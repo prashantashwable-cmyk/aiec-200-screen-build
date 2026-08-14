@@ -11,6 +11,7 @@ import {
   MapTrifold,
   Path,
   PlusCircle,
+  Receipt,
   Storefront,
   Wrench,
 } from '@phosphor-icons/react';
@@ -40,6 +41,7 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
     { id: 'map', labelKey: 'nav.map', path: '/admin/map', icon: <MapTrifold size={ICON_SIZE} /> },
     { id: 'leads', labelKey: 'nav.crm', path: '/admin/leads', icon: <Funnel size={ICON_SIZE} /> },
     { id: 'comm', labelKey: 'nav.comm', path: '/admin/comm/templates', icon: <ChatCircleText size={ICON_SIZE} /> },
+    { id: 'quotes', labelKey: 'nav.quotes', path: '/admin/quotes', icon: <Receipt size={ICON_SIZE} /> },
     {
       id: 'analytics',
       labelKey: 'nav.analytics',
