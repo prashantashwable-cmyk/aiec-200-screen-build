@@ -157,13 +157,26 @@ export interface BotSimulationResult {
   escalateReasonKey?: string;
 }
 
-export interface ReplyInboxItem {
-  message: CommMessage;
-  conversation: Conversation;
+interface ReplyInboxItemBase {
   lead: Lead;
   slaBreached: boolean;
   waitingMinutes: number;
 }
+
+export interface ReplyInboxMessageItem extends ReplyInboxItemBase {
+  kind: 'message';
+  message: CommMessage;
+  conversation: Conversation;
+}
+
+/** A `no_answer` call still awaiting a callback — the unified inbox's third
+ *  channel alongside WhatsApp and SMS replies. */
+export interface ReplyInboxMissedCallItem extends ReplyInboxItemBase {
+  kind: 'missed_call';
+  call: CallLogEntry;
+}
+
+export type ReplyInboxItem = ReplyInboxMessageItem | ReplyInboxMissedCallItem;
 
 export interface TriggerRuleEvaluation {
   rule: TriggerRule;

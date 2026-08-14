@@ -1397,8 +1397,26 @@ export const memoryRepository: Repository = {
         const lead = resolveLead(conversation.leadId);
         if (!lead) continue;
         const waitingMinutes = businessMinutesSince(message.at);
-        items.push({ message, conversation, lead, slaBreached: waitingMinutes > SLA_MINUTES, waitingMinutes });
+        items.push({ kind: 'message', message, conversation, lead, slaBreached: waitingMinutes > SLA_MINUTES, waitingMinutes });
       }
+
+      // A missed-call-back request: the newest call attempt for a lead went
+      // unanswered. Once a fresh call is placed (any outcome, even
+      // undispositioned), that becomes the newest record and this item
+      // naturally drops out — no separate "handled" flag needed.
+      const newestCallByLead = new Map<string, CallLogEntry>();
+      for (const call of callLog) {
+        const current = newestCallByLead.get(call.leadId);
+        if (!current || call.at > current.at) newestCallByLead.set(call.leadId, call);
+      }
+      for (const call of newestCallByLead.values()) {
+        if (call.outcome !== 'no_answer') continue;
+        const lead = resolveLead(call.leadId);
+        if (!lead) continue;
+        const waitingMinutes = businessMinutesSince(call.at);
+        items.push({ kind: 'missed_call', call, lead, slaBreached: waitingMinutes > SLA_MINUTES, waitingMinutes });
+      }
+
       return items.sort((a, b) => b.waitingMinutes - a.waitingMinutes);
     }),
 
