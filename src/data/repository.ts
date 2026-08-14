@@ -149,7 +149,9 @@ export interface BroadcastSegmentPreview {
 }
 
 export interface BotSimulationResult {
-  reply: string;
+  /** Absent when the topic escalates before any reply is composed. */
+  replyKey?: string;
+  replyParams?: Record<string, string | number>;
   confidence: number;
   escalate: boolean;
   escalateReasonKey?: string;
@@ -304,7 +306,12 @@ export interface Repository {
   /* Communication: AI bot */
   getBotConfig(): Promise<BotConfig>;
   updateBotConfig(patch: Partial<Pick<BotConfig, 'toneKey' | 'allowedDiscountMinPct' | 'allowedDiscountMaxPct' | 'escalationConfidenceThreshold'>>): Promise<BotConfig>;
-  simulateBotReply(sampleMessage: string): Promise<BotSimulationResult>;
+  /** `configOverride` lets the simulator preview unsaved slider changes
+   *  before the Admin commits them with Save. */
+  simulateBotReply(
+    sampleMessage: string,
+    configOverride?: Partial<Pick<BotConfig, 'toneKey' | 'allowedDiscountMinPct' | 'allowedDiscountMaxPct' | 'escalationConfidenceThreshold'>>,
+  ): Promise<BotSimulationResult>;
 
   /* Communication: reply inbox */
   listReplyInboxItems(): Promise<ReplyInboxItem[]>;

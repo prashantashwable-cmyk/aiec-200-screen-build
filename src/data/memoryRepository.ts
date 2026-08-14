@@ -86,6 +86,7 @@ import type {
   User,
 } from './types';
 import { formatINRCompact, haversineKm } from '@/design-system/format';
+import { MAX_SAFE_BOT_DISCOUNT_PCT } from '@/features/communication/botRules';
 import { extractMergeFields, renderTemplateBody } from '@/features/communication/templateRender';
 
 /**
@@ -335,30 +336,35 @@ function runBotSimulation(sampleMessage: string, config: BotConfig): BotSimulati
   const lower = sampleMessage.toLowerCase();
 
   if (ESCALATION_KEYWORDS.some((kw) => lower.includes(kw))) {
-    return { reply: '', confidence: 0, escalate: true, escalateReasonKey: 'bot.escalate.sensitiveTopic' };
+    return { confidence: 0, escalate: true, escalateReasonKey: 'bot.escalate.sensitiveTopic' };
   }
 
   const discountMatch = lower.match(DISCOUNT_PATTERN);
   if (discountMatch) {
     const requestedPct = Number(discountMatch[1]);
     if (requestedPct > config.allowedDiscountMaxPct) {
+      const confidence = 0.72;
       return {
-        reply: `I can offer up to ${config.allowedDiscountMaxPct}% — let me have our team confirm anything beyond that.`,
-        confidence: 0.72,
-        escalate: 0.72 < config.escalationConfidenceThreshold,
-        escalateReasonKey: 0.72 < config.escalationConfidenceThreshold ? 'bot.escalate.lowConfidence' : undefined,
+        replyKey: 'bot.reply.discountCapped',
+        replyParams: { maxPct: config.allowedDiscountMaxPct },
+        confidence,
+        escalate: confidence < config.escalationConfidenceThreshold,
+        escalateReasonKey: confidence < config.escalationConfidenceThreshold ? 'bot.escalate.lowConfidence' : undefined,
       };
     }
+    const confidence = 0.9;
     return {
-      reply: `Happy to offer ${requestedPct}% on this — within what I'm able to approve directly.`,
-      confidence: 0.9,
-      escalate: 0.9 < config.escalationConfidenceThreshold,
+      replyKey: 'bot.reply.discountApproved',
+      replyParams: { pct: requestedPct },
+      confidence,
+      escalate: confidence < config.escalationConfidenceThreshold,
+      escalateReasonKey: confidence < config.escalationConfidenceThreshold ? 'bot.escalate.lowConfidence' : undefined,
     };
   }
 
   const confidence = lower.length > 0 ? 0.55 : 0;
   return {
-    reply: 'Thanks for the message — someone from our team will follow up shortly.',
+    replyKey: 'bot.reply.generic',
     confidence,
     escalate: confidence < config.escalationConfidenceThreshold,
     escalateReasonKey: confidence < config.escalationConfidenceThreshold ? 'bot.escalate.lowConfidence' : undefined,
@@ -1371,11 +1377,14 @@ export const memoryRepository: Repository = {
 
   updateBotConfig: (patch) =>
     simulateWrite(() => {
+      const nextMax = patch.allowedDiscountMaxPct ?? botConfig.allowedDiscountMaxPct;
+      if (nextMax > MAX_SAFE_BOT_DISCOUNT_PCT) throw new RepositoryError('discount_exceeds_margin_floor');
       botConfig = { ...botConfig, ...patch, updatedAt: new Date().toISOString() };
       return { ...botConfig };
     }),
 
-  simulateBotReply: (sampleMessage) => simulateRead(() => runBotSimulation(sampleMessage, botConfig)),
+  simulateBotReply: (sampleMessage, configOverride) =>
+    simulateRead(() => runBotSimulation(sampleMessage, { ...botConfig, ...configOverride })),
 
   /* ------------------------------------------- Communication: reply inbox */
   listReplyInboxItems: () =>
