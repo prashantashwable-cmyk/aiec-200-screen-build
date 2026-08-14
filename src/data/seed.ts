@@ -1,0 +1,791 @@
+import type {
+  ActivityEvent,
+  Alert,
+  AutomationRule,
+  CommissionEntry,
+  Deal,
+  DuplicatePair,
+  FollowUpTask,
+  GeoZone,
+  Job,
+  Lead,
+  LeadImportBatch,
+  LeadSource,
+  LeadTimelineEvent,
+  Payment,
+  RoutePlan,
+  ScoreWeightingProfile,
+  SeriesPoint,
+  SiteVisitVerification,
+  Supplier,
+  User,
+} from './types';
+
+/**
+ * The seeded AIEC demo dataset.
+ *
+ * Every record carries `isDemo: true`. This is the entire dataset Demo Mode
+ * reads; there is no production data in this build, and the repository refuses
+ * writes that would mix the two (see repository.ts).
+ *
+ * Grounded in the real Pune / Pimpri-Chinchwad market the brief describes:
+ * genuine locality names and coordinates, and lift prices in the range Indian
+ * passenger-lift quotes actually land in (roughly ₹8L for a small 4-stop MRL
+ * up to ₹40L+ for a high-rise commercial bank of lifts).
+ */
+
+/* --------------------------------------------------------------- Time base */
+
+const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+
+/** Anchored at load so the demo always reads as "live" rather than stale. */
+const NOW = Date.now();
+
+const at = (offsetMs: number) => new Date(NOW + offsetMs).toISOString();
+export const minutesAgo = (n: number) => at(-n * MINUTE);
+export const hoursAgo = (n: number) => at(-n * HOUR);
+export const daysAgo = (n: number) => at(-n * DAY);
+export const daysAhead = (n: number) => at(n * DAY);
+export const hoursAhead = (n: number) => at(n * HOUR);
+
+/** Deterministic PRNG so charts look identical on every reload. */
+function makeRandom(seed: number) {
+  let state = seed >>> 0;
+  return () => {
+    state = (state * 1_664_525 + 1_013_904_223) >>> 0;
+    return state / 0xffffffff;
+  };
+}
+
+/* ------------------------------------------------------------------- Users */
+
+export const seedUsers: User[] = [
+  {
+    id: 'u-admin-1',
+    role: 'admin',
+    name: 'Prashant Vasant Wable',
+    phone: '9822011001',
+    email: 'owner@aiec.example',
+    status: 'active',
+    preferredLanguage: 'en',
+    themePreference: 'light',
+    isDemo: true,
+    city: 'Pune',
+    joinedAt: daysAgo(720),
+    rating: 5,
+  },
+  {
+    id: 'u-srv-1',
+    role: 'surveyor',
+    name: 'Ganesh Pawar',
+    phone: '9822022001',
+    status: 'active',
+    preferredLanguage: 'mr',
+    themePreference: 'light',
+    isDemo: true,
+    city: 'Pune',
+    territory: 'z-hinjawadi',
+    joinedAt: daysAgo(310),
+    rating: 4.8,
+    onDuty: true,
+    location: { lat: 18.5913, lng: 73.7389 },
+    lastSeenAt: minutesAgo(3),
+    documents: [
+      { id: 'd1', kind: 'aadhaar', label: 'Aadhaar', status: 'verified', uploadedAt: daysAgo(310) },
+      { id: 'd2', kind: 'pan', label: 'PAN', status: 'verified', uploadedAt: daysAgo(310) },
+      { id: 'd3', kind: 'bank', label: 'Bank passbook', status: 'verified', uploadedAt: daysAgo(309) },
+    ],
+  },
+  {
+    id: 'u-srv-2',
+    role: 'surveyor',
+    name: 'Sunita Deshmukh',
+    phone: '9822022002',
+    status: 'active',
+    preferredLanguage: 'hi',
+    themePreference: 'snow',
+    isDemo: true,
+    city: 'Pune',
+    territory: 'z-kharadi',
+    joinedAt: daysAgo(210),
+    rating: 4.9,
+    onDuty: true,
+    location: { lat: 18.5515, lng: 73.947 },
+    lastSeenAt: minutesAgo(11),
+  },
+  {
+    id: 'u-srv-3',
+    role: 'surveyor',
+    name: 'Imran Shaikh',
+    phone: '9822022003',
+    status: 'active',
+    preferredLanguage: 'en',
+    themePreference: 'dark',
+    isDemo: true,
+    city: 'Pimpri-Chinchwad',
+    territory: 'z-pimpri',
+    joinedAt: daysAgo(160),
+    rating: 4.4,
+    onDuty: true,
+    location: { lat: 18.6298, lng: 73.7997 },
+    lastSeenAt: minutesAgo(1),
+  },
+  {
+    id: 'u-srv-4',
+    role: 'surveyor',
+    name: 'Rohit Jadhav',
+    phone: '9822022004',
+    status: 'active',
+    preferredLanguage: 'mr',
+    themePreference: 'light',
+    isDemo: true,
+    city: 'Pune',
+    territory: 'z-kothrud',
+    joinedAt: daysAgo(95),
+    rating: 4.1,
+    onDuty: false,
+    location: { lat: 18.5074, lng: 73.8077 },
+    lastSeenAt: hoursAgo(14),
+  },
+  {
+    id: 'u-srv-5',
+    role: 'surveyor',
+    name: 'Kavita Bhosale',
+    phone: '9822022005',
+    status: 'pending_approval',
+    preferredLanguage: 'mr',
+    themePreference: 'light',
+    isDemo: true,
+    city: 'Pune',
+    joinedAt: daysAgo(2),
+    documents: [
+      { id: 'd4', kind: 'aadhaar', label: 'Aadhaar', status: 'uploaded', uploadedAt: daysAgo(2) },
+      { id: 'd5', kind: 'pan', label: 'PAN', status: 'uploaded', uploadedAt: daysAgo(2) },
+      { id: 'd6', kind: 'bank', label: 'Bank passbook', status: 'missing' },
+    ],
+  },
+  {
+    id: 'u-tech-1',
+    role: 'technician',
+    name: 'Santosh Kale',
+    phone: '9822033001',
+    status: 'active',
+    preferredLanguage: 'mr',
+    themePreference: 'dark',
+    isDemo: true,
+    city: 'Pune',
+    joinedAt: daysAgo(430),
+    rating: 4.9,
+    onDuty: true,
+    location: { lat: 18.515, lng: 73.928 },
+    lastSeenAt: minutesAgo(6),
+    skills: ['mrl_install', 'traction', 'door_operator', 'wiring'],
+    documents: [
+      {
+        id: 'd7',
+        kind: 'certificate',
+        label: 'ITI Electrician',
+        status: 'verified',
+        uploadedAt: daysAgo(430),
+      },
+      {
+        id: 'd8',
+        kind: 'licence',
+        label: 'Lift mechanic licence',
+        status: 'verified',
+        uploadedAt: daysAgo(430),
+      },
+      { id: 'd9', kind: 'insurance', label: 'Accident cover', status: 'verified', uploadedAt: daysAgo(120) },
+    ],
+  },
+  {
+    id: 'u-tech-2',
+    role: 'technician',
+    name: 'Vishal More',
+    phone: '9822033002',
+    status: 'active',
+    preferredLanguage: 'hi',
+    themePreference: 'light',
+    isDemo: true,
+    city: 'Pune',
+    joinedAt: daysAgo(280),
+    rating: 4.6,
+    onDuty: true,
+    location: { lat: 18.559, lng: 73.7868 },
+    lastSeenAt: minutesAgo(22),
+    skills: ['traction', 'hydraulic', 'controller'],
+  },
+  {
+    id: 'u-tech-3',
+    role: 'technician',
+    name: 'Ajay Nikam',
+    phone: '9822033003',
+    status: 'active',
+    preferredLanguage: 'mr',
+    themePreference: 'light',
+    isDemo: true,
+    city: 'Pimpri-Chinchwad',
+    joinedAt: daysAgo(150),
+    rating: 4.2,
+    onDuty: false,
+    location: { lat: 18.642, lng: 73.7997 },
+    lastSeenAt: hoursAgo(9),
+    skills: ['mrl_install', 'wiring'],
+  },
+  {
+    id: 'u-tech-4',
+    role: 'technician',
+    name: 'Prakash Salunke',
+    phone: '9822033004',
+    status: 'pending_approval',
+    preferredLanguage: 'mr',
+    themePreference: 'light',
+    isDemo: true,
+    city: 'Pune',
+    joinedAt: daysAgo(1),
+    skills: ['wiring'],
+    documents: [
+      { id: 'd10', kind: 'certificate', label: 'ITI Electrician', status: 'uploaded', uploadedAt: daysAgo(1) },
+      { id: 'd11', kind: 'licence', label: 'Lift mechanic licence', status: 'missing' },
+    ],
+  },
+  {
+    id: 'u-cust-1',
+    role: 'customer',
+    name: 'Rajesh Agarwal',
+    phone: '9822044001',
+    email: 'rajesh@shreeramdev.example',
+    status: 'active',
+    preferredLanguage: 'en',
+    themePreference: 'light',
+    isDemo: true,
+    city: 'Pune',
+    companyName: 'Shree Ram Developers',
+    joinedAt: daysAgo(88),
+  },
+  {
+    id: 'u-cust-2',
+    role: 'customer',
+    name: 'Meera Kulkarni',
+    phone: '9822044002',
+    status: 'active',
+    preferredLanguage: 'mr',
+    themePreference: 'light',
+    isDemo: true,
+    city: 'Pune',
+    companyName: 'Kulkarni Constructions',
+    joinedAt: daysAgo(46),
+  },
+  {
+    id: 'u-cust-3',
+    role: 'customer',
+    name: 'Farhan Qureshi',
+    phone: '9822044003',
+    status: 'active',
+    preferredLanguage: 'hi',
+    themePreference: 'light',
+    isDemo: true,
+    city: 'Pimpri-Chinchwad',
+    companyName: 'Skyline Realty',
+    joinedAt: daysAgo(20),
+  },
+  {
+    id: 'u-sup-1',
+    role: 'supplier',
+    name: 'Anil Mehta',
+    phone: '9822055001',
+    status: 'active',
+    preferredLanguage: 'en',
+    themePreference: 'light',
+    isDemo: true,
+    city: 'Mumbai',
+    companyName: 'Vertex Elevator Components Pvt Ltd',
+    gstin: '27AABCV1234A1Z5',
+    joinedAt: daysAgo(500),
+    rating: 4.7,
+  },
+  {
+    id: 'u-sup-2',
+    role: 'supplier',
+    name: 'Deepak Rathi',
+    phone: '9822055002',
+    status: 'pending_approval',
+    preferredLanguage: 'en',
+    themePreference: 'light',
+    isDemo: true,
+    city: 'Ahmedabad',
+    companyName: 'Rathi Lift Systems',
+    gstin: '24AACFR5678B1Z2',
+    joinedAt: daysAgo(4),
+    documents: [
+      { id: 'd12', kind: 'gst', label: 'GST certificate', status: 'uploaded', uploadedAt: daysAgo(4) },
+      { id: 'd13', kind: 'pan', label: 'Company PAN', status: 'uploaded', uploadedAt: daysAgo(4) },
+      { id: 'd14', kind: 'bank', label: 'Cancelled cheque', status: 'missing' },
+    ],
+  },
+];
+
+/* ------------------------------------------------------------------- Leads */
+
+interface LeadSeed {
+  id: string;
+  code: string;
+  stage: Lead['stage'];
+  surveyorId: string;
+  builderName: string;
+  contactName: string;
+  phone: string;
+  siteName: string;
+  address: string;
+  city: string;
+  pincode: string;
+  lat: number;
+  lng: number;
+  value: number;
+  ageDays: number;
+  stageDays: number;
+  floors: number;
+  capacity: number;
+  score: number;
+  lostReason?: string;
+}
+
+const leadSeeds: LeadSeed[] = [
+  { id: 'l-1', code: 'AIEC-L-0101', stage: 'won', surveyorId: 'u-srv-1', builderName: 'Shree Ram Developers', contactName: 'Rajesh Agarwal', phone: '9822044001', siteName: 'Shree Ram Heights', address: 'Phase 2, Hinjawadi', city: 'Pune', pincode: '411057', lat: 18.5913, lng: 73.7389, value: 2_640_000, ageDays: 74, stageDays: 12, floors: 12, capacity: 8, score: 92 },
+  { id: 'l-2', code: 'AIEC-L-0102', stage: 'won', surveyorId: 'u-srv-2', builderName: 'Kulkarni Constructions', contactName: 'Meera Kulkarni', phone: '9822044002', siteName: 'Kulkarni Signature', address: 'Kharadi Bypass', city: 'Pune', pincode: '411014', lat: 18.5515, lng: 73.947, value: 1_880_000, ageDays: 52, stageDays: 9, floors: 8, capacity: 6, score: 88 },
+  { id: 'l-3', code: 'AIEC-L-0103', stage: 'negotiation', surveyorId: 'u-srv-3', builderName: 'Skyline Realty', contactName: 'Farhan Qureshi', phone: '9822044003', siteName: 'Skyline Corporate Park', address: 'Pimpri MIDC Road', city: 'Pimpri-Chinchwad', pincode: '411018', lat: 18.6298, lng: 73.7997, value: 4_120_000, ageDays: 30, stageDays: 6, floors: 14, capacity: 13, score: 85 },
+  { id: 'l-4', code: 'AIEC-L-0104', stage: 'quoted', surveyorId: 'u-srv-1', builderName: 'Pinnacle Spaces', contactName: 'Amit Joshi', phone: '9822044004', siteName: 'Pinnacle Aurum', address: 'Balewadi High Street', city: 'Pune', pincode: '411045', lat: 18.575, lng: 73.769, value: 3_050_000, ageDays: 21, stageDays: 4, floors: 11, capacity: 10, score: 78 },
+  { id: 'l-5', code: 'AIEC-L-0105', stage: 'quoted', surveyorId: 'u-srv-2', builderName: 'Green Nest Builders', contactName: 'Sneha Patil', phone: '9822044005', siteName: 'Green Nest Residency', address: 'Viman Nagar', city: 'Pune', pincode: '411014', lat: 18.5679, lng: 73.9143, value: 1_450_000, ageDays: 18, stageDays: 7, floors: 6, capacity: 6, score: 71 },
+  { id: 'l-6', code: 'AIEC-L-0106', stage: 'site_visit', surveyorId: 'u-srv-1', builderName: 'Trinity Infra', contactName: 'Nilesh Gaikwad', phone: '9822044006', siteName: 'Trinity Business Bay', address: 'Baner Road', city: 'Pune', pincode: '411045', lat: 18.559, lng: 73.7868, value: 5_600_000, ageDays: 14, stageDays: 2, floors: 16, capacity: 13, score: 81 },
+  { id: 'l-7', code: 'AIEC-L-0107', stage: 'site_visit', surveyorId: 'u-srv-3', builderName: 'Ravet Realty', contactName: 'Suresh Shinde', phone: '9822044007', siteName: 'Ravet Sky Towers', address: 'Ravet, PCMC', city: 'Pimpri-Chinchwad', pincode: '412101', lat: 18.65, lng: 73.745, value: 2_980_000, ageDays: 11, stageDays: 3, floors: 10, capacity: 8, score: 68 },
+  { id: 'l-8', code: 'AIEC-L-0108', stage: 'contacted', surveyorId: 'u-srv-2', builderName: 'Magarpatta Homes', contactName: 'Pooja Rane', phone: '9822044008', siteName: 'Magarpatta Grove', address: 'Magarpatta City', city: 'Pune', pincode: '411028', lat: 18.515, lng: 73.928, value: 2_200_000, ageDays: 8, stageDays: 5, floors: 9, capacity: 8, score: 64 },
+  { id: 'l-9', code: 'AIEC-L-0109', stage: 'contacted', surveyorId: 'u-srv-4', builderName: 'Kothrud Nirman', contactName: 'Vikas Thorat', phone: '9822044009', siteName: 'Nirman Elite', address: 'Karve Road, Kothrud', city: 'Pune', pincode: '411038', lat: 18.5074, lng: 73.8077, value: 1_120_000, ageDays: 9, stageDays: 6, floors: 5, capacity: 6, score: 52 },
+  { id: 'l-10', code: 'AIEC-L-0110', stage: 'captured', surveyorId: 'u-srv-1', builderName: 'Wakad Vista', contactName: 'Deepa Naik', phone: '9822044010', siteName: 'Vista Enclave', address: 'Wakad Chowk', city: 'Pune', pincode: '411057', lat: 18.5975, lng: 73.762, value: 1_680_000, ageDays: 2, stageDays: 2, floors: 7, capacity: 6, score: 58 },
+  { id: 'l-11', code: 'AIEC-L-0111', stage: 'captured', surveyorId: 'u-srv-3', builderName: 'Chinchwad Estates', contactName: 'Manoj Kadam', phone: '9822044011', siteName: 'Estate One', address: 'Chinchwad Station Road', city: 'Pimpri-Chinchwad', pincode: '411019', lat: 18.642, lng: 73.7997, value: 2_340_000, ageDays: 1, stageDays: 1, floors: 9, capacity: 8, score: 61 },
+  { id: 'l-12', code: 'AIEC-L-0112', stage: 'captured', surveyorId: 'u-srv-2', builderName: 'Aundh Anand', contactName: 'Shweta Kale', phone: '9822044012', siteName: 'Anand Residency', address: 'ITI Road, Aundh', city: 'Pune', pincode: '411007', lat: 18.559, lng: 73.8077, value: 1_260_000, ageDays: 0, stageDays: 0, floors: 5, capacity: 6, score: 49 },
+  { id: 'l-13', code: 'AIEC-L-0113', stage: 'lost', surveyorId: 'u-srv-4', builderName: 'Katraj Constructions', contactName: 'Ramesh Gore', phone: '9822044013', siteName: 'Katraj Crown', address: 'Katraj Kondhwa Road', city: 'Pune', pincode: '411046', lat: 18.4529, lng: 73.8567, value: 1_540_000, ageDays: 40, stageDays: 15, floors: 6, capacity: 6, score: 34, lostReason: 'price' },
+  { id: 'l-14', code: 'AIEC-L-0114', stage: 'lost', surveyorId: 'u-srv-2', builderName: 'Hadapsar Heights', contactName: 'Anita Sawant', phone: '9822044014', siteName: 'Hadapsar Orchid', address: 'Solapur Road, Hadapsar', city: 'Pune', pincode: '411028', lat: 18.5089, lng: 73.926, value: 990_000, ageDays: 35, stageDays: 20, floors: 4, capacity: 4, score: 28, lostReason: 'competitor' },
+  { id: 'l-15', code: 'AIEC-L-0115', stage: 'negotiation', surveyorId: 'u-srv-1', builderName: 'Hinjawadi Tech Park', contactName: 'Girish Rao', phone: '9822044015', siteName: 'Tech Park Block C', address: 'Phase 3, Hinjawadi', city: 'Pune', pincode: '411057', lat: 18.5945, lng: 73.7315, value: 8_400_000, ageDays: 26, stageDays: 8, floors: 18, capacity: 20, score: 90 },
+  { id: 'l-16', code: 'AIEC-L-0116', stage: 'quoted', surveyorId: 'u-srv-3', builderName: 'PCMC Civic Trust', contactName: 'Sanjay Bhoir', phone: '9822044016', siteName: 'Civic Health Centre', address: 'Nigdi, PCMC', city: 'Pimpri-Chinchwad', pincode: '411044', lat: 18.6512, lng: 73.7679, value: 3_700_000, ageDays: 16, stageDays: 5, floors: 7, capacity: 13, score: 74 },
+  { id: 'l-17', code: 'AIEC-L-0117', stage: 'site_visit', surveyorId: 'u-srv-2', builderName: 'Koregaon Luxe', contactName: 'Tanvi Mehta', phone: '9822044017', siteName: 'Luxe Boutique Hotel', address: 'Koregaon Park', city: 'Pune', pincode: '411001', lat: 18.5362, lng: 73.8939, value: 6_200_000, ageDays: 12, stageDays: 1, floors: 9, capacity: 10, score: 83 },
+  { id: 'l-18', code: 'AIEC-L-0118', stage: 'contacted', surveyorId: 'u-srv-1', builderName: 'Baner Bloom', contactName: 'Kiran Zende', phone: '9822044018', siteName: 'Bloom Apartments', address: 'Pashan Link Road', city: 'Pune', pincode: '411021', lat: 18.5385, lng: 73.7845, value: 1_390_000, ageDays: 6, stageDays: 4, floors: 6, capacity: 6, score: 55 },
+  // Inbound enquiries with no field surveyor involved at all — real data for
+  // screen 044's assignment queue, which otherwise has nothing to show.
+  { id: 'l-19', code: 'AIEC-L-0120', stage: 'captured', surveyorId: '', builderName: 'Riverside Developers', contactName: 'Nikhil Sane', phone: '9822044020', siteName: 'Riverside Enclave', address: 'Sinhagad Road', city: 'Pune', pincode: '411030', lat: 18.4634, lng: 73.8264, value: 1_780_000, ageDays: 0, stageDays: 0, floors: 8, capacity: 8, score: 55 },
+  { id: 'l-20', code: 'AIEC-L-0121', stage: 'captured', surveyorId: '', builderName: 'Wagholi Nirman', contactName: 'Priya Bhagat', phone: '9822044021', siteName: 'Wagholi Heights', address: 'Wagholi Bypass', city: 'Pune', pincode: '412207', lat: 18.5793, lng: 73.9868, value: 990_000, ageDays: 0, stageDays: 0, floors: 4, capacity: 4, score: 40 },
+];
+
+const SOURCE_OVERRIDE: Partial<Record<string, LeadSource>> = {
+  'l-19': 'inbound_website',
+  'l-20': 'inbound_whatsapp',
+};
+
+/** Most leads are field-captured; a realistic minority arrive some other way
+ *  — enough spread for the source-attribution screen (048) to be meaningful. */
+const LEAD_SOURCE_CYCLE: LeadSource[] = [
+  'field_survey',
+  'field_survey',
+  'field_survey',
+  'referral_repeat',
+  'field_survey',
+  'inbound_website',
+  'field_survey',
+  'field_survey',
+  'inbound_whatsapp',
+  'field_survey',
+];
+
+/** l-9 was reassigned from Sunita to Rohit after a territory rebalance —
+ *  gives screen 044's history and screen 042's timeline real data to show. */
+const REASSIGNED_LEAD_IDS: Record<string, string> = { 'l-9': 'u-srv-2' };
+
+const STAGE_LADDER: Lead['stage'][] = [
+  'captured',
+  'contacted',
+  'site_visit',
+  'quoted',
+  'negotiation',
+  'won',
+];
+
+export const seedLeads: Lead[] = leadSeeds.map((s, index) => {
+  const capacityKg = s.capacity * 68;
+  return {
+    id: s.id,
+    code: s.code,
+    stage: s.stage,
+    surveyorId: s.surveyorId,
+    originalSurveyorId: REASSIGNED_LEAD_IDS[s.id] ?? s.surveyorId,
+    source: SOURCE_OVERRIDE[s.id] ?? LEAD_SOURCE_CYCLE[index % LEAD_SOURCE_CYCLE.length],
+    builderName: s.builderName,
+    contactName: s.contactName,
+    contactPhone: s.phone,
+    siteName: s.siteName,
+    address: s.address,
+    city: s.city,
+    pincode: s.pincode,
+    location: { lat: s.lat, lng: s.lng },
+    photos: ['site-front', 'shaft', 'approach-road'],
+    spec: {
+      buildingType:
+        s.floors >= 12 ? 'commercial_office' : s.floors >= 7 ? 'residential_apartment' : 'residential_villa',
+      mixedUse: false,
+      floors: s.floors,
+      basements: s.floors >= 10 ? 2 : 1,
+      shaftCount: s.floors >= 14 ? 3 : s.floors >= 8 ? 2 : 1,
+      capacityPersons: s.capacity,
+      capacityKg,
+      speedMps: s.floors >= 12 ? 1.5 : 1,
+      shaftWidthMm: 1800,
+      shaftDepthMm: 1900,
+      pitDepthMm: 1500,
+      headroomMm: 4200,
+      machineRoom: s.floors >= 12 ? 'with_machine_room' : 'mrl',
+      doorType: 'automatic_centre',
+      cabinFinish: s.value > 3_000_000 ? 'premium_ss' : 'standard_ss',
+      powerBackup: true,
+      constructionStage: s.ageDays > 40 ? 'finishing' : s.ageDays > 15 ? 'structure' : 'foundation',
+    },
+    estimatedValue: s.value,
+    // 1.5% of deal value, floored at ₹5,000 — the surveyor incentive rule.
+    incentiveAmount: Math.max(5_000, Math.round(s.value * 0.015)),
+    incentiveStatus:
+      s.stage === 'won' ? 'paid' : s.stage === 'lost' ? 'forfeited' : 'projected',
+    createdAt: daysAgo(s.ageDays),
+    updatedAt: daysAgo(s.stageDays),
+    stageEnteredAt: daysAgo(s.stageDays),
+    isDemo: true,
+    lostReason: s.lostReason,
+    score: s.score,
+  };
+});
+
+/** A pending duplicate, deliberately near an existing lead, for screen 035. */
+export const duplicateCandidate: Lead = {
+  ...seedLeads[9],
+  id: 'l-dup-1',
+  code: 'AIEC-L-0119',
+  surveyorId: 'u-srv-4',
+  originalSurveyorId: 'u-srv-4',
+  location: { lat: 18.5978, lng: 73.7624 },
+  createdAt: minutesAgo(4),
+  updatedAt: minutesAgo(4),
+  stageEnteredAt: minutesAgo(4),
+  duplicateOfLeadId: 'l-10',
+};
+
+/* ------------------------------------------------------------------- Deals */
+
+export const seedDeals: Deal[] = [
+  { id: 'dl-1', code: 'AIEC-D-2101', leadId: 'l-1', customerId: 'u-cust-1', status: 'won', quotedPrice: 2_780_000, agreedPrice: 2_640_000, marginAmount: 528_000, gstPercent: 18, supplierId: 'sp-1', negotiationRounds: 2, createdAt: daysAgo(62), closedAt: daysAgo(48), isDemo: true },
+  { id: 'dl-2', code: 'AIEC-D-2102', leadId: 'l-2', customerId: 'u-cust-2', status: 'won', quotedPrice: 1_950_000, agreedPrice: 1_880_000, marginAmount: 357_000, gstPercent: 18, supplierId: 'sp-2', negotiationRounds: 1, createdAt: daysAgo(41), closedAt: daysAgo(33), isDemo: true },
+  { id: 'dl-3', code: 'AIEC-D-2103', leadId: 'l-3', customerId: 'u-cust-3', status: 'negotiating', quotedPrice: 4_320_000, agreedPrice: 4_120_000, marginAmount: 741_000, gstPercent: 18, supplierId: 'sp-1', negotiationRounds: 3, createdAt: daysAgo(18), isDemo: true },
+  { id: 'dl-4', code: 'AIEC-D-2104', leadId: 'l-4', status: 'quoted', quotedPrice: 3_050_000, agreedPrice: 0, marginAmount: 549_000, gstPercent: 18, supplierId: 'sp-1', negotiationRounds: 0, createdAt: daysAgo(9), isDemo: true },
+  { id: 'dl-5', code: 'AIEC-D-2105', leadId: 'l-5', status: 'quoted', quotedPrice: 1_450_000, agreedPrice: 0, marginAmount: 246_500, gstPercent: 18, supplierId: 'sp-3', negotiationRounds: 0, createdAt: daysAgo(7), isDemo: true },
+  { id: 'dl-6', code: 'AIEC-D-2106', leadId: 'l-15', status: 'negotiating', quotedPrice: 8_800_000, agreedPrice: 8_400_000, marginAmount: 1_512_000, gstPercent: 18, supplierId: 'sp-1', negotiationRounds: 4, createdAt: daysAgo(15), isDemo: true },
+  { id: 'dl-7', code: 'AIEC-D-2107', leadId: 'l-16', status: 'quoted', quotedPrice: 3_700_000, agreedPrice: 0, marginAmount: 629_000, gstPercent: 18, supplierId: 'sp-2', negotiationRounds: 0, createdAt: daysAgo(5), isDemo: true },
+  { id: 'dl-8', code: 'AIEC-D-2108', leadId: 'l-13', status: 'lost', quotedPrice: 1_620_000, agreedPrice: 0, marginAmount: 0, gstPercent: 18, negotiationRounds: 2, createdAt: daysAgo(32), closedAt: daysAgo(18), isDemo: true },
+];
+
+/* -------------------------------------------------------------------- Jobs */
+
+const installSteps = (completedCount: number): Job['steps'] => {
+  const defs: Array<{ id: string; key: string; evidence: boolean }> = [
+    { id: 's1', key: 'job.step.siteReadiness', evidence: true },
+    { id: 's2', key: 'job.step.materialsReceived', evidence: true },
+    { id: 's3', key: 'job.step.guideRails', evidence: false },
+    { id: 's4', key: 'job.step.machineMount', evidence: true },
+    { id: 's5', key: 'job.step.carAssembly', evidence: false },
+    { id: 's6', key: 'job.step.doorOperator', evidence: false },
+    { id: 's7', key: 'job.step.wiringControl', evidence: true },
+    { id: 's8', key: 'job.step.safetyGearTest', evidence: true },
+    { id: 's9', key: 'job.step.loadTest', evidence: true },
+    { id: 's10', key: 'job.step.finishHandover', evidence: true },
+  ];
+  return defs.map((d, i) => ({
+    id: d.id,
+    labelKey: d.key,
+    status: i < completedCount ? 'complete' : i === completedCount ? 'current' : 'upcoming',
+    requiresEvidence: d.evidence,
+    evidenceCount: i < completedCount && d.evidence ? 3 : 0,
+    completedAt: i < completedCount ? daysAgo(completedCount - i) : undefined,
+  }));
+};
+
+export const seedJobs: Job[] = [
+  { id: 'j-1', code: 'AIEC-J-3101', dealId: 'dl-1', technicianId: 'u-tech-1', status: 'in_progress', siteName: 'Shree Ram Heights', address: 'Phase 2, Hinjawadi', location: { lat: 18.5913, lng: 73.7389 }, scheduledFor: daysAgo(21), startedAt: daysAgo(21), steps: installSteps(7), isDemo: true },
+  { id: 'j-2', code: 'AIEC-J-3102', dealId: 'dl-2', technicianId: 'u-tech-2', status: 'qc_pending', siteName: 'Kulkarni Signature', address: 'Kharadi Bypass', location: { lat: 18.5515, lng: 73.947 }, scheduledFor: daysAgo(28), startedAt: daysAgo(28), steps: installSteps(9), isDemo: true },
+  { id: 'j-3', code: 'AIEC-J-3103', dealId: 'dl-1', technicianId: 'u-tech-3', status: 'materials_pending', siteName: 'Shree Ram Heights — Wing B', address: 'Phase 2, Hinjawadi', location: { lat: 18.592, lng: 73.7401 }, scheduledFor: daysAhead(3), steps: installSteps(1), isDemo: true },
+  { id: 'j-4', code: 'AIEC-J-3104', dealId: 'dl-2', technicianId: 'u-tech-1', status: 'scheduled', siteName: 'Kulkarni Signature — Tower 2', address: 'Kharadi Bypass', location: { lat: 18.5522, lng: 73.9481 }, scheduledFor: daysAhead(6), steps: installSteps(0), isDemo: true },
+  { id: 'j-5', code: 'AIEC-J-3105', dealId: 'dl-1', technicianId: 'u-tech-2', status: 'completed', siteName: 'Shree Ram Heights — Service Lift', address: 'Phase 2, Hinjawadi', location: { lat: 18.5908, lng: 73.7378 }, scheduledFor: daysAgo(56), startedAt: daysAgo(56), completedAt: daysAgo(38), steps: installSteps(10), isDemo: true },
+  { id: 'j-6', code: 'AIEC-J-3106', dealId: 'dl-2', technicianId: 'u-tech-3', status: 'on_hold', siteName: 'Kulkarni Signature — Basement', address: 'Kharadi Bypass', location: { lat: 18.5509, lng: 73.9462 }, scheduledFor: daysAgo(4), startedAt: daysAgo(4), steps: installSteps(3), isDemo: true },
+];
+
+/* ---------------------------------------------------------------- Payments */
+
+export const seedPayments: Payment[] = [
+  { id: 'p-1', code: 'AIEC-P-4101', dealId: 'dl-1', stage: 'advance', amount: 660_000, status: 'paid', dueDate: daysAgo(46), paidAt: daysAgo(45), method: 'neft', isDemo: true },
+  { id: 'p-2', code: 'AIEC-P-4102', dealId: 'dl-1', stage: 'material', amount: 924_000, status: 'paid', dueDate: daysAgo(30), paidAt: daysAgo(29), method: 'neft', isDemo: true },
+  { id: 'p-3', code: 'AIEC-P-4103', dealId: 'dl-1', stage: 'installation', amount: 792_000, status: 'overdue', dueDate: daysAgo(6), isDemo: true },
+  { id: 'p-4', code: 'AIEC-P-4104', dealId: 'dl-1', stage: 'handover', amount: 264_000, status: 'due', dueDate: daysAhead(20), isDemo: true },
+  { id: 'p-5', code: 'AIEC-P-4105', dealId: 'dl-2', stage: 'advance', amount: 470_000, status: 'paid', dueDate: daysAgo(32), paidAt: daysAgo(32), method: 'upi', isDemo: true },
+  { id: 'p-6', code: 'AIEC-P-4106', dealId: 'dl-2', stage: 'material', amount: 658_000, status: 'paid', dueDate: daysAgo(20), paidAt: daysAgo(19), method: 'neft', isDemo: true },
+  { id: 'p-7', code: 'AIEC-P-4107', dealId: 'dl-2', stage: 'installation', amount: 564_000, status: 'pending', dueDate: daysAhead(2), isDemo: true },
+  { id: 'p-8', code: 'AIEC-P-4108', dealId: 'dl-2', stage: 'handover', amount: 188_000, status: 'due', dueDate: daysAhead(24), isDemo: true },
+  { id: 'p-9', code: 'AIEC-P-4109', dealId: 'dl-3', stage: 'advance', amount: 1_030_000, status: 'due', dueDate: daysAhead(5), isDemo: true },
+  { id: 'p-10', code: 'AIEC-P-4110', dealId: 'dl-6', stage: 'advance', amount: 2_100_000, status: 'due', dueDate: daysAhead(9), isDemo: true },
+  { id: 'p-11', code: 'AIEC-P-4111', dealId: 'dl-1', stage: 'retention', amount: 132_000, status: 'due', dueDate: daysAhead(75), isDemo: true },
+  { id: 'p-12', code: 'AIEC-P-4112', dealId: 'dl-2', stage: 'retention', amount: 94_000, status: 'due', dueDate: daysAhead(90), isDemo: true },
+];
+
+/* --------------------------------------------------------------- Suppliers */
+
+export const seedSuppliers: Supplier[] = [
+  { id: 'sp-1', name: 'Vertex Elevator Components Pvt Ltd', status: 'active', city: 'Mumbai', gstin: '27AABCV1234A1Z5', categories: ['traction_machine', 'controller', 'cabin', 'door_operator'], onTimeRate: 0.94, qualityScore: 4.7, avgLeadTimeDays: 18, openOrders: 6, totalOrderValue: 14_800_000, rating: 4.7, isDemo: true },
+  { id: 'sp-2', name: 'Sanghvi Lift Works', status: 'active', city: 'Pune', gstin: '27AACFS9012C1Z8', categories: ['cabin', 'guide_rails', 'ropes'], onTimeRate: 0.81, qualityScore: 4.1, avgLeadTimeDays: 12, openOrders: 4, totalOrderValue: 6_200_000, rating: 4.1, isDemo: true },
+  { id: 'sp-3', name: 'Konark Drives & Controls', status: 'active', city: 'Nashik', gstin: '27AAECK3456D1Z1', categories: ['controller', 'vfd', 'wiring'], onTimeRate: 0.88, qualityScore: 4.4, avgLeadTimeDays: 21, openOrders: 3, totalOrderValue: 4_950_000, rating: 4.4, isDemo: true },
+  { id: 'sp-4', name: 'Deccan Structural Steel', status: 'active', city: 'Pune', categories: ['guide_rails', 'brackets', 'counterweight'], onTimeRate: 0.72, qualityScore: 3.6, avgLeadTimeDays: 9, openOrders: 2, totalOrderValue: 2_100_000, rating: 3.6, isDemo: true },
+  { id: 'sp-5', name: 'Rathi Lift Systems', status: 'pending_approval', city: 'Ahmedabad', gstin: '24AACFR5678B1Z2', categories: ['traction_machine', 'controller'], onTimeRate: 0, qualityScore: 0, avgLeadTimeDays: 0, openOrders: 0, totalOrderValue: 0, rating: 0, isDemo: true },
+];
+
+/* ------------------------------------------------------------- Geo-fencing */
+
+export const seedZones: GeoZone[] = [
+  { id: 'z-hinjawadi', name: 'Hinjawadi – Wakad', points: [{ lat: 18.615, lng: 73.72 }, { lat: 18.615, lng: 73.78 }, { lat: 18.575, lng: 73.78 }, { lat: 18.575, lng: 73.72 }], assignedUserIds: ['u-srv-1'], leadCount: 6, status: 'active', isDemo: true },
+  { id: 'z-kharadi', name: 'Kharadi – Viman Nagar', points: [{ lat: 18.58, lng: 73.9 }, { lat: 18.58, lng: 73.96 }, { lat: 18.54, lng: 73.96 }, { lat: 18.54, lng: 73.9 }], assignedUserIds: ['u-srv-2'], leadCount: 5, status: 'active', isDemo: true },
+  { id: 'z-pimpri', name: 'Pimpri – Chinchwad – Ravet', points: [{ lat: 18.67, lng: 73.73 }, { lat: 18.67, lng: 73.82 }, { lat: 18.62, lng: 73.82 }, { lat: 18.62, lng: 73.73 }], assignedUserIds: ['u-srv-3'], leadCount: 4, status: 'active', isDemo: true },
+  { id: 'z-kothrud', name: 'Kothrud – Katraj', points: [{ lat: 18.52, lng: 73.79 }, { lat: 18.52, lng: 73.87 }, { lat: 18.45, lng: 73.87 }, { lat: 18.45, lng: 73.79 }], assignedUserIds: ['u-srv-4'], leadCount: 3, status: 'draft', isDemo: true },
+];
+
+/* ------------------------------------------------------------- Route plans */
+
+export const seedRoutePlans: RoutePlan[] = [
+  {
+    id: 'rp-1',
+    userId: 'u-srv-1',
+    date: new Date(NOW).toISOString().slice(0, 10),
+    stops: [
+      { id: 'rs-1', leadId: 'l-10', label: 'Vista Enclave', address: 'Wakad Chowk', location: { lat: 18.5975, lng: 73.762 }, windowStart: hoursAhead(1), windowEnd: hoursAhead(2), status: 'done', legKm: 0, legMinutes: 0 },
+      { id: 'rs-2', leadId: 'l-6', label: 'Trinity Business Bay', address: 'Baner Road', location: { lat: 18.559, lng: 73.7868 }, windowStart: hoursAhead(3), windowEnd: hoursAhead(4), status: 'arrived', legKm: 5.4, legMinutes: 18 },
+      { id: 'rs-3', leadId: 'l-4', label: 'Pinnacle Aurum', address: 'Balewadi High Street', location: { lat: 18.575, lng: 73.769 }, windowStart: hoursAhead(5), windowEnd: hoursAhead(6), status: 'pending', legKm: 3.1, legMinutes: 14 },
+      { id: 'rs-4', leadId: 'l-18', label: 'Bloom Apartments', address: 'Pashan Link Road', location: { lat: 18.5385, lng: 73.7845 }, windowStart: hoursAhead(7), windowEnd: hoursAhead(8), status: 'pending', legKm: 6.2, legMinutes: 24 },
+      { id: 'rs-5', leadId: 'l-15', label: 'Tech Park Block C', address: 'Phase 3, Hinjawadi', location: { lat: 18.5945, lng: 73.7315 }, windowStart: hoursAhead(9), windowEnd: hoursAhead(10), status: 'pending', legKm: 9.8, legMinutes: 32 },
+    ],
+    totalKm: 24.5,
+    totalMinutes: 88,
+    optimizedKm: 18.2,
+    optimizedMinutes: 64,
+    isDemo: true,
+  },
+];
+
+/* -------------------------------------------------------------- Commission */
+
+export const seedCommissions: CommissionEntry[] = [
+  { id: 'c-1', userId: 'u-srv-1', leadId: 'l-1', dealId: 'dl-1', reasonKey: 'commission.reason.leadConverted', amount: 39_600, status: 'paid', earnedAt: daysAgo(48), paidAt: daysAgo(41), isDemo: true },
+  { id: 'c-2', userId: 'u-srv-1', leadId: 'l-1', reasonKey: 'commission.reason.siteVisitVerified', amount: 500, status: 'paid', earnedAt: daysAgo(70), paidAt: daysAgo(63), isDemo: true },
+  { id: 'c-3', userId: 'u-srv-2', leadId: 'l-2', dealId: 'dl-2', reasonKey: 'commission.reason.leadConverted', amount: 28_200, status: 'paid', earnedAt: daysAgo(33), paidAt: daysAgo(26), isDemo: true },
+  { id: 'c-4', userId: 'u-srv-1', leadId: 'l-15', reasonKey: 'commission.reason.leadQualified', amount: 2_000, status: 'approved', earnedAt: daysAgo(20), isDemo: true },
+  { id: 'c-5', userId: 'u-srv-1', leadId: 'l-4', reasonKey: 'commission.reason.leadQualified', amount: 2_000, status: 'approved', earnedAt: daysAgo(15), isDemo: true },
+  { id: 'c-6', userId: 'u-srv-1', leadId: 'l-15', dealId: 'dl-6', reasonKey: 'commission.reason.leadConverted', amount: 126_000, status: 'projected', earnedAt: daysAgo(15), isDemo: true },
+  { id: 'c-7', userId: 'u-srv-1', leadId: 'l-6', reasonKey: 'commission.reason.siteVisitVerified', amount: 500, status: 'approved', earnedAt: minutesAgo(41), isDemo: true },
+  { id: 'c-8', userId: 'u-srv-1', reasonKey: 'commission.reason.monthlyBonus', amount: 10_000, status: 'approved', earnedAt: daysAgo(12), isDemo: true },
+  { id: 'c-9', userId: 'u-srv-2', leadId: 'l-5', reasonKey: 'commission.reason.leadQualified', amount: 2_000, status: 'approved', earnedAt: daysAgo(11), isDemo: true },
+  { id: 'c-10', userId: 'u-srv-2', leadId: 'l-17', reasonKey: 'commission.reason.siteVisitVerified', amount: 500, status: 'approved', earnedAt: daysAgo(1), isDemo: true },
+  { id: 'c-11', userId: 'u-srv-3', leadId: 'l-3', dealId: 'dl-3', reasonKey: 'commission.reason.leadConverted', amount: 61_800, status: 'projected', earnedAt: daysAgo(18), isDemo: true },
+  { id: 'c-12', userId: 'u-srv-3', leadId: 'l-16', reasonKey: 'commission.reason.leadQualified', amount: 2_000, status: 'approved', earnedAt: daysAgo(5), isDemo: true },
+  { id: 'c-13', userId: 'u-srv-4', leadId: 'l-13', reasonKey: 'commission.reason.leadConverted', amount: 23_100, status: 'forfeited', earnedAt: daysAgo(32), isDemo: true },
+  { id: 'c-14', userId: 'u-srv-4', leadId: 'l-9', reasonKey: 'commission.reason.leadQualified', amount: 2_000, status: 'projected', earnedAt: daysAgo(6), isDemo: true },
+];
+
+/* ------------------------------------------------------------- Time series */
+
+function buildSeries(days: number, base: number, variance: number, seed: number): SeriesPoint[] {
+  const rand = makeRandom(seed);
+  return Array.from({ length: days }, (_, i) => {
+    const drift = (i / days) * base * 0.35;
+    const noise = (rand() - 0.5) * variance;
+    // Sundays run quiet on a construction-site business.
+    const date = new Date(NOW - (days - 1 - i) * DAY);
+    const weekendDip = date.getDay() === 0 ? 0.45 : 1;
+    return {
+      t: date.toISOString().slice(0, 10),
+      v: Math.max(0, Math.round((base + drift + noise) * weekendDip)),
+    };
+  });
+}
+
+export const seedSeries = {
+  leadsPerDay: buildSeries(30, 4, 4, 11),
+  revenuePerDay: buildSeries(30, 320_000, 260_000, 23),
+  quotesPerDay: buildSeries(30, 3, 3, 31),
+  conversionsPerDay: buildSeries(30, 1, 2, 47),
+  siteVisitsPerDay: buildSeries(30, 5, 4, 53),
+};
+
+/* ------------------------------------------------------------- Automations */
+
+export const seedAutomations: AutomationRule[] = [
+  { id: 'a-1', name: 'Welcome WhatsApp on lead capture', triggerKey: 'automation.trigger.leadCaptured', actionKey: 'automation.action.sendWhatsapp', enabled: true, runsToday: 12, failuresToday: 0, lastRunAt: minutesAgo(9), avgLatencyMs: 840, status: 'healthy', isDemo: true },
+  { id: 'a-2', name: 'Auto-quote on spec complete', triggerKey: 'automation.trigger.specCompleted', actionKey: 'automation.action.generateQuote', enabled: true, runsToday: 5, failuresToday: 0, lastRunAt: hoursAgo(2), avgLatencyMs: 2_240, status: 'healthy', isDemo: true },
+  { id: 'a-3', name: 'Payment reminder at T-3 days', triggerKey: 'automation.trigger.paymentDueSoon', actionKey: 'automation.action.sendSms', enabled: true, runsToday: 8, failuresToday: 2, lastRunAt: hoursAgo(1), avgLatencyMs: 1_120, status: 'degraded', isDemo: true },
+  { id: 'a-4', name: 'Assign technician on deal won', triggerKey: 'automation.trigger.dealWon', actionKey: 'automation.action.assignTechnician', enabled: true, runsToday: 1, failuresToday: 0, lastRunAt: hoursAgo(20), avgLatencyMs: 430, status: 'healthy', isDemo: true },
+  { id: 'a-5', name: 'Escalate SLA breach to admin', triggerKey: 'automation.trigger.slaBreached', actionKey: 'automation.action.raiseAlert', enabled: true, runsToday: 3, failuresToday: 0, lastRunAt: hoursAgo(4), avgLatencyMs: 310, status: 'healthy', isDemo: true },
+  { id: 'a-6', name: 'Supplier PO on material stage', triggerKey: 'automation.trigger.materialStage', actionKey: 'automation.action.raisePurchaseOrder', enabled: false, runsToday: 0, failuresToday: 0, lastRunAt: daysAgo(3), avgLatencyMs: 0, status: 'paused', isDemo: true },
+  { id: 'a-7', name: 'Duplicate lead check on capture', triggerKey: 'automation.trigger.leadCaptured', actionKey: 'automation.action.checkDuplicate', enabled: true, runsToday: 12, failuresToday: 0, lastRunAt: minutesAgo(4), avgLatencyMs: 190, status: 'healthy', isDemo: true },
+  { id: 'a-8', name: 'Nightly commission accrual', triggerKey: 'automation.trigger.nightly', actionKey: 'automation.action.accrueCommission', enabled: true, runsToday: 1, failuresToday: 1, lastRunAt: hoursAgo(11), avgLatencyMs: 9_600, status: 'failing', isDemo: true },
+];
+
+/* ------------------------------------------------------------------ Alerts */
+
+export const seedAlerts: Alert[] = [
+  { id: 'al-1', code: 'ALT-9001', titleKey: 'alerts.type.safetyStepBlocked', context: 'AIEC-J-3106 · Kulkarni Signature — Basement · load test blocked, no evidence attached', severity: 'critical', category: 'safety', status: 'open', raisedAt: hoursAgo(2), relatedId: 'j-6', location: { lat: 18.5509, lng: 73.9462 }, isDemo: true },
+  { id: 'al-2', code: 'ALT-9002', titleKey: 'alerts.type.paymentOverdue', context: 'AIEC-P-4103 · ₹7,92,000 · 6 days past due', severity: 'high', category: 'payment', status: 'open', raisedAt: daysAgo(1), relatedId: 'p-3', isDemo: true },
+  { id: 'al-3', code: 'ALT-9003', titleKey: 'alerts.type.automationFailing', context: 'Nightly commission accrual failed on last run', severity: 'high', category: 'automation', status: 'acknowledged', raisedAt: hoursAgo(11), acknowledgedBy: 'u-admin-1', relatedId: 'a-8', isDemo: true },
+  { id: 'al-4', code: 'ALT-9004', titleKey: 'alerts.type.leadStalled', context: 'AIEC-L-0109 · Nirman Elite · 6 days at Contacted, SLA is 3', severity: 'medium', category: 'sla_breach', status: 'open', raisedAt: hoursAgo(6), relatedId: 'l-9', isDemo: true },
+  { id: 'al-5', code: 'ALT-9005', titleKey: 'alerts.type.supplierLate', context: 'Deccan Structural Steel · on-time rate fell to 72%', severity: 'medium', category: 'supplier', status: 'open', raisedAt: daysAgo(2), relatedId: 'sp-4', isDemo: true },
+  { id: 'al-6', code: 'ALT-9006', titleKey: 'alerts.type.gpsMismatch', context: 'AIEC-L-0119 · site photo GPS 340 m from recorded site', severity: 'medium', category: 'quality', status: 'open', raisedAt: minutesAgo(4), relatedId: 'l-dup-1', location: { lat: 18.5978, lng: 73.7624 }, isDemo: true },
+  { id: 'al-7', code: 'ALT-9007', titleKey: 'alerts.type.technicianIdle', context: 'Ajay Nikam · no check-in for 9 hours during a scheduled job', severity: 'low', category: 'staffing', status: 'open', raisedAt: hoursAgo(9), relatedId: 'u-tech-3', isDemo: true },
+  { id: 'al-8', code: 'ALT-9008', titleKey: 'alerts.type.qcFailed', context: 'AIEC-J-3102 · door operator alignment out of tolerance', severity: 'high', category: 'quality', status: 'resolved', raisedAt: daysAgo(3), acknowledgedBy: 'u-admin-1', relatedId: 'j-2', isDemo: true },
+];
+
+/* ---------------------------------------------------------- Activity feed */
+
+export const seedActivity: ActivityEvent[] = [
+  { id: 'ev-1', kind: 'lead_captured', actorName: 'Sunita Deshmukh', actorRole: 'surveyor', subject: 'Anand Residency', detail: 'ITI Road, Aundh', at: minutesAgo(2), severity: 'info', location: { lat: 18.559, lng: 73.8077 }, isDemo: true },
+  { id: 'ev-2', kind: 'alert_raised', actorName: 'Automation', actorRole: 'admin', subject: 'GPS mismatch on AIEC-L-0119', at: minutesAgo(4), severity: 'warning', isDemo: true },
+  { id: 'ev-3', kind: 'automation_ran', actorName: 'Automation', actorRole: 'admin', subject: 'Welcome WhatsApp sent', detail: 'AIEC-L-0112', at: minutesAgo(9), severity: 'success', isDemo: true },
+  { id: 'ev-4', kind: 'job_step_completed', actorName: 'Santosh Kale', actorRole: 'technician', subject: 'Wiring & control panel', detail: 'AIEC-J-3101', at: minutesAgo(26), severity: 'success', location: { lat: 18.5913, lng: 73.7389 }, isDemo: true },
+  { id: 'ev-5', kind: 'surveyor_checked_in', actorName: 'Ganesh Pawar', actorRole: 'surveyor', subject: 'Trinity Business Bay', at: minutesAgo(41), severity: 'info', location: { lat: 18.559, lng: 73.7868 }, isDemo: true },
+  { id: 'ev-6', kind: 'quote_sent', actorName: 'Automation', actorRole: 'admin', subject: 'AIEC-D-2107 quoted', amount: 3_700_000, at: hoursAgo(2), severity: 'info', isDemo: true },
+  { id: 'ev-7', kind: 'payment_received', actorName: 'Kulkarni Constructions', actorRole: 'customer', subject: 'Material stage payment', amount: 658_000, at: hoursAgo(5), severity: 'success', isDemo: true },
+  { id: 'ev-8', kind: 'lead_stage_changed', actorName: 'Imran Shaikh', actorRole: 'surveyor', subject: 'Skyline Corporate Park → Negotiation', at: hoursAgo(7), severity: 'info', isDemo: true },
+  { id: 'ev-9', kind: 'technician_checked_in', actorName: 'Vishal More', actorRole: 'technician', subject: 'Kulkarni Signature', at: hoursAgo(8), severity: 'info', location: { lat: 18.5515, lng: 73.947 }, isDemo: true },
+  { id: 'ev-10', kind: 'qc_failed', actorName: 'Quality bot', actorRole: 'admin', subject: 'Door operator alignment', detail: 'AIEC-J-3102', at: daysAgo(3), severity: 'error', isDemo: true },
+  { id: 'ev-11', kind: 'deal_won', actorName: 'Prashant Vasant Wable', actorRole: 'admin', subject: 'Kulkarni Signature', amount: 1_880_000, at: daysAgo(33), severity: 'success', isDemo: true },
+  { id: 'ev-12', kind: 'deal_lost', actorName: 'Rohit Jadhav', actorRole: 'surveyor', subject: 'Katraj Crown', detail: 'Lost on price', at: daysAgo(18), severity: 'warning', isDemo: true },
+];
+
+/* ------------------------------------------------------ Site verifications */
+
+export const seedSiteVisits: SiteVisitVerification[] = [
+  { id: 'sv-1', leadId: 'l-dup-1', surveyorId: 'u-srv-4', surveyorName: 'Rohit Jadhav', siteName: 'Vista Enclave', checkInAt: minutesAgo(6), gpsDriftMetres: 340, photoCount: 2, photoTimestampsValid: false, dwellMinutes: 4, status: 'flagged', flagReason: 'gps_drift', location: { lat: 18.5978, lng: 73.7624 }, isDemo: true },
+  { id: 'sv-2', leadId: 'l-6', surveyorId: 'u-srv-1', surveyorName: 'Ganesh Pawar', siteName: 'Trinity Business Bay', checkInAt: minutesAgo(41), gpsDriftMetres: 12, photoCount: 6, photoTimestampsValid: true, dwellMinutes: 34, status: 'verified', location: { lat: 18.559, lng: 73.7868 }, isDemo: true },
+  { id: 'sv-3', leadId: 'l-7', surveyorId: 'u-srv-3', surveyorName: 'Imran Shaikh', siteName: 'Ravet Sky Towers', checkInAt: hoursAgo(20), gpsDriftMetres: 28, photoCount: 5, photoTimestampsValid: true, dwellMinutes: 27, status: 'pending', location: { lat: 18.65, lng: 73.745 }, isDemo: true },
+  { id: 'sv-4', leadId: 'l-17', surveyorId: 'u-srv-2', surveyorName: 'Sunita Deshmukh', siteName: 'Luxe Boutique Hotel', checkInAt: daysAgo(1), gpsDriftMetres: 9, photoCount: 8, photoTimestampsValid: true, dwellMinutes: 52, status: 'verified', location: { lat: 18.5362, lng: 73.8939 }, isDemo: true },
+  { id: 'sv-5', leadId: 'l-9', surveyorId: 'u-srv-4', surveyorName: 'Rohit Jadhav', siteName: 'Nirman Elite', checkInAt: daysAgo(2), gpsDriftMetres: 780, photoCount: 1, photoTimestampsValid: false, dwellMinutes: 2, status: 'rejected', flagReason: 'insufficient_evidence', location: { lat: 18.5074, lng: 73.8077 }, isDemo: true },
+];
+
+/* ---------------------------------------------------- CRM: lead timeline */
+
+function nameOf(userId: string): string {
+  return seedUsers.find((u) => u.id === userId)?.name ?? 'AIEC';
+}
+
+let timelineCounter = 0;
+const nextTimelineId = () => `lt-${(timelineCounter += 1)}`;
+
+/** Reconstructed from each seeded lead's own fields, so it can never drift out
+ *  of sync with the lead record it describes — capture, an optional mid-life
+ *  reassignment, the move into its current stage, and a loss reason if lost. */
+export const seedLeadTimeline: LeadTimelineEvent[] = seedLeads.flatMap((lead) => {
+  const events: LeadTimelineEvent[] = [
+    {
+      id: nextTimelineId(),
+      leadId: lead.id,
+      kind: 'captured',
+      actorName: nameOf(lead.originalSurveyorId),
+      at: lead.createdAt,
+      detail: lead.siteName,
+    },
+  ];
+
+  if (lead.originalSurveyorId !== lead.surveyorId) {
+    events.push({
+      id: nextTimelineId(),
+      leadId: lead.id,
+      kind: 'reassigned',
+      actorName: 'Prashant Vasant Wable',
+      at: daysAgo(4),
+      detail: 'Territory rebalance',
+      fromValue: nameOf(lead.originalSurveyorId),
+      toValue: nameOf(lead.surveyorId),
+    });
+  }
+
+  if (lead.stage !== 'captured') {
+    events.push({
+      id: nextTimelineId(),
+      leadId: lead.id,
+      kind: 'stage_changed',
+      actorName: nameOf(lead.surveyorId),
+      at: lead.stageEnteredAt,
+      // Raw stage key, matching how a real runtime stage-change event is
+      // logged (memoryRepository.updateLead) — the View translates it via
+      // `stage.<value>`, so a display label stored here would fail to resolve.
+      toValue: lead.stage,
+    });
+  }
+
+  if (lead.stage === 'lost' && lead.lostReason) {
+    events.push({
+      id: nextTimelineId(),
+      leadId: lead.id,
+      kind: 'marked_lost',
+      actorName: 'Prashant Vasant Wable',
+      at: lead.updatedAt,
+      detail: lead.lostReason,
+    });
+  }
+
+  return events.sort((a, b) => a.at.localeCompare(b.at));
+});
+
+/* ---------------------------------------------------- CRM: follow-up tasks */
+
+export const seedFollowUpTasks: FollowUpTask[] = [
+  { id: 'ft-1', leadId: 'l-9', title: 'No contact in 5 days — schedule a follow-up call', dueDate: daysAgo(2), assignedTo: 'u-srv-4', status: 'open', source: 'auto', createdAt: daysAgo(3), isDemo: true },
+  { id: 'ft-2', leadId: 'l-8', title: 'Call back after site visit reschedule', dueDate: daysAgo(1), assignedTo: 'u-srv-2', status: 'open', source: 'manual', createdAt: daysAgo(4), isDemo: true },
+  { id: 'ft-3', leadId: 'l-5', title: 'Confirm quote received and answer pricing questions', dueDate: hoursAhead(4), assignedTo: 'u-srv-2', status: 'open', source: 'auto', createdAt: daysAgo(1), isDemo: true },
+  { id: 'ft-4', leadId: 'l-16', title: 'Follow up on Civic Health Centre quote', dueDate: daysAhead(1), assignedTo: 'u-srv-3', status: 'open', source: 'auto', createdAt: daysAgo(1), isDemo: true },
+  { id: 'ft-5', leadId: 'l-18', title: 'Reconfirm site visit window', dueDate: daysAhead(2), assignedTo: 'u-srv-1', status: 'open', source: 'manual', createdAt: hoursAgo(10), isDemo: true },
+  { id: 'ft-6', leadId: 'l-3', title: 'Negotiation round 4 — share revised terms', dueDate: daysAhead(1), assignedTo: 'u-srv-3', status: 'open', source: 'manual', createdAt: hoursAgo(20), isDemo: true },
+  { id: 'ft-7', leadId: 'l-1', title: 'Post-handover courtesy check-in', dueDate: daysAgo(20), assignedTo: 'u-srv-1', status: 'done', source: 'manual', createdAt: daysAgo(25), completedAt: daysAgo(19), isDemo: true },
+  { id: 'ft-8', leadId: 'l-14', title: 'No contact in 5 days — schedule a follow-up call', dueDate: daysAgo(30), assignedTo: 'u-srv-2', status: 'cancelled', source: 'auto', createdAt: daysAgo(31), rescheduleReasonKey: 'followUp.reason.leadClosed', isDemo: true },
+  { id: 'ft-9', leadId: 'l-7', title: 'Share revised timeline after client asked for delay', dueDate: daysAgo(3), assignedTo: 'u-srv-3', status: 'open', source: 'manual', createdAt: daysAgo(6), rescheduleReasonKey: 'followUp.reason.customerNotReachable', isDemo: true },
+  { id: 'ft-10', leadId: 'l-15', title: 'Send updated commercial terms for Tech Park Block C', dueDate: hoursAhead(30), assignedTo: 'u-srv-1', status: 'open', source: 'auto', createdAt: daysAgo(2), isDemo: true },
+];
+
+/* -------------------------------------------------------- CRM: duplicates */
+
+export const seedDuplicatePairs: DuplicatePair[] = [
+  { id: 'dp-1', primaryLeadId: 'l-10', secondaryLeadId: 'l-dup-1', status: 'pending', detectedAt: minutesAgo(4), commissionImpactSummary: 'Ganesh Pawar keeps the capture bonus; Rohit Jadhav’s duplicate entry earns nothing if merged.', isDemo: true },
+  { id: 'dp-2', primaryLeadId: 'l-8', secondaryLeadId: 'l-9', status: 'not_duplicate', detectedAt: daysAgo(7), resolvedAt: daysAgo(7), resolvedBy: 'Prashant Vasant Wable', isDemo: true },
+];
+
+/* ------------------------------------------------------------ CRM: scoring */
+
+export const seedScoreWeightingProfile: ScoreWeightingProfile = {
+  buildingSize: 0.3,
+  constructionReadiness: 0.3,
+  responsiveness: 0.25,
+  territoryHistory: 0.15,
+  updatedAt: daysAgo(60),
+};
+
+/* ------------------------------------------------------- CRM: bulk import */
+
+export const seedImportBatches: LeadImportBatch[] = [
+  {
+    id: 'ib-1',
+    fileName: 'legacy_leads_2025.xlsx',
+    importedBy: 'Prashant Vasant Wable',
+    importedAt: daysAgo(180),
+    totalRows: 42,
+    importedRows: 39,
+    rejectedRows: 3,
+    isDemo: true,
+  },
+];

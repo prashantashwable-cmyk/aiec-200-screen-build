@@ -1,0 +1,128 @@
+import type { ScreenTranslations } from '@/i18n/types';
+
+const translations: ScreenTranslations = {
+  en: {
+    roleSelect: {
+      title: 'How will you use AIEC?',
+      subtitle: 'Pick the one that fits. You can be changed later by an admin if it is wrong.',
+      continue: 'Continue',
+      approvalNeeded:
+        'This role needs an admin to approve you before your account goes live. We will tell you the moment it does.',
+      autoApproved: 'This role is active straight away — nothing to wait for.',
+      adminLocked: 'Admin access can only be granted by an existing admin. It is never self-selected.',
+      resumed: 'We kept the choice you made last time. Change it if you meant something else.',
+      reapplication:
+        'You applied for this before and were not approved. You can apply again — it will be marked as a re-application.',
+      loading: 'Loading roles',
+      description: {
+        surveyor: 'Visit sites, capture buildings as leads, and earn commission on what converts.',
+        technician: 'Take installation jobs, work through the safety steps, and log proof as you go.',
+        supplier: 'Receive purchase orders, confirm delivery dates, and track your payments.',
+        customer: 'Follow your own lift project from order through to handover.',
+        admin: 'See the whole business: the live map, every number, and every exception.',
+      },
+      queue: {
+        title: 'Role requests',
+        subtitle: 'Everyone waiting on a decision, in one place.',
+        emptyTitle: 'Nobody is waiting',
+        emptyBody: 'Every partner who has applied has been approved or rejected. New requests will land here.',
+        appliedAs: 'Applied as {{role}}',
+        approved: 'Approve',
+        rejected: 'Reject',
+        changedElsewhere:
+          "Another admin already resolved {{name}}'s request while you had it open. Your change was saved on top of theirs.",
+        auditTitle: 'Recent role changes',
+        auditEntry: '{{name}}: {{from}} → {{to}}',
+        auditEmpty: 'No role has been changed yet. Every change will be recorded here with who made it.',
+      },
+      error: {
+        title: 'Could not load roles',
+        body: 'We could not reach the account service. Check your connection and try again.',
+      },
+    },
+  },
+
+  hi: {
+    roleSelect: {
+      title: 'आप AIEC कैसे इस्तेमाल करेंगे?',
+      subtitle: 'जो आप पर लागू हो वही चुनिए। ग़लत हो जाए तो एडमिन बाद में बदल सकता है।',
+      continue: 'आगे बढ़ें',
+      approvalNeeded:
+        'इस भूमिका के लिए एडमिन की मंज़ूरी चाहिए, तभी खाता चालू होगा। मंज़ूरी मिलते ही हम बता देंगे।',
+      autoApproved: 'यह भूमिका तुरंत चालू हो जाती है — कुछ इंतज़ार नहीं करना।',
+      adminLocked: 'एडमिन अधिकार सिर्फ़ कोई मौजूदा एडमिन ही दे सकता है। इसे ख़ुद नहीं चुना जा सकता।',
+      resumed: 'पिछली बार का चुनाव हमने संभालकर रखा है। कुछ और चाहते हों तो बदल लीजिए।',
+      reapplication:
+        'आपने पहले भी इसके लिए आवेदन किया था और मंज़ूरी नहीं मिली थी। दोबारा आवेदन कर सकते हैं — इसे पुनः-आवेदन के रूप में दर्ज किया जाएगा।',
+      loading: 'भूमिकाएँ लोड हो रही हैं',
+      description: {
+        surveyor: 'साइट पर जाइए, इमारतों को लीड बनाइए, और जो सौदे बनें उन पर कमीशन कमाइए।',
+        technician: 'इंस्टॉलेशन के काम लीजिए, सुरक्षा चरण पूरे कीजिए, और साथ-साथ सबूत दर्ज कीजिए।',
+        supplier: 'ऑर्डर लीजिए, डिलीवरी की तारीख़ पक्की कीजिए, और अपने भुगतान पर नज़र रखिए।',
+        customer: 'ऑर्डर से हैंडओवर तक अपना लिफ़्ट प्रोजेक्ट खुद देखिए।',
+        admin: 'पूरा कारोबार देखिए: लाइव नक्शा, हर आँकड़ा, और हर अपवाद।',
+      },
+      queue: {
+        title: 'भूमिका अनुरोध',
+        subtitle: 'फ़ैसले का इंतज़ार कर रहे सभी लोग, एक ही जगह।',
+        emptyTitle: 'कोई इंतज़ार में नहीं है',
+        emptyBody: 'हर आवेदक पर फ़ैसला हो चुका है। नए अनुरोध यहीं आएँगे।',
+        appliedAs: '{{role}} के लिए आवेदन',
+        approved: 'मंज़ूर करें',
+        rejected: 'अस्वीकार करें',
+        changedElsewhere:
+          'जब यह आपके सामने खुला था, तभी किसी दूसरे एडमिन ने {{name}} का अनुरोध निपटा दिया था। आपका बदलाव उसके ऊपर दर्ज हुआ है।',
+        auditTitle: 'हाल के भूमिका बदलाव',
+        auditEntry: '{{name}}: {{from}} → {{to}}',
+        auditEmpty: 'अभी कोई भूमिका नहीं बदली गई। हर बदलाव यहाँ दर्ज होगा — किसने किया, यह भी।',
+      },
+      error: {
+        title: 'भूमिकाएँ लोड नहीं हो पाईं',
+        body: 'हम खाता सेवा तक नहीं पहुँच पाए। नेटवर्क जाँचिए और दोबारा कोशिश कीजिए।',
+      },
+    },
+  },
+
+  mr: {
+    roleSelect: {
+      title: 'तुम्ही AIEC कसे वापरणार?',
+      subtitle: 'तुम्हाला लागू होईल तेच निवडा. चुकले तर प्रशासक नंतर बदलू शकतो.',
+      continue: 'पुढे जा',
+      approvalNeeded:
+        'या भूमिकेसाठी प्रशासकाची मंजुरी लागते, तेव्हाच खाते सुरू होईल. मंजुरी मिळताच आम्ही कळवू.',
+      autoApproved: 'ही भूमिका लगेच सुरू होते — काहीही वाट पहावे लागत नाही.',
+      adminLocked: 'प्रशासक अधिकार फक्त सध्याचा प्रशासकच देऊ शकतो. तो स्वतः निवडता येत नाही.',
+      resumed: 'मागच्या वेळची तुमची निवड आम्ही जपून ठेवली आहे. दुसरे काही हवे असेल तर बदला.',
+      reapplication:
+        'तुम्ही याआधीही यासाठी अर्ज केला होता आणि मंजुरी मिळाली नव्हती. पुन्हा अर्ज करू शकता — तो पुन्हा-अर्ज म्हणून नोंदवला जाईल.',
+      loading: 'भूमिका लोड होत आहेत',
+      description: {
+        surveyor: 'साइटवर जा, इमारतींचे लीड बनवा, आणि जे व्यवहार होतील त्यावर कमिशन मिळवा.',
+        technician: 'बसवणुकीची कामे घ्या, सुरक्षा टप्पे पूर्ण करा, आणि सोबतच पुरावा नोंदवा.',
+        supplier: 'ऑर्डर घ्या, वितरणाची तारीख निश्चित करा, आणि तुमच्या पैशांवर लक्ष ठेवा.',
+        customer: 'ऑर्डरपासून ताबा मिळेपर्यंत तुमचा लिफ्ट प्रकल्प स्वतः पहा.',
+        admin: 'संपूर्ण व्यवसाय पहा: थेट नकाशा, प्रत्येक आकडा, आणि प्रत्येक अपवाद.',
+      },
+      queue: {
+        title: 'भूमिका विनंत्या',
+        subtitle: 'निर्णयाची वाट पाहणारे सर्वजण, एकाच ठिकाणी.',
+        emptyTitle: 'कोणीही वाट पाहत नाही',
+        emptyBody: 'प्रत्येक अर्जदाराचा निर्णय झाला आहे. नवीन विनंत्या इथेच येतील.',
+        appliedAs: '{{role}} साठी अर्ज',
+        approved: 'मंजूर करा',
+        rejected: 'नाकारा',
+        changedElsewhere:
+          'हे तुमच्यासमोर उघडे असतानाच दुसऱ्या प्रशासकाने {{name}} ची विनंती निकाली काढली होती. तुमचा बदल त्यावर नोंदवला गेला आहे.',
+        auditTitle: 'अलीकडचे भूमिका बदल',
+        auditEntry: '{{name}}: {{from}} → {{to}}',
+        auditEmpty: 'अजून कोणतीही भूमिका बदललेली नाही. प्रत्येक बदल इथे नोंदवला जाईल — कोणी केला हेसुद्धा.',
+      },
+      error: {
+        title: 'भूमिका लोड होऊ शकल्या नाहीत',
+        body: 'आम्ही खाते सेवेपर्यंत पोहोचू शकलो नाही. नेटवर्क तपासा आणि पुन्हा प्रयत्न करा.',
+      },
+    },
+  },
+};
+
+export default translations;

@@ -1,0 +1,150 @@
+import type { ScreenTranslations } from '@/i18n/types';
+
+const translations: ScreenTranslations = {
+  en: {
+    finance: {
+      title: 'Cash flow',
+      subtitle: 'How much is owed, how overdue it is, and what is coming.',
+      loading: 'Loading the numbers',
+      card: {
+        cashIn: 'Cash in',
+        cashOut: 'Cash out',
+        netPosition: 'Net position',
+        totalReceivable: 'Total receivable',
+      },
+      outlierNote:
+        'One large receivable is shaping this total more than the typical customer does.',
+      medianNote: 'The typical (median) receivable is {{median}} — worth keeping in view alongside the total.',
+      agingHeading: 'How overdue',
+      bucket: {
+        current: 'Not yet due',
+        d30: '1–30 days',
+        d60: '31–60 days',
+        d90plus: '60+ days',
+        disputed: 'Disputed',
+      },
+      dueDateNote: 'Each figure is aged from that specific payment stage’s own due date, not the deal’s close date.',
+      escalationNote: 'Anything over 60 days old has been queued for overdue-payment escalation automatically.',
+      upcomingHeading: 'Coming due',
+      window: { '7': 'Next 7 days', '30': 'Next 30 days' },
+      dueIn: 'Due in {{days}} days',
+      dueToday: 'Due today',
+      reconciliationNote: 'Every figure here is the same one the Payments module tracks — nothing on this screen is a separate estimate.',
+      currencyNote: 'All figures are shown in INR.',
+      sheetTitle: '{{bucket}} receivables',
+      empty: {
+        title: 'Nothing due right now',
+        body: 'Nothing is coming due in this window.',
+      },
+      error: {
+        title: 'Could not load the numbers',
+        body: 'We could not reach the payment data. Check your connection and try again.',
+      },
+      paymentStage: {
+        advance: 'Advance',
+        material: 'Material stage',
+        installation: 'Installation stage',
+        handover: 'Handover',
+        retention: 'Retention',
+      },
+    },
+  },
+
+  hi: {
+    finance: {
+      title: 'नक़दी प्रवाह',
+      subtitle: 'कितना बकाया है, कितनी देर हो चुकी है, और आगे क्या आना है।',
+      loading: 'आँकड़े लोड हो रहे हैं',
+      card: {
+        cashIn: 'आया पैसा',
+        cashOut: 'गया पैसा',
+        netPosition: 'शुद्ध स्थिति',
+        totalReceivable: 'कुल बकाया',
+      },
+      outlierNote: 'एक बड़ा बकाया इस कुल आँकड़े को सामान्य ग्राहक से कहीं ज़्यादा प्रभावित कर रहा है।',
+      medianNote: 'सामान्य (माध्यिका) बकाया {{median}} है — कुल आँकड़े के साथ इसे भी ध्यान में रखिए।',
+      agingHeading: 'कितनी देर हो चुकी',
+      bucket: {
+        current: 'अभी देय नहीं',
+        d30: '1–30 दिन',
+        d60: '31–60 दिन',
+        d90plus: '60+ दिन',
+        disputed: 'विवादित',
+      },
+      dueDateNote: 'हर आँकड़ा उसी भुगतान चरण की अपनी देय तारीख़ से गिना गया है, सौदे की बंद होने की तारीख़ से नहीं।',
+      escalationNote: '60 दिन से पुराना कुछ भी अपने आप बकाया-भुगतान एस्केलेशन की क़तार में जुड़ चुका है।',
+      upcomingHeading: 'आने वाला भुगतान',
+      window: { '7': 'अगले 7 दिन', '30': 'अगले 30 दिन' },
+      dueIn: '{{days}} दिन में देय',
+      dueToday: 'आज देय',
+      reconciliationNote: 'यहाँ हर आँकड़ा वही है जो भुगतान मॉड्यूल में दर्ज है — इस स्क्रीन पर कुछ भी अलग से अंदाज़ा नहीं लगाया गया।',
+      currencyNote: 'सभी आँकड़े भारतीय रुपये में दिखाए गए हैं।',
+      sheetTitle: '{{bucket}} बकाया',
+      empty: {
+        title: 'अभी कुछ भी देय नहीं',
+        body: 'इस अवधि में कुछ भी देय नहीं आ रहा।',
+      },
+      error: {
+        title: 'आँकड़े लोड नहीं हो पाए',
+        body: 'हम भुगतान डेटा तक नहीं पहुँच पाए। नेटवर्क जाँचिए और दोबारा कोशिश कीजिए।',
+      },
+      paymentStage: {
+        advance: 'एडवांस',
+        material: 'सामग्री चरण',
+        installation: 'इंस्टॉलेशन चरण',
+        handover: 'हैंडओवर',
+        retention: 'रिटेंशन',
+      },
+    },
+  },
+
+  mr: {
+    finance: {
+      title: 'रोख प्रवाह',
+      subtitle: 'किती थकीत आहे, किती उशीर झाला आहे, आणि पुढे काय येणार आहे.',
+      loading: 'आकडे लोड होत आहेत',
+      card: {
+        cashIn: 'आलेले पैसे',
+        cashOut: 'गेलेले पैसे',
+        netPosition: 'निव्वळ स्थिती',
+        totalReceivable: 'एकूण थकीत',
+      },
+      outlierNote: 'एक मोठी थकीत रक्कम या एकूण आकड्यावर सर्वसाधारण ग्राहकापेक्षा जास्त परिणाम करत आहे.',
+      medianNote: 'सर्वसाधारण (मध्यक) थकीत रक्कम {{median}} आहे — एकूण आकड्यासोबत हेही लक्षात ठेवा.',
+      agingHeading: 'किती उशीर झाला',
+      bucket: {
+        current: 'अजून देय नाही',
+        d30: '1–30 दिवस',
+        d60: '31–60 दिवस',
+        d90plus: '60+ दिवस',
+        disputed: 'वादग्रस्त',
+      },
+      dueDateNote: 'प्रत्येक आकडा त्या पेमेंट टप्प्याच्या स्वतःच्या देय तारखेपासून मोजला आहे, व्यवहार बंद झाल्याच्या तारखेपासून नाही.',
+      escalationNote: '60 दिवसांपेक्षा जुने काहीही आपोआप थकीत-पेमेंट एस्केलेशन रांगेत जोडले गेले आहे.',
+      upcomingHeading: 'येणारे देय',
+      window: { '7': 'पुढील 7 दिवस', '30': 'पुढील 30 दिवस' },
+      dueIn: '{{days}} दिवसांत देय',
+      dueToday: 'आज देय',
+      reconciliationNote: 'इथला प्रत्येक आकडा पेमेंट विभागात नोंदलेला तोच आहे — या स्क्रीनवर काहीही वेगळे अंदाजे नाही.',
+      currencyNote: 'सर्व आकडे भारतीय रुपयांत दाखवले आहेत.',
+      sheetTitle: '{{bucket}} थकीत',
+      empty: {
+        title: 'सध्या काहीही देय नाही',
+        body: 'या कालावधीत काहीही देय येत नाही.',
+      },
+      error: {
+        title: 'आकडे लोड होऊ शकले नाहीत',
+        body: 'आम्ही पेमेंट माहितीपर्यंत पोहोचू शकलो नाही. नेटवर्क तपासा आणि पुन्हा प्रयत्न करा.',
+      },
+      paymentStage: {
+        advance: 'आगाऊ रक्कम',
+        material: 'साहित्य टप्पा',
+        installation: 'बसवणूक टप्पा',
+        handover: 'ताबा',
+        retention: 'रिटेन्शन',
+      },
+    },
+  },
+};
+
+export default translations;

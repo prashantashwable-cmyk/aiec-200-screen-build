@@ -1,0 +1,73 @@
+/** Screen 028 — Financial Overview: Cash Flow & Receivables. Types and keys. */
+
+import type { Payment } from '@/data/types';
+
+export type FinanceStatus = 'loading' | 'ready' | 'error';
+
+export type AgingBucket = 'current' | 'd30' | 'd60' | 'd90plus' | 'disputed';
+
+export const AGING_BUCKETS: AgingBucket[] = ['current', 'd30', 'd60', 'd90plus', 'disputed'];
+
+export interface AgingGroup {
+  bucket: AgingBucket;
+  payments: Payment[];
+  total: number;
+}
+
+export interface UpcomingOutflow {
+  payment: Payment;
+  daysUntilDue: number;
+}
+
+export interface FinanceSummary {
+  cashIn: number;
+  cashOut: number;
+  netPosition: number;
+  totalReceivable: number;
+  medianReceivable: number;
+  /** True when one payment is large enough to distort the total on its own. */
+  skewedByOutlier: boolean;
+}
+
+/** A single receivable this many times the median counts as an outlier. */
+export const OUTLIER_MULTIPLE = 3;
+
+export const FINANCE_KEYS = {
+  title: 'finance.title',
+  subtitle: 'finance.subtitle',
+  loading: 'finance.loading',
+  card: {
+    cashIn: 'finance.card.cashIn',
+    cashOut: 'finance.card.cashOut',
+    netPosition: 'finance.card.netPosition',
+    totalReceivable: 'finance.card.totalReceivable',
+  },
+  outlierNote: 'finance.outlierNote',
+  medianNote: 'finance.medianNote',
+  agingHeading: 'finance.agingHeading',
+  bucket: {
+    current: 'finance.bucket.current',
+    d30: 'finance.bucket.d30',
+    d60: 'finance.bucket.d60',
+    d90plus: 'finance.bucket.d90plus',
+    disputed: 'finance.bucket.disputed',
+  },
+  dueDateNote: 'finance.dueDateNote',
+  escalationNote: 'finance.escalationNote',
+  upcomingHeading: 'finance.upcomingHeading',
+  window: { '7': 'finance.window.7', '30': 'finance.window.30' },
+  dueIn: 'finance.dueIn',
+  dueToday: 'finance.dueToday',
+  reconciliationNote: 'finance.reconciliationNote',
+  currencyNote: 'finance.currencyNote',
+  sheetTitle: 'finance.sheetTitle',
+  paymentStage: {
+    advance: 'finance.paymentStage.advance',
+    material: 'finance.paymentStage.material',
+    installation: 'finance.paymentStage.installation',
+    handover: 'finance.paymentStage.handover',
+    retention: 'finance.paymentStage.retention',
+  },
+  empty: { title: 'finance.empty.title', body: 'finance.empty.body' },
+  error: { title: 'finance.error.title', body: 'finance.error.body' },
+} as const;

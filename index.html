@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#F8F6F1" />
+    <meta
+      name="description"
+      content="ALL INDIA ELEVATORS COMPANY — survey, quote, install and hand over elevators on one orchestrated platform."
+    />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+
+    <!--
+      AIEC type system.
+      Latin pairing:      Fraunces (display) + Plus Jakarta Sans (UI) + IBM Plex Mono (numerals)
+      Devanagari pairing: Martel (display) + Hind (UI)  — required, see 000_DESIGN_SYSTEM.md.
+      Neither Fraunces nor Plus Jakarta Sans carries Devanagari glyphs, so Hindi/Marathi text
+      would silently fall back to a system font without the second pairing.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Martel:wght@400;600;700;800&family=Hind:wght@400;500;600;700&family=Noto+Serif+Devanagari:wght@400;600;700&family=Noto+Sans+Devanagari:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <title>AIEC — All India Elevators Company</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,13 @@
+import type { ScreenRoute } from '@/navigation/registry';
+import { AutomationHealthView } from './AutomationHealthView';
+
+const route: ScreenRoute = {
+  id: '027',
+  path: '/admin/analytics/automation',
+  roles: ['admin'],
+  titleKey: 'automationHealth.title',
+  Component: AutomationHealthView,
+  tab: 'analytics',
+};
+
+export default route;
