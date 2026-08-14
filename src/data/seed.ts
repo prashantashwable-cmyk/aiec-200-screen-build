@@ -1142,6 +1142,22 @@ export const seedQuotationTemplates: QuotationTemplate[] = [
     updatedBy: 'Prashant Vasant Wable',
     isDemo: true,
   },
+  {
+    id: 'qt-3',
+    name: 'Commercial Bulk',
+    variant: 'commercial_bulk',
+    version: 1,
+    legalBoilerplate:
+      'This quotation is valid for the period stated above from the date of issue. Pricing reflects a multi-unit commercial order and is not valid for a single-unit purchase. Payment and delivery schedule for a multi-lift order is detailed in the accompanying terms sheet.',
+    stateOverrides: {
+      Maharashtra: 'This quotation additionally complies with the Maharashtra Lifts, Escalators and Moving Walks Act, 2017 and its inspection requirements.',
+    },
+    validityPeriodDays: 30,
+    footerTagline: 'All India Elevators Company — bulk fleets, one accountable partner.',
+    updatedAt: daysAgo(30),
+    updatedBy: 'Prashant Vasant Wable',
+    isDemo: true,
+  },
 ];
 
 export const seedQuotations: Quotation[] = [
