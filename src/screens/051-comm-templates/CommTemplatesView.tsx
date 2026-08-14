@@ -1,5 +1,19 @@
 import { useTranslation } from 'react-i18next';
-import { MagnifyingGlass, Image as ImageIcon, WarningCircle } from '@phosphor-icons/react';
+import { useNavigate } from 'react-router-dom';
+import {
+  MagnifyingGlass,
+  Image as ImageIcon,
+  WarningCircle,
+  FlowArrow,
+  ChatCircleText,
+  Phone,
+  Megaphone,
+  Robot,
+  Tray,
+  ShieldWarning,
+  Lightning,
+  ChartLineUp,
+} from '@phosphor-icons/react';
 import {
   Badge,
   Button,
@@ -39,6 +53,7 @@ function renderPreviewWithChips(body: string, t: (k: string) => string) {
 
 export function CommTemplatesView() {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
   const toast = useToast();
   const s = useCommTemplates();
 
@@ -107,6 +122,64 @@ export function CommTemplatesView() {
           ))}
         </Card>
       )}
+
+      <h2 className="t-lg mb-3 mt-4">{t(K.quickLinks.heading)}</h2>
+      <div className="grid-auto mb-4" style={{ ['--min' as string]: '160px' }}>
+        <Card onClick={() => navigate('/admin/comm/sequences')}>
+          <div className="row gap-3">
+            <FlowArrow size={22} className="t-emerald" />
+            <span className="t-sm t-medium">{t(K.quickLinks.sequences)}</span>
+          </div>
+        </Card>
+        <Card onClick={() => navigate('/admin/comm/whatsapp')}>
+          <div className="row gap-3">
+            <ChatCircleText size={22} className="t-emerald" />
+            <span className="t-sm t-medium">{t(K.quickLinks.whatsapp)}</span>
+          </div>
+        </Card>
+        <Card onClick={() => navigate('/admin/comm/calls')}>
+          <div className="row gap-3">
+            <Phone size={22} className="t-emerald" />
+            <span className="t-sm t-medium">{t(K.quickLinks.calls)}</span>
+          </div>
+        </Card>
+        <Card onClick={() => navigate('/admin/comm/broadcast')}>
+          <div className="row gap-3">
+            <Megaphone size={22} className="t-emerald" />
+            <span className="t-sm t-medium">{t(K.quickLinks.broadcast)}</span>
+          </div>
+        </Card>
+        <Card onClick={() => navigate('/admin/comm/bot')}>
+          <div className="row gap-3">
+            <Robot size={22} className="t-emerald" />
+            <span className="t-sm t-medium">{t(K.quickLinks.bot)}</span>
+          </div>
+        </Card>
+        <Card onClick={() => navigate('/admin/comm/inbox')}>
+          <div className="row gap-3">
+            <Tray size={22} className="t-emerald" />
+            <span className="t-sm t-medium">{t(K.quickLinks.inbox)}</span>
+          </div>
+        </Card>
+        <Card onClick={() => navigate('/admin/comm/opt-outs')}>
+          <div className="row gap-3">
+            <ShieldWarning size={22} className="t-emerald" />
+            <span className="t-sm t-medium">{t(K.quickLinks.optOuts)}</span>
+          </div>
+        </Card>
+        <Card onClick={() => navigate('/admin/comm/trigger-rules')}>
+          <div className="row gap-3">
+            <Lightning size={22} className="t-emerald" />
+            <span className="t-sm t-medium">{t(K.quickLinks.triggerRules)}</span>
+          </div>
+        </Card>
+        <Card onClick={() => navigate('/admin/comm/analytics')}>
+          <div className="row gap-3">
+            <ChartLineUp size={22} className="t-emerald" />
+            <span className="t-sm t-medium">{t(K.quickLinks.analytics)}</span>
+          </div>
+        </Card>
+      </div>
 
       <Sheet
         open={s.openGroupId !== null}

@@ -61,4 +61,17 @@ export const COMM_TEMPLATES_KEYS = {
     statusChanged: 'commTemplates.toast.statusChanged',
     error: 'commTemplates.toast.error',
   },
+
+  quickLinks: {
+    heading: 'commTemplates.quickLinks.heading',
+    sequences: 'commTemplates.quickLinks.sequences',
+    whatsapp: 'commTemplates.quickLinks.whatsapp',
+    calls: 'commTemplates.quickLinks.calls',
+    broadcast: 'commTemplates.quickLinks.broadcast',
+    bot: 'commTemplates.quickLinks.bot',
+    inbox: 'commTemplates.quickLinks.inbox',
+    optOuts: 'commTemplates.quickLinks.optOuts',
+    triggerRules: 'commTemplates.quickLinks.triggerRules',
+    analytics: 'commTemplates.quickLinks.analytics',
+  },
 } as const;

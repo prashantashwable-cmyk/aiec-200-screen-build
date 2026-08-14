@@ -21,8 +21,8 @@ form to fill, populated data behind every one.
 
 | | |
 |---|---|
-| **Built** | The Foundation Prompt in full, plus screens `001`–`058` (Modules 1–5, and Module 6 through screen 058 of 10): Onboarding, Field Surveyor & Lead Capture, Admin Command Centre & Live Map, Analytics & Rewards, CRM Lead & Pipeline Management, and most of the Automated Communication Engine. |
-| **Not built** | Screens `059`–`200`. Their prompt files exist in this folder now, but implementation hasn't reached them yet. |
+| **Built** | The Foundation Prompt in full, plus screens `001`–`060` (Modules 1–6, all complete): Onboarding, Field Surveyor & Lead Capture, Admin Command Centre & Live Map, Analytics & Rewards, CRM Lead & Pipeline Management, and the Automated Communication Engine. |
+| **Not built** | Screens `061`–`200` (Modules 7–20). Their prompt files exist in this folder now, but implementation hasn't reached them yet. |
 | **Real, not simulated** | Maps (Leaflet + OpenStreetMap, genuine geography), GPS (`navigator.geolocation`), camera capture (device camera via `capture="environment"`), business-card OCR (Tesseract.js, on-device). |
 | **Stubbed deliberately** | Firebase, payments, WhatsApp, financing, file storage (uploads stay in-tab). Each is explained under *Honest limits* below. |
 
@@ -202,19 +202,16 @@ passenger-lift quotes actually land in — but invented. Every record carries
 
 ## Where to go next
 
-1. Finish Module 6 (Automated Communication Engine): screens `059` (Follow-up
-   Stage Trigger Rules) and `060` (Communication Analytics), then add the
-   deferred "Go deeper" quick-links grid to screen `051` — the same pattern
-   041 uses for Module 5 — now that all ten of 051–060 exist to link to.
-2. Build screens `061`–`200` for Modules 7–20 (Auto-Quotation Engine,
+1. Build screens `061`–`200` for Modules 7–20 (Auto-Quotation Engine,
    Negotiation & Deal Closing, Payments & Financing, Supplier & Manufacturer
    Management, and the rest) the same way: one folder per screen, no shared
-   file to edit.
-3. Stand up the Firebase project and implement `firebaseRepository`.
-4. Wire up a storage bucket so `DocumentSlot` uploads actually persist, and
+   file to edit. Module 6 (Automated Communication Engine, `051`–`060`) is
+   now complete and checkpoint-verified — see below.
+2. Stand up the Firebase project and implement `firebaseRepository`.
+3. Wire up a storage bucket so `DocumentSlot` uploads actually persist, and
    move off the public OSM tile servers to a paid or self-hosted tile source
    before any real production traffic.
-5. Get the contract and safety-compliance copy reviewed before go-live.
+4. Get the contract and safety-compliance copy reviewed before go-live.
 
 ---
 
@@ -270,21 +267,22 @@ anything — delivery wiring arrives with the Communication Engine module.
 
 ---
 
-## Module 6 — Automated Communication Engine (`051`–`060`, in progress)
+## Module 6 — Automated Communication Engine (`051`–`060`, complete)
 
-Eight of ten screens built (`051`–`058`) under the new **Comms** tab. Like
-Module 5, everything reads and writes through one shared repository layer —
-`CommTemplate`, `CommSequence`, `Conversation`/`CommMessage`, `CallLogEntry`,
-`SmsBroadcast`, `BotConfig` and `OptOutEvent` — extended once up front before
-any of the eight screens were built, so e.g. the WhatsApp console's
+All ten screens built under the new **Comms** tab. Like Module 5, everything
+reads and writes through one shared repository layer — `CommTemplate`,
+`CommSequence`, `Conversation`/`CommMessage`, `CallLogEntry`, `SmsBroadcast`,
+`BotConfig`, `OptOutEvent` and `TriggerRule` — extended once up front before
+any of the ten screens were built, so e.g. the WhatsApp console's
 quick-replies, the call log's disposition, and the compliance screen's
 send-blocking check all agree with each other by construction, not by
-convention.
+convention. Checkpoint-verified end to end (all ten screens clicked through,
+plus a regression spot-check of 021 and 041) before moving to Module 7.
 
 - **051 Communication Templates** — versioned per-language template bodies
   with merge-field preview; owns the shared `commChannel.*` label set every
-  later Comms screen reuses. Still needs its "Go deeper" quick-links grid
-  (see *Where to go next*) — deferred until 052–060 all existed to link to.
+  later Comms screen reuses, and hosts the module's own "Go deeper"
+  quick-links grid to the other nine screens.
 - **052 Sequence Builder** — a multi-step wizard that persists as an inactive
   draft between steps, so the test-send step always operates on a real
   record rather than in-memory wizard state.
@@ -316,9 +314,24 @@ convention.
   every send, so this screen's list can never drift from what actually
   blocks a message. Opt-ins are new events, never edits to old opt-out
   records — the compliance history is append-only by construction.
+- **059 Trigger Rules** — the actual rule table the automation engine reads,
+  not documentation of it; priority ties break on most-recently-created,
+  only the top non-stacking match fires per stage, and the built-in
+  simulator runs that exact evaluation against a hypothetical stage.
+  Disabling a rule tied to a sequence asks explicitly whether in-flight
+  leads should finish or stop — "stop" deactivates the linked `CommSequence`
+  for real via 052's own `toggleSequence`, not a decorative flag.
+- **060 Communication Analytics** — read-only, over the same real
+  channel/template/SLA figures the repository computes from actual message
+  and reply-inbox records. Templates with too few sends are labelled early
+  data and excluded from both the poor-performer check and the
+  median/average, so sparse data never gets unfairly ranked.
 
-Still to build: **059** Follow-up Stage Trigger Rules and **060**
-Communication Analytics — both have their repository methods already
-stubbed (`TriggerRule`, `CommunicationAnalytics` in `src/data/repository.ts`)
-from the up-front Module 6 data-model extension, so building them should not
-require another data-model pass.
+One gap worth knowing about: `bot.reply.*` and `bot.escalate.*` (056) and
+the outage annotation on 060 (`commAnalytics.outageNote`) are the only
+places the repository returns a translation *key* rather than raw data — a
+deliberate pattern (mirrors `escalateReasonKey` already in the type) so
+simulated/demo copy stays real in all three languages instead of leaking
+English from the data layer. The outage note itself is a fixed demo
+annotation, not a live incident feed — there's no status-page integration
+to compute it from yet.
