@@ -968,6 +968,7 @@ export const seedCommMessages: CommMessage[] = [
   { id: 'cm-2', conversationId: 'conv-1', channel: 'whatsapp', sender: 'customer', body: 'Can we get a better rate on the SS finish?', status: 'read', at: daysAgo(2) },
   { id: 'cm-3', conversationId: 'conv-1', channel: 'whatsapp', sender: 'bot', body: 'Let me connect you with our team on that — one moment.', status: 'delivered', at: hoursAgo(20), requiresHumanReview: true, handled: false },
   { id: 'cm-4', conversationId: 'conv-1', channel: 'whatsapp', sender: 'agent', senderName: 'Prashant Vasant Wable', body: 'Hi Farhan, happy to discuss — could do premium SS at a small step up, or standard SS within the quoted price. Which would you prefer?', status: 'sent', at: hoursAgo(2), handled: true },
+  { id: 'cm-4b', conversationId: 'conv-1', channel: 'whatsapp', sender: 'customer', body: 'Here is the lobby finish we have in mind', mediaKind: 'photo', status: 'delivered', at: hoursAgo(1), requiresHumanReview: true, handled: false },
 
   { id: 'cm-5', conversationId: 'conv-2', channel: 'whatsapp', sender: 'bot', body: 'Hi Amit Joshi, following up on the quote of ₹30.50L for Pinnacle Aurum. Any questions on our end?', templateGroupId: 'tpl-quote-followup', status: 'delivered', at: hoursAgo(20) },
 
