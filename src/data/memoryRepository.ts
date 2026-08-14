@@ -1053,6 +1053,32 @@ export const memoryRepository: Repository = {
 
   getQuotation: (id) => simulateRead(() => byId(quotations, id)),
 
+  getQuotationForCustomer: (id) =>
+    simulateRead(() => {
+      const q = byId(quotations, id);
+      if (!q) return null;
+      const lead = resolveLead(q.leadId);
+      const lapsed = !!q.validityDate && new Date(q.validityDate).getTime() < Date.now();
+      const effectiveStatus = lapsed && (q.status === 'sent' || q.status === 'viewed') ? 'expired' : q.status;
+      return {
+        id: q.id,
+        code: q.code,
+        version: q.version,
+        effectiveStatus,
+        leadSiteName: lead?.siteName ?? '',
+        driveType: q.driveType,
+        capacityPersons: q.capacityPersons,
+        finishTier: q.finishTier,
+        stopsCount: q.stopsCount,
+        finalPrice: q.cost.finalPrice,
+        gstPercent: q.cost.gstPercent,
+        validityDate: q.validityDate,
+        sentAt: q.sentAt,
+        viewedAt: q.viewedAt,
+        acceptedAt: q.acceptedAt,
+      };
+    }),
+
   createQuotationDraft: (leadId) =>
     simulateWrite(() => {
       const lead = resolveLead(leadId);

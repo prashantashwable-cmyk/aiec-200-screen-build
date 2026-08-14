@@ -214,6 +214,34 @@ export interface QuotationSpecInput {
   customConfiguration: boolean;
 }
 
+/**
+ * The customer-facing surface of a quotation — a real, structural boundary
+ * rather than a UI omission. `equipmentCost`, `civilWorkEstimate`,
+ * `installationLaborCost`, `transportCost`, `marginPct` and `marginAmount`
+ * are not fields on this type at all, so they can never leak through this
+ * path even by accident; `getQuotationForCustomer` is the only method that
+ * returns it, and it never touches the full `Quotation.cost` object.
+ */
+export interface CustomerQuotationView {
+  id: string;
+  code: string;
+  version: number;
+  /** `status` past its `validityDate` and not yet accepted, computed at
+   *  read time — the stored status is never silently rewritten. */
+  effectiveStatus: QuotationStatus;
+  leadSiteName: string;
+  driveType: DriveType;
+  capacityPersons: number;
+  finishTier: Quotation['finishTier'];
+  stopsCount: number;
+  finalPrice: number;
+  gstPercent: number;
+  validityDate?: string;
+  sentAt?: string;
+  viewedAt?: string;
+  acceptedAt?: string;
+}
+
 export interface QuotationWinLossStat {
   /** The tier/drive-type/price-band/territory value this row groups by. */
   key: string;
@@ -303,6 +331,9 @@ export interface Repository {
   /* Quotations */
   listQuotations(filter?: { leadId?: string; status?: QuotationStatus[] }): Promise<Quotation[]>;
   getQuotation(id: string): Promise<Quotation | null>;
+  /** The one method a customer-facing surface may call — see
+   *  `CustomerQuotationView` for exactly what it can and can't see. */
+  getQuotationForCustomer(id: string): Promise<CustomerQuotationView | null>;
   /** Pre-fills from the lead's building spec and the current PricingConfig. */
   createQuotationDraft(leadId: string): Promise<Quotation>;
   /** Recomputes the full cost breakdown from the current PricingConfig
