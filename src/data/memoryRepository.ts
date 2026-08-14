@@ -1271,6 +1271,37 @@ export const memoryRepository: Repository = {
       return updated;
     }),
 
+  adjustQuotationCost: (id, input) =>
+    simulateWrite(() => {
+      const quotation = byId(quotations, id);
+      if (!quotation) throw new RepositoryError('not_found');
+      const marginPct = input.marginPct ?? quotation.cost.marginPct;
+      if (marginPct < pricingConfig.minimumMarginFloorPct) {
+        throw new RepositoryError('below_margin_floor');
+      }
+      const { equipmentCost, installationLaborCost, transportCost, perFloorCostDelta } = quotation.cost;
+      const civilWorkEstimate = input.civilWorkOverride?.amount ?? quotation.cost.civilWorkEstimate;
+      const civilWorkAdjustmentNote = input.civilWorkOverride?.note ?? quotation.cost.civilWorkAdjustmentNote;
+      const baseCost = equipmentCost + civilWorkEstimate + installationLaborCost + transportCost;
+      const sellBeforeTax = Math.round(baseCost / (1 - marginPct / 100));
+      const marginAmount = sellBeforeTax - baseCost;
+      const gstAmount = Math.round(sellBeforeTax * (pricingConfig.gstRatePct / 100));
+      const cost: QuotationCostBreakdown = {
+        equipmentCost,
+        civilWorkEstimate,
+        civilWorkAdjustmentNote,
+        installationLaborCost,
+        transportCost,
+        perFloorCostDelta,
+        gstPercent: pricingConfig.gstRatePct,
+        gstAmount,
+        marginPct,
+        marginAmount,
+        finalPrice: sellBeforeTax + gstAmount,
+      };
+      return patchInPlace(quotations, id, { cost });
+    }),
+
   /* -------------------------------------------------- Quotation templates */
   listQuotationTemplates: () => simulateRead(() => [...quotationTemplates]),
 

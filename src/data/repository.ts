@@ -325,6 +325,15 @@ export interface Repository {
   recordQuotationView(id: string): Promise<Quotation>;
   acceptQuotation(id: string): Promise<Quotation>;
   requestQuotationChanges(id: string, note: string): Promise<Quotation>;
+  /** Adjusts margin and/or the civil-work line directly on a draft, without
+   *  touching the spec — used by the Cost Breakdown screen's live
+   *  recalculation. Blocks outright if the resulting margin would fall
+   *  below the configured floor; a margin below that only reaches the
+   *  customer through the Discount & Approval workflow. */
+  adjustQuotationCost(
+    id: string,
+    input: { marginPct?: number; civilWorkOverride?: { amount: number; note: string } },
+  ): Promise<Quotation>;
 
   /* Quotation templates */
   listQuotationTemplates(): Promise<QuotationTemplate[]>;

@@ -26,15 +26,6 @@ export const QUOTATION_GENERATOR_KEYS = {
   },
 
   listHeading: 'quotationGenerator.listHeading',
-  statusBadge: {
-    draft: 'quotationGenerator.statusBadge.draft',
-    sent: 'quotationGenerator.statusBadge.sent',
-    viewed: 'quotationGenerator.statusBadge.viewed',
-    accepted: 'quotationGenerator.statusBadge.accepted',
-    expired: 'quotationGenerator.statusBadge.expired',
-    superseded: 'quotationGenerator.statusBadge.superseded',
-    change_requested: 'quotationGenerator.statusBadge.change_requested',
-  },
 
   driveType: {
     hydraulic: 'driveType.hydraulic',
@@ -48,6 +39,15 @@ export const QUOTATION_GENERATOR_KEYS = {
     standard: 'finishTier.standard',
     premium: 'finishTier.premium',
     luxury: 'finishTier.luxury',
+  },
+  quotationStatus: {
+    draft: 'quotationStatus.draft',
+    sent: 'quotationStatus.sent',
+    viewed: 'quotationStatus.viewed',
+    accepted: 'quotationStatus.accepted',
+    expired: 'quotationStatus.expired',
+    superseded: 'quotationStatus.superseded',
+    change_requested: 'quotationStatus.change_requested',
   },
 
   form: {
@@ -77,5 +77,5 @@ export const QUOTATION_GENERATOR_KEYS = {
 } as const;
 
 export function statusBadgeKey(status: QuotationStatus): string {
-  return QUOTATION_GENERATOR_KEYS.statusBadge[status];
+  return QUOTATION_GENERATOR_KEYS.quotationStatus[status];
 }
