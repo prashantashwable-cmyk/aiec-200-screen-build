@@ -1263,9 +1263,9 @@ export const memoryRepository: Repository = {
       return call;
     }),
 
-  setCallDisposition: (id, outcome, durationSec) =>
+  setCallDisposition: (id, outcome, durationSec, consentGiven) =>
     simulateWrite(() => {
-      const updated = patchInPlace(callLog, id, { outcome, durationSec });
+      const updated = patchInPlace(callLog, id, consentGiven === undefined ? { outcome, durationSec } : { outcome, durationSec, consentGiven });
       if (outcome === 'connected_interested') {
         const lead = byId(leads, updated.leadId);
         if (lead) {

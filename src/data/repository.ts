@@ -293,7 +293,7 @@ export interface Repository {
   /* Communication: call log */
   listCallLog(filter?: { leadId?: string }): Promise<CallLogEntry[]>;
   logCall(leadId: string, loggedBy: 'auto_dialer' | 'manual'): Promise<CallLogEntry>;
-  setCallDisposition(id: string, outcome: CallOutcome, durationSec: number): Promise<CallLogEntry>;
+  setCallDisposition(id: string, outcome: CallOutcome, durationSec: number, consentGiven?: boolean): Promise<CallLogEntry>;
 
   /* Communication: broadcasts */
   listBroadcasts(): Promise<SmsBroadcast[]>;
