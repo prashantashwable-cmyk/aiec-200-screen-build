@@ -521,6 +521,58 @@ function pushToMap<K>(map: Map<K, Quotation[]>, key: K, q: Quotation) {
   else map.set(key, [q]);
 }
 
+/** The one place an approved discount turns into a real quotation version —
+ *  shared by the manual approval path and the urgent-and-safe auto-approve
+ *  path, so both produce exactly the same, real, superseding record. */
+function applyApprovedDiscount(request: DiscountRequest, approverId: string, reasonKey: string) {
+  const quotation = byId(quotations, request.quotationId);
+  if (!quotation) return;
+  const cost = computeQuotationCost(
+    {
+      driveType: quotation.driveType,
+      capacityPersons: quotation.capacityPersons,
+      capacityKg: quotation.capacityKg,
+      stopsCount: quotation.stopsCount,
+      travelHeightM: quotation.travelHeightM,
+      finishTier: quotation.finishTier,
+      customConfiguration: quotation.customConfiguration,
+    },
+    pricingConfig,
+    Math.max(0.1, request.resultingMarginPct),
+  );
+  quotationCounter += 1;
+  const now = new Date().toISOString();
+  const approverName = approverId === 'system-auto' ? 'Automation' : nameOf(approverId);
+  const version: Quotation = {
+    ...quotation,
+    id: `q-new-${quotationCounter}`,
+    code: `AIEC-Q-${quotationCounter}`,
+    version: quotation.version + 1,
+    supersedesQuotationId: quotation.id,
+    status: 'draft',
+    cost,
+    viewedAt: undefined,
+    acceptedAt: undefined,
+    sentAt: undefined,
+    deliveryResults: [],
+    createdBy: approverName,
+    createdAt: now,
+    createdReasonKey: reasonKey,
+    createdReasonNote: request.reasonNote,
+  };
+  quotations.unshift(version);
+  if (quotation.status === 'sent' || quotation.status === 'viewed') {
+    patchInPlace(quotations, quotation.id, { status: 'superseded' as const });
+  }
+  pushTimelineEvent({ leadId: quotation.leadId, kind: 'quote_created', actorName: approverName, at: now, detail: `Quotation ${version.code} v${version.version} — discount approved` });
+}
+
+/** An urgent request stays safely inside a slimmer secondary ceiling —
+ *  a real margin buffer above the hard floor, not the floor itself — gets
+ *  approved immediately rather than waiting on an Admin who may be
+ *  unavailable right when the customer is on the phone. */
+const URGENT_AUTO_APPROVE_BUFFER_PCT = 3;
+
 export const memoryRepository: Repository = {
   /* ------------------------------------------------------------- Users */
   listUsers: (filter) =>
@@ -1373,6 +1425,11 @@ export const memoryRepository: Repository = {
         .filter((r) => r.quotationId === input.quotationId && r.requestedByUserId === input.requestedByUserId && r.status === 'rejected')
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
       discountRequestCounter += 1;
+      // Urgent AND safely inside the buffer above the hard floor: approved
+      // immediately rather than left waiting on an Admin who might be
+      // offline right when the customer is on the phone.
+      const autoApprove = input.urgent && resultingMarginPct >= pricingConfig.minimumMarginFloorPct + URGENT_AUTO_APPROVE_BUFFER_PCT;
+      const now = new Date().toISOString();
       const request: DiscountRequest = {
         id: `dr-new-${discountRequestCounter}`,
         quotationId: input.quotationId,
@@ -1382,12 +1439,15 @@ export const memoryRepository: Repository = {
         reasonNote: input.reasonNote,
         resultingMarginPct,
         urgent: input.urgent,
-        status: 'pending',
+        status: autoApprove ? 'approved' : 'pending',
+        approverId: autoApprove ? 'system-auto' : undefined,
+        decidedAt: autoApprove ? now : undefined,
         resubmissionOfId: priorRejected?.id,
-        createdAt: new Date().toISOString(),
+        createdAt: now,
         isDemo: true,
       };
       discountRequests.unshift(request);
+      if (autoApprove) applyApprovedDiscount(request, 'system-auto', 'quotation.reason.discountApproved');
       return request;
     }),
 
@@ -1402,50 +1462,7 @@ export const memoryRepository: Repository = {
         rejectionReason: decision.rejectionReason,
         counterSuggestionPct: decision.counterSuggestionPct,
       });
-      // An approved discount closes the loop by producing the corresponding
-      // new quotation version automatically — no manual re-entry step.
-      if (decision.status === 'approved') {
-        const quotation = byId(quotations, request.quotationId);
-        if (quotation) {
-          const cost = computeQuotationCost(
-            {
-              driveType: quotation.driveType,
-              capacityPersons: quotation.capacityPersons,
-              capacityKg: quotation.capacityKg,
-              stopsCount: quotation.stopsCount,
-              travelHeightM: quotation.travelHeightM,
-              finishTier: quotation.finishTier,
-              customConfiguration: quotation.customConfiguration,
-            },
-            pricingConfig,
-            Math.max(0.1, request.resultingMarginPct),
-          );
-          quotationCounter += 1;
-          const now = new Date().toISOString();
-          const version: Quotation = {
-            ...quotation,
-            id: `q-new-${quotationCounter}`,
-            code: `AIEC-Q-${quotationCounter}`,
-            version: quotation.version + 1,
-            supersedesQuotationId: quotation.id,
-            status: 'draft',
-            cost,
-            viewedAt: undefined,
-            acceptedAt: undefined,
-            sentAt: undefined,
-            deliveryResults: [],
-            createdBy: nameOf(decision.approverId),
-            createdAt: now,
-            createdReasonKey: 'quotation.reason.discountApproved',
-            createdReasonNote: request.reasonNote,
-          };
-          quotations.unshift(version);
-          if (quotation.status === 'sent' || quotation.status === 'viewed') {
-            patchInPlace(quotations, quotation.id, { status: 'superseded' as const });
-          }
-          pushTimelineEvent({ leadId: quotation.leadId, kind: 'quote_created', actorName: nameOf(decision.approverId), at: now, detail: `Quotation ${version.code} v${version.version} — discount approved` });
-        }
-      }
+      if (decision.status === 'approved') applyApprovedDiscount(request, decision.approverId, 'quotation.reason.discountApproved');
       return updated;
     }),
 
