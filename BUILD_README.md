@@ -21,8 +21,8 @@ form to fill, populated data behind every one.
 
 | | |
 |---|---|
-| **Built** | The Foundation Prompt in full, plus screens `001`–`050` (Modules 1–5 of 20): Onboarding, Field Surveyor & Lead Capture, Admin Command Centre & Live Map, Analytics & Rewards, and CRM Lead & Pipeline Management. |
-| **Not built** | Screens `051`–`200` (Modules 6–20). Their prompt files exist in this folder now, but implementation hasn't reached them yet. |
+| **Built** | The Foundation Prompt in full, plus screens `001`–`058` (Modules 1–5, and Module 6 through screen 058 of 10): Onboarding, Field Surveyor & Lead Capture, Admin Command Centre & Live Map, Analytics & Rewards, CRM Lead & Pipeline Management, and most of the Automated Communication Engine. |
+| **Not built** | Screens `059`–`200`. Their prompt files exist in this folder now, but implementation hasn't reached them yet. |
 | **Real, not simulated** | Maps (Leaflet + OpenStreetMap, genuine geography), GPS (`navigator.geolocation`), camera capture (device camera via `capture="environment"`), business-card OCR (Tesseract.js, on-device). |
 | **Stubbed deliberately** | Firebase, payments, WhatsApp, financing, file storage (uploads stay in-tab). Each is explained under *Honest limits* below. |
 
@@ -202,15 +202,19 @@ passenger-lift quotes actually land in — but invented. Every record carries
 
 ## Where to go next
 
-1. Build screens `051`–`200` for Modules 6–20 (Automated Communication Engine,
-   Auto-Quotation Engine, Negotiation & Deal Closing, Payments & Financing,
-   Supplier & Manufacturer Management, and the rest) the same way: one folder
-   per screen, no shared file to edit.
-2. Stand up the Firebase project and implement `firebaseRepository`.
-3. Wire up a storage bucket so `DocumentSlot` uploads actually persist, and
+1. Finish Module 6 (Automated Communication Engine): screens `059` (Follow-up
+   Stage Trigger Rules) and `060` (Communication Analytics), then add the
+   deferred "Go deeper" quick-links grid to screen `051` — the same pattern
+   041 uses for Module 5 — now that all ten of 051–060 exist to link to.
+2. Build screens `061`–`200` for Modules 7–20 (Auto-Quotation Engine,
+   Negotiation & Deal Closing, Payments & Financing, Supplier & Manufacturer
+   Management, and the rest) the same way: one folder per screen, no shared
+   file to edit.
+3. Stand up the Firebase project and implement `firebaseRepository`.
+4. Wire up a storage bucket so `DocumentSlot` uploads actually persist, and
    move off the public OSM tile servers to a paid or self-hosted tile source
    before any real production traffic.
-4. Get the contract and safety-compliance copy reviewed before go-live.
+5. Get the contract and safety-compliance copy reviewed before go-live.
 
 ---
 
@@ -263,3 +267,58 @@ Module 6/7's job), so the Kanban's Quoted/Won gates use the existing `Deal`
 record as the closest real proxy; and "send message" on the Lead Detail
 screen logs a real, permanent timeline event but doesn't actually dispatch
 anything — delivery wiring arrives with the Communication Engine module.
+
+---
+
+## Module 6 — Automated Communication Engine (`051`–`060`, in progress)
+
+Eight of ten screens built (`051`–`058`) under the new **Comms** tab. Like
+Module 5, everything reads and writes through one shared repository layer —
+`CommTemplate`, `CommSequence`, `Conversation`/`CommMessage`, `CallLogEntry`,
+`SmsBroadcast`, `BotConfig` and `OptOutEvent` — extended once up front before
+any of the eight screens were built, so e.g. the WhatsApp console's
+quick-replies, the call log's disposition, and the compliance screen's
+send-blocking check all agree with each other by construction, not by
+convention.
+
+- **051 Communication Templates** — versioned per-language template bodies
+  with merge-field preview; owns the shared `commChannel.*` label set every
+  later Comms screen reuses. Still needs its "Go deeper" quick-links grid
+  (see *Where to go next*) — deferred until 052–060 all existed to link to.
+- **052 Sequence Builder** — a multi-step wizard that persists as an inactive
+  draft between steps, so the test-send step always operates on a real
+  record rather than in-memory wizard state.
+- **053 WhatsApp Console** — quick-replies render from the same template
+  bodies 051 edits; an inbound "STOP" shows a persistent opt-out banner that
+  only clears once actually acknowledged, not just on next render.
+- **054 Call Log / Auto-Dialer** — `tel:` links genuinely open the device
+  dialer; a `Connected – interested` disposition nudges the lead one real
+  pipeline stage forward (capped before Quoted, which still needs a linked
+  deal — the same gate 043's Kanban enforces).
+- **055 SMS Broadcast** — the segment builder reuses 041's own stage/source/
+  city filters; cost estimate and delivery report both exclude opted-out
+  contacts from the same `previewBroadcastSegment` call, so the number
+  quoted before sending is the number actually billed. TRAI's 9pm–9am
+  promotional-SMS restriction blocks scheduling outright.
+- **056 AI Bot Configuration** — the discount range is validated against a
+  margin-floor constant (`MAX_SAFE_BOT_DISCOUNT_PCT`, `src/features/
+  communication/botRules.ts`) before it can save; the simulator tests the
+  *current unsaved draft*, not just the last-saved config, so adjusting a
+  slider and re-testing never requires leaving the screen.
+- **057 Reply Inbox** — a real cross-channel view, not a separate copy: it
+  aggregates WhatsApp/SMS messages the bot escalated (`requiresHumanReview`)
+  with missed calls still awaiting a callback, computed as "the newest
+  call-log entry for this lead is a `no_answer`" — placing a fresh call
+  naturally clears the item, no separate "handled" flag needed on
+  `CallLogEntry`.
+- **058 Compliance & Opt-Out Manager** — per-contact status is computed from
+  the same append-only `OptOutEvent` log that `isOptedOut()` checks before
+  every send, so this screen's list can never drift from what actually
+  blocks a message. Opt-ins are new events, never edits to old opt-out
+  records — the compliance history is append-only by construction.
+
+Still to build: **059** Follow-up Stage Trigger Rules and **060**
+Communication Analytics — both have their repository methods already
+stubbed (`TriggerRule`, `CommunicationAnalytics` in `src/data/repository.ts`)
+from the up-front Module 6 data-model extension, so building them should not
+require another data-model pass.
