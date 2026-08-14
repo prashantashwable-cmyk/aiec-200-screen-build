@@ -656,6 +656,8 @@ export interface CallLogEntry {
 
 export type BroadcastStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'cancelled';
 
+export type SmsFailureReason = 'invalid_number' | 'carrier_block' | 'handset_unreachable';
+
 export interface SmsBroadcast {
   id: string;
   name: string;
@@ -668,6 +670,8 @@ export interface SmsBroadcast {
   sentCount: number;
   deliveredCount: number;
   failedCount: number;
+  /** Only present once `failedCount > 0` — breaks the aggregate down by cause. */
+  failureBreakdown?: Partial<Record<SmsFailureReason, number>>;
   optedOutExcludedCount: number;
   estimatedCost: number;
   actualCost?: number;

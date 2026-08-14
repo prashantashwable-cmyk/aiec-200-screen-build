@@ -80,6 +80,7 @@ import type {
   SeriesPoint,
   SiteVisitVerification,
   SmsBroadcast,
+  SmsFailureReason,
   TemplateStat,
   TriggerRule,
   User,
@@ -309,6 +310,19 @@ function isOptedOutSync(phone: string, channel: CommChannel): boolean {
   if (relevant.length === 0) return false;
   const latest = [...relevant].sort((a, b) => b.at.localeCompare(a.at))[0];
   return latest.type === 'opted_out';
+}
+
+/** Deterministic breakdown of a failure count across causes — no randomness,
+ *  so the same send always reports the same delivery report on reload. */
+function splitFailureReasons(total: number): Partial<Record<SmsFailureReason, number>> {
+  const invalidNumber = Math.ceil(total * 0.5);
+  const carrierBlock = Math.ceil((total - invalidNumber) * 0.6);
+  const handsetUnreachable = total - invalidNumber - carrierBlock;
+  const breakdown: Partial<Record<SmsFailureReason, number>> = {};
+  if (invalidNumber > 0) breakdown.invalid_number = invalidNumber;
+  if (carrierBlock > 0) breakdown.carrier_block = carrierBlock;
+  if (handsetUnreachable > 0) breakdown.handset_unreachable = handsetUnreachable;
+  return breakdown;
 }
 
 const ESCALATION_KEYWORDS = ['legal', 'lawyer', 'unsafe', 'danger', 'injur', 'complaint', 'sue', 'accident'];
@@ -1321,6 +1335,7 @@ export const memoryRepository: Repository = {
       const now = new Date().toISOString();
       const immediate = !input.scheduledFor;
       const delivered = immediate ? Math.round(input.leadIds.length * 0.92) : 0;
+      const failed = immediate ? input.leadIds.length - delivered : 0;
       const broadcast: SmsBroadcast = {
         id: `bc-new-${(broadcastCounter += 1)}`,
         name: input.name,
@@ -1331,7 +1346,8 @@ export const memoryRepository: Repository = {
         status: immediate ? 'sent' : 'scheduled',
         sentCount: immediate ? input.leadIds.length : 0,
         deliveredCount: delivered,
-        failedCount: immediate ? input.leadIds.length - delivered : 0,
+        failedCount: failed,
+        failureBreakdown: failed > 0 ? splitFailureReasons(failed) : undefined,
         optedOutExcludedCount: 0,
         estimatedCost: Math.round(input.leadIds.length * 0.18 * 100) / 100,
         actualCost: immediate ? Math.round(input.leadIds.length * 0.18 * 100) / 100 : undefined,
