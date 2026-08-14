@@ -1533,6 +1533,13 @@ export const memoryRepository: Repository = {
         templateStats,
         volumeTrend,
         slaCompliancePct: inboxItemsAll.length ? withinSla / inboxItemsAll.length : 1,
+        // Stand-in for a real incident feed (a status-page or PagerDuty
+        // integration) that doesn't exist yet — a fixed demo annotation so
+        // Admin sees a depressed number explained rather than misread as a
+        // content problem, per the module spec's outage edge case. A
+        // translation key, like `escalateReasonKey` elsewhere — never raw
+        // English from the data layer.
+        outageNote: 'commAnalytics.outageNote',
       };
     }),
 };
