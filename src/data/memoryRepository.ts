@@ -12,6 +12,7 @@ import {
   seedCommissions,
   seedConversations,
   seedDeals,
+  seedDiscountRequests,
   seedDuplicatePairs,
   seedFollowUpTasks,
   seedImportBatches,
@@ -20,6 +21,9 @@ import {
   seedLeads,
   seedOptOutEvents,
   seedPayments,
+  seedPricingConfig,
+  seedQuotationTemplates,
+  seedQuotations,
   seedRoutePlans,
   seedScoreWeightingProfile,
   seedSeries,
@@ -45,6 +49,9 @@ import type {
   ImportPreview,
   ImportValidationRow,
   LeadFilter,
+  QuotationAnalytics,
+  QuotationSpecInput,
+  QuotationWinLossStat,
   RegionConversion,
   ReplyInboxItem,
   Repository,
@@ -65,6 +72,9 @@ import type {
   CommSequence,
   CommTemplate,
   Conversation,
+  DiscountRequest,
+  DiscountRequestStatus,
+  DriveType,
   DuplicatePair,
   FollowUpTask,
   GeoZone,
@@ -75,6 +85,11 @@ import type {
   LeadTimelineEvent,
   OptOutChannel,
   OptOutEvent,
+  PricingConfig,
+  Quotation,
+  QuotationCostBreakdown,
+  QuotationDeliveryResult,
+  QuotationTemplate,
   ScoreFactor,
   ScoreWeightingProfile,
   SeriesPoint,
@@ -127,6 +142,11 @@ let botConfig: BotConfig = { ...seedBotConfig };
 const optOutEvents = [...seedOptOutEvents];
 const triggerRules = [...seedTriggerRules];
 
+const quotations = [...seedQuotations];
+const quotationTemplates = [...seedQuotationTemplates];
+const discountRequests = [...seedDiscountRequests];
+let pricingConfig: PricingConfig = { ...seedPricingConfig };
+
 let leadCounter = 200;
 let timelineEventCounter = 900;
 let followUpTaskCounter = 900;
@@ -137,6 +157,9 @@ let broadcastCounter = 900;
 let ruleCounter = 900;
 let optOutCounter = 900;
 let sequenceCounter = 900;
+let quotationCounter = 900;
+let templateCounter = 900;
+let discountRequestCounter = 900;
 
 const byId = <T extends { id: string }>(list: T[], id: string): T | null =>
   list.find((item) => item.id === id) ?? null;
@@ -409,6 +432,94 @@ const startOfPrevMonth = () => {
 /** Safe percentage change that doesn't blow up when the base is zero. */
 const delta = (current: number, previous: number): number =>
   previous === 0 ? (current > 0 ? 1 : 0) : (current - previous) / previous;
+
+/* ------------------------------------------------------------- Quotations */
+
+/** Equipment base price already covers this many stops (G+3); every stop
+ *  above it costs the drive type's own per-floor increment. */
+const BASE_STOPS_INCLUDED = 4;
+
+const FINISH_TIER_MULTIPLIER: Record<Quotation['finishTier'], number> = {
+  standard: 1,
+  premium: 1.15,
+  luxury: 1.35,
+};
+
+/** Base price assumes this capacity; each person above it is a real cost
+ *  driver (a bigger car, a stronger machine) the formula can't ignore. */
+const CAPACITY_BASELINE_PERSONS = 6;
+const CAPACITY_COST_PCT_PER_PERSON = 0.06;
+
+const INSTALLATION_COST_PER_STOP = 12_000;
+const TRANSPORT_COST_FLAT = 25_000;
+const CIVIL_WORK_PCT_OF_EQUIPMENT = 0.1;
+
+/** The one place a quote's price is computed — screens 061/062/065/067 all
+ *  route through this, so a discount or spec change can never produce a
+ *  number the margin floor didn't actually see. Every line is rounded to
+ *  the rupee, then the total is the sum of the rounded lines, so the
+ *  displayed breakdown always matches a sum-of-parts check exactly. */
+function computeQuotationCost(spec: QuotationSpecInput, pricing: PricingConfig, marginOverridePct?: number): QuotationCostBreakdown {
+  const basePrice = pricing.driveTypeBasePrice[spec.driveType];
+  const perFloorPct = pricing.perFloorIncrementPct[spec.driveType];
+  const extraStops = Math.max(0, spec.stopsCount - BASE_STOPS_INCLUDED);
+  const perFloorCostDelta = Math.round(basePrice * perFloorPct);
+  const capacityMultiplier = 1 + Math.max(0, spec.capacityPersons - CAPACITY_BASELINE_PERSONS) * CAPACITY_COST_PCT_PER_PERSON;
+  const equipmentCost = Math.round(basePrice * FINISH_TIER_MULTIPLIER[spec.finishTier] * capacityMultiplier) + perFloorCostDelta * extraStops;
+  const civilWorkEstimate = Math.round(equipmentCost * CIVIL_WORK_PCT_OF_EQUIPMENT);
+  const installationLaborCost = INSTALLATION_COST_PER_STOP * spec.stopsCount;
+  const transportCost = TRANSPORT_COST_FLAT;
+
+  const baseCost = equipmentCost + civilWorkEstimate + installationLaborCost + transportCost;
+  const marginPct = marginOverridePct ?? pricing.minimumMarginFloorPct + 5;
+  const sellBeforeTax = Math.round(baseCost / (1 - marginPct / 100));
+  const marginAmount = sellBeforeTax - baseCost;
+  const gstAmount = Math.round(sellBeforeTax * (pricing.gstRatePct / 100));
+  const finalPrice = sellBeforeTax + gstAmount;
+
+  return {
+    equipmentCost,
+    civilWorkEstimate,
+    installationLaborCost,
+    transportCost,
+    perFloorCostDelta,
+    gstPercent: pricing.gstRatePct,
+    gstAmount,
+    marginPct,
+    marginAmount,
+    finalPrice,
+  };
+}
+
+const PRICE_BANDS: { key: string; max: number }[] = [
+  { key: 'under10L', max: 1_000_000 },
+  { key: '10to25L', max: 2_500_000 },
+  { key: '25to50L', max: 5_000_000 },
+  { key: 'above50L', max: Infinity },
+];
+function priceBandOf(price: number): string {
+  return PRICE_BANDS.find((b) => price <= b.max)?.key ?? 'above50L';
+}
+
+const LOW_SAMPLE_THRESHOLD = 3;
+function winLossStat(key: string, group: Quotation[]): QuotationWinLossStat {
+  const leadsForGroup = group.map((q) => resolveLead(q.leadId)).filter((l): l is Lead => !!l);
+  const decided = leadsForGroup.filter((l) => l.stage === 'won' || l.stage === 'lost');
+  const won = decided.filter((l) => l.stage === 'won').length;
+  return {
+    key,
+    quotesCount: group.length,
+    wonCount: won,
+    winRatePct: decided.length ? won / decided.length : 0,
+    lowSample: decided.length < LOW_SAMPLE_THRESHOLD,
+  };
+}
+
+function pushToMap<K>(map: Map<K, Quotation[]>, key: K, q: Quotation) {
+  const list = map.get(key);
+  if (list) list.push(q);
+  else map.set(key, [q]);
+}
 
 export const memoryRepository: Repository = {
   /* ------------------------------------------------------------- Users */
@@ -930,6 +1041,413 @@ export const memoryRepository: Repository = {
   listSuppliers: () => simulateRead(() => [...suppliers]),
 
   getSupplier: (id) => simulateRead(() => byId(suppliers, id)),
+
+  /* ------------------------------------------------------- Quotations */
+  listQuotations: (filter) =>
+    simulateRead(() =>
+      quotations
+        .filter((q) => !filter?.leadId || q.leadId === filter.leadId)
+        .filter((q) => !filter?.status || filter.status.includes(q.status))
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    ),
+
+  getQuotation: (id) => simulateRead(() => byId(quotations, id)),
+
+  createQuotationDraft: (leadId) =>
+    simulateWrite(() => {
+      const lead = resolveLead(leadId);
+      if (!lead) throw new RepositoryError('not_found');
+      const spec = lead.spec;
+      const stopsCount = spec ? spec.floors + spec.basements + 1 : 5;
+      const driveType: DriveType = stopsCount > 10 ? 'gearless_traction' : spec?.machineRoom === 'mrl' ? 'mrl' : 'geared_traction';
+      const finishTier: Quotation['finishTier'] =
+        spec?.cabinFinish === 'glass' || spec?.cabinFinish === 'custom' ? 'luxury' : spec?.cabinFinish === 'premium_ss' ? 'premium' : 'standard';
+      const specInput: QuotationSpecInput = {
+        driveType,
+        capacityPersons: spec?.capacityPersons ?? 6,
+        capacityKg: spec?.capacityKg ?? 408,
+        stopsCount,
+        travelHeightM: Math.round(stopsCount * 3 * 10) / 10,
+        finishTier,
+        customConfiguration: false,
+      };
+      const cost = computeQuotationCost(specInput, pricingConfig);
+      const now = new Date().toISOString();
+      quotationCounter += 1;
+      const quotation: Quotation = {
+        id: `q-new-${quotationCounter}`,
+        code: `AIEC-Q-${quotationCounter}`,
+        leadId,
+        version: 1,
+        status: 'draft',
+        ...specInput,
+        needsSpecializedReview: stopsCount >= 20,
+        cost,
+        deliveryChannels: [],
+        deliveryResults: [],
+        createdBy: 'Sales',
+        createdAt: now,
+        isDemo: true,
+      };
+      quotations.unshift(quotation);
+      pushTimelineEvent({ leadId, kind: 'quote_created', actorName: 'Sales', at: now, detail: `Quotation ${quotation.code} drafted` });
+      return quotation;
+    }),
+
+  saveQuotationSpec: (id, patch) =>
+    simulateWrite(() => {
+      const existing = byId(quotations, id);
+      if (!existing) throw new RepositoryError('not_found');
+      const cost = computeQuotationCost(patch, pricingConfig, existing.cost.marginPct);
+      return patchInPlace(quotations, id, {
+        ...patch,
+        needsSpecializedReview: patch.stopsCount >= 20,
+        cost,
+      });
+    }),
+
+  generateComparisonSet: (leadId, baseSpec, tiers) =>
+    simulateWrite(() => {
+      const lead = resolveLead(leadId);
+      if (!lead) throw new RepositoryError('not_found');
+      // Simple, explainable rule — never an opaque heuristic, since trust in
+      // the recommendation matters for a premium brand.
+      const commercialTypes = ['commercial_office', 'retail', 'industrial'];
+      const recommended: Quotation['packageTier'] = lead.spec && commercialTypes.includes(lead.spec.buildingType) ? 'basic' : 'premium';
+      const now = new Date().toISOString();
+      const comparisonSetId = `cmp-${(quotationCounter += 1)}`;
+      const created: Quotation[] = tiers.map((tier) => {
+        const finishTier: Quotation['finishTier'] = tier === 'luxury' ? 'luxury' : tier === 'premium' ? 'premium' : 'standard';
+        const specInput: QuotationSpecInput = { ...baseSpec, finishTier };
+        const cost = computeQuotationCost(specInput, pricingConfig);
+        quotationCounter += 1;
+        const q: Quotation = {
+          id: `q-new-${quotationCounter}`,
+          code: `AIEC-Q-${quotationCounter}`,
+          leadId,
+          version: 1,
+          status: 'draft',
+          ...specInput,
+          needsSpecializedReview: specInput.stopsCount >= 20,
+          cost,
+          comparisonSetId,
+          packageTier: tier,
+          recommended: tier === recommended,
+          deliveryChannels: [],
+          deliveryResults: [],
+          createdBy: 'Sales',
+          createdAt: now,
+          isDemo: true,
+        };
+        quotations.unshift(q);
+        return q;
+      });
+      pushTimelineEvent({ leadId, kind: 'quote_created', actorName: 'Sales', at: now, detail: `${created.length}-option comparison generated` });
+      return created;
+    }),
+
+  createQuotationVersion: (supersedesId, patch, reason, createdBy) =>
+    simulateWrite(() => {
+      const prior = byId(quotations, supersedesId);
+      if (!prior) throw new RepositoryError('not_found');
+      const specInput: QuotationSpecInput = {
+        driveType: patch.driveType ?? prior.driveType,
+        capacityPersons: patch.capacityPersons ?? prior.capacityPersons,
+        capacityKg: patch.capacityKg ?? prior.capacityKg,
+        stopsCount: patch.stopsCount ?? prior.stopsCount,
+        travelHeightM: patch.travelHeightM ?? prior.travelHeightM,
+        finishTier: patch.finishTier ?? prior.finishTier,
+        specOverrideNote: patch.specOverrideNote ?? prior.specOverrideNote,
+        customConfiguration: patch.customConfiguration ?? prior.customConfiguration,
+      };
+      // Always recalculated against current rates — a restored old version
+      // never quietly resends stale numbers.
+      const cost = computeQuotationCost(specInput, pricingConfig, prior.cost.marginPct);
+      const now = new Date().toISOString();
+      quotationCounter += 1;
+      const version: Quotation = {
+        ...prior,
+        id: `q-new-${quotationCounter}`,
+        code: `AIEC-Q-${quotationCounter}`,
+        version: prior.version + 1,
+        supersedesQuotationId: prior.id,
+        status: 'draft',
+        ...specInput,
+        needsSpecializedReview: specInput.stopsCount >= 20,
+        cost,
+        viewedAt: undefined,
+        acceptedAt: undefined,
+        sentAt: undefined,
+        scheduledSendAt: undefined,
+        deliveryResults: [],
+        createdBy,
+        createdAt: now,
+        createdReasonKey: reason.key,
+        createdReasonNote: reason.note,
+      };
+      quotations.unshift(version);
+      // Only one version per lead can be active/sent at once.
+      if (prior.status === 'sent' || prior.status === 'viewed') {
+        patchInPlace(quotations, prior.id, { status: 'superseded' as const });
+      }
+      pushTimelineEvent({ leadId: prior.leadId, kind: 'quote_created', actorName: createdBy, at: now, detail: `Quotation ${version.code} v${version.version} — ${reason.key}` });
+      return version;
+    }),
+
+  listQuotationVersions: (quotationId) =>
+    simulateRead(() => {
+      const target = byId(quotations, quotationId);
+      if (!target) return [];
+      let root = target;
+      while (root.supersedesQuotationId) {
+        const prior = byId(quotations, root.supersedesQuotationId);
+        if (!prior) break;
+        root = prior;
+      }
+      const chain: Quotation[] = [root];
+      let current = root;
+      for (;;) {
+        const next = quotations.find((q) => q.supersedesQuotationId === current.id);
+        if (!next) break;
+        chain.push(next);
+        current = next;
+      }
+      return chain;
+    }),
+
+  sendQuotation: (id, input) =>
+    simulateWrite(() => {
+      const quotation = byId(quotations, id);
+      if (!quotation) throw new RepositoryError('not_found');
+      const template = quotationTemplates[0];
+      const now = new Date().toISOString();
+      const validityDate = new Date(Date.now() + (template?.validityPeriodDays ?? 15) * 86_400_000).toISOString();
+      const deliveryResults: QuotationDeliveryResult[] = input.channels.map((channel) => ({ channel, status: 'delivered' as const, at: now }));
+      const updated = patchInPlace(quotations, id, {
+        status: 'sent' as const,
+        deliveryChannels: input.channels,
+        coverMessage: input.coverMessage,
+        scheduledSendAt: input.scheduledSendAt,
+        sentAt: now,
+        deliveryResults,
+        templateId: template?.id,
+        templateVersionAtSend: template?.version,
+        validityDate,
+      });
+      // Sending is what actually transitions the lead's CRM stage to
+      // Quoted — keeps the Kanban board and this action perfectly synced.
+      const lead = resolveLead(quotation.leadId);
+      if (lead && rankOf(lead.stage) < rankOf('quoted')) {
+        patchInPlace(leads, lead.id, { stage: 'quoted', stageEnteredAt: now, updatedAt: now });
+        pushTimelineEvent({ leadId: lead.id, kind: 'stage_changed', actorName: 'Automation', at: now, fromValue: lead.stage, toValue: 'quoted', detail: `Quotation ${quotation.code} sent` });
+      }
+      return updated;
+    }),
+
+  recordQuotationView: (id) =>
+    simulateWrite(() => {
+      const quotation = byId(quotations, id);
+      if (!quotation) throw new RepositoryError('not_found');
+      if (quotation.viewedAt) return quotation;
+      return patchInPlace(quotations, id, { status: 'viewed' as const, viewedAt: new Date().toISOString() });
+    }),
+
+  acceptQuotation: (id) =>
+    simulateWrite(() => {
+      const quotation = byId(quotations, id);
+      if (!quotation) throw new RepositoryError('not_found');
+      if (quotation.validityDate && new Date(quotation.validityDate).getTime() < Date.now()) {
+        throw new RepositoryError('quotation_expired');
+      }
+      return patchInPlace(quotations, id, { status: 'accepted' as const, acceptedAt: new Date().toISOString() });
+    }),
+
+  requestQuotationChanges: (id, note) =>
+    simulateWrite(() => {
+      const quotation = byId(quotations, id);
+      if (!quotation) throw new RepositoryError('not_found');
+      const updated = patchInPlace(quotations, id, { status: 'change_requested' as const });
+      pushTimelineEvent({ leadId: quotation.leadId, kind: 'quote_change_requested', actorName: 'Customer', at: new Date().toISOString(), detail: note });
+      return updated;
+    }),
+
+  /* -------------------------------------------------- Quotation templates */
+  listQuotationTemplates: () => simulateRead(() => [...quotationTemplates]),
+
+  saveQuotationTemplate: (template) =>
+    simulateWrite(() => {
+      if (template.id) {
+        const existing = byId(quotationTemplates, template.id);
+        if (!existing) throw new RepositoryError('not_found');
+        // Edits bump the version — a quote already open with a customer
+        // keeps whichever version it was sent with (templateVersionAtSend);
+        // only new sends pick up the change.
+        return patchInPlace(quotationTemplates, template.id, { ...template, version: existing.version + 1, updatedAt: new Date().toISOString() });
+      }
+      templateCounter += 1;
+      const created: QuotationTemplate = {
+        ...template,
+        id: `qt-new-${templateCounter}`,
+        version: 1,
+        updatedAt: new Date().toISOString(),
+        isDemo: true,
+      };
+      quotationTemplates.push(created);
+      return created;
+    }),
+
+  /* ---------------------------------------------------- Discount approvals */
+  listDiscountRequests: (filter) =>
+    simulateRead(() =>
+      discountRequests
+        .filter((r) => !filter?.status || filter.status.includes(r.status))
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    ),
+
+  requestDiscount: (input) =>
+    simulateWrite(() => {
+      const quotation = byId(quotations, input.quotationId);
+      if (!quotation) throw new RepositoryError('not_found');
+      const baseCost = quotation.cost.equipmentCost + quotation.cost.civilWorkEstimate + quotation.cost.installationLaborCost + quotation.cost.transportCost;
+      const sellBeforeTax = quotation.cost.finalPrice / (1 + quotation.cost.gstPercent / 100);
+      const discountedSell = sellBeforeTax * (1 - input.requestedDiscountPct / 100);
+      const resultingMarginPct = discountedSell > 0 ? Math.round(((discountedSell - baseCost) / discountedSell) * 1000) / 10 : 0;
+      const priorRejected = discountRequests
+        .filter((r) => r.quotationId === input.quotationId && r.requestedByUserId === input.requestedByUserId && r.status === 'rejected')
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+      discountRequestCounter += 1;
+      const request: DiscountRequest = {
+        id: `dr-new-${discountRequestCounter}`,
+        quotationId: input.quotationId,
+        leadId: quotation.leadId,
+        requestedByUserId: input.requestedByUserId,
+        requestedDiscountPct: input.requestedDiscountPct,
+        reasonNote: input.reasonNote,
+        resultingMarginPct,
+        urgent: input.urgent,
+        status: 'pending',
+        resubmissionOfId: priorRejected?.id,
+        createdAt: new Date().toISOString(),
+        isDemo: true,
+      };
+      discountRequests.unshift(request);
+      return request;
+    }),
+
+  decideDiscountRequest: (id, decision) =>
+    simulateWrite(() => {
+      const request = byId(discountRequests, id);
+      if (!request) throw new RepositoryError('not_found');
+      const updated = patchInPlace(discountRequests, id, {
+        status: decision.status,
+        approverId: decision.approverId,
+        decidedAt: new Date().toISOString(),
+        rejectionReason: decision.rejectionReason,
+        counterSuggestionPct: decision.counterSuggestionPct,
+      });
+      // An approved discount closes the loop by producing the corresponding
+      // new quotation version automatically — no manual re-entry step.
+      if (decision.status === 'approved') {
+        const quotation = byId(quotations, request.quotationId);
+        if (quotation) {
+          const cost = computeQuotationCost(
+            {
+              driveType: quotation.driveType,
+              capacityPersons: quotation.capacityPersons,
+              capacityKg: quotation.capacityKg,
+              stopsCount: quotation.stopsCount,
+              travelHeightM: quotation.travelHeightM,
+              finishTier: quotation.finishTier,
+              customConfiguration: quotation.customConfiguration,
+            },
+            pricingConfig,
+            Math.max(0.1, request.resultingMarginPct),
+          );
+          quotationCounter += 1;
+          const now = new Date().toISOString();
+          const version: Quotation = {
+            ...quotation,
+            id: `q-new-${quotationCounter}`,
+            code: `AIEC-Q-${quotationCounter}`,
+            version: quotation.version + 1,
+            supersedesQuotationId: quotation.id,
+            status: 'draft',
+            cost,
+            viewedAt: undefined,
+            acceptedAt: undefined,
+            sentAt: undefined,
+            deliveryResults: [],
+            createdBy: nameOf(decision.approverId),
+            createdAt: now,
+            createdReasonKey: 'quotation.reason.discountApproved',
+            createdReasonNote: request.reasonNote,
+          };
+          quotations.unshift(version);
+          if (quotation.status === 'sent' || quotation.status === 'viewed') {
+            patchInPlace(quotations, quotation.id, { status: 'superseded' as const });
+          }
+          pushTimelineEvent({ leadId: quotation.leadId, kind: 'quote_created', actorName: nameOf(decision.approverId), at: now, detail: `Quotation ${version.code} v${version.version} — discount approved` });
+        }
+      }
+      return updated;
+    }),
+
+  /* ---------------------------------------------------- Pricing configuration */
+  getPricingConfig: () => simulateRead(() => ({ ...pricingConfig })),
+
+  updatePricingConfig: (patch) =>
+    simulateWrite(() => {
+      if (patch.minimumMarginFloorPct !== undefined && patch.minimumMarginFloorPct <= 0) {
+        throw new RepositoryError('margin_floor_must_be_positive');
+      }
+      pricingConfig = { ...pricingConfig, ...patch, updatedAt: new Date().toISOString() };
+      return { ...pricingConfig };
+    }),
+
+  /* -------------------------------------------------------- Quotation analytics */
+  getQuotationAnalytics: () =>
+    simulateRead(() => {
+      const sentOrLater = quotations.filter((q) => q.status !== 'draft');
+      const byTier = new Map<string, Quotation[]>();
+      const byDrive = new Map<string, Quotation[]>();
+      const byBand = new Map<string, Quotation[]>();
+      const byTerritory = new Map<string, Quotation[]>();
+      for (const q of sentOrLater) {
+        const lead = resolveLead(q.leadId);
+        pushToMap(byTier, q.packageTier ?? 'standard', q);
+        pushToMap(byDrive, q.driveType, q);
+        pushToMap(byBand, priceBandOf(q.cost.finalPrice), q);
+        pushToMap(byTerritory, lead?.city ?? 'unknown', q);
+      }
+
+      const decisionDays: number[] = [];
+      for (const q of sentOrLater) {
+        const lead = resolveLead(q.leadId);
+        if (!lead || !q.sentAt) continue;
+        if (lead.stage === 'won' || lead.stage === 'lost') {
+          const days = (new Date(lead.stageEnteredAt).getTime() - new Date(q.sentAt).getTime()) / 86_400_000;
+          if (days >= 0) decisionDays.push(days);
+        }
+      }
+      const avgDecisionDays = decisionDays.length ? decisionDays.reduce((s, d) => s + d, 0) / decisionDays.length : 0;
+
+      const lostLeads = leads.filter((l) => l.stage === 'lost' && quotations.some((q) => q.leadId === l.id));
+      const lossCounts = new Map<string, number>();
+      for (const l of lostLeads) {
+        const key = l.lostReason ?? 'unknown';
+        lossCounts.set(key, (lossCounts.get(key) ?? 0) + 1);
+      }
+      const commonLossFactors = [...lossCounts.entries()].map(([reasonKey, count]) => ({ reasonKey, count })).sort((a, b) => b.count - a.count);
+
+      return {
+        byPackageTier: [...byTier.entries()].map(([k, g]) => winLossStat(k, g)),
+        byDriveType: [...byDrive.entries()].map(([k, g]) => winLossStat(k, g)),
+        byPriceBand: PRICE_BANDS.map((b) => winLossStat(b.key, byBand.get(b.key) ?? [])).filter((s) => s.quotesCount > 0),
+        byTerritory: [...byTerritory.entries()].map(([k, g]) => winLossStat(k, g)),
+        avgDecisionDays: Math.round(avgDecisionDays * 10) / 10,
+        commonLossFactors,
+      };
+    }),
 
   /* -------------------------------------------------------- Operations */
   listActivity: (limit = 50) =>

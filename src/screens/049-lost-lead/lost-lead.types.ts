@@ -32,6 +32,7 @@ export const LOST_LEAD_KEYS = {
     communication_sent: 'lostLead.eventKind.communication_sent',
     communication_failed: 'lostLead.eventKind.communication_failed',
     quote_created: 'lostLead.eventKind.quote_created',
+    quote_change_requested: 'lostLead.eventKind.quote_change_requested',
     task_completed: 'lostLead.eventKind.task_completed',
     merged: 'lostLead.eventKind.merged',
     marked_lost: 'lostLead.eventKind.marked_lost',

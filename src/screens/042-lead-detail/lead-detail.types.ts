@@ -110,6 +110,7 @@ export const LEAD_DETAIL_KEYS = {
     communicationSent: 'leadDetail.timeline.communicationSent',
     communicationFailed: 'leadDetail.timeline.communicationFailed',
     quoteCreated: 'leadDetail.timeline.quoteCreated',
+    quoteChangeRequested: 'leadDetail.timeline.quoteChangeRequested',
     taskCompleted: 'leadDetail.timeline.taskCompleted',
     merged: 'leadDetail.timeline.merged',
     markedLost: 'leadDetail.timeline.markedLost',

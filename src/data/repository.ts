@@ -13,6 +13,9 @@ import type {
   CommissionEntry,
   Conversation,
   Deal,
+  DiscountRequest,
+  DiscountRequestStatus,
+  DriveType,
   DuplicatePair,
   FollowUpTask,
   FollowUpTaskStatus,
@@ -25,7 +28,13 @@ import type {
   LeadTimelineEvent,
   OptOutChannel,
   OptOutEvent,
+  PackageTier,
   Payment,
+  PricingConfig,
+  Quotation,
+  QuotationDeliveryChannel,
+  QuotationStatus,
+  QuotationTemplate,
   Role,
   RoutePlan,
   ScoreWeightingProfile,
@@ -192,6 +201,38 @@ export interface CommunicationAnalytics {
   outageNote?: string;
 }
 
+/* -------------------------------------------------------------- Quotations */
+
+export interface QuotationSpecInput {
+  driveType: DriveType;
+  capacityPersons: number;
+  capacityKg: number;
+  stopsCount: number;
+  travelHeightM: number;
+  finishTier: Quotation['finishTier'];
+  specOverrideNote?: string;
+  customConfiguration: boolean;
+}
+
+export interface QuotationWinLossStat {
+  /** The tier/drive-type/price-band/territory value this row groups by. */
+  key: string;
+  quotesCount: number;
+  wonCount: number;
+  winRatePct: number;
+  /** Too few quotes for the rate to be statistically meaningful. */
+  lowSample: boolean;
+}
+
+export interface QuotationAnalytics {
+  byPackageTier: QuotationWinLossStat[];
+  byDriveType: QuotationWinLossStat[];
+  byPriceBand: QuotationWinLossStat[];
+  byTerritory: QuotationWinLossStat[];
+  avgDecisionDays: number;
+  commonLossFactors: { reasonKey: string; count: number }[];
+}
+
 export interface Repository {
   /* Users */
   listUsers(filter?: { role?: Role; status?: User['status'] }): Promise<User[]>;
@@ -258,6 +299,59 @@ export interface Repository {
   listPayments(filter?: { dealId?: string; status?: Payment['status'][] }): Promise<Payment[]>;
   listSuppliers(): Promise<Supplier[]>;
   getSupplier(id: string): Promise<Supplier | null>;
+
+  /* Quotations */
+  listQuotations(filter?: { leadId?: string; status?: QuotationStatus[] }): Promise<Quotation[]>;
+  getQuotation(id: string): Promise<Quotation | null>;
+  /** Pre-fills from the lead's building spec and the current PricingConfig. */
+  createQuotationDraft(leadId: string): Promise<Quotation>;
+  /** Recomputes the full cost breakdown from the current PricingConfig
+   *  every time the spec changes — the breakdown is never hand-edited. */
+  saveQuotationSpec(id: string, patch: QuotationSpecInput): Promise<Quotation>;
+  /** Generates a linked Basic/Premium/Luxury set from one shared base spec —
+   *  a genuine apples-to-apples comparison, not three disconnected quotes. */
+  generateComparisonSet(leadId: string, baseSpec: QuotationSpecInput, tiers: PackageTier[]): Promise<Quotation[]>;
+  /** Appends a new version superseding `supersedesId` — nothing is ever
+   *  destructively edited once sent; a change is always a new version. */
+  createQuotationVersion(
+    supersedesId: string,
+    patch: Partial<QuotationSpecInput>,
+    reason: { key: string; note?: string },
+    createdBy: string,
+  ): Promise<Quotation>;
+  /** Every version for the lead this quotation belongs to, oldest first. */
+  listQuotationVersions(quotationId: string): Promise<Quotation[]>;
+  sendQuotation(id: string, input: { channels: QuotationDeliveryChannel[]; coverMessage: string; scheduledSendAt?: string }): Promise<Quotation>;
+  recordQuotationView(id: string): Promise<Quotation>;
+  acceptQuotation(id: string): Promise<Quotation>;
+  requestQuotationChanges(id: string, note: string): Promise<Quotation>;
+
+  /* Quotation templates */
+  listQuotationTemplates(): Promise<QuotationTemplate[]>;
+  saveQuotationTemplate(
+    template: Omit<QuotationTemplate, 'id' | 'version' | 'updatedAt' | 'isDemo'> & { id?: string },
+  ): Promise<QuotationTemplate>;
+
+  /* Discount approvals */
+  listDiscountRequests(filter?: { status?: DiscountRequestStatus[] }): Promise<DiscountRequest[]>;
+  requestDiscount(input: {
+    quotationId: string;
+    requestedByUserId: string;
+    requestedDiscountPct: number;
+    reasonNote: string;
+    urgent: boolean;
+  }): Promise<DiscountRequest>;
+  decideDiscountRequest(
+    id: string,
+    decision: { status: 'approved' | 'rejected'; approverId: string; rejectionReason?: string; counterSuggestionPct?: number },
+  ): Promise<DiscountRequest>;
+
+  /* Pricing configuration */
+  getPricingConfig(): Promise<PricingConfig>;
+  updatePricingConfig(patch: Partial<Omit<PricingConfig, 'updatedAt'>>): Promise<PricingConfig>;
+
+  /* Quotation analytics */
+  getQuotationAnalytics(): Promise<QuotationAnalytics>;
 
   /* Operations */
   listActivity(limit?: number): Promise<ActivityEvent[]>;

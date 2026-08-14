@@ -208,6 +208,7 @@ export type LeadTimelineEventKind =
   | 'communication_sent'
   | 'communication_failed'
   | 'quote_created'
+  | 'quote_change_requested'
   | 'task_completed'
   | 'merged'
   | 'marked_lost'
@@ -309,6 +310,177 @@ export interface Deal {
   createdAt: string;
   closedAt?: string;
   isDemo: boolean;
+}
+
+/* ------------------------------------------------------------- Quotations */
+
+export type DriveType = 'hydraulic' | 'geared_traction' | 'gearless_traction' | 'mrl' | 'vacuum' | 'screw_driven';
+
+export type FinishTier = 'standard' | 'premium' | 'luxury';
+
+export type PackageTier = 'basic' | 'premium' | 'luxury';
+
+export type QuotationStatus =
+  | 'draft'
+  | 'sent'
+  | 'viewed'
+  | 'accepted'
+  | 'expired'
+  | 'superseded'
+  | 'change_requested';
+
+export type QuotationDeliveryChannel = 'whatsapp' | 'email';
+
+export interface QuotationDeliveryResult {
+  channel: QuotationDeliveryChannel;
+  status: 'sent' | 'delivered' | 'failed';
+  failureReason?: string;
+  at: string;
+}
+
+/** Itemized so the breakdown always sums exactly to the displayed total,
+ *  and so a manual adjustment (e.g. a difficult site's civil work) is
+ *  visible with its own required note rather than folded silently in. */
+export interface QuotationCostBreakdown {
+  equipmentCost: number;
+  civilWorkEstimate: number;
+  civilWorkAdjustmentNote?: string;
+  installationLaborCost: number;
+  transportCost: number;
+  /** Cost delta contributed per additional floor above the base — shown
+   *  explicitly since stops are a major real-world cost driver. */
+  perFloorCostDelta: number;
+  gstPercent: number;
+  gstAmount: number;
+  marginPct: number;
+  marginAmount: number;
+  /** Sum of every line above, GST-inclusive — the customer-facing price. */
+  finalPrice: number;
+}
+
+export interface Quotation {
+  id: string;
+  code: string;
+  leadId: string;
+  version: number;
+  /** The immediately-prior version this one replaced, if any — the whole
+   *  chain is reconstructable by walking this pointer back to version 1. */
+  supersedesQuotationId?: string;
+  status: QuotationStatus;
+
+  /* Input specs (061) */
+  driveType: DriveType;
+  capacityPersons: number;
+  capacityKg: number;
+  stopsCount: number;
+  travelHeightM: number;
+  finishTier: FinishTier;
+  /** Set when floor count or another survey estimate was overridden here,
+   *  never silently — always paired with a reason. */
+  specOverrideNote?: string;
+  /** True for a configuration outside the standard presets (e.g. a
+   *  hospital stretcher lift) — routes to manual Admin pricing instead of
+   *  the auto cost engine. */
+  customConfiguration: boolean;
+  /** True for 20+ floors — flagged for specialized review rather than the
+   *  standard auto-quotation flow. */
+  needsSpecializedReview: boolean;
+
+  /* Cost breakdown (062) */
+  cost: QuotationCostBreakdown;
+
+  /* Package comparison (065) */
+  comparisonSetId?: string;
+  packageTier?: PackageTier;
+  recommended?: boolean;
+
+  /* Template & branding (063) — snapshotted at send time so an edited
+   *  template never silently changes an already-sent quote. */
+  templateId?: string;
+  templateVersionAtSend?: number;
+
+  /* Customer-facing (064) */
+  validityDate?: string;
+  viewedAt?: string;
+  acceptedAt?: string;
+
+  /* Send & delivery (068) */
+  deliveryChannels: QuotationDeliveryChannel[];
+  coverMessage?: string;
+  scheduledSendAt?: string;
+  sentAt?: string;
+  deliveryResults: QuotationDeliveryResult[];
+
+  /* Version history (066) */
+  createdBy: string;
+  createdAt: string;
+  createdReasonKey?: string;
+  createdReasonNote?: string;
+
+  isDemo: boolean;
+}
+
+export type QuotationTemplateVariant = 'residential_standard' | 'premium_luxury' | 'commercial_bulk';
+
+export interface QuotationTemplate {
+  id: string;
+  name: string;
+  variant: QuotationTemplateVariant;
+  version: number;
+  logoAssetUrl?: string;
+  /** National-default legal boilerplate. */
+  legalBoilerplate: string;
+  /** Keyed by state name — layered on top of the national default. */
+  stateOverrides: Record<string, string>;
+  validityPeriodDays: number;
+  footerTagline: string;
+  updatedAt: string;
+  updatedBy: string;
+  isDemo: boolean;
+}
+
+export type DiscountRequestStatus = 'pending' | 'approved' | 'rejected';
+
+export interface DiscountRequest {
+  id: string;
+  quotationId: string;
+  leadId: string;
+  requestedByUserId: string;
+  requestedDiscountPct: number;
+  reasonNote: string;
+  resultingMarginPct: number;
+  urgent: boolean;
+  status: DiscountRequestStatus;
+  approverId?: string;
+  decidedAt?: string;
+  rejectionReason?: string;
+  counterSuggestionPct?: number;
+  /** Set when this request is a resubmission of an earlier rejected one —
+   *  surfaces the repeated-request pattern rather than treating it as fresh. */
+  resubmissionOfId?: string;
+  createdAt: string;
+  isDemo: boolean;
+}
+
+export interface AmcPricingTier {
+  tier: 'basic' | 'standard' | 'comprehensive';
+  annualPrice: number;
+  responseTimeHours: number;
+}
+
+/** The single governed root of every price the Quotation Engine
+ *  calculates — screen 070. Changing it only affects quotes generated
+ *  after the change; already-sent quotes keep their locked-in numbers. */
+export interface PricingConfig {
+  driveTypeBasePrice: Record<DriveType, number>;
+  /** Percent cost increase per additional floor above the base, per drive
+   *  type — varies roughly 10-25% in practice, never a single flat number. */
+  perFloorIncrementPct: Record<DriveType, number>;
+  minimumMarginFloorPct: number;
+  gstRatePct: number;
+  scheduledGstChange?: { newRatePct: number; effectiveDate: string };
+  amcTiers: AmcPricingTier[];
+  updatedAt: string;
 }
 
 /* -------------------------------------------------------------------- Jobs */

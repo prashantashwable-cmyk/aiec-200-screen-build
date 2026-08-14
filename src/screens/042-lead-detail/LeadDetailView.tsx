@@ -48,6 +48,8 @@ function eventLabel(event: LeadTimelineEvent, t: Translate): string {
       return t(K.timeline.communicationFailed, { detail: event.detail });
     case 'quote_created':
       return t(K.timeline.quoteCreated);
+    case 'quote_change_requested':
+      return t(K.timeline.quoteChangeRequested, { note: event.detail });
     case 'task_completed':
       return t(K.timeline.taskCompleted, { title: event.detail });
     case 'merged':
