@@ -134,6 +134,7 @@ let callCounter = 900;
 let broadcastCounter = 900;
 let ruleCounter = 900;
 let optOutCounter = 900;
+let sequenceCounter = 900;
 
 const byId = <T extends { id: string }>(list: T[], id: string): T | null =>
   list.find((item) => item.id === id) ?? null;
@@ -1151,8 +1152,12 @@ export const memoryRepository: Repository = {
   saveSequence: (sequence) =>
     simulateWrite(() => {
       const now = new Date().toISOString();
-      const saved: CommSequence = { ...sequence, updatedAt: now };
-      const index = commSequences.findIndex((s) => s.id === sequence.id);
+      const index = sequence.id ? commSequences.findIndex((s) => s.id === sequence.id) : -1;
+      const saved: CommSequence = {
+        ...sequence,
+        id: sequence.id || `seq-new-${(sequenceCounter += 1)}`,
+        updatedAt: now,
+      };
       if (index === -1) commSequences.push(saved);
       else commSequences[index] = saved;
       return saved;
