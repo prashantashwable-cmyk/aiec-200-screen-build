@@ -184,6 +184,9 @@ export interface Lead {
   scoreFactorBreakdown?: ScoreFactor[];
   scoreLastComputed?: string;
   importBatchId?: string;
+  /** The contact's own language preference, captured at intake — drives
+   *  which template-language variant an automated send picks. */
+  preferredLanguage?: Language;
 }
 
 export interface ScoreWeightingProfile {
@@ -542,4 +545,193 @@ export interface SiteVisitVerification {
   flagReason?: string;
   location: GeoPoint;
   isDemo: boolean;
+}
+
+/* ============================================== Communication engine (M6) */
+
+export type CommChannel = 'sms' | 'whatsapp' | 'call';
+
+/** One saved edit of a template's body — the version history the spec
+ *  requires so a change can be reviewed or reverted. */
+export interface TemplateVersion {
+  version: number;
+  body: string;
+  editedBy: string;
+  editedAt: string;
+}
+
+/** `groupId` ties together the per-language variants of one logical
+ *  template — "Quote Follow-Up" in en/hi/mr is three records, one groupId. */
+export interface CommTemplate {
+  id: string;
+  groupId: string;
+  name: string;
+  channel: CommChannel;
+  associatedStage: LeadStage | 'any';
+  language: Language;
+  /** Contains `{{tokenKey}}` merge-field placeholders. */
+  body: string;
+  mergeFields: string[];
+  status: 'active' | 'draft';
+  versions: TemplateVersion[];
+  updatedAt: string;
+  updatedBy: string;
+  isDemo: boolean;
+}
+
+export type SequenceBranch = 'always' | 'no_response' | 'positive_response' | 'negative_response';
+
+export interface SequenceStep {
+  id: string;
+  order: number;
+  /** Days to wait after the previous step (or the trigger, for step 1). */
+  waitDays: number;
+  templateGroupId: string;
+  branch: SequenceBranch;
+}
+
+export interface CommSequence {
+  id: string;
+  name: string;
+  triggerStage: LeadStage;
+  steps: SequenceStep[];
+  maxNudgesPerLead: number;
+  priority: number;
+  isActive: boolean;
+  /** Explicit, logged choice for the "lead reopens after Lost" edge case —
+   *  never an accidental restart. */
+  restartOnReopen: boolean;
+  updatedAt: string;
+  isDemo: boolean;
+}
+
+export type MessageSender = 'customer' | 'bot' | 'agent';
+export type MessageStatus = 'queued' | 'sent' | 'delivered' | 'read' | 'failed';
+
+export interface CommMessage {
+  id: string;
+  conversationId: string;
+  channel: CommChannel;
+  sender: MessageSender;
+  /** Set when sender is 'agent' — whose name shows on the bubble. */
+  senderName?: string;
+  body: string;
+  mediaKind?: 'photo' | 'voice';
+  /** Set on bot/automated sends — which logical template produced this
+   *  message, so Communication Analytics can compute real per-template
+   *  response rates instead of an estimate. */
+  templateGroupId?: string;
+  status: MessageStatus;
+  at: string;
+  /** Bot handled this with confidence below the escalation threshold, or an
+   *  explicit escalation topic — surfaces in the Reply Inbox either way. */
+  requiresHumanReview?: boolean;
+  handled?: boolean;
+}
+
+export interface Conversation {
+  id: string;
+  leadId: string;
+  assignedAgentId?: string;
+  lastMessageAt: string;
+  /** A human's live reply pauses the automated sequence until this instant. */
+  sequencePausedUntil?: string;
+  isDemo: boolean;
+}
+
+export type CallOutcome = 'connected_interested' | 'connected_not_interested' | 'no_answer' | 'wrong_number' | 'pocket_dial';
+
+export interface CallLogEntry {
+  id: string;
+  leadId: string;
+  /** Null means placed/scheduled but never dispositioned. */
+  outcome: CallOutcome | null;
+  durationSec: number;
+  at: string;
+  recordingUrl?: string;
+  consentGiven: boolean;
+  loggedBy: 'auto_dialer' | 'manual';
+  isDemo: boolean;
+}
+
+export type BroadcastStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'cancelled';
+
+export interface SmsBroadcast {
+  id: string;
+  name: string;
+  /** Human-readable summary of the filter used, e.g. "Pune · Quoted · Field survey". */
+  segmentDescription: string;
+  segmentLeadIds: string[];
+  messageBody: string;
+  scheduledFor?: string;
+  status: BroadcastStatus;
+  sentCount: number;
+  deliveredCount: number;
+  failedCount: number;
+  optedOutExcludedCount: number;
+  estimatedCost: number;
+  actualCost?: number;
+  createdAt: string;
+  isDemo: boolean;
+}
+
+export interface BotConfig {
+  toneKey: 'professional' | 'warm' | 'concise';
+  allowedDiscountMinPct: number;
+  allowedDiscountMaxPct: number;
+  /** 0..1 — below this, the bot always hands off rather than guessing. */
+  escalationConfidenceThreshold: number;
+  autoResolvedRatePct: number;
+  escalatedRatePct: number;
+  updatedAt: string;
+}
+
+export type OptOutChannel = CommChannel | 'all';
+export type OptOutEventType = 'opted_out' | 'opted_in';
+
+/** Append-only. A re-opt-in is a new event, never an edit to the old one —
+ *  the compliance record has to survive a regulatory inquiry intact. */
+export interface OptOutEvent {
+  id: string;
+  contactPhone: string;
+  contactName: string;
+  channel: OptOutChannel;
+  type: OptOutEventType;
+  source: 'stop_keyword' | 'manual_entry' | 'customer_request' | 'dnd_registry';
+  reason?: string;
+  at: string;
+  recordedBy: string;
+  isDemo: boolean;
+}
+
+export interface TriggerRule {
+  id: string;
+  name: string;
+  triggerStage: LeadStage;
+  delayHours: number;
+  actionTemplateGroupId?: string;
+  actionSequenceId?: string;
+  priority: number;
+  enabled: boolean;
+  allowStacking: boolean;
+  createdAt: string;
+  isDemo: boolean;
+}
+
+export interface ChannelStat {
+  channel: CommChannel;
+  totalSent: number;
+  responseRatePct: number;
+  cost: number;
+}
+
+export interface TemplateStat {
+  templateGroupId: string;
+  templateName: string;
+  channel: CommChannel;
+  totalSent: number;
+  responseRatePct: number;
+  conversionInfluenceScore: number;
+  /** Too few sends yet for the rate to be statistically meaningful. */
+  earlyData: boolean;
 }

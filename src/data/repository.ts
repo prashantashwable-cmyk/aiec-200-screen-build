@@ -2,24 +2,39 @@ import type {
   ActivityEvent,
   Alert,
   AutomationRule,
+  BotConfig,
+  CallLogEntry,
+  CallOutcome,
+  ChannelStat,
+  CommChannel,
+  CommMessage,
+  CommSequence,
+  CommTemplate,
   CommissionEntry,
+  Conversation,
   Deal,
   DuplicatePair,
   FollowUpTask,
   FollowUpTaskStatus,
   GeoZone,
   Job,
+  Language,
   Lead,
   LeadImportBatch,
   LeadSourceAttribution,
   LeadTimelineEvent,
+  OptOutChannel,
+  OptOutEvent,
   Payment,
   Role,
   RoutePlan,
   ScoreWeightingProfile,
   SeriesPoint,
   SiteVisitVerification,
+  SmsBroadcast,
   Supplier,
+  TemplateStat,
+  TriggerRule,
   User,
 } from './types';
 
@@ -110,6 +125,56 @@ export interface RegionConversion {
   conversions: number;
   rate: number;
   revenue: number;
+}
+
+/* -------------------------------------------------- Communication engine */
+
+export interface ConversationWithContext extends Conversation {
+  lead: Lead;
+  messages: CommMessage[];
+}
+
+export interface SequenceTestStep {
+  stepId: string;
+  order: number;
+  waitDays: number;
+  channel: CommChannel;
+  renderedBody: string;
+}
+
+export interface BroadcastSegmentPreview {
+  leadIds: string[];
+  excludedOptedOutCount: number;
+  estimatedCost: number;
+}
+
+export interface BotSimulationResult {
+  reply: string;
+  confidence: number;
+  escalate: boolean;
+  escalateReasonKey?: string;
+}
+
+export interface ReplyInboxItem {
+  message: CommMessage;
+  conversation: Conversation;
+  lead: Lead;
+  slaBreached: boolean;
+  waitingMinutes: number;
+}
+
+export interface TriggerRuleEvaluation {
+  rule: TriggerRule;
+  wouldFire: boolean;
+  suppressedByRuleId?: string;
+}
+
+export interface CommunicationAnalytics {
+  channelStats: ChannelStat[];
+  templateStats: TemplateStat[];
+  volumeTrend: SeriesPoint[];
+  slaCompliancePct: number;
+  outageNote?: string;
 }
 
 export interface Repository {
@@ -203,6 +268,60 @@ export interface Repository {
   getSurveyorScores(): Promise<SurveyorScore[]>;
   getTechnicianScores(): Promise<TechnicianScore[]>;
   getRegionConversion(): Promise<RegionConversion[]>;
+
+  /* Communication: templates */
+  listCommTemplates(filter?: { channel?: CommChannel; associatedStage?: Lead['stage'] | 'any'; language?: Language }): Promise<CommTemplate[]>;
+  getTemplateGroup(groupId: string): Promise<CommTemplate[]>;
+  /** Creates a new version of the template and updates the live body —
+   *  earlier versions stay in `versions[]` for review/revert. */
+  saveCommTemplateBody(id: string, body: string, editedBy: string): Promise<CommTemplate>;
+  setCommTemplateStatus(id: string, status: CommTemplate['status']): Promise<CommTemplate>;
+
+  /* Communication: sequences */
+  listSequences(): Promise<CommSequence[]>;
+  saveSequence(sequence: CommSequence): Promise<CommSequence>;
+  toggleSequence(id: string, isActive: boolean): Promise<CommSequence>;
+  testSendSequence(sequenceId: string, leadId: string): Promise<SequenceTestStep[]>;
+
+  /* Communication: conversations */
+  listConversations(filter?: { assignedAgentId?: string }): Promise<ConversationWithContext[]>;
+  getConversation(id: string): Promise<ConversationWithContext | null>;
+  sendAgentMessage(conversationId: string, body: string, agentName: string): Promise<CommMessage>;
+  assignConversation(conversationId: string, agentId: string): Promise<Conversation>;
+  markMessageHandled(messageId: string): Promise<CommMessage>;
+
+  /* Communication: call log */
+  listCallLog(filter?: { leadId?: string }): Promise<CallLogEntry[]>;
+  logCall(leadId: string, loggedBy: 'auto_dialer' | 'manual'): Promise<CallLogEntry>;
+  setCallDisposition(id: string, outcome: CallOutcome, durationSec: number): Promise<CallLogEntry>;
+
+  /* Communication: broadcasts */
+  listBroadcasts(): Promise<SmsBroadcast[]>;
+  previewBroadcastSegment(filter: LeadFilter): Promise<BroadcastSegmentPreview>;
+  createBroadcast(input: { name: string; segmentDescription: string; leadIds: string[]; messageBody: string; scheduledFor?: string }): Promise<SmsBroadcast>;
+  cancelBroadcast(id: string): Promise<SmsBroadcast>;
+
+  /* Communication: AI bot */
+  getBotConfig(): Promise<BotConfig>;
+  updateBotConfig(patch: Partial<Pick<BotConfig, 'toneKey' | 'allowedDiscountMinPct' | 'allowedDiscountMaxPct' | 'escalationConfidenceThreshold'>>): Promise<BotConfig>;
+  simulateBotReply(sampleMessage: string): Promise<BotSimulationResult>;
+
+  /* Communication: reply inbox */
+  listReplyInboxItems(): Promise<ReplyInboxItem[]>;
+
+  /* Communication: opt-outs */
+  listOptOutEvents(): Promise<OptOutEvent[]>;
+  recordOptOutEvent(input: { contactPhone: string; contactName: string; channel: OptOutChannel; type: OptOutEvent['type']; source: OptOutEvent['source']; reason?: string; recordedBy: string }): Promise<OptOutEvent>;
+  isOptedOut(contactPhone: string, channel: CommChannel): Promise<boolean>;
+
+  /* Communication: trigger rules */
+  listTriggerRules(): Promise<TriggerRule[]>;
+  saveTriggerRule(rule: Omit<TriggerRule, 'id' | 'createdAt' | 'isDemo'> & { id?: string }): Promise<TriggerRule>;
+  toggleTriggerRule(id: string, enabled: boolean): Promise<TriggerRule>;
+  simulateTriggerRules(stage: Lead['stage']): Promise<TriggerRuleEvaluation[]>;
+
+  /* Communication: analytics */
+  getCommunicationAnalytics(): Promise<CommunicationAnalytics>;
 }
 
 export const SERIES_KEYS = {

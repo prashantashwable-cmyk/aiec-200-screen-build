@@ -2,22 +2,33 @@ import type {
   ActivityEvent,
   Alert,
   AutomationRule,
+  BotConfig,
+  CallLogEntry,
+  CommChannel,
+  CommMessage,
+  CommSequence,
+  CommTemplate,
   CommissionEntry,
+  Conversation,
   Deal,
   DuplicatePair,
   FollowUpTask,
   GeoZone,
   Job,
+  Language,
   Lead,
   LeadImportBatch,
   LeadSource,
   LeadTimelineEvent,
+  OptOutEvent,
   Payment,
   RoutePlan,
   ScoreWeightingProfile,
   SeriesPoint,
   SiteVisitVerification,
+  SmsBroadcast,
   Supplier,
+  TriggerRule,
   User,
 } from './types';
 
@@ -382,6 +393,14 @@ const SOURCE_OVERRIDE: Partial<Record<string, LeadSource>> = {
   'l-20': 'inbound_whatsapp',
 };
 
+/** A realistic spread so the Communication Engine's per-language template
+ *  rendering has more than one language to actually demonstrate. */
+const PREFERRED_LANGUAGE_OVERRIDE: Partial<Record<string, Language>> = {
+  'l-9': 'hi',
+  'l-15': 'mr',
+  'l-3': 'hi',
+};
+
 /** Most leads are field-captured; a realistic minority arrive some other way
  *  — enough spread for the source-attribution screen (048) to be meaningful. */
 const LEAD_SOURCE_CYCLE: LeadSource[] = [
@@ -419,6 +438,7 @@ export const seedLeads: Lead[] = leadSeeds.map((s, index) => {
     surveyorId: s.surveyorId,
     originalSurveyorId: REASSIGNED_LEAD_IDS[s.id] ?? s.surveyorId,
     source: SOURCE_OVERRIDE[s.id] ?? LEAD_SOURCE_CYCLE[index % LEAD_SOURCE_CYCLE.length],
+    preferredLanguage: PREFERRED_LANGUAGE_OVERRIDE[s.id],
     builderName: s.builderName,
     contactName: s.contactName,
     contactPhone: s.phone,
@@ -788,4 +808,249 @@ export const seedImportBatches: LeadImportBatch[] = [
     rejectedRows: 3,
     isDemo: true,
   },
+];
+
+/* ============================================ Communication engine (M6) */
+
+interface TemplateSeed {
+  groupId: string;
+  name: string;
+  channel: CommChannel;
+  associatedStage: Lead['stage'] | 'any';
+  mergeFields: string[];
+  body: Record<Language, string>;
+}
+
+const templateSeeds: TemplateSeed[] = [
+  {
+    groupId: 'tpl-welcome',
+    name: 'New Lead Welcome',
+    channel: 'whatsapp',
+    associatedStage: 'captured',
+    mergeFields: ['customerName', 'buildingName'],
+    body: {
+      en: 'Hi {{customerName}}, thank you for your interest in a lift for {{buildingName}}. AIEC will be in touch shortly.',
+      hi: 'नमस्ते {{customerName}}, {{buildingName}} के लिए लिफ्ट में आपकी रुचि के लिए धन्यवाद। AIEC जल्द ही आपसे संपर्क करेगा।',
+      mr: 'नमस्कार {{customerName}}, {{buildingName}} साठी लिफ्टमध्ये स्वारस्य दाखवल्याबद्दल धन्यवाद. AIEC लवकरच तुमच्याशी संपर्क साधेल.',
+    },
+  },
+  {
+    groupId: 'tpl-quote-followup',
+    name: 'Quote Follow-Up',
+    channel: 'whatsapp',
+    associatedStage: 'quoted',
+    mergeFields: ['customerName', 'buildingName', 'quoteAmount'],
+    body: {
+      en: 'Hi {{customerName}}, following up on the quote of {{quoteAmount}} for {{buildingName}}. Any questions on our end?',
+      hi: 'नमस्ते {{customerName}}, {{buildingName}} के लिए {{quoteAmount}} के कोटेशन पर फ़ॉलो-अप कर रहे हैं। कोई सवाल हो तो बताइए।',
+      mr: 'नमस्कार {{customerName}}, {{buildingName}} साठी {{quoteAmount}} च्या कोटेशनबाबत फॉलो-अप करत आहोत. काही प्रश्न असल्यास कळवा.',
+    },
+  },
+  {
+    groupId: 'tpl-payment-reminder',
+    name: 'Payment Reminder',
+    channel: 'sms',
+    associatedStage: 'won',
+    mergeFields: ['customerName', 'buildingName', 'quoteAmount'],
+    body: {
+      en: 'AIEC: Reminder - payment of {{quoteAmount}} is due for {{buildingName}}. Please complete at your earliest convenience.',
+      hi: 'AIEC: याद दिलाना - {{buildingName}} के लिए {{quoteAmount}} का भुगतान बाकी है। कृपया जल्द पूरा करें।',
+      mr: 'AIEC: स्मरण - {{buildingName}} साठी {{quoteAmount}} रक्कम देय आहे. कृपया लवकरात लवकर पूर्ण करा.',
+    },
+  },
+  {
+    groupId: 'tpl-install-update',
+    name: 'Installation Update',
+    channel: 'whatsapp',
+    associatedStage: 'won',
+    mergeFields: ['customerName', 'buildingName', 'installStep'],
+    body: {
+      en: 'Update for {{buildingName}}: installation has reached "{{installStep}}". We will keep you posted as it progresses.',
+      hi: '{{buildingName}} के लिए अपडेट: इंस्टॉलेशन "{{installStep}}" चरण तक पहुँच गया है। आगे की जानकारी देते रहेंगे।',
+      mr: '{{buildingName}} साठी अपडेट: इंस्टॉलेशन "{{installStep}}" टप्प्यापर्यंत पोहोचले आहे. पुढील माहिती कळवत राहू.',
+    },
+  },
+  {
+    groupId: 'tpl-site-visit-confirm',
+    name: 'Site Visit Confirmation',
+    channel: 'sms',
+    associatedStage: 'site_visit',
+    mergeFields: ['customerName', 'buildingName', 'visitDate'],
+    body: {
+      en: 'AIEC: Confirming our site visit at {{buildingName}} on {{visitDate}}. Reply if this time no longer works.',
+      hi: 'AIEC: {{buildingName}} पर {{visitDate}} को साइट विज़िट की पुष्टि कर रहे हैं। यह समय ठीक न हो तो जवाब दीजिए।',
+      mr: 'AIEC: {{buildingName}} येथे {{visitDate}} रोजी साइट भेटीची पुष्टी करत आहोत. ही वेळ योग्य नसल्यास कळवा.',
+    },
+  },
+];
+
+const LANGUAGES_SEED: Language[] = ['en', 'hi', 'mr'];
+
+export const seedCommTemplates: CommTemplate[] = templateSeeds.flatMap((t) =>
+  LANGUAGES_SEED.map((lang) => {
+    const body = t.body[lang];
+    return {
+      id: `ct-${t.groupId}-${lang}`,
+      groupId: t.groupId,
+      name: t.name,
+      channel: t.channel,
+      associatedStage: t.associatedStage,
+      language: lang,
+      body,
+      mergeFields: t.mergeFields,
+      status: 'active' as const,
+      versions: [{ version: 1, body, editedBy: 'Prashant Vasant Wable', editedAt: daysAgo(90) }],
+      updatedAt: daysAgo(90),
+      updatedBy: 'Prashant Vasant Wable',
+      isDemo: true,
+    };
+  }),
+);
+
+export const seedCommSequences: CommSequence[] = [
+  {
+    id: 'seq-1',
+    name: 'New Lead Nurture',
+    triggerStage: 'captured',
+    steps: [
+      { id: 'seq-1-s1', order: 1, waitDays: 0, templateGroupId: 'tpl-welcome', branch: 'always' },
+      { id: 'seq-1-s2', order: 2, waitDays: 3, templateGroupId: 'tpl-site-visit-confirm', branch: 'no_response' },
+    ],
+    maxNudgesPerLead: 3,
+    priority: 1,
+    isActive: true,
+    restartOnReopen: false,
+    updatedAt: daysAgo(45),
+    isDemo: true,
+  },
+  {
+    id: 'seq-2',
+    name: 'Quote Nudge',
+    triggerStage: 'quoted',
+    steps: [
+      { id: 'seq-2-s1', order: 1, waitDays: 2, templateGroupId: 'tpl-quote-followup', branch: 'always' },
+      { id: 'seq-2-s2', order: 2, waitDays: 5, templateGroupId: 'tpl-quote-followup', branch: 'no_response' },
+    ],
+    maxNudgesPerLead: 2,
+    priority: 2,
+    isActive: true,
+    restartOnReopen: true,
+    updatedAt: daysAgo(30),
+    isDemo: true,
+  },
+  {
+    id: 'seq-3',
+    name: 'Post-Win Payment Cadence',
+    triggerStage: 'won',
+    steps: [{ id: 'seq-3-s1', order: 1, waitDays: 1, templateGroupId: 'tpl-payment-reminder', branch: 'always' }],
+    maxNudgesPerLead: 4,
+    priority: 1,
+    isActive: false,
+    restartOnReopen: false,
+    updatedAt: daysAgo(10),
+    isDemo: true,
+  },
+];
+
+export const seedConversations: Conversation[] = [
+  { id: 'conv-1', leadId: 'l-3', assignedAgentId: 'u-admin-1', lastMessageAt: hoursAgo(2), isDemo: true },
+  { id: 'conv-2', leadId: 'l-4', lastMessageAt: hoursAgo(20), isDemo: true },
+  { id: 'conv-3', leadId: 'l-9', lastMessageAt: daysAgo(1), isDemo: true },
+  { id: 'conv-4', leadId: 'l-15', assignedAgentId: 'u-admin-1', lastMessageAt: minutesAgo(30), sequencePausedUntil: hoursAhead(2), isDemo: true },
+  { id: 'conv-5', leadId: 'l-10', lastMessageAt: daysAgo(9), isDemo: true },
+  { id: 'conv-6', leadId: 'l-11', lastMessageAt: daysAgo(1), isDemo: true },
+  { id: 'conv-7', leadId: 'l-1', lastMessageAt: daysAgo(4), isDemo: true },
+  { id: 'conv-8', leadId: 'l-2', lastMessageAt: daysAgo(6), isDemo: true },
+];
+
+export const seedCommMessages: CommMessage[] = [
+  { id: 'cm-1', conversationId: 'conv-1', channel: 'whatsapp', sender: 'bot', body: 'Hi Farhan Qureshi, following up on the quote of ₹41.20L for Skyline Corporate Park. Any questions on our end?', templateGroupId: 'tpl-quote-followup', status: 'read', at: daysAgo(2) },
+  { id: 'cm-2', conversationId: 'conv-1', channel: 'whatsapp', sender: 'customer', body: 'Can we get a better rate on the SS finish?', status: 'read', at: daysAgo(2) },
+  { id: 'cm-3', conversationId: 'conv-1', channel: 'whatsapp', sender: 'bot', body: 'Let me connect you with our team on that — one moment.', status: 'delivered', at: hoursAgo(20), requiresHumanReview: true, handled: false },
+  { id: 'cm-4', conversationId: 'conv-1', channel: 'whatsapp', sender: 'agent', senderName: 'Prashant Vasant Wable', body: 'Hi Farhan, happy to discuss — could do premium SS at a small step up, or standard SS within the quoted price. Which would you prefer?', status: 'sent', at: hoursAgo(2), handled: true },
+
+  { id: 'cm-5', conversationId: 'conv-2', channel: 'whatsapp', sender: 'bot', body: 'Hi Amit Joshi, following up on the quote of ₹30.50L for Pinnacle Aurum. Any questions on our end?', templateGroupId: 'tpl-quote-followup', status: 'delivered', at: hoursAgo(20) },
+
+  { id: 'cm-6', conversationId: 'conv-3', channel: 'sms', sender: 'bot', body: 'AIEC: Confirming our site visit at Nirman Elite on 18 Aug. Reply if this time no longer works.', templateGroupId: 'tpl-site-visit-confirm', status: 'delivered', at: daysAgo(1) },
+  { id: 'cm-7', conversationId: 'conv-3', channel: 'sms', sender: 'customer', body: 'STOP', status: 'delivered', at: daysAgo(1), requiresHumanReview: true, handled: false },
+
+  { id: 'cm-8', conversationId: 'conv-4', channel: 'whatsapp', sender: 'bot', body: 'Hi Girish Rao, following up on the quote for Tech Park Block C. Any questions on our end?', templateGroupId: 'tpl-quote-followup', status: 'read', at: hoursAgo(3) },
+  { id: 'cm-9', conversationId: 'conv-4', channel: 'whatsapp', sender: 'customer', body: 'Can we get 10 units at this price plus a 2-year AMC bundled in?', status: 'read', at: minutesAgo(35) },
+  { id: 'cm-10', conversationId: 'conv-4', channel: 'whatsapp', sender: 'agent', senderName: 'Prashant Vasant Wable', body: 'Good question — let me get you a bundled number for that by tomorrow.', status: 'sent', at: minutesAgo(30), handled: true },
+
+  { id: 'cm-11', conversationId: 'conv-5', channel: 'whatsapp', sender: 'bot', body: 'Hi Deepa Naik, thank you for your interest in a lift for Vista Enclave. AIEC will be in touch shortly.', templateGroupId: 'tpl-welcome', status: 'read', at: daysAgo(9) },
+  { id: 'cm-12', conversationId: 'conv-6', channel: 'whatsapp', sender: 'bot', body: 'Hi Manoj Kadam, thank you for your interest in a lift for Estate One. AIEC will be in touch shortly.', templateGroupId: 'tpl-welcome', status: 'delivered', at: daysAgo(1) },
+  { id: 'cm-13', conversationId: 'conv-7', channel: 'sms', sender: 'bot', body: 'AIEC: Reminder - payment of ₹4.58L is due for Shree Ram Heights. Please complete at your earliest convenience.', templateGroupId: 'tpl-payment-reminder', status: 'delivered', at: daysAgo(5) },
+  { id: 'cm-14', conversationId: 'conv-7', channel: 'sms', sender: 'customer', body: 'Will pay by Friday, thanks for the reminder.', status: 'delivered', at: daysAgo(4) },
+  { id: 'cm-15', conversationId: 'conv-8', channel: 'sms', sender: 'bot', body: 'AIEC: Reminder - payment of ₹1.88L is due for Kulkarni Signature. Please complete at your earliest convenience.', templateGroupId: 'tpl-payment-reminder', status: 'failed', at: daysAgo(6) },
+];
+
+export const seedCallLog: CallLogEntry[] = [
+  { id: 'cl-1', leadId: 'l-6', outcome: 'connected_interested', durationSec: 246, at: hoursAgo(5), consentGiven: true, loggedBy: 'auto_dialer', isDemo: true },
+  { id: 'cl-2', leadId: 'l-7', outcome: 'no_answer', durationSec: 0, at: hoursAgo(8), consentGiven: false, loggedBy: 'auto_dialer', isDemo: true },
+  { id: 'cl-3', leadId: 'l-7', outcome: 'no_answer', durationSec: 0, at: daysAgo(1), consentGiven: false, loggedBy: 'auto_dialer', isDemo: true },
+  { id: 'cl-4', leadId: 'l-7', outcome: 'no_answer', durationSec: 0, at: daysAgo(2), consentGiven: false, loggedBy: 'auto_dialer', isDemo: true },
+  { id: 'cl-5', leadId: 'l-8', outcome: 'connected_not_interested', durationSec: 88, at: daysAgo(1), consentGiven: true, loggedBy: 'auto_dialer', isDemo: true },
+  { id: 'cl-6', leadId: 'l-16', outcome: null, durationSec: 190, at: daysAgo(1), consentGiven: true, loggedBy: 'auto_dialer', isDemo: true },
+  { id: 'cl-7', leadId: 'l-18', outcome: 'wrong_number', durationSec: 12, at: daysAgo(3), consentGiven: false, loggedBy: 'manual', isDemo: true },
+];
+
+export const seedBroadcasts: SmsBroadcast[] = [
+  {
+    id: 'bc-1',
+    name: 'Diwali greeting',
+    segmentDescription: 'All active leads · Pune',
+    segmentLeadIds: ['l-6', 'l-8', 'l-9', 'l-10', 'l-11', 'l-12', 'l-15', 'l-18'],
+    messageBody: 'AIEC wishes you and your family a very happy Diwali! From all of us on your lift installation team.',
+    status: 'sent',
+    sentCount: 8,
+    deliveredCount: 7,
+    failedCount: 1,
+    optedOutExcludedCount: 1,
+    estimatedCost: 40,
+    actualCost: 35,
+    createdAt: daysAgo(20),
+    isDemo: true,
+  },
+  {
+    id: 'bc-2',
+    name: 'Monsoon service reminder',
+    segmentDescription: 'Won deals · Pimpri-Chinchwad',
+    segmentLeadIds: ['l-3', 'l-16'],
+    messageBody: 'AIEC: Monsoon service check available for your installed lift — reply to schedule a free inspection.',
+    status: 'scheduled',
+    scheduledFor: daysAhead(4),
+    sentCount: 0,
+    deliveredCount: 0,
+    failedCount: 0,
+    optedOutExcludedCount: 0,
+    estimatedCost: 10,
+    createdAt: daysAgo(1),
+    isDemo: true,
+  },
+];
+
+export const seedBotConfig: BotConfig = {
+  toneKey: 'warm',
+  allowedDiscountMinPct: 0,
+  allowedDiscountMaxPct: 8,
+  escalationConfidenceThreshold: 0.6,
+  autoResolvedRatePct: 0.64,
+  escalatedRatePct: 0.36,
+  updatedAt: daysAgo(15),
+};
+
+export const seedOptOutEvents: OptOutEvent[] = [
+  { id: 'oo-1', contactPhone: '9822044014', contactName: 'Anita Sawant', channel: 'sms', type: 'opted_out', source: 'stop_keyword', at: daysAgo(35), recordedBy: 'System', isDemo: true },
+  { id: 'oo-2', contactPhone: '9822044013', contactName: 'Ramesh Gore', channel: 'all', type: 'opted_out', source: 'customer_request', reason: 'Asked not to be contacted again after losing the deal on price.', at: daysAgo(40), recordedBy: 'Prashant Vasant Wable', isDemo: true },
+  { id: 'oo-3', contactPhone: '9822044009', contactName: 'Vikas Thorat', channel: 'whatsapp', type: 'opted_out', source: 'stop_keyword', at: daysAgo(1), recordedBy: 'System', isDemo: true },
+  { id: 'oo-4', contactPhone: '9822044006', contactName: 'Nilesh Gaikwad', channel: 'sms', type: 'opted_out', source: 'manual_entry', reason: 'Requested via phone call to office.', at: daysAgo(60), recordedBy: 'Prashant Vasant Wable', isDemo: true },
+  { id: 'oo-5', contactPhone: '9822044006', contactName: 'Nilesh Gaikwad', channel: 'sms', type: 'opted_in', source: 'customer_request', reason: 'Called back asking to resume installation updates only.', at: daysAgo(12), recordedBy: 'Prashant Vasant Wable', isDemo: true },
+];
+
+export const seedTriggerRules: TriggerRule[] = [
+  { id: 'tr-1', name: 'Welcome new captures', triggerStage: 'captured', delayHours: 0, actionSequenceId: 'seq-1', priority: 1, enabled: true, allowStacking: false, createdAt: daysAgo(90), isDemo: true },
+  { id: 'tr-2', name: 'Nudge on quote sent', triggerStage: 'quoted', delayHours: 48, actionSequenceId: 'seq-2', priority: 1, enabled: true, allowStacking: false, createdAt: daysAgo(70), isDemo: true },
+  { id: 'tr-3', name: 'Payment cadence on win', triggerStage: 'won', delayHours: 24, actionSequenceId: 'seq-3', priority: 1, enabled: false, allowStacking: false, createdAt: daysAgo(50), isDemo: true },
+  { id: 'tr-4', name: 'Immediate quote thank-you', triggerStage: 'quoted', delayHours: 0, actionTemplateGroupId: 'tpl-quote-followup', priority: 2, enabled: true, allowStacking: true, createdAt: daysAgo(20), isDemo: true },
 ];

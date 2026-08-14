@@ -3,7 +3,14 @@ import {
   seedActivity,
   seedAlerts,
   seedAutomations,
+  seedBotConfig,
+  seedBroadcasts,
+  seedCallLog,
+  seedCommMessages,
+  seedCommSequences,
+  seedCommTemplates,
   seedCommissions,
+  seedConversations,
   seedDeals,
   seedDuplicatePairs,
   seedFollowUpTasks,
@@ -11,12 +18,14 @@ import {
   seedJobs,
   seedLeadTimeline,
   seedLeads,
+  seedOptOutEvents,
   seedPayments,
   seedRoutePlans,
   seedScoreWeightingProfile,
   seedSeries,
   seedSiteVisits,
   seedSuppliers,
+  seedTriggerRules,
   seedUsers,
   seedZones,
 } from './seed';
@@ -27,19 +36,35 @@ import {
   simulateWrite,
 } from './repository';
 import type {
+  BotSimulationResult,
+  BroadcastSegmentPreview,
+  CommunicationAnalytics,
+  ConversationWithContext,
   ExecutiveKpis,
   FunnelStage,
   ImportPreview,
   ImportValidationRow,
   LeadFilter,
   RegionConversion,
+  ReplyInboxItem,
   Repository,
+  SequenceTestStep,
   SurveyorScore,
   TechnicianScore,
+  TriggerRuleEvaluation,
 } from './repository';
 import type {
   Alert,
   AutomationRule,
+  BotConfig,
+  CallLogEntry,
+  CallOutcome,
+  ChannelStat,
+  CommChannel,
+  CommMessage,
+  CommSequence,
+  CommTemplate,
+  Conversation,
   DuplicatePair,
   FollowUpTask,
   GeoZone,
@@ -48,12 +73,19 @@ import type {
   LeadSource,
   LeadSourceAttribution,
   LeadTimelineEvent,
+  OptOutChannel,
+  OptOutEvent,
   ScoreFactor,
   ScoreWeightingProfile,
+  SeriesPoint,
   SiteVisitVerification,
+  SmsBroadcast,
+  TemplateStat,
+  TriggerRule,
   User,
 } from './types';
-import { haversineKm } from '@/design-system/format';
+import { formatINRCompact, haversineKm } from '@/design-system/format';
+import { extractMergeFields, renderTemplateBody } from '@/features/communication/templateRender';
 
 /**
  * The in-memory implementation backing Demo Mode.
@@ -83,10 +115,25 @@ const duplicatePairs = [...seedDuplicatePairs];
 const importBatches = [...seedImportBatches];
 let scoreWeightingProfile: ScoreWeightingProfile = { ...seedScoreWeightingProfile };
 
+const commTemplates = [...seedCommTemplates];
+const commSequences = [...seedCommSequences];
+const conversations = [...seedConversations];
+const commMessages = [...seedCommMessages];
+const callLog = [...seedCallLog];
+const broadcasts = [...seedBroadcasts];
+let botConfig: BotConfig = { ...seedBotConfig };
+const optOutEvents = [...seedOptOutEvents];
+const triggerRules = [...seedTriggerRules];
+
 let leadCounter = 200;
 let timelineEventCounter = 900;
 let followUpTaskCounter = 900;
 let importBatchCounter = 1;
+let messageCounter = 900;
+let callCounter = 900;
+let broadcastCounter = 900;
+let ruleCounter = 900;
+let optOutCounter = 900;
 
 const byId = <T extends { id: string }>(list: T[], id: string): T | null =>
   list.find((item) => item.id === id) ?? null;
@@ -213,6 +260,120 @@ function patchInPlace<T extends { id: string }>(list: T[], id: string, patch: Pa
   const next = { ...list[index], ...patch } as T;
   list[index] = next;
   return next;
+}
+
+/* -------------------------------------------------- Communication engine */
+
+/** Resolves what real data exists for a lead's merge fields — an empty
+ *  string here is exactly what tells `renderTemplateBody` to fall back to
+ *  its sensible default phrase instead of a broken blank. */
+function buildMergeValuesForLead(lead: Lead): Record<string, string> {
+  const deal = deals.find((d) => d.leadId === lead.id);
+  const job = deal ? jobs.find((j) => j.dealId === deal.id) : undefined;
+  const currentStep = job?.steps.find((s) => s.status === 'current') ?? job?.steps.find((s) => s.status === 'complete');
+  const readableStep = currentStep
+    ? currentStep.labelKey
+        .replace('job.step.', '')
+        .replace(/([A-Z])/g, ' $1')
+        .trim()
+        .replace(/^./, (c) => c.toUpperCase())
+    : '';
+  const routeStop = routePlans.flatMap((r) => r.stops).find((s) => s.leadId === lead.id);
+
+  return {
+    customerName: lead.contactName,
+    buildingName: lead.siteName,
+    quoteAmount: deal && (deal.agreedPrice || deal.quotedPrice) ? formatINRCompact(deal.agreedPrice || deal.quotedPrice) : '',
+    installStep: readableStep,
+    visitDate: routeStop ? routeStop.windowStart.slice(0, 10) : '',
+  };
+}
+
+function findTemplate(id: string): CommTemplate {
+  const template = byId(commTemplates, id);
+  if (!template) throw new RepositoryError('not_found');
+  return template;
+}
+
+function templateInGroup(groupId: string, language: string): CommTemplate | undefined {
+  return commTemplates.find((t) => t.groupId === groupId && t.language === language);
+}
+
+const OPT_OUT_KEYWORDS = ['stop', 'unsubscribe'];
+
+/** Most recent event per phone+channel (or 'all') wins — opt-outs are
+ *  channel-specific by default, with 'all' as the explicit blanket option. */
+function isOptedOutSync(phone: string, channel: CommChannel): boolean {
+  const relevant = optOutEvents.filter((e) => e.contactPhone === phone && (e.channel === channel || e.channel === 'all'));
+  if (relevant.length === 0) return false;
+  const latest = [...relevant].sort((a, b) => b.at.localeCompare(a.at))[0];
+  return latest.type === 'opted_out';
+}
+
+const ESCALATION_KEYWORDS = ['legal', 'lawyer', 'unsafe', 'danger', 'injur', 'complaint', 'sue', 'accident'];
+const DISCOUNT_PATTERN = /(\d+(?:\.\d+)?)\s*%/;
+
+/** A deliberately simple, deterministic heuristic — not a real ML call.
+ *  Keyword-matched escalation topics always win over everything else, the
+ *  bot never independently reasons its way past a configured boundary. */
+function runBotSimulation(sampleMessage: string, config: BotConfig): BotSimulationResult {
+  const lower = sampleMessage.toLowerCase();
+
+  if (ESCALATION_KEYWORDS.some((kw) => lower.includes(kw))) {
+    return { reply: '', confidence: 0, escalate: true, escalateReasonKey: 'bot.escalate.sensitiveTopic' };
+  }
+
+  const discountMatch = lower.match(DISCOUNT_PATTERN);
+  if (discountMatch) {
+    const requestedPct = Number(discountMatch[1]);
+    if (requestedPct > config.allowedDiscountMaxPct) {
+      return {
+        reply: `I can offer up to ${config.allowedDiscountMaxPct}% — let me have our team confirm anything beyond that.`,
+        confidence: 0.72,
+        escalate: 0.72 < config.escalationConfidenceThreshold,
+        escalateReasonKey: 0.72 < config.escalationConfidenceThreshold ? 'bot.escalate.lowConfidence' : undefined,
+      };
+    }
+    return {
+      reply: `Happy to offer ${requestedPct}% on this — within what I'm able to approve directly.`,
+      confidence: 0.9,
+      escalate: 0.9 < config.escalationConfidenceThreshold,
+    };
+  }
+
+  const confidence = lower.length > 0 ? 0.55 : 0;
+  return {
+    reply: 'Thanks for the message — someone from our team will follow up shortly.',
+    confidence,
+    escalate: confidence < config.escalationConfidenceThreshold,
+    escalateReasonKey: confidence < config.escalationConfidenceThreshold ? 'bot.escalate.lowConfidence' : undefined,
+  };
+}
+
+const BUSINESS_HOURS_START = 9;
+const BUSINESS_HOURS_END = 19;
+/** One business hour to respond before a reply counts as SLA-breached. */
+const SLA_MINUTES = 60;
+
+function isBusinessHours(iso: string): boolean {
+  const hour = new Date(iso).getHours();
+  return hour >= BUSINESS_HOURS_START && hour < BUSINESS_HOURS_END;
+}
+
+/** Minutes of business-hours time elapsed since `at` — overnight gaps don't
+ *  count against the SLA clock, per the Reply Inbox's fairness rule.
+ *  Hour-granularity is plenty for a same-day SLA indicator. */
+function businessMinutesSince(at: string): number {
+  const start = new Date(at);
+  const now = new Date();
+  let hours = 0;
+  const cursor = new Date(start);
+  cursor.setMinutes(0, 0, 0);
+  while (cursor < now) {
+    if (isBusinessHours(cursor.toISOString())) hours += 1;
+    cursor.setHours(cursor.getHours() + 1);
+  }
+  return hours * 60;
 }
 
 const startOfMonth = () => {
@@ -955,4 +1116,379 @@ export const memoryRepository: Repository = {
         .map((r) => ({ ...r, rate: r.leads ? r.conversions / r.leads : 0 }))
         .sort((a, b) => b.revenue - a.revenue);
     }),
+
+  /* ---------------------------------------------- Communication: templates */
+  listCommTemplates: (filter) =>
+    simulateRead(() =>
+      commTemplates
+        .filter((t) => !filter?.channel || t.channel === filter.channel)
+        .filter((t) => !filter?.associatedStage || t.associatedStage === filter.associatedStage)
+        .filter((t) => !filter?.language || t.language === filter.language)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    ),
+
+  getTemplateGroup: (groupId) => simulateRead(() => commTemplates.filter((t) => t.groupId === groupId)),
+
+  saveCommTemplateBody: (id, body, editedBy) =>
+    simulateWrite(() => {
+      const template = findTemplate(id);
+      const now = new Date().toISOString();
+      const nextVersion = (template.versions.at(-1)?.version ?? 0) + 1;
+      return patchInPlace(commTemplates, id, {
+        body,
+        mergeFields: extractMergeFields(body),
+        updatedAt: now,
+        updatedBy: editedBy,
+        versions: [...template.versions, { version: nextVersion, body, editedBy, editedAt: now }],
+      });
+    }),
+
+  setCommTemplateStatus: (id, status) => simulateWrite(() => patchInPlace(commTemplates, id, { status })),
+
+  /* ---------------------------------------------- Communication: sequences */
+  listSequences: () => simulateRead(() => [...commSequences].sort((a, b) => a.priority - b.priority)),
+
+  saveSequence: (sequence) =>
+    simulateWrite(() => {
+      const now = new Date().toISOString();
+      const saved: CommSequence = { ...sequence, updatedAt: now };
+      const index = commSequences.findIndex((s) => s.id === sequence.id);
+      if (index === -1) commSequences.push(saved);
+      else commSequences[index] = saved;
+      return saved;
+    }),
+
+  toggleSequence: (id, isActive) =>
+    simulateWrite(() => patchInPlace(commSequences, id, { isActive, updatedAt: new Date().toISOString() })),
+
+  testSendSequence: (sequenceId, leadId) =>
+    simulateRead(() => {
+      const sequence = byId(commSequences, sequenceId);
+      if (!sequence) throw new RepositoryError('not_found');
+      const lead = resolveLead(leadId);
+      if (!lead) throw new RepositoryError('not_found');
+      const values = buildMergeValuesForLead(lead);
+      const language = lead.preferredLanguage ?? 'en';
+      return [...sequence.steps]
+        .sort((a, b) => a.order - b.order)
+        .map<SequenceTestStep>((step) => {
+          const template = templateInGroup(step.templateGroupId, language) ?? templateInGroup(step.templateGroupId, 'en');
+          return {
+            stepId: step.id,
+            order: step.order,
+            waitDays: step.waitDays,
+            channel: template?.channel ?? 'sms',
+            renderedBody: template ? renderTemplateBody(template.body, values) : '',
+          };
+        });
+    }),
+
+  /* ------------------------------------------ Communication: conversations */
+  listConversations: (filter) =>
+    simulateRead(() =>
+      conversations
+        .filter((c) => !filter?.assignedAgentId || c.assignedAgentId === filter.assignedAgentId)
+        .map((c) => {
+          const lead = resolveLead(c.leadId);
+          if (!lead) return null;
+          return { ...c, lead, messages: commMessages.filter((m) => m.conversationId === c.id).sort((a, b) => a.at.localeCompare(b.at)) };
+        })
+        .filter((c): c is ConversationWithContext => c !== null)
+        .sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt)),
+    ),
+
+  getConversation: (id) =>
+    simulateRead(() => {
+      const conv = byId(conversations, id);
+      if (!conv) return null;
+      const lead = resolveLead(conv.leadId);
+      if (!lead) return null;
+      return { ...conv, lead, messages: commMessages.filter((m) => m.conversationId === id).sort((a, b) => a.at.localeCompare(b.at)) };
+    }),
+
+  sendAgentMessage: (conversationId, body, agentName) =>
+    simulateWrite(() => {
+      const conv = byId(conversations, conversationId);
+      if (!conv) throw new RepositoryError('not_found');
+      const now = new Date().toISOString();
+      const message: CommMessage = {
+        id: `cm-new-${(messageCounter += 1)}`,
+        conversationId,
+        channel: 'whatsapp',
+        sender: 'agent',
+        senderName: agentName,
+        body,
+        status: 'sent',
+        at: now,
+        handled: true,
+      };
+      commMessages.push(message);
+      // A human reply pauses the automated sequence for a cool-down window so
+      // a bot nudge never lands right after a person just personally replied.
+      const cooldownUntil = new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString();
+      patchInPlace(conversations, conversationId, { lastMessageAt: now, sequencePausedUntil: cooldownUntil });
+      return message;
+    }),
+
+  assignConversation: (conversationId, agentId) =>
+    simulateWrite(() => patchInPlace(conversations, conversationId, { assignedAgentId: agentId })),
+
+  markMessageHandled: (messageId) =>
+    simulateWrite(() => patchInPlace(commMessages, messageId, { handled: true, requiresHumanReview: false })),
+
+  /* -------------------------------------------------- Communication: calls */
+  listCallLog: (filter) =>
+    simulateRead(() =>
+      callLog.filter((c) => !filter?.leadId || c.leadId === filter.leadId).sort((a, b) => b.at.localeCompare(a.at)),
+    ),
+
+  logCall: (leadId, loggedBy) =>
+    simulateWrite(() => {
+      const call: CallLogEntry = {
+        id: `cl-new-${(callCounter += 1)}`,
+        leadId,
+        outcome: null,
+        durationSec: 0,
+        at: new Date().toISOString(),
+        consentGiven: false,
+        loggedBy,
+        isDemo: true,
+      };
+      callLog.unshift(call);
+      return call;
+    }),
+
+  setCallDisposition: (id, outcome, durationSec) =>
+    simulateWrite(() => {
+      const updated = patchInPlace(callLog, id, { outcome, durationSec });
+      if (outcome === 'connected_interested') {
+        const lead = byId(leads, updated.leadId);
+        if (lead) {
+          const currentRank = rankOf(lead.stage);
+          // Nudges the lead toward Quoted readiness — advances one real stage
+          // at a time, never jumps straight to Quoted (that still needs a
+          // linked deal, same gate the Kanban board enforces).
+          if (currentRank >= 0 && currentRank < rankOf('quoted') - 1) {
+            const nextStage = PIPELINE_RANK[currentRank + 1];
+            const now = new Date().toISOString();
+            patchInPlace(leads, lead.id, { stage: nextStage, stageEnteredAt: now, updatedAt: now });
+            pushTimelineEvent({
+              leadId: lead.id,
+              kind: 'stage_changed',
+              actorName: 'Automation',
+              at: now,
+              fromValue: lead.stage,
+              toValue: nextStage,
+              detail: 'Call disposition: Connected - Interested',
+            });
+            recomputeActiveScores(scoreWeightingProfile);
+          }
+        }
+      }
+      return updated;
+    }),
+
+  /* --------------------------------------------- Communication: broadcasts */
+  listBroadcasts: () => simulateRead(() => [...broadcasts].sort((a, b) => b.createdAt.localeCompare(a.createdAt))),
+
+  previewBroadcastSegment: (filter) =>
+    simulateRead(() => {
+      const q = filter.query?.trim().toLowerCase();
+      const matched = leads
+        .filter((l) => !l.duplicateOfLeadId)
+        .filter((l) => !filter.stage || filter.stage.includes(l.stage))
+        .filter((l) => !filter.surveyorId || l.surveyorId === filter.surveyorId)
+        .filter((l) => !filter.city || l.city === filter.city)
+        .filter((l) => !filter.source || filter.source.includes(l.source))
+        .filter((l) => !q || l.siteName.toLowerCase().includes(q) || l.builderName.toLowerCase().includes(q));
+      const eligible = matched.filter((l) => !isOptedOutSync(l.contactPhone, 'sms'));
+      // Roughly matches typical DLT-routed transactional SMS pricing.
+      const COST_PER_SMS = 0.18;
+      return {
+        leadIds: eligible.map((l) => l.id),
+        excludedOptedOutCount: matched.length - eligible.length,
+        estimatedCost: Math.round(eligible.length * COST_PER_SMS * 100) / 100,
+      };
+    }),
+
+  createBroadcast: (input) =>
+    simulateWrite(() => {
+      const now = new Date().toISOString();
+      const immediate = !input.scheduledFor;
+      const delivered = immediate ? Math.round(input.leadIds.length * 0.92) : 0;
+      const broadcast: SmsBroadcast = {
+        id: `bc-new-${(broadcastCounter += 1)}`,
+        name: input.name,
+        segmentDescription: input.segmentDescription,
+        segmentLeadIds: input.leadIds,
+        messageBody: input.messageBody,
+        scheduledFor: input.scheduledFor,
+        status: immediate ? 'sent' : 'scheduled',
+        sentCount: immediate ? input.leadIds.length : 0,
+        deliveredCount: delivered,
+        failedCount: immediate ? input.leadIds.length - delivered : 0,
+        optedOutExcludedCount: 0,
+        estimatedCost: Math.round(input.leadIds.length * 0.18 * 100) / 100,
+        actualCost: immediate ? Math.round(input.leadIds.length * 0.18 * 100) / 100 : undefined,
+        createdAt: now,
+        isDemo: true,
+      };
+      broadcasts.unshift(broadcast);
+      return broadcast;
+    }),
+
+  cancelBroadcast: (id) =>
+    simulateWrite(() => {
+      const b = byId(broadcasts, id);
+      if (!b) throw new RepositoryError('not_found');
+      if (b.status !== 'scheduled') throw new RepositoryError('not_cancellable');
+      return patchInPlace(broadcasts, id, { status: 'cancelled' as const });
+    }),
+
+  /* ------------------------------------------------- Communication: AI bot */
+  getBotConfig: () => simulateRead(() => ({ ...botConfig })),
+
+  updateBotConfig: (patch) =>
+    simulateWrite(() => {
+      botConfig = { ...botConfig, ...patch, updatedAt: new Date().toISOString() };
+      return { ...botConfig };
+    }),
+
+  simulateBotReply: (sampleMessage) => simulateRead(() => runBotSimulation(sampleMessage, botConfig)),
+
+  /* ------------------------------------------- Communication: reply inbox */
+  listReplyInboxItems: () =>
+    simulateRead(() => {
+      const items: ReplyInboxItem[] = [];
+      for (const message of commMessages) {
+        if (message.sender !== 'customer' || message.handled || !message.requiresHumanReview) continue;
+        const conversation = byId(conversations, message.conversationId);
+        if (!conversation) continue;
+        const lead = resolveLead(conversation.leadId);
+        if (!lead) continue;
+        const waitingMinutes = businessMinutesSince(message.at);
+        items.push({ message, conversation, lead, slaBreached: waitingMinutes > SLA_MINUTES, waitingMinutes });
+      }
+      return items.sort((a, b) => b.waitingMinutes - a.waitingMinutes);
+    }),
+
+  /* ----------------------------------------------- Communication: opt-outs */
+  listOptOutEvents: () => simulateRead(() => [...optOutEvents].sort((a, b) => b.at.localeCompare(a.at))),
+
+  recordOptOutEvent: (input) =>
+    simulateWrite(() => {
+      const event: OptOutEvent = {
+        id: `oo-new-${(optOutCounter += 1)}`,
+        contactPhone: input.contactPhone,
+        contactName: input.contactName,
+        channel: input.channel,
+        type: input.type,
+        source: input.source,
+        reason: input.reason,
+        at: new Date().toISOString(),
+        recordedBy: input.recordedBy,
+        isDemo: true,
+      };
+      optOutEvents.unshift(event);
+      return event;
+    }),
+
+  isOptedOut: (contactPhone, channel) => simulateRead(() => isOptedOutSync(contactPhone, channel)),
+
+  /* ------------------------------------------ Communication: trigger rules */
+  listTriggerRules: () =>
+    simulateRead(() => [...triggerRules].sort((a, b) => a.priority - b.priority || b.createdAt.localeCompare(a.createdAt))),
+
+  saveTriggerRule: (rule) =>
+    simulateWrite(() => {
+      if (rule.id) return patchInPlace(triggerRules, rule.id, { ...rule });
+      const created: TriggerRule = { ...rule, id: `tr-new-${(ruleCounter += 1)}`, createdAt: new Date().toISOString(), isDemo: true };
+      triggerRules.push(created);
+      return created;
+    }),
+
+  toggleTriggerRule: (id, enabled) => simulateWrite(() => patchInPlace(triggerRules, id, { enabled })),
+
+  simulateTriggerRules: (stage) =>
+    simulateRead(() => {
+      const matching = [...triggerRules]
+        .filter((r) => r.triggerStage === stage)
+        .sort((a, b) => a.priority - b.priority || b.createdAt.localeCompare(a.createdAt));
+      let topFired: TriggerRule | null = null;
+      return matching.map<TriggerRuleEvaluation>((rule) => {
+        if (!rule.enabled) return { rule, wouldFire: false };
+        if (rule.allowStacking) return { rule, wouldFire: true };
+        if (!topFired) {
+          topFired = rule;
+          return { rule, wouldFire: true };
+        }
+        return { rule, wouldFire: false, suppressedByRuleId: topFired.id };
+      });
+    }),
+
+  /* -------------------------------------------- Communication: analytics */
+  getCommunicationAnalytics: () =>
+    simulateRead(() => {
+      const channels: CommChannel[] = ['sms', 'whatsapp', 'call'];
+      const channelStats: ChannelStat[] = channels.map((channel) => {
+        if (channel === 'call') {
+          const totalSent = callLog.length;
+          const responded = callLog.filter((c) => c.outcome === 'connected_interested' || c.outcome === 'connected_not_interested').length;
+          return { channel, totalSent, responseRatePct: totalSent ? responded / totalSent : 0, cost: 0 };
+        }
+        const sent = commMessages.filter((m) => m.channel === channel && m.sender !== 'customer').length;
+        const responded = commMessages.filter((m) => m.channel === channel && m.sender === 'customer').length;
+        const cost = channel === 'sms' ? broadcasts.reduce((sum, b) => sum + (b.actualCost ?? 0), 0) : 0;
+        return { channel, totalSent: sent, responseRatePct: sent ? Math.min(1, responded / sent) : 0, cost };
+      });
+
+      const EARLY_DATA_THRESHOLD = 3;
+      const templateStats: TemplateStat[] = templateSeedsUnique().map((groupId) => {
+        const sends = commMessages.filter((m) => m.templateGroupId === groupId);
+        const responded = sends.filter((m) => {
+          const conv = byId(conversations, m.conversationId);
+          if (!conv) return false;
+          return commMessages.some((reply) => reply.conversationId === conv.id && reply.sender === 'customer' && reply.at > m.at);
+        }).length;
+        const template = commTemplates.find((t) => t.groupId === groupId && t.language === 'en');
+        const wonLeadsReached = sends
+          .map((m) => byId(conversations, m.conversationId)?.leadId)
+          .filter((id): id is string => Boolean(id))
+          .map((id) => resolveLead(id))
+          .filter((l): l is Lead => l !== null && l.stage === 'won').length;
+        return {
+          templateGroupId: groupId,
+          templateName: template?.name ?? groupId,
+          channel: template?.channel ?? 'sms',
+          totalSent: sends.length,
+          responseRatePct: sends.length ? Math.min(1, responded / sends.length) : 0,
+          conversionInfluenceScore: sends.length ? Math.round((wonLeadsReached / sends.length) * 100) : 0,
+          earlyData: sends.length < EARLY_DATA_THRESHOLD,
+        };
+      });
+
+      // Real daily buckets from actual outbound send timestamps, not a
+      // fabricated trend line.
+      const dayBuckets = new Map<string, number>();
+      for (const message of commMessages) {
+        if (message.sender === 'customer') continue;
+        const day = message.at.slice(0, 10);
+        dayBuckets.set(day, (dayBuckets.get(day) ?? 0) + 1);
+      }
+      const volumeTrend: SeriesPoint[] = [...dayBuckets.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([t, v]) => ({ t, v }));
+
+      const inboxItemsAll = commMessages.filter((m) => m.sender === 'customer' && m.requiresHumanReview);
+      const withinSla = inboxItemsAll.filter((m) => !m.handled || businessMinutesSince(m.at) <= SLA_MINUTES).length;
+
+      return {
+        channelStats,
+        templateStats,
+        volumeTrend,
+        slaCompliancePct: inboxItemsAll.length ? withinSla / inboxItemsAll.length : 1,
+      };
+    }),
 };
+
+function templateSeedsUnique(): string[] {
+  return [...new Set(commTemplates.map((t) => t.groupId))];
+}
