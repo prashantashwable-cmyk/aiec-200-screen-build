@@ -202,11 +202,11 @@ passenger-lift quotes actually land in — but invented. Every record carries
 
 ## Where to go next
 
-1. Build screens `061`–`200` for Modules 7–20 (Auto-Quotation Engine,
-   Negotiation & Deal Closing, Payments & Financing, Supplier & Manufacturer
+1. Finish Module 7 (`068`–`070`), then build `071`–`200` for Modules 8–20
+   (Negotiation & Deal Closing, Payments & Financing, Supplier & Manufacturer
    Management, and the rest) the same way: one folder per screen, no shared
-   file to edit. Module 6 (Automated Communication Engine, `051`–`060`) is
-   now complete and checkpoint-verified — see below.
+   file to edit. Modules 5 and 6 are complete and checkpoint-verified;
+   Module 7 is in progress. See below and `CLAUDE.md`.
 2. Stand up the Firebase project and implement `firebaseRepository`.
 3. Wire up a storage bucket so `DocumentSlot` uploads actually persist, and
    move off the public OSM tile servers to a paid or self-hosted tile source
@@ -335,3 +335,59 @@ simulated/demo copy stays real in all three languages instead of leaking
 English from the data layer. The outage note itself is a fixed demo
 annotation, not a live incident feed — there's no status-page integration
 to compute it from yet.
+
+---
+
+## Module 7 — Auto-Quotation Engine (`061`–`070`, in progress: 061–067 built)
+
+Everything under the **Quotes** tab (`/admin/quotes`). As with Modules 5 and 6,
+the data model was extended once up front (`Quotation`, `QuotationTemplate`,
+`DiscountRequest`, `PricingConfig` plus about 20 repository methods) before any
+screen was built.
+
+- **One pricing engine.** `computeQuotationCost(spec, pricing, marginOverridePct?)`
+  in `memoryRepository.ts` is the only place a price is produced. It covers drive-type base
+  price, per-floor increment above 4 included stops, finish-tier multiplier
+  (1 / 1.15 / 1.35), capacity multiplier (+6% per person above 6), civil work
+  (10% of equipment), installation (₹12,000 per stop) and flat transport (₹25,000).
+  Every line is rounded to the rupee before summing, so the lines always add
+  up exactly to the total shown.
+- **Versions, not edits.** `Quotation.supersedesQuotationId` forms a chain.
+  Only one version per lead can be `sent`/`viewed`, and a new version
+  supersedes the previous one. 062, 066 and 067 all read or extend this chain; there
+  is no separate history table.
+- **The customer screen can't see costs.** `CustomerQuotationView` (returned only by
+  `getQuotationForCustomer`) has no cost or margin fields. 064 never calls
+  `getQuotation`.
+- **Margin floor.** `PricingConfig.minimumMarginFloorPct` (seed: 15%) is enforced in
+  `adjustQuotationCost` (062) and in the discount flow (067).
+
+Screens:
+
+- **061 Quotation Generator** (`/admin/quotes`): draft pre-filled from the lead's
+  survey spec. Owns shared `driveType.*`, `finishTier.*`, `quotationStatus.*`.
+- **062 Cost Breakdown** (`/admin/quotes/:quotationId/cost`): itemised lines,
+  live margin edit blocked below the floor, civil-work override with a
+  required note.
+- **063 Template & Branding** (`/admin/quotes/templates`): version bump on
+  every save; reuses `DocumentSlot` for the logo.
+- **064 Customer Preview** (`/admin/quotes/:quotationId/preview`): expired /
+  accepted / superseded states; opening a `sent` quote records the view.
+- **065 Package Comparison** (`/admin/quotes/compare`): Basic/Premium/Luxury
+  from one base spec; AMC figures come from `PricingConfig.amcTiers`; flags
+  price gaps under 8%.
+- **066 Version History** (`/admin/quotes/history`): field diffs computed live
+  between consecutive versions. "Restore" copies the old spec and keeps the
+  current margin, so an approved discount is not silently undone. Owns
+  `quotation.reason.*`.
+- **067 Discount Approvals** (`/admin/quotes/discounts`): request form with a
+  live margin preview (same formula as the repository), approval queue
+  (urgent first, resubmissions flagged), reject with reason and optional
+  counter-offer. An **urgent** request whose margin stays at least 3 points above the
+  floor (`URGENT_AUTO_APPROVE_BUFFER_PCT`) is approved automatically. Manual and
+  automatic approval share `applyApprovedDiscount`, so both create
+  the new version the same way.
+
+Still to build: **068** Send & E-Delivery, **069** Win/Loss Analytics,
+**070** Pricing Rules & Margin Config, then a quick-links grid on 061 and the
+Module 7 checkpoint. See `CLAUDE.md` for details.
