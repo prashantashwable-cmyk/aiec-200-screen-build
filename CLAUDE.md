@@ -6,6 +6,10 @@ numbered specs in the repo root (`001_…md` to `200_…md`, 20 modules × 10 sc
 The `000_*.md` files are the foundation docs (design system, architecture pattern,
 information architecture). Read `BUILD_README.md` for what each module built and why.
 
+Past chat history is in `docs/session-history/`. It holds readable logs plus redacted raw transcripts. The last
+"Context summary" in the Session 2 log is the most detailed recap of recent decisions. Open it only when a
+decision's reasoning isn't clear from the code or `BUILD_README.md`.
+
 This repo is self-contained: no secrets, no env vars, no Firebase project. The data layer is an
 in-memory, Firebase-shaped repository with seeded demo data. It runs anywhere with Node.
 
