@@ -167,9 +167,14 @@ export function DealTermsFinalizationView() {
             <AscensionLine steps={confirmSteps} />
             <div className="stack gap-2 mt-3 hairline-top pt-3">
               {status === 'confirmed' && (
-                <p className="t-sm t-success row gap-1 items-center">
-                  <CheckCircle size={16} /> {t(K.confirmation.bothConfirmed)}
-                </p>
+                <>
+                  <p className="t-sm t-success row gap-1 items-center">
+                    <CheckCircle size={16} /> {t(K.confirmation.bothConfirmed)}
+                  </p>
+                  <Button size="sm" onClick={() => navigate(`/admin/deals/${deal.id}/contract`)}>
+                    {t(K.confirmation.generateContract)}
+                  </Button>
+                </>
               )}
               {status === 'awaiting_customer' && <p className="t-xs t-muted">{t(K.confirmation.waitingOnCustomer)}</p>}
             </div>

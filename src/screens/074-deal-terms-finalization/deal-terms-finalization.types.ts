@@ -65,6 +65,7 @@ export const DEAL_TERMS_FINALIZATION_KEYS = {
     confirmCustomerNote: 'dealTermsFinalization.confirmation.confirmCustomerNote',
     waitingOnCustomer: 'dealTermsFinalization.confirmation.waitingOnCustomer',
     bothConfirmed: 'dealTermsFinalization.confirmation.bothConfirmed',
+    generateContract: 'dealTermsFinalization.confirmation.generateContract',
   },
 
   amendments: {

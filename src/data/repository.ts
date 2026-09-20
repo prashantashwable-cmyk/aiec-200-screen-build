@@ -11,6 +11,7 @@ import type {
   CommSequence,
   CommTemplate,
   CommissionEntry,
+  Contract,
   Conversation,
   CounterOffer,
   Deal,
@@ -179,6 +180,20 @@ export interface DealTermsView {
   defaultFinalPrice: number;
   currentQuotationId: string | null;
   negotiationId: string | null;
+}
+
+/** Screen 075's own read shape. `contract` is the current active version,
+ *  null until one is generated; `priorVersions` is the superseded chain,
+ *  oldest first, so a regeneration is always visibly a new version, never
+ *  a replacement of history. `canGenerate` mirrors the repository's own
+ *  "deal terms must be fully confirmed" gate. */
+export interface ContractView {
+  contract: Contract | null;
+  priorVersions: Contract[];
+  deal: Deal;
+  lead: Lead;
+  dealTerms: DealTerms | null;
+  canGenerate: boolean;
 }
 
 export interface SequenceTestStep {
@@ -489,6 +504,17 @@ export interface Repository {
   /** Only valid once both parties have confirmed — logs a correction
    *  without reopening or silently altering the confirmed record. */
   amendDealTerms(dealId: string, note: string, byUserId: string): Promise<DealTerms>;
+
+  /* Digital contract */
+  getContract(dealId: string): Promise<ContractView | null>;
+  /** Blocked unless `DealTerms.bothPartyConfirmedFlag` is true. Creates
+   *  version 1 the first time; called again (e.g. after a deal-terms
+   *  amendment) it supersedes the current active version and creates the
+   *  next one — never two active-looking versions at once. */
+  generateContract(dealId: string, byUserId: string): Promise<Contract>;
+  /** Attaches a reviewed custom term alongside the generated contract —
+   *  the clauses themselves stay version-locked either way. */
+  addContractAddendum(contractId: string, note: string, byUserId: string): Promise<Contract>;
 
   /* Operations */
   listActivity(limit?: number): Promise<ActivityEvent[]>;

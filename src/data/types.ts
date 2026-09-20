@@ -451,6 +451,53 @@ export interface DealTerms {
   isDemo: boolean;
 }
 
+export type ContractClauseKey = 'scope' | 'price_and_payment' | 'installation_and_liability' | 'warranty_and_amc' | 'state_compliance';
+
+/** One clause, always carrying both forms side by side — screen 075's
+ *  "plain-language summary alongside the full legal text" requirement,
+ *  never a summary the customer has to trust without the source text. */
+export interface ContractClause {
+  key: ContractClauseKey;
+  legalText: string;
+  plainLanguageSummary: string;
+}
+
+/** An Admin-reviewed custom term (e.g. a large commercial client's own
+ *  procurement terms) attached to, never replacing, the generated
+ *  contract — the standard clauses stay version-locked either way. */
+export interface ContractAddendum {
+  id: string;
+  note: string;
+  addedBy: string;
+  addedAt: string;
+}
+
+export type ContractStatus = 'active' | 'superseded';
+
+/**
+ * The auto-generated, version-locked contract for a deal — screen 075.
+ * Only ever produced from a `DealTerms` record whose
+ * `bothPartyConfirmedFlag` is true; a later amendment doesn't touch this
+ * record, it requires a fresh `generateContract` call that supersedes it,
+ * so two valid-looking versions are never in circulation at once.
+ */
+export interface Contract {
+  id: string;
+  dealId: string;
+  version: number;
+  supersedesContractId?: string;
+  status: ContractStatus;
+  clauses: ContractClause[];
+  /** True when the customer's state has no Lift Act clause configured yet
+   *  and the National Building Code / BIS-standard default was used
+   *  instead — surfaced so Admin can add the state-specific set. */
+  usedStateClauseFallback: boolean;
+  addenda: ContractAddendum[];
+  generatedAt: string;
+  generatedBy: string;
+  isDemo: boolean;
+}
+
 /* ------------------------------------------------------------- Quotations */
 
 export type DriveType = 'hydraulic' | 'geared_traction' | 'gearless_traction' | 'mrl' | 'vacuum' | 'screw_driven';

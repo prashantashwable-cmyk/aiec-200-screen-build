@@ -10,6 +10,7 @@ import {
   seedCommSequences,
   seedCommTemplates,
   seedCommissions,
+  seedContracts,
   seedConversations,
   seedCounterOffers,
   seedDealTerms,
@@ -47,6 +48,7 @@ import type {
   BotSimulationResult,
   BroadcastSegmentPreview,
   CommunicationAnalytics,
+  ContractView,
   ConversationWithContext,
   CounterOfferQueueItem,
   DealTermsView,
@@ -77,6 +79,8 @@ import type {
   CommMessage,
   CommSequence,
   CommTemplate,
+  Contract,
+  ContractClause,
   Conversation,
   CounterOffer,
   DealTerms,
@@ -112,7 +116,7 @@ import type {
   TriggerRule,
   User,
 } from './types';
-import { formatINRCompact, haversineKm } from '@/design-system/format';
+import { formatINR, formatINRCompact, haversineKm } from '@/design-system/format';
 import { MAX_SAFE_BOT_DISCOUNT_PCT } from '@/features/communication/botRules';
 import { extractMergeFields, renderTemplateBody } from '@/features/communication/templateRender';
 
@@ -165,6 +169,9 @@ const counterOffers = [...seedCounterOffers];
 const dealTermsRecords = [...seedDealTerms];
 let dealTermsCounter = 100;
 let dealTermsAmendmentCounter = 100;
+const contracts = [...seedContracts];
+let contractCounter = 100;
+let contractAddendumCounter = 100;
 
 let leadCounter = 200;
 let timelineEventCounter = 900;
@@ -195,6 +202,65 @@ const nameOf = (userId: string): string => byId(users, userId)?.name ?? 'AIEC';
  *  quotation, whatever its status, since a chain never skips versions. */
 const currentQuotationForLead = (leadId: string): Quotation | undefined =>
   quotations.filter((q) => q.leadId === leadId).sort((a, b) => b.version - a.version)[0];
+
+/** Every AIEC site captured so far is in Maharashtra — a city outside this
+ *  list is exactly the "state has no Lift Act clause configured yet" case
+ *  screen 075 falls back on, since lift regulation in India is
+ *  state-specific rather than centrally governed. */
+const MAHARASHTRA_CITIES = new Set(['Pune', 'Pimpri-Chinchwad', 'Mumbai', 'Nashik']);
+const deriveStateFromCity = (city: string): string | null => (MAHARASHTRA_CITIES.has(city) ? 'Maharashtra' : null);
+
+function buildContractClauses(
+  lead: Lead,
+  dealTerms: DealTerms,
+  quotation: Quotation | undefined,
+  template: QuotationTemplate | undefined,
+): { clauses: ContractClause[]; usedStateClauseFallback: boolean } {
+  const state = deriveStateFromCity(lead.city);
+  const stateOverride = state ? template?.stateOverrides[state] : undefined;
+  const usedStateClauseFallback = !stateOverride;
+  const driveLabel = quotation?.driveType.replace(/_/g, ' ') ?? 'the agreed';
+  const stagesText = dealTerms.paymentStagePlan.map((s) => `${s.stage.replace(/_/g, ' ')} ${s.percentage}%`).join(', ');
+  const nationalDefault =
+    template?.legalBoilerplate ??
+    'This contract follows the National Building Code of India and applicable BIS standards, including IS 14665.';
+
+  const clauses: ContractClause[] = [
+    {
+      key: 'scope',
+      legalText: `AIEC shall supply and arrange installation of one (1) elevator at ${lead.siteName}, ${lead.address}, ${lead.city}, configured per Quotation ${quotation?.code ?? 'on file'} (${driveLabel} drive), for the price stated below.`,
+      plainLanguageSummary: `This contract covers one elevator at ${lead.siteName}, built to the specification you already agreed on in your quotation.`,
+    },
+    {
+      key: 'price_and_payment',
+      legalText: `The final agreed price is ${formatINR(dealTerms.finalAgreedPrice)}, inclusive of applicable GST at ${quotation?.cost.gstPercent ?? 18}%, payable in stages: ${stagesText} — exactly as locked in on the confirmed Deal Terms record.`,
+      plainLanguageSummary: `You'll pay ${formatINR(dealTerms.finalAgreedPrice)} in total, split across the payment stages you already agreed to.`,
+    },
+    {
+      key: 'installation_and_liability',
+      legalText:
+        'Installation shall be carried out by an AIEC-assigned technician in accordance with IS 14665 and applicable safety codes. The assigned technician/installer is responsible for correct on-site installation; the equipment manufacturer/supplier is responsible for equipment defects; AIEC’s role is limited to facilitation, coordination, and quality oversight, and AIEC does not itself assume manufacturer or installer liability.',
+      plainLanguageSummary: "Your technician is responsible for a correct, safe installation; the equipment maker is responsible for the equipment itself; AIEC coordinates and oversees rather than carrying that liability directly.",
+    },
+    {
+      key: 'warranty_and_amc',
+      legalText:
+        "The equipment carries the manufacturer's standard warranty from the date of handover. An Annual Maintenance Contract, if selected, follows the tier and response-time terms published in AIEC's current AMC schedule.",
+      plainLanguageSummary: "Your elevator is covered by the manufacturer's warranty from handover; any AMC you've chosen follows its own published response-time promise.",
+    },
+    {
+      key: 'state_compliance',
+      legalText: usedStateClauseFallback
+        ? `${nationalDefault} A state-specific Lift Act clause set has not yet been configured for this location and has been flagged for Admin to add.`
+        : `${nationalDefault} ${stateOverride}`.trim(),
+      plainLanguageSummary: usedStateClauseFallback
+        ? "We're using our standard national compliance language for your location since a state-specific clause set hasn't been added for it yet — this has been flagged internally."
+        : `This contract also complies with ${state}'s own Lift Act, on top of our standard national terms.`,
+    },
+  ];
+
+  return { clauses, usedStateClauseFallback };
+}
 
 function pushTimelineEvent(event: Omit<LeadTimelineEvent, 'id'>): LeadTimelineEvent {
   const full: LeadTimelineEvent = { ...event, id: `lt-${(timelineEventCounter += 1)}` };
@@ -1984,6 +2050,73 @@ export const memoryRepository: Repository = {
       return patchInPlace(dealTermsRecords, terms.id, {
         amendments: [...terms.amendments, { id: `dta-new-${dealTermsAmendmentCounter}`, note, amendedBy: byUserId, amendedAt: now }],
         updatedAt: now,
+      });
+    }),
+
+  getContract: (dealId) =>
+    simulateRead(() => {
+      const deal = byId(deals, dealId);
+      if (!deal) return null;
+      const lead = resolveLead(deal.leadId);
+      if (!lead) return null;
+      const dealTerms = dealTermsRecords.find((t) => t.dealId === dealId) ?? null;
+      const dealContracts = contracts.filter((c) => c.dealId === dealId).sort((a, b) => a.version - b.version);
+      const contract = dealContracts.find((c) => c.status === 'active') ?? null;
+      const priorVersions = dealContracts.filter((c) => c.status === 'superseded');
+      const view: ContractView = {
+        contract,
+        priorVersions,
+        deal,
+        lead,
+        dealTerms,
+        canGenerate: dealTerms?.bothPartyConfirmedFlag === true,
+      };
+      return view;
+    }),
+
+  generateContract: (dealId, byUserId) =>
+    simulateWrite(() => {
+      const deal = byId(deals, dealId);
+      if (!deal) throw new RepositoryError('not_found');
+      const lead = resolveLead(deal.leadId);
+      if (!lead) throw new RepositoryError('not_found');
+      const dealTerms = dealTermsRecords.find((t) => t.dealId === dealId);
+      if (!dealTerms || !dealTerms.bothPartyConfirmedFlag) throw new RepositoryError('deal_terms_not_confirmed');
+
+      const quotation = currentQuotationForLead(lead.id);
+      const template = quotation ? selectActiveQuotationTemplate(quotation, lead) : undefined;
+      const { clauses, usedStateClauseFallback } = buildContractClauses(lead, dealTerms, quotation, template);
+
+      const current = contracts.filter((c) => c.dealId === dealId).sort((a, b) => b.version - a.version)[0];
+      if (current && current.status === 'active') {
+        patchInPlace(contracts, current.id, { status: 'superseded' as const });
+      }
+
+      contractCounter += 1;
+      const created: Contract = {
+        id: `ct-new-${contractCounter}`,
+        dealId,
+        version: (current?.version ?? 0) + 1,
+        supersedesContractId: current?.id,
+        status: 'active',
+        clauses,
+        usedStateClauseFallback,
+        addenda: [],
+        generatedAt: new Date().toISOString(),
+        generatedBy: byUserId,
+        isDemo: true,
+      };
+      contracts.push(created);
+      return created;
+    }),
+
+  addContractAddendum: (contractId, note, byUserId) =>
+    simulateWrite(() => {
+      const contract = byId(contracts, contractId);
+      if (!contract) throw new RepositoryError('not_found');
+      const now = new Date().toISOString();
+      return patchInPlace(contracts, contractId, {
+        addenda: [...contract.addenda, { id: `cta-new-${(contractAddendumCounter += 1)}`, note, addedBy: byUserId, addedAt: now }],
       });
     }),
 

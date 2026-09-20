@@ -9,6 +9,7 @@ import type {
   CommSequence,
   CommTemplate,
   CommissionEntry,
+  Contract,
   Conversation,
   CounterOffer,
   Deal,
@@ -697,6 +698,122 @@ export const seedDealTerms: DealTerms[] = [
     ],
     createdAt: daysAgo(10),
     updatedAt: daysAgo(2),
+    isDemo: true,
+  },
+  // dl-1 (Shree Ram Heights) — an old, already-won deal: confirmed long ago,
+  // but never had a contract generated in this build's history. Feeds
+  // screen 075's "confirmed, ready to generate" starting state.
+  {
+    id: 'dt-3',
+    dealId: 'dl-1',
+    finalAgreedPrice: 2_640_000,
+    paymentStagePlan: [
+      { stage: 'advance', percentage: 25 },
+      { stage: 'material', percentage: 35 },
+      { stage: 'installation', percentage: 30 },
+      { stage: 'handover', percentage: 10 },
+      { stage: 'retention', percentage: 5 },
+    ],
+    specialTermsNotes: 'Standard 1-year manufacturer warranty; no bundled AMC selected at close.',
+    status: 'confirmed',
+    internalConfirmedBy: 'u-admin-1',
+    internalConfirmedAt: daysAgo(47),
+    customerConfirmedAt: daysAgo(46),
+    bothPartyConfirmedFlag: true,
+    amendments: [],
+    createdAt: daysAgo(47),
+    updatedAt: daysAgo(46),
+    isDemo: true,
+  },
+];
+
+export const seedContracts: Contract[] = [
+  // dl-6 (Tech Park Block C) — v1 generated right after confirmation; the
+  // GST correction on dt-2's amendment (dta-1) is exactly why v2 exists,
+  // superseding v1 rather than editing it in place. Neither version found
+  // a linked Quotation record for this lead, so both fall back to the
+  // national default compliance language — flagged for Admin either way.
+  {
+    id: 'ct-1',
+    dealId: 'dl-6',
+    version: 1,
+    status: 'superseded',
+    usedStateClauseFallback: true,
+    clauses: [
+      {
+        key: 'scope',
+        legalText: 'AIEC shall supply and arrange installation of one (1) elevator at Tech Park Block C, Phase 3, Hinjawadi, Pune, configured per Quotation on file (gearless traction drive), for the price stated below.',
+        plainLanguageSummary: 'This contract covers one elevator at Tech Park Block C, built to the specification you already agreed on in your quotation.',
+      },
+      {
+        key: 'price_and_payment',
+        legalText: 'The final agreed price is ₹84,00,000, inclusive of applicable GST at 12%, payable in stages: advance 25%, material 35%, installation 30%, handover 10%, retention 5% — exactly as locked in on the confirmed Deal Terms record.',
+        plainLanguageSummary: "You'll pay ₹84,00,000 in total, split across the payment stages you already agreed to.",
+      },
+      {
+        key: 'installation_and_liability',
+        legalText:
+          'Installation shall be carried out by an AIEC-assigned technician in accordance with IS 14665 and applicable safety codes. The assigned technician/installer is responsible for correct on-site installation; the equipment manufacturer/supplier is responsible for equipment defects; AIEC’s role is limited to facilitation, coordination, and quality oversight, and AIEC does not itself assume manufacturer or installer liability.',
+        plainLanguageSummary: "Your technician is responsible for a correct, safe installation; the equipment maker is responsible for the equipment itself; AIEC coordinates and oversees rather than carrying that liability directly.",
+      },
+      {
+        key: 'warranty_and_amc',
+        legalText:
+          "The equipment carries the manufacturer's standard warranty from the date of handover. An Annual Maintenance Contract, if selected, follows the tier and response-time terms published in AIEC's current AMC schedule.",
+        plainLanguageSummary: "Your elevator is covered by the manufacturer's warranty from handover; any AMC you've chosen follows its own published response-time promise.",
+      },
+      {
+        key: 'state_compliance',
+        legalText:
+          'This contract follows the National Building Code of India and applicable BIS standards, including IS 14665. A state-specific Lift Act clause set has not yet been configured for this location and has been flagged for Admin to add.',
+        plainLanguageSummary: "We're using our standard national compliance language for your location since a state-specific clause set hasn't been added for it yet — this has been flagged internally.",
+      },
+    ],
+    addenda: [],
+    generatedAt: daysAgo(9),
+    generatedBy: 'u-admin-1',
+    isDemo: true,
+  },
+  {
+    id: 'ct-2',
+    dealId: 'dl-6',
+    version: 2,
+    supersedesContractId: 'ct-1',
+    status: 'active',
+    usedStateClauseFallback: true,
+    clauses: [
+      {
+        key: 'scope',
+        legalText: 'AIEC shall supply and arrange installation of one (1) elevator at Tech Park Block C, Phase 3, Hinjawadi, Pune, configured per Quotation on file (gearless traction drive), for the price stated below.',
+        plainLanguageSummary: 'This contract covers one elevator at Tech Park Block C, built to the specification you already agreed on in your quotation.',
+      },
+      {
+        key: 'price_and_payment',
+        legalText: 'The final agreed price is ₹84,00,000, inclusive of applicable GST at 18%, payable in stages: advance 25%, material 35%, installation 30%, handover 10%, retention 5% — exactly as locked in on the confirmed Deal Terms record.',
+        plainLanguageSummary: "You'll pay ₹84,00,000 in total, split across the payment stages you already agreed to.",
+      },
+      {
+        key: 'installation_and_liability',
+        legalText:
+          'Installation shall be carried out by an AIEC-assigned technician in accordance with IS 14665 and applicable safety codes. The assigned technician/installer is responsible for correct on-site installation; the equipment manufacturer/supplier is responsible for equipment defects; AIEC’s role is limited to facilitation, coordination, and quality oversight, and AIEC does not itself assume manufacturer or installer liability.',
+        plainLanguageSummary: "Your technician is responsible for a correct, safe installation; the equipment maker is responsible for the equipment itself; AIEC coordinates and oversees rather than carrying that liability directly.",
+      },
+      {
+        key: 'warranty_and_amc',
+        legalText:
+          "The equipment carries the manufacturer's standard warranty from the date of handover. An Annual Maintenance Contract, if selected, follows the tier and response-time terms published in AIEC's current AMC schedule.",
+        plainLanguageSummary: "Your elevator is covered by the manufacturer's warranty from handover; any AMC you've chosen follows its own published response-time promise.",
+      },
+      {
+        key: 'state_compliance',
+        legalText:
+          'This contract follows the National Building Code of India and applicable BIS standards, including IS 14665. A state-specific Lift Act clause set has not yet been configured for this location and has been flagged for Admin to add.',
+        plainLanguageSummary: "We're using our standard national compliance language for your location since a state-specific clause set hasn't been added for it yet — this has been flagged internally.",
+      },
+    ],
+    addenda: [],
+    generatedAt: daysAgo(1),
+    generatedBy: 'u-admin-1',
     isDemo: true,
   },
 ];
