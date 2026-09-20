@@ -158,6 +158,9 @@ export function QuotationPreviewView() {
 
       <ActionBar>
         <div className="stack gap-2">
+          <Button block variant="secondary" onClick={() => navigate(`/admin/quotes/${view.id}/send`)}>
+            {t(view.effectiveStatus === 'draft' || view.effectiveStatus === 'change_requested' ? K.actions.send : K.actions.deliveryStatus)}
+          </Button>
           <Button block loading={s.accepting} onClick={() => void s.accept().then((ok) => toast.push(t(ok ? K.toast.accepted : K.toast.error), ok ? 'success' : 'error'))}>
             {t(K.actions.accept)}
           </Button>

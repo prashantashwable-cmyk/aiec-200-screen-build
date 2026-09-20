@@ -88,8 +88,10 @@ import type {
   PricingConfig,
   Quotation,
   QuotationCostBreakdown,
+  QuotationDeliveryChannel,
   QuotationDeliveryResult,
   QuotationTemplate,
+  QuotationTemplateVariant,
   ScoreFactor,
   ScoreWeightingProfile,
   SeriesPoint,
@@ -336,6 +338,91 @@ function isOptedOutSync(phone: string, channel: CommChannel): boolean {
   return latest.type === 'opted_out';
 }
 
+/** Deterministic per-number simulation of WhatsApp reachability — no real
+ *  gateway exists in this demo, so the same contact always resolves the same
+ *  way on retry rather than flapping randomly. */
+function whatsappReachableSync(phone: string): boolean {
+  return Number(phone.slice(-1)) % 2 === 1;
+}
+
+/** Explainable, not opaque: a multi-shaft commercial building gets the
+ *  Commercial Bulk terms, a premium or luxury finish gets Premium/Luxury,
+ *  everything else gets Residential Standard. */
+function selectQuotationTemplateVariant(quotation: Quotation, lead: Lead | null): QuotationTemplateVariant {
+  if (lead?.spec?.buildingType === 'commercial_office' && lead.spec.shaftCount >= 2) return 'commercial_bulk';
+  if (quotation.finishTier !== 'standard') return 'premium_luxury';
+  return 'residential_standard';
+}
+
+/** The currently active template for the matching variant — never a fixed
+ *  index — so an edited template is always what actually goes out. */
+function selectActiveQuotationTemplate(quotation: Quotation, lead: Lead | null): QuotationTemplate | undefined {
+  const variant = selectQuotationTemplateVariant(quotation, lead);
+  const matches = quotationTemplates.filter((t) => t.variant === variant);
+  if (matches.length === 0) return quotationTemplates[0];
+  return [...matches].sort((a, b) => b.version - a.version)[0];
+}
+
+/**
+ * The one place a quotation actually goes out — used for both an immediate
+ * send and a scheduled one whose time has arrived. WhatsApp opt-out and a
+ * bounced/unregistered number are handled the same way: the channel is
+ * recorded as failed and, if an email is on file and wasn't already part of
+ * the send, it's added automatically so the customer never simply hears
+ * nothing. Every channel's real outcome is kept, never collapsed into one
+ * ambiguous status.
+ */
+function executeQuotationSend(quotation: Quotation, channels: QuotationDeliveryChannel[], coverMessage: string): Quotation {
+  const now = new Date().toISOString();
+  const lead = resolveLead(quotation.leadId);
+  const template = selectActiveQuotationTemplate(quotation, lead);
+  const validityDate = new Date(Date.now() + (template?.validityPeriodDays ?? 15) * 86_400_000).toISOString();
+
+  const deliveryResults: QuotationDeliveryResult[] = [];
+  let actualChannels = [...channels];
+
+  if (channels.includes('whatsapp')) {
+    const optedOut = lead ? isOptedOutSync(lead.contactPhone, 'whatsapp') : true;
+    const reachable = !optedOut && lead ? whatsappReachableSync(lead.contactPhone) : false;
+    if (reachable) {
+      deliveryResults.push({ channel: 'whatsapp', status: 'delivered', at: now });
+    } else {
+      deliveryResults.push({ channel: 'whatsapp', status: 'failed', failureReason: optedOut ? 'opted_out' : 'not_on_whatsapp', at: now });
+      if (lead?.contactEmail && !actualChannels.includes('email')) {
+        actualChannels = [...actualChannels, 'email'];
+      }
+    }
+  }
+
+  if (actualChannels.includes('email') && !deliveryResults.some((r) => r.channel === 'email')) {
+    if (lead?.contactEmail) {
+      deliveryResults.push({ channel: 'email', status: 'delivered', at: now });
+    } else {
+      deliveryResults.push({ channel: 'email', status: 'failed', failureReason: 'no_email_on_file', at: now });
+    }
+  }
+
+  const updated = patchInPlace(quotations, quotation.id, {
+    status: quotation.status === 'draft' || quotation.status === 'change_requested' ? ('sent' as const) : quotation.status,
+    deliveryChannels: actualChannels,
+    coverMessage,
+    scheduledSendAt: undefined,
+    sentAt: now,
+    deliveryResults,
+    templateId: template?.id,
+    templateVersionAtSend: template?.version,
+    validityDate,
+  });
+
+  // Sending is what actually transitions the lead's CRM stage to Quoted —
+  // keeps the Kanban board and this action perfectly synced.
+  if (lead && rankOf(lead.stage) < rankOf('quoted')) {
+    patchInPlace(leads, lead.id, { stage: 'quoted', stageEnteredAt: now, updatedAt: now });
+    pushTimelineEvent({ leadId: lead.id, kind: 'stage_changed', actorName: 'Automation', at: now, fromValue: lead.stage, toValue: 'quoted', detail: `Quotation ${quotation.code} sent` });
+  }
+  return updated;
+}
+
 /** Deterministic breakdown of a failure count across causes — no randomness,
  *  so the same send always reports the same delivery report on reload. */
 function splitFailureReasons(total: number): Partial<Record<SmsFailureReason, number>> {
@@ -561,8 +648,20 @@ function applyApprovedDiscount(request: DiscountRequest, approverId: string, rea
     createdReasonNote: request.reasonNote,
   };
   quotations.unshift(version);
-  if (quotation.status === 'sent' || quotation.status === 'viewed') {
-    patchInPlace(quotations, quotation.id, { status: 'superseded' as const });
+  // A prior version with a scheduled send still pending is superseded right
+  // away too — see the identical rule in createQuotationVersion.
+  const hadPendingScheduledSend = Boolean(quotation.scheduledSendAt) && !quotation.sentAt;
+  if (quotation.status === 'sent' || quotation.status === 'viewed' || hadPendingScheduledSend) {
+    patchInPlace(quotations, quotation.id, { status: 'superseded' as const, scheduledSendAt: undefined });
+    if (hadPendingScheduledSend) {
+      pushTimelineEvent({
+        leadId: quotation.leadId,
+        kind: 'communication_failed',
+        actorName: 'Automation',
+        at: now,
+        detail: `Scheduled send for ${quotation.code} v${quotation.version} cancelled automatically — superseded by v${version.version} before it went out`,
+      });
+    }
   }
   pushTimelineEvent({ leadId: quotation.leadId, kind: 'quote_created', actorName: approverName, at: now, detail: `Quotation ${version.code} v${version.version} — discount approved` });
 }
@@ -1264,9 +1363,22 @@ export const memoryRepository: Repository = {
         createdReasonNote: reason.note,
       };
       quotations.unshift(version);
-      // Only one version per lead can be active/sent at once.
-      if (prior.status === 'sent' || prior.status === 'viewed') {
-        patchInPlace(quotations, prior.id, { status: 'superseded' as const });
+      // Only one version per lead can be active/sent at once. A prior version
+      // with a scheduled send still pending is superseded right away too — a
+      // customer must never receive a stale version just because the clock
+      // hadn't reached the scheduled time yet.
+      const hadPendingScheduledSend = Boolean(prior.scheduledSendAt) && !prior.sentAt;
+      if (prior.status === 'sent' || prior.status === 'viewed' || hadPendingScheduledSend) {
+        patchInPlace(quotations, prior.id, { status: 'superseded' as const, scheduledSendAt: undefined });
+        if (hadPendingScheduledSend) {
+          pushTimelineEvent({
+            leadId: prior.leadId,
+            kind: 'communication_failed',
+            actorName: 'Automation',
+            at: now,
+            detail: `Scheduled send for ${prior.code} v${prior.version} cancelled automatically — superseded by v${version.version} before it went out`,
+          });
+        }
       }
       pushTimelineEvent({ leadId: prior.leadId, kind: 'quote_created', actorName: createdBy, at: now, detail: `Quotation ${version.code} v${version.version} — ${reason.key}` });
       return version;
@@ -1297,28 +1409,34 @@ export const memoryRepository: Repository = {
     simulateWrite(() => {
       const quotation = byId(quotations, id);
       if (!quotation) throw new RepositoryError('not_found');
-      const template = quotationTemplates[0];
-      const now = new Date().toISOString();
-      const validityDate = new Date(Date.now() + (template?.validityPeriodDays ?? 15) * 86_400_000).toISOString();
-      const deliveryResults: QuotationDeliveryResult[] = input.channels.map((channel) => ({ channel, status: 'delivered' as const, at: now }));
-      const updated = patchInPlace(quotations, id, {
-        status: 'sent' as const,
-        deliveryChannels: input.channels,
-        coverMessage: input.coverMessage,
-        scheduledSendAt: input.scheduledSendAt,
-        sentAt: now,
-        deliveryResults,
-        templateId: template?.id,
-        templateVersionAtSend: template?.version,
-        validityDate,
-      });
-      // Sending is what actually transitions the lead's CRM stage to
-      // Quoted — keeps the Kanban board and this action perfectly synced.
-      const lead = resolveLead(quotation.leadId);
-      if (lead && rankOf(lead.stage) < rankOf('quoted')) {
-        patchInPlace(leads, lead.id, { stage: 'quoted', stageEnteredAt: now, updatedAt: now });
-        pushTimelineEvent({ leadId: lead.id, kind: 'stage_changed', actorName: 'Automation', at: now, fromValue: lead.stage, toValue: 'quoted', detail: `Quotation ${quotation.code} sent` });
+      if (quotation.status === 'superseded') throw new RepositoryError('quotation_superseded');
+
+      const scheduledTimeMs = input.scheduledSendAt ? new Date(input.scheduledSendAt).getTime() : null;
+      if (scheduledTimeMs !== null && scheduledTimeMs > Date.now()) {
+        // Not due yet — persist the scheduling intent only. Nothing is
+        // delivered and the lead's stage doesn't move until it actually sends.
+        return patchInPlace(quotations, id, {
+          deliveryChannels: input.channels,
+          coverMessage: input.coverMessage,
+          scheduledSendAt: input.scheduledSendAt,
+        });
       }
+      return executeQuotationSend(quotation, input.channels, input.coverMessage);
+    }),
+
+  cancelScheduledQuotationSend: (id) =>
+    simulateWrite(() => {
+      const quotation = byId(quotations, id);
+      if (!quotation) throw new RepositoryError('not_found');
+      if (!quotation.scheduledSendAt || quotation.sentAt) throw new RepositoryError('not_cancellable');
+      const updated = patchInPlace(quotations, id, { scheduledSendAt: undefined });
+      pushTimelineEvent({
+        leadId: quotation.leadId,
+        kind: 'communication_failed',
+        actorName: 'Sales',
+        at: new Date().toISOString(),
+        detail: `Scheduled send for ${quotation.code} v${quotation.version} cancelled by the sales user`,
+      });
       return updated;
     }),
 

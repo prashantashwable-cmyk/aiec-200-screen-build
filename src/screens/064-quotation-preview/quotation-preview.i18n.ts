@@ -31,6 +31,8 @@ const translations: ScreenTranslations = {
       actions: {
         accept: 'Accept quotation',
         requestChanges: 'Request changes',
+        send: 'Send quotation',
+        deliveryStatus: 'View delivery status',
       },
       changeRequestSheet: {
         title: 'What would you like changed?',
@@ -77,6 +79,8 @@ const translations: ScreenTranslations = {
       actions: {
         accept: 'कोटेशन स्वीकार करें',
         requestChanges: 'बदलाव माँगें',
+        send: 'कोटेशन भेजें',
+        deliveryStatus: 'डिलीवरी स्थिति देखें',
       },
       changeRequestSheet: {
         title: 'आप क्या बदलाव चाहते हैं?',
@@ -123,6 +127,8 @@ const translations: ScreenTranslations = {
       actions: {
         accept: 'कोटेशन स्वीकारा',
         requestChanges: 'बदल मागवा',
+        send: 'कोटेशन पाठवा',
+        deliveryStatus: 'डिलिव्हरी स्थिती पहा',
       },
       changeRequestSheet: {
         title: 'तुम्हाला काय बदल हवा आहे?',

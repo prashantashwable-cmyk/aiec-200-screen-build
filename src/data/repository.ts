@@ -353,6 +353,9 @@ export interface Repository {
   /** Every version for the lead this quotation belongs to, oldest first. */
   listQuotationVersions(quotationId: string): Promise<Quotation[]>;
   sendQuotation(id: string, input: { channels: QuotationDeliveryChannel[]; coverMessage: string; scheduledSendAt?: string }): Promise<Quotation>;
+  /** Cancels a still-pending scheduled send before its time arrives — the
+   *  form's counterpart to `cancelBroadcast` for quotations. */
+  cancelScheduledQuotationSend(id: string): Promise<Quotation>;
   recordQuotationView(id: string): Promise<Quotation>;
   acceptQuotation(id: string): Promise<Quotation>;
   requestQuotationChanges(id: string, note: string): Promise<Quotation>;

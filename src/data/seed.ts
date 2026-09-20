@@ -424,6 +424,11 @@ const LEAD_SOURCE_CYCLE: LeadSource[] = [
  *  gives screen 044's history and screen 042's timeline real data to show. */
 const REASSIGNED_LEAD_IDS: Record<string, string> = { 'l-9': 'u-srv-2' };
 
+/** Most contacts have an email on file, as a real B2B lead would — a small
+ *  minority genuinely don't, so screen 068's "no email on file" edge case
+ *  has a real record to show it against rather than only a contrived one. */
+const NO_EMAIL_LEAD_IDS = new Set(['l-8', 'l-9']);
+
 const STAGE_LADDER: Lead['stage'][] = [
   'captured',
   'contacted',
@@ -446,6 +451,9 @@ export const seedLeads: Lead[] = leadSeeds.map((s, index) => {
     builderName: s.builderName,
     contactName: s.contactName,
     contactPhone: s.phone,
+    contactEmail: NO_EMAIL_LEAD_IDS.has(s.id)
+      ? undefined
+      : `${s.contactName.toLowerCase().replace(/[^a-z]+/g, '.')}@${s.builderName.toLowerCase().replace(/[^a-z]+/g, '')}.in`,
     siteName: s.siteName,
     address: s.address,
     city: s.city,
