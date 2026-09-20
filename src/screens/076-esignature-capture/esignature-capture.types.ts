@@ -71,6 +71,7 @@ export const ESIGNATURE_CAPTURE_KEYS = {
     body: 'esignatureCapture.fullySigned.body',
     customerSignedLine: 'esignatureCapture.fullySigned.customerSignedLine',
     countersignedLine: 'esignatureCapture.fullySigned.countersignedLine',
+    viewClosure: 'esignatureCapture.fullySigned.viewClosure',
   },
 
   toast: {

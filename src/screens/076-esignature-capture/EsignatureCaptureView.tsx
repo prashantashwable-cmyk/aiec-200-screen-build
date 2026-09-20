@@ -93,12 +93,15 @@ export function EsignatureCaptureView() {
         <Card className="mb-4">
           <AscensionLine steps={progressSteps} />
         </Card>
-        <Card>
+        <Card className="mb-4">
           <div className="stack gap-2 t-sm">
             <p>{t(K.fullySigned.customerSignedLine, { name: lead.contactName, date: signature.customerSignedAt ? formatDate(signature.customerSignedAt, i18n.language) : '' })}</p>
             <p>{t(K.fullySigned.countersignedLine, { date: signature.aiecCountersignedAt ? formatDate(signature.aiecCountersignedAt, i18n.language) : '' })}</p>
           </div>
         </Card>
+        <Button block onClick={() => navigate(`/admin/deals/${deal.id}/closure`)}>
+          {t(K.fullySigned.viewClosure)}
+        </Button>
       </Screen>
     );
   }

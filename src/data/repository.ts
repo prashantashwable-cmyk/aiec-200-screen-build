@@ -16,6 +16,7 @@ import type {
   Conversation,
   CounterOffer,
   Deal,
+  DealClosure,
   DealTerms,
   DiscountRequest,
   DiscountRequestStatus,
@@ -49,6 +50,7 @@ import type {
   SiteVisitVerification,
   SmsBroadcast,
   Supplier,
+  SupplierPurchaseOrder,
   TemplateStat,
   TriggerRule,
   User,
@@ -207,6 +209,19 @@ export interface SignatureView {
   deal: Deal;
   lead: Lead;
   canSign: boolean;
+}
+
+/** Screen 077's own read shape. `closure` is null until the deal has been
+ *  through its kickoff; `eligibleToClose` mirrors "the deal is fully
+ *  signed" (`Deal.status === 'won'`), the only state this can fire from. */
+export interface DealClosureView {
+  closure: DealClosure | null;
+  deal: Deal;
+  lead: Lead;
+  dealTerms: DealTerms | null;
+  paymentRecords: Payment[];
+  supplierPo: SupplierPurchaseOrder | null;
+  eligibleToClose: boolean;
 }
 
 export interface SequenceTestStep {
@@ -543,6 +558,19 @@ export interface Repository {
    *  to `'won'` and stamps `closedAt`. Blocked unless the customer has
    *  already signed. */
   recordAiecCountersignature(dealId: string, byUserId: string): Promise<ContractSignature>;
+
+  /* Deal closure */
+  getDealClosure(dealId: string): Promise<DealClosureView | null>;
+  /** Idempotent — a deal already closed returns its existing `DealClosure`
+   *  rather than re-running the kickoff (Payment rows, commission entry,
+   *  supplier PO) a second time. Fires the CRM stage transition to
+   *  'won', creates the Payment schedule from the locked-in
+   *  DealTerms.paymentStagePlan, and attempts the supplier PO — a PO
+   *  failure never blocks this call from succeeding. */
+  triggerDealClosure(dealId: string): Promise<DealClosure>;
+  /** Logs a reversal on the existing record — never deletes it — for the
+   *  "closed deal needs to be voided" edge case. */
+  voidDealClosure(dealId: string, reason: string, byUserId: string): Promise<DealClosure>;
 
   /* Operations */
   listActivity(limit?: number): Promise<ActivityEvent[]>;

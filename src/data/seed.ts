@@ -14,6 +14,7 @@ import type {
   Conversation,
   CounterOffer,
   Deal,
+  DealClosure,
   DealTerms,
   DiscountRequest,
   DuplicatePair,
@@ -38,6 +39,7 @@ import type {
   SiteVisitVerification,
   SmsBroadcast,
   Supplier,
+  SupplierPurchaseOrder,
   TriggerRule,
   User,
 } from './types';
@@ -522,7 +524,7 @@ export const seedDeals: Deal[] = [
   { id: 'dl-3', code: 'AIEC-D-2103', leadId: 'l-3', customerId: 'u-cust-3', status: 'negotiating', quotedPrice: 4_320_000, agreedPrice: 4_120_000, marginAmount: 741_000, gstPercent: 18, supplierId: 'sp-1', negotiationRounds: 3, createdAt: daysAgo(18), isDemo: true },
   { id: 'dl-4', code: 'AIEC-D-2104', leadId: 'l-4', status: 'quoted', quotedPrice: 3_050_000, agreedPrice: 0, marginAmount: 549_000, gstPercent: 18, supplierId: 'sp-1', negotiationRounds: 0, createdAt: daysAgo(9), isDemo: true },
   { id: 'dl-5', code: 'AIEC-D-2105', leadId: 'l-5', status: 'quoted', quotedPrice: 1_450_000, agreedPrice: 0, marginAmount: 246_500, gstPercent: 18, supplierId: 'sp-3', negotiationRounds: 0, createdAt: daysAgo(7), isDemo: true },
-  { id: 'dl-6', code: 'AIEC-D-2106', leadId: 'l-15', status: 'approved', quotedPrice: 8_800_000, agreedPrice: 8_400_000, marginAmount: 1_512_000, gstPercent: 18, supplierId: 'sp-1', negotiationRounds: 4, createdAt: daysAgo(15), isDemo: true },
+  { id: 'dl-6', code: 'AIEC-D-2106', leadId: 'l-15', status: 'won', quotedPrice: 8_800_000, agreedPrice: 8_400_000, marginAmount: 1_512_000, gstPercent: 18, supplierId: 'sp-5', negotiationRounds: 4, createdAt: daysAgo(15), closedAt: hoursAgo(2), isDemo: true },
   { id: 'dl-7', code: 'AIEC-D-2107', leadId: 'l-16', status: 'quoted', quotedPrice: 3_700_000, agreedPrice: 0, marginAmount: 629_000, gstPercent: 18, supplierId: 'sp-2', negotiationRounds: 0, createdAt: daysAgo(5), isDemo: true },
   { id: 'dl-8', code: 'AIEC-D-2108', leadId: 'l-13', status: 'lost', quotedPrice: 1_620_000, agreedPrice: 0, marginAmount: 0, gstPercent: 18, negotiationRounds: 2, createdAt: daysAgo(32), closedAt: daysAgo(18), isDemo: true },
 ];
@@ -820,19 +822,40 @@ export const seedContracts: Contract[] = [
 ];
 
 export const seedContractSignatures: ContractSignature[] = [
-  // dl-6 (Tech Park Block C) — the customer signed a day ago; AIEC's
-  // countersignature hasn't happened yet, so this deal shows as
-  // "Customer Signed, Pending Countersignature", not fully closed.
+  // dl-6 (Tech Park Block C) — customer signed a day ago, AIEC countersigned
+  // 2 hours ago: fully closed. Feeds screen 077's closure/kickoff demo,
+  // including its supplier-PO-failure edge case (see seedSupplierPurchaseOrders).
   {
     id: 'cs-1',
     contractId: 'ct-2',
     dealId: 'dl-6',
-    status: 'customer_signed',
+    status: 'fully_signed',
     customerSignatureMethod: 'typed',
     customerSignatureData: 'Girish Rao',
     customerConsentGiven: true,
     customerOtpVerified: true,
     customerSignedAt: daysAgo(1),
+    aiecCountersignedBy: 'u-admin-1',
+    aiecCountersignedAt: hoursAgo(2),
+    isDemo: true,
+  },
+];
+
+export const seedDealClosures: DealClosure[] = [
+  // dl-6 — p-10 (advance) already existed before closure; the kickoff
+  // created the other four stages and the leadConverted commission was
+  // already c-6 from earlier in this deal's life, so it's referenced
+  // rather than duplicated. The supplier PO failed (see spo-1) without
+  // blocking this record from existing.
+  {
+    id: 'dc-1',
+    dealId: 'dl-6',
+    closedAt: hoursAgo(2),
+    paymentRecordIds: ['p-10', 'p-13', 'p-14', 'p-15', 'p-16'],
+    supplierPoId: 'spo-1',
+    supplierPoFailed: true,
+    commissionEntryIds: ['c-6'],
+    voided: false,
     isDemo: true,
   },
 ];
@@ -886,6 +909,13 @@ export const seedPayments: Payment[] = [
   { id: 'p-10', code: 'AIEC-P-4110', dealId: 'dl-6', stage: 'advance', amount: 2_100_000, status: 'due', dueDate: daysAhead(9), isDemo: true },
   { id: 'p-11', code: 'AIEC-P-4111', dealId: 'dl-1', stage: 'retention', amount: 132_000, status: 'due', dueDate: daysAhead(75), isDemo: true },
   { id: 'p-12', code: 'AIEC-P-4112', dealId: 'dl-2', stage: 'retention', amount: 94_000, status: 'due', dueDate: daysAhead(90), isDemo: true },
+  // dl-6's material/installation/handover/retention stages, created by
+  // screen 077's closure kickoff — p-10 (advance) already existed from
+  // before closure, so the kickoff only ever creates the remaining stages.
+  { id: 'p-13', code: 'AIEC-P-4113', dealId: 'dl-6', stage: 'material', amount: 2_940_000, status: 'due', dueDate: daysAhead(15), isDemo: true },
+  { id: 'p-14', code: 'AIEC-P-4114', dealId: 'dl-6', stage: 'installation', amount: 2_520_000, status: 'due', dueDate: daysAhead(40), isDemo: true },
+  { id: 'p-15', code: 'AIEC-P-4115', dealId: 'dl-6', stage: 'handover', amount: 840_000, status: 'due', dueDate: daysAhead(65), isDemo: true },
+  { id: 'p-16', code: 'AIEC-P-4116', dealId: 'dl-6', stage: 'retention', amount: 420_000, status: 'due', dueDate: daysAhead(120), isDemo: true },
 ];
 
 /* --------------------------------------------------------------- Suppliers */
@@ -896,6 +926,21 @@ export const seedSuppliers: Supplier[] = [
   { id: 'sp-3', name: 'Konark Drives & Controls', status: 'active', city: 'Nashik', gstin: '27AAECK3456D1Z1', categories: ['controller', 'vfd', 'wiring'], onTimeRate: 0.88, qualityScore: 4.4, avgLeadTimeDays: 21, openOrders: 3, totalOrderValue: 4_950_000, rating: 4.4, isDemo: true },
   { id: 'sp-4', name: 'Deccan Structural Steel', status: 'active', city: 'Pune', categories: ['guide_rails', 'brackets', 'counterweight'], onTimeRate: 0.72, qualityScore: 3.6, avgLeadTimeDays: 9, openOrders: 2, totalOrderValue: 2_100_000, rating: 3.6, isDemo: true },
   { id: 'sp-5', name: 'Rathi Lift Systems', status: 'pending_approval', city: 'Ahmedabad', gstin: '24AACFR5678B1Z2', categories: ['traction_machine', 'controller'], onTimeRate: 0, qualityScore: 0, avgLeadTimeDays: 0, openOrders: 0, totalOrderValue: 0, rating: 0, isDemo: true },
+];
+
+export const seedSupplierPurchaseOrders: SupplierPurchaseOrder[] = [
+  // dl-6's closure kickoff tried to raise this automatically; sp-5 isn't
+  // approved yet, so it failed without blocking the deal's own closure.
+  {
+    id: 'spo-1',
+    code: 'AIEC-PO-9001',
+    dealId: 'dl-6',
+    supplierId: 'sp-5',
+    status: 'failed',
+    failureReason: 'Rathi Lift Systems is still pending approval and cannot receive purchase orders yet.',
+    triggeredAt: hoursAgo(2),
+    isDemo: true,
+  },
 ];
 
 /* ------------------------------------------------------------- Geo-fencing */
@@ -984,6 +1029,7 @@ export const seedAutomations: AutomationRule[] = [
   { id: 'a-6', name: 'Supplier PO on material stage', triggerKey: 'automation.trigger.materialStage', actionKey: 'automation.action.raisePurchaseOrder', enabled: false, runsToday: 0, failuresToday: 0, lastRunAt: daysAgo(3), avgLatencyMs: 0, status: 'paused', isDemo: true },
   { id: 'a-7', name: 'Duplicate lead check on capture', triggerKey: 'automation.trigger.leadCaptured', actionKey: 'automation.action.checkDuplicate', enabled: true, runsToday: 12, failuresToday: 0, lastRunAt: minutesAgo(4), avgLatencyMs: 190, status: 'healthy', isDemo: true },
   { id: 'a-8', name: 'Nightly commission accrual', triggerKey: 'automation.trigger.nightly', actionKey: 'automation.action.accrueCommission', enabled: true, runsToday: 1, failuresToday: 1, lastRunAt: hoursAgo(11), avgLatencyMs: 9_600, status: 'failing', isDemo: true },
+  { id: 'a-9', name: 'Supplier PO on deal closure', triggerKey: 'automation.trigger.dealWon', actionKey: 'automation.action.raisePurchaseOrder', enabled: true, runsToday: 1, failuresToday: 1, lastRunAt: hoursAgo(2), avgLatencyMs: 640, status: 'degraded', isDemo: true },
 ];
 
 /* ------------------------------------------------------------------ Alerts */
@@ -998,6 +1044,7 @@ export const seedAlerts: Alert[] = [
   { id: 'al-7', code: 'ALT-9007', titleKey: 'alerts.type.technicianIdle', context: 'Ajay Nikam · no check-in for 9 hours during a scheduled job', severity: 'low', category: 'staffing', status: 'open', raisedAt: hoursAgo(9), relatedId: 'u-tech-3', isDemo: true },
   { id: 'al-8', code: 'ALT-9008', titleKey: 'alerts.type.qcFailed', context: 'AIEC-J-3102 · door operator alignment out of tolerance', severity: 'high', category: 'quality', status: 'resolved', raisedAt: daysAgo(3), acknowledgedBy: 'u-admin-1', relatedId: 'j-2', isDemo: true },
   { id: 'al-9', code: 'ALT-9009', titleKey: 'alerts.type.counterOfferAging', context: 'AIEC-D-2103 · Skyline Corporate Park · counter-offer waiting 9h with no Admin decision yet', severity: 'medium', category: 'sla_breach', status: 'open', raisedAt: hoursAgo(9), relatedId: 'co-3', isDemo: true },
+  { id: 'al-10', code: 'ALT-9010', titleKey: 'alerts.type.automationFailing', context: 'AIEC-D-2106 · Tech Park Block C · supplier PO failed — Rathi Lift Systems is still pending approval', severity: 'medium', category: 'automation', status: 'open', raisedAt: hoursAgo(2), relatedId: 'a-9', isDemo: true },
 ];
 
 /* ---------------------------------------------------------- Activity feed */

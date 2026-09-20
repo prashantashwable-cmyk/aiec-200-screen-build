@@ -14,6 +14,7 @@ import {
   seedContracts,
   seedConversations,
   seedCounterOffers,
+  seedDealClosures,
   seedDealTerms,
   seedDeals,
   seedDiscountRequests,
@@ -35,6 +36,7 @@ import {
   seedSeries,
   seedSiteVisits,
   seedSuppliers,
+  seedSupplierPurchaseOrders,
   seedTriggerRules,
   seedUsers,
   seedZones,
@@ -52,6 +54,7 @@ import type {
   ContractView,
   ConversationWithContext,
   CounterOfferQueueItem,
+  DealClosureView,
   DealTermsView,
   ExecutiveKpis,
   FunnelStage,
@@ -78,6 +81,7 @@ import type {
   CallOutcome,
   ChannelStat,
   CommChannel,
+  CommissionEntry,
   CommMessage,
   CommSequence,
   CommTemplate,
@@ -86,6 +90,8 @@ import type {
   ContractSignature,
   Conversation,
   CounterOffer,
+  Deal,
+  DealClosure,
   DealTerms,
   DiscountRequest,
   DiscountRequestStatus,
@@ -102,6 +108,7 @@ import type {
   NegotiationBotConfig,
   OptOutChannel,
   OptOutEvent,
+  Payment,
   PricingConfig,
   Quotation,
   QuotationCostBreakdown,
@@ -115,6 +122,7 @@ import type {
   SiteVisitVerification,
   SmsBroadcast,
   SmsFailureReason,
+  SupplierPurchaseOrder,
   TemplateStat,
   TriggerRule,
   User,
@@ -177,6 +185,13 @@ let contractCounter = 100;
 let contractAddendumCounter = 100;
 const contractSignatures = [...seedContractSignatures];
 let contractSignatureCounter = 100;
+const supplierPurchaseOrders = [...seedSupplierPurchaseOrders];
+let supplierPurchaseOrderCounter = 100;
+const dealClosures = [...seedDealClosures];
+let dealClosureCounter = 100;
+let closurePaymentCounter = 900;
+let closureCommissionCounter = 900;
+let alertCounter = 900;
 
 let leadCounter = 200;
 let timelineEventCounter = 900;
@@ -265,6 +280,120 @@ function buildContractClauses(
   ];
 
   return { clauses, usedStateClauseFallback };
+}
+
+/** Rough, honest estimates from the moment of closure — real enough to set
+ *  accurate customer expectations without a full scheduling subsystem.
+ *  'advance' isn't listed: it's due immediately, or (as for dl-6) may
+ *  already have been invoiced before formal closure. */
+const CLOSURE_STAGE_DELAY_DAYS: Record<string, number> = { material: 15, installation: 40, handover: 65, retention: 120 };
+
+/** Creates only the stages that don't already have a Payment row for this
+ *  deal — an advance often gets invoiced during negotiation, well before
+ *  the deal is formally closed, and this never double-books it. */
+function createDealPaymentSchedule(deal: Deal, dealTerms: DealTerms | undefined): string[] {
+  const finalPrice = dealTerms?.finalAgreedPrice ?? (deal.agreedPrice || deal.quotedPrice);
+  const plan = dealTerms?.paymentStagePlan ?? [];
+  const closedAt = deal.closedAt ?? new Date().toISOString();
+  const ids: string[] = [];
+  for (const item of plan) {
+    const existing = payments.find((p) => p.dealId === deal.id && p.stage === item.stage);
+    if (existing) {
+      ids.push(existing.id);
+      continue;
+    }
+    const delayDays = CLOSURE_STAGE_DELAY_DAYS[item.stage] ?? 0;
+    const dueDate = new Date(new Date(closedAt).getTime() + delayDays * 24 * 60 * 60 * 1000).toISOString();
+    closurePaymentCounter += 1;
+    const created: Payment = {
+      id: `p-new-${closurePaymentCounter}`,
+      code: `AIEC-P-${4200 + closurePaymentCounter}`,
+      dealId: deal.id,
+      stage: item.stage,
+      amount: Math.round((finalPrice * item.percentage) / 100),
+      status: 'due',
+      dueDate,
+      isDemo: true,
+    };
+    payments.push(created);
+    ids.push(created.id);
+  }
+  return ids;
+}
+
+/** Reuses an already-recognized 'leadConverted' commission if one exists
+ *  for this deal (a lead can be recognized before formal deal closure)
+ *  rather than crediting the surveyor twice for the same conversion. */
+function createOrReuseLeadConvertedCommission(deal: Deal, lead: Lead): string {
+  const existing = commissions.find((c) => c.dealId === deal.id && c.reasonKey === 'commission.reason.leadConverted');
+  if (existing) return existing.id;
+  closureCommissionCounter += 1;
+  const created: CommissionEntry = {
+    id: `c-new-${closureCommissionCounter}`,
+    userId: lead.originalSurveyorId,
+    leadId: lead.id,
+    dealId: deal.id,
+    reasonKey: 'commission.reason.leadConverted',
+    amount: Math.round((deal.agreedPrice || deal.quotedPrice) * 0.015),
+    status: 'projected',
+    earnedAt: deal.closedAt ?? new Date().toISOString(),
+    isDemo: true,
+  };
+  commissions.push(created);
+  return created.id;
+}
+
+/** A failed PO never blocks the deal's own closure — it surfaces on the
+ *  Automation Health Monitor (screen 027) and Alerts exactly the way any
+ *  other automation failure in this build does. */
+function triggerSupplierPo(deal: Deal): { id: string; failed: boolean } {
+  const supplier = deal.supplierId ? byId(suppliers, deal.supplierId) : null;
+  const failed = !supplier || supplier.status !== 'active';
+  const failureReason = !supplier
+    ? 'No supplier is assigned to this deal yet.'
+    : failed
+      ? `${supplier.name} is not yet an active, approved supplier.`
+      : undefined;
+  supplierPurchaseOrderCounter += 1;
+  const now = new Date().toISOString();
+  const created: SupplierPurchaseOrder = {
+    id: `spo-new-${supplierPurchaseOrderCounter}`,
+    code: `AIEC-PO-${9000 + supplierPurchaseOrderCounter}`,
+    dealId: deal.id,
+    supplierId: deal.supplierId,
+    status: failed ? 'failed' : 'triggered',
+    failureReason,
+    triggeredAt: now,
+    isDemo: true,
+  };
+  supplierPurchaseOrders.push(created);
+
+  if (failed) {
+    const rule = automations.find((a) => a.actionKey === 'automation.action.raisePurchaseOrder' && a.triggerKey === 'automation.trigger.dealWon');
+    if (rule) {
+      patchInPlace(automations, rule.id, {
+        runsToday: rule.runsToday + 1,
+        failuresToday: rule.failuresToday + 1,
+        lastRunAt: now,
+        status: 'degraded' as const,
+      });
+      alertCounter += 1;
+      alerts.push({
+        id: `al-new-${alertCounter}`,
+        code: `ALT-${9000 + alertCounter}`,
+        titleKey: 'alerts.type.automationFailing',
+        context: `${deal.code} · supplier PO failed — ${failureReason}`,
+        severity: 'medium',
+        category: 'automation',
+        status: 'open',
+        raisedAt: now,
+        relatedId: rule.id,
+        isDemo: true,
+      });
+    }
+  }
+
+  return { id: created.id, failed };
 }
 
 function pushTimelineEvent(event: Omit<LeadTimelineEvent, 'id'>): LeadTimelineEvent {
@@ -2181,6 +2310,71 @@ export const memoryRepository: Repository = {
       // The one moment this deal becomes formally, legally Closed Won.
       patchInPlace(deals, dealId, { status: 'won' as const, closedAt: now });
       return updated;
+    }),
+
+  getDealClosure: (dealId) =>
+    simulateRead(() => {
+      const deal = byId(deals, dealId);
+      if (!deal) return null;
+      const lead = resolveLead(deal.leadId);
+      if (!lead) return null;
+      const dealTerms = dealTermsRecords.find((t) => t.dealId === dealId) ?? null;
+      const closure = dealClosures.find((c) => c.dealId === dealId) ?? null;
+      const paymentRecords = closure
+        ? closure.paymentRecordIds.map((id) => byId(payments, id)).filter((p): p is Payment => p !== null)
+        : [];
+      const supplierPo = closure?.supplierPoId ? byId(supplierPurchaseOrders, closure.supplierPoId) : null;
+      const view: DealClosureView = { closure, deal, lead, dealTerms, paymentRecords, supplierPo, eligibleToClose: deal.status === 'won' };
+      return view;
+    }),
+
+  triggerDealClosure: (dealId) =>
+    simulateWrite(() => {
+      const deal = byId(deals, dealId);
+      if (!deal) throw new RepositoryError('not_found');
+      const existing = dealClosures.find((c) => c.dealId === dealId);
+      if (existing) return existing;
+      if (deal.status !== 'won') throw new RepositoryError('deal_not_fully_signed');
+      const lead = resolveLead(deal.leadId);
+      if (!lead) throw new RepositoryError('not_found');
+      const dealTerms = dealTermsRecords.find((t) => t.dealId === dealId);
+
+      // Auto-transitions the CRM pipeline stage as part of this same event.
+      if (lead.stage !== 'won') {
+        patchInPlace(leads, lead.id, { stage: 'won' as const, stageEnteredAt: deal.closedAt ?? new Date().toISOString() });
+      }
+
+      const paymentRecordIds = createDealPaymentSchedule(deal, dealTerms);
+      const commissionId = createOrReuseLeadConvertedCommission(deal, lead);
+      const po = triggerSupplierPo(deal);
+
+      dealClosureCounter += 1;
+      const created: DealClosure = {
+        id: `dc-new-${dealClosureCounter}`,
+        dealId,
+        closedAt: deal.closedAt ?? new Date().toISOString(),
+        paymentRecordIds,
+        supplierPoId: po.id,
+        supplierPoFailed: po.failed,
+        commissionEntryIds: [commissionId],
+        voided: false,
+        isDemo: true,
+      };
+      dealClosures.push(created);
+      return created;
+    }),
+
+  voidDealClosure: (dealId, reason, byUserId) =>
+    simulateWrite(() => {
+      const closure = dealClosures.find((c) => c.dealId === dealId);
+      if (!closure) throw new RepositoryError('not_found');
+      if (closure.voided) throw new RepositoryError('already_voided');
+      return patchInPlace(dealClosures, closure.id, {
+        voided: true,
+        voidReason: reason,
+        voidedBy: byUserId,
+        voidedAt: new Date().toISOString(),
+      });
     }),
 
   /* -------------------------------------------------------- Operations */

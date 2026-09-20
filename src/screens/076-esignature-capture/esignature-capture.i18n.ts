@@ -61,6 +61,7 @@ const translations: ScreenTranslations = {
         body: 'Both signatures are captured. This contract is now immutable and is the instrument every downstream module reads.',
         customerSignedLine: '{{name}} signed on {{date}}.',
         countersignedLine: 'AIEC countersigned on {{date}}.',
+        viewClosure: 'View closure confirmation',
       },
 
       toast: {
@@ -130,6 +131,7 @@ const translations: ScreenTranslations = {
         body: 'दोनों हस्ताक्षर दर्ज हो गए हैं। यह अनुबंध अब अपरिवर्तनीय है और हर आगे के मॉड्यूल द्वारा इसे ही पढ़ा जाएगा।',
         customerSignedLine: '{{name}} ने {{date}} को हस्ताक्षर किए।',
         countersignedLine: 'AIEC ने {{date}} को प्रति-हस्ताक्षर किए।',
+        viewClosure: 'क्लोज़र पुष्टिकरण देखें',
       },
 
       toast: {
@@ -199,6 +201,7 @@ const translations: ScreenTranslations = {
         body: 'दोन्ही स्वाक्षऱ्या नोंदल्या गेल्या आहेत. हा करार आता अपरिवर्तनीय आहे आणि पुढील प्रत्येक मॉड्यूल हाच वाचेल.',
         customerSignedLine: '{{name}} यांनी {{date}} रोजी स्वाक्षरी केली.',
         countersignedLine: 'AIEC ने {{date}} रोजी प्रति-स्वाक्षरी केली.',
+        viewClosure: 'क्लोजर पुष्टीकरण पहा',
       },
 
       toast: {

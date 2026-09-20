@@ -528,6 +528,51 @@ export interface ContractSignature {
   isDemo: boolean;
 }
 
+export type SupplierPurchaseOrderStatus = 'triggered' | 'failed';
+
+/** A minimal record that a supplier PO was kicked off by a deal closure —
+ *  not a full purchase-order management system, which belongs to a later
+ *  module. Just enough for screen 077 to report the kickoff honestly and
+ *  for screen 080 to reference it. */
+export interface SupplierPurchaseOrder {
+  id: string;
+  code: string;
+  dealId: string;
+  supplierId?: string;
+  status: SupplierPurchaseOrderStatus;
+  failureReason?: string;
+  triggeredAt: string;
+  isDemo: boolean;
+}
+
+/**
+ * The single, reliable kickoff event fired once a deal is fully signed —
+ * screen 077. Idempotent per `dealId`: triggering it again when a record
+ * already exists returns the existing one rather than re-running side
+ * effects or creating a second set of Payments/commissions for the same
+ * deal, which is also what keeps two deals closing minutes apart from
+ * ever sharing or overwriting each other's kickoff.
+ */
+export interface DealClosure {
+  id: string;
+  dealId: string;
+  closedAt: string;
+  paymentRecordIds: string[];
+  supplierPoId?: string;
+  /** A failed PO kickoff never blocks this record from existing — the deal
+   *  genuinely closed regardless, and the failure surfaces separately on
+   *  the Automation Health Monitor (screen 027) instead. */
+  supplierPoFailed: boolean;
+  commissionEntryIds: string[];
+  /** A closed deal is never deleted to reverse it — voiding just logs the
+   *  reversal on the existing record, fully audited. */
+  voided: boolean;
+  voidReason?: string;
+  voidedBy?: string;
+  voidedAt?: string;
+  isDemo: boolean;
+}
+
 /* ------------------------------------------------------------- Quotations */
 
 export type DriveType = 'hydraulic' | 'geared_traction' | 'gearless_traction' | 'mrl' | 'vacuum' | 'screw_driven';
