@@ -68,6 +68,7 @@ export const NEGOTIATION_BOT_CONFIG_KEYS = {
     currentOffer: 'negotiationBotConfig.dashboard.currentOffer',
     floor: 'negotiationBotConfig.dashboard.floor',
     takeOver: 'negotiationBotConfig.dashboard.takeOver',
+    openThread: 'negotiationBotConfig.dashboard.openThread',
     takenOverBy: 'negotiationBotConfig.dashboard.takenOverBy',
     lastActivity: 'negotiationBotConfig.dashboard.lastActivity',
     status: {

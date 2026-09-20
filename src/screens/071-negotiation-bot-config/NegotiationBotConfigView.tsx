@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { Broadcast, ChatCircleDots, ShieldCheck, Timer, WarningCircle } from '@phosphor-icons/react';
 import {
   ActionBar,
@@ -36,6 +37,7 @@ const STATUS_TONE: Record<NegotiationStatus, BadgeTone> = {
 
 export function NegotiationBotConfigView() {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
   const toast = useToast();
   const s = useNegotiationBotConfig();
 
@@ -212,22 +214,29 @@ export function NegotiationBotConfigView() {
                     <p className="t-xs t-muted mb-1">{t(K.dashboard.escalationReason[negotiation.lastEscalationReason])}</p>
                   )}
 
-                  {negotiation.status === 'human_takeover' ? (
+                  {negotiation.status === 'human_takeover' && (
                     <p className="t-xs t-muted">
                       {t(K.dashboard.takenOverBy, {
                         date: negotiation.takenOverAt ? formatDate(negotiation.takenOverAt, i18n.language) : '',
                       })}
                     </p>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      loading={s.takingOverId === negotiation.id}
-                      onClick={() => void s.takeOver(negotiation.id).then((ok) => toast.push(t(ok ? K.toast.takenOver : K.toast.error), ok ? 'success' : 'error'))}
-                    >
-                      {t(K.dashboard.takeOver)}
-                    </Button>
                   )}
+
+                  <div className="row gap-2 mt-1">
+                    <Button size="sm" variant="secondary" onClick={() => navigate(`/admin/deals/${negotiation.id}/thread`)}>
+                      {t(K.dashboard.openThread)}
+                    </Button>
+                    {negotiation.status !== 'human_takeover' && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        loading={s.takingOverId === negotiation.id}
+                        onClick={() => void s.takeOver(negotiation.id).then((ok) => toast.push(t(ok ? K.toast.takenOver : K.toast.error), ok ? 'success' : 'error'))}
+                      >
+                        {t(K.dashboard.takeOver)}
+                      </Button>
+                    )}
+                  </div>
 
                   <p className="t-xs t-muted mt-2">
                     {(() => {

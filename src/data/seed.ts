@@ -1025,7 +1025,7 @@ export const seedCommSequences: CommSequence[] = [
 ];
 
 export const seedConversations: Conversation[] = [
-  { id: 'conv-1', leadId: 'l-3', assignedAgentId: 'u-admin-1', lastMessageAt: hoursAgo(2), isDemo: true },
+  { id: 'conv-1', leadId: 'l-3', assignedAgentId: 'u-admin-1', lastMessageAt: minutesAgo(40), isDemo: true },
   { id: 'conv-2', leadId: 'l-4', lastMessageAt: hoursAgo(20), isDemo: true },
   { id: 'conv-3', leadId: 'l-9', lastMessageAt: daysAgo(1), isDemo: true },
   { id: 'conv-4', leadId: 'l-15', assignedAgentId: 'u-admin-1', lastMessageAt: minutesAgo(30), sequencePausedUntil: hoursAhead(2), isDemo: true },
@@ -1041,12 +1041,17 @@ export const seedCommMessages: CommMessage[] = [
   { id: 'cm-3', conversationId: 'conv-1', channel: 'whatsapp', sender: 'bot', body: 'Let me connect you with our team on that — one moment.', status: 'delivered', at: hoursAgo(20), requiresHumanReview: true, handled: false },
   { id: 'cm-4', conversationId: 'conv-1', channel: 'whatsapp', sender: 'agent', senderName: 'Prashant Vasant Wable', body: 'Hi Farhan, happy to discuss — could do premium SS at a small step up, or standard SS within the quoted price. Which would you prefer?', status: 'sent', at: hoursAgo(2), handled: true },
   { id: 'cm-4b', conversationId: 'conv-1', channel: 'whatsapp', sender: 'customer', body: 'Here is the lobby finish we have in mind', mediaKind: 'photo', status: 'delivered', at: hoursAgo(1), requiresHumanReview: true, handled: false },
+  { id: 'cm-4c', conversationId: 'conv-1', channel: 'whatsapp', sender: 'customer', body: 'We were quoted ₹39L elsewhere for the same spec — can you match that?', status: 'delivered', at: minutesAgo(45) },
+  { id: 'cm-4d', conversationId: 'conv-1', channel: 'whatsapp', sender: 'bot', body: "We're not able to go that low on this configuration, but we can hold ₹41.80L with our AMC response-time guarantee included, which most vendors quote separately.", status: 'delivered', at: minutesAgo(40) },
 
   { id: 'cm-5', conversationId: 'conv-2', channel: 'whatsapp', sender: 'bot', body: 'Hi Amit Joshi, following up on the quote of ₹30.50L for Pinnacle Aurum. Any questions on our end?', templateGroupId: 'tpl-quote-followup', status: 'delivered', at: hoursAgo(20) },
 
   { id: 'cm-6', conversationId: 'conv-3', channel: 'sms', sender: 'bot', body: 'AIEC: Confirming our site visit at Nirman Elite on 18 Aug. Reply if this time no longer works.', templateGroupId: 'tpl-site-visit-confirm', status: 'delivered', at: daysAgo(1) },
   { id: 'cm-7', conversationId: 'conv-3', channel: 'sms', sender: 'customer', body: 'STOP', status: 'delivered', at: daysAgo(1), requiresHumanReview: true, handled: false },
 
+  { id: 'cm-7b', conversationId: 'conv-4', channel: 'whatsapp', sender: 'bot', body: "Here's our best bundled number for 10 units with a 2-year AMC: ₹84.50L all-in — this already reflects our maximum approved step-down for this specification.", status: 'read', at: hoursAgo(11) },
+  { id: 'cm-7c', conversationId: 'conv-4', channel: 'whatsapp', sender: 'customer', body: 'Still hoping for something closer to ₹78L with the AMC included.', status: 'read', at: hoursAgo(10) },
+  { id: 'cm-7d', conversationId: 'conv-4', channel: 'whatsapp', sender: 'bot', body: "That's beyond what we're able to offer within policy on this configuration. I'm looping in our team to see if anything further is possible.", status: 'delivered', at: hoursAgo(9), requiresHumanReview: true, handled: false },
   { id: 'cm-8', conversationId: 'conv-4', channel: 'whatsapp', sender: 'bot', body: 'Hi Girish Rao, following up on the quote for Tech Park Block C. Any questions on our end?', templateGroupId: 'tpl-quote-followup', status: 'read', at: hoursAgo(3) },
   { id: 'cm-9', conversationId: 'conv-4', channel: 'whatsapp', sender: 'customer', body: 'Can we get 10 units at this price plus a 2-year AMC bundled in?', status: 'read', at: minutesAgo(35) },
   { id: 'cm-10', conversationId: 'conv-4', channel: 'whatsapp', sender: 'agent', senderName: 'Prashant Vasant Wable', body: 'Good question — let me get you a bundled number for that by tomorrow.', status: 'sent', at: minutesAgo(30), handled: true },

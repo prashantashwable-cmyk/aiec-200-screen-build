@@ -161,6 +161,7 @@ let timelineEventCounter = 900;
 let followUpTaskCounter = 900;
 let importBatchCounter = 1;
 let messageCounter = 900;
+let conversationCounter = 100;
 let callCounter = 900;
 let broadcastCounter = 900;
 let ruleCounter = 900;
@@ -1733,6 +1734,48 @@ export const memoryRepository: Repository = {
         lastEscalationReason: negotiation.lastEscalationReason ?? 'manual_takeover',
         lastActivityAt: new Date().toISOString(),
       });
+    }),
+
+  getNegotiationThread: (negotiationId) =>
+    simulateRead(() => {
+      const negotiation = byId(negotiations, negotiationId);
+      if (!negotiation) return null;
+      const deal = byId(deals, negotiation.dealId);
+      const lead = resolveLead(negotiation.leadId);
+      if (!deal || !lead) return null;
+      const conversation = conversations.find((c) => c.leadId === negotiation.leadId) ?? null;
+      const messages = conversation
+        ? commMessages.filter((m) => m.conversationId === conversation.id).sort((a, b) => a.at.localeCompare(b.at))
+        : [];
+      return { negotiation, deal, lead, conversationId: conversation?.id ?? null, messages };
+    }),
+
+  sendNegotiationMessage: (negotiationId, body, agentName) =>
+    simulateWrite(() => {
+      const negotiation = byId(negotiations, negotiationId);
+      if (!negotiation) throw new RepositoryError('not_found');
+      if (negotiation.status !== 'human_takeover') throw new RepositoryError('must_take_over_first');
+      let conversation = conversations.find((c) => c.leadId === negotiation.leadId) ?? null;
+      const now = new Date().toISOString();
+      if (!conversation) {
+        conversation = { id: `conv-new-${(conversationCounter += 1)}`, leadId: negotiation.leadId, lastMessageAt: now, isDemo: true };
+        conversations.push(conversation);
+      }
+      const message: CommMessage = {
+        id: `cm-new-${(messageCounter += 1)}`,
+        conversationId: conversation.id,
+        channel: 'whatsapp',
+        sender: 'agent',
+        senderName: agentName,
+        body,
+        status: 'sent',
+        at: now,
+        handled: true,
+      };
+      commMessages.push(message);
+      patchInPlace(conversations, conversation.id, { lastMessageAt: now });
+      patchInPlace(negotiations, negotiationId, { lastActivityAt: now });
+      return message;
     }),
 
   /* -------------------------------------------------------- Operations */

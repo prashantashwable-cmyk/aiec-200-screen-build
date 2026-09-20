@@ -145,6 +145,17 @@ export interface ConversationWithContext extends Conversation {
   messages: CommMessage[];
 }
 
+/** Screen 072's own read shape — one negotiation plus the deal, lead, and
+ *  live message thread it needs, so the header strip and the conversation
+ *  view load from a single call. */
+export interface NegotiationThread {
+  negotiation: Negotiation;
+  deal: Deal;
+  lead: Lead;
+  conversationId: string | null;
+  messages: CommMessage[];
+}
+
 export interface SequenceTestStep {
   stepId: string;
   order: number;
@@ -415,6 +426,15 @@ export interface Repository {
    *  over by a human but still open — for the live monitoring dashboard. */
   listActiveNegotiations(): Promise<Negotiation[]>;
   takeOverNegotiation(id: string, byUserId: string): Promise<Negotiation>;
+  /** The live thread for one negotiation — reuses the same `Conversation`/
+   *  `CommMessage` records the WhatsApp Console and the customer's own
+   *  portal read, so internal staff never see a doctored copy of the
+   *  conversation. */
+  getNegotiationThread(negotiationId: string): Promise<NegotiationThread | null>;
+  /** Only valid once a human has taken over — the bot is fully and
+   *  permanently disengaged by then, so there's no risk of a bot reply
+   *  landing on top of this one. */
+  sendNegotiationMessage(negotiationId: string, body: string, agentName: string): Promise<CommMessage>;
 
   /* Operations */
   listActivity(limit?: number): Promise<ActivityEvent[]>;
