@@ -15,6 +15,7 @@ export type { BadgeTone } from './Badge';
 export { Skeleton, LoadingState, EmptyState, ErrorState } from './States';
 export { Field, Input, TextArea, Select, Toggle, Checkbox } from './Field';
 export { OtpInput } from './OtpInput';
+export { SignaturePad } from './SignaturePad';
 export { Tabs, SegBar, Chip } from './Tabs';
 export type { TabItem } from './Tabs';
 export { Screen, ScreenHeader, ActionBar } from './Screen';

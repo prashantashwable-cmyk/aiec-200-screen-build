@@ -498,6 +498,36 @@ export interface Contract {
   isDemo: boolean;
 }
 
+export type SignatureStatus = 'unsigned' | 'customer_signed' | 'fully_signed';
+
+export type SignatureMethod = 'drawn' | 'typed';
+
+/**
+ * The two-party signature record for one generated `Contract` — screen 076,
+ * the precise moment a deal becomes formally Closed Won. Reaching
+ * `customer_signed` moves `Deal.status` to `'approved'`; only
+ * `fully_signed` (AIEC's countersignature too) moves it to `'won'` with
+ * `closedAt` set — Deal Terms Finalization's mutual agreement is not yet a
+ * signed instrument, and downstream fulfilment must not start on it alone.
+ */
+export interface ContractSignature {
+  id: string;
+  contractId: string;
+  dealId: string;
+  status: SignatureStatus;
+  customerSignatureMethod?: SignatureMethod;
+  /** A data URL for a drawn signature, or the typed name itself. */
+  customerSignatureData?: string;
+  customerConsentGiven?: boolean;
+  /** True whether verified by OTP or by the manual fallback path — both are
+   *  a genuine identity confirmation, just via a different route. */
+  customerOtpVerified?: boolean;
+  customerSignedAt?: string;
+  aiecCountersignedBy?: string;
+  aiecCountersignedAt?: string;
+  isDemo: boolean;
+}
+
 /* ------------------------------------------------------------- Quotations */
 
 export type DriveType = 'hydraulic' | 'geared_traction' | 'gearless_traction' | 'mrl' | 'vacuum' | 'screw_driven';

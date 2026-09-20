@@ -12,6 +12,7 @@ import type {
   CommTemplate,
   CommissionEntry,
   Contract,
+  ContractSignature,
   Conversation,
   CounterOffer,
   Deal,
@@ -44,6 +45,7 @@ import type {
   RoutePlan,
   ScoreWeightingProfile,
   SeriesPoint,
+  SignatureMethod,
   SiteVisitVerification,
   SmsBroadcast,
   Supplier,
@@ -194,6 +196,17 @@ export interface ContractView {
   lead: Lead;
   dealTerms: DealTerms | null;
   canGenerate: boolean;
+}
+
+/** Screen 076's own read shape. `signature` is null until the customer
+ *  signs the first time; `canSign` mirrors "an active contract exists" —
+ *  there is nothing to sign otherwise. */
+export interface SignatureView {
+  signature: ContractSignature | null;
+  contract: Contract | null;
+  deal: Deal;
+  lead: Lead;
+  canSign: boolean;
 }
 
 export interface SequenceTestStep {
@@ -515,6 +528,21 @@ export interface Repository {
   /** Attaches a reviewed custom term alongside the generated contract —
    *  the clauses themselves stay version-locked either way. */
   addContractAddendum(contractId: string, note: string, byUserId: string): Promise<Contract>;
+
+  /* E-signature */
+  getSignature(dealId: string): Promise<SignatureView | null>;
+  /** OTP correctness is checked client-side exactly like screen 003's own
+   *  login OTP step — this call only ever records an already-confirmed
+   *  identity. Moves the deal to `'approved'`, never `'won'` on its own;
+   *  only the AIEC countersignature closes it. */
+  recordCustomerSignature(
+    dealId: string,
+    signature: { method: SignatureMethod; data: string; consentGiven: boolean },
+  ): Promise<ContractSignature>;
+  /** The one moment a deal becomes formally Closed Won — sets `Deal.status`
+   *  to `'won'` and stamps `closedAt`. Blocked unless the customer has
+   *  already signed. */
+  recordAiecCountersignature(dealId: string, byUserId: string): Promise<ContractSignature>;
 
   /* Operations */
   listActivity(limit?: number): Promise<ActivityEvent[]>;

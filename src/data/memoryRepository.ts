@@ -10,6 +10,7 @@ import {
   seedCommSequences,
   seedCommTemplates,
   seedCommissions,
+  seedContractSignatures,
   seedContracts,
   seedConversations,
   seedCounterOffers,
@@ -63,6 +64,7 @@ import type {
   RegionConversion,
   ReplyInboxItem,
   Repository,
+  SignatureView,
   SequenceTestStep,
   SurveyorScore,
   TechnicianScore,
@@ -81,6 +83,7 @@ import type {
   CommTemplate,
   Contract,
   ContractClause,
+  ContractSignature,
   Conversation,
   CounterOffer,
   DealTerms,
@@ -172,6 +175,8 @@ let dealTermsAmendmentCounter = 100;
 const contracts = [...seedContracts];
 let contractCounter = 100;
 let contractAddendumCounter = 100;
+const contractSignatures = [...seedContractSignatures];
+let contractSignatureCounter = 100;
 
 let leadCounter = 200;
 let timelineEventCounter = 900;
@@ -2118,6 +2123,64 @@ export const memoryRepository: Repository = {
       return patchInPlace(contracts, contractId, {
         addenda: [...contract.addenda, { id: `cta-new-${(contractAddendumCounter += 1)}`, note, addedBy: byUserId, addedAt: now }],
       });
+    }),
+
+  getSignature: (dealId) =>
+    simulateRead(() => {
+      const deal = byId(deals, dealId);
+      if (!deal) return null;
+      const lead = resolveLead(deal.leadId);
+      if (!lead) return null;
+      const contract = contracts.find((c) => c.dealId === dealId && c.status === 'active') ?? null;
+      const signature = contractSignatures.find((s) => s.dealId === dealId) ?? null;
+      const view: SignatureView = { signature, contract, deal, lead, canSign: contract !== null };
+      return view;
+    }),
+
+  recordCustomerSignature: (dealId, signature) =>
+    simulateWrite(() => {
+      const deal = byId(deals, dealId);
+      if (!deal) throw new RepositoryError('not_found');
+      const contract = contracts.find((c) => c.dealId === dealId && c.status === 'active');
+      if (!contract) throw new RepositoryError('no_active_contract');
+      const existing = contractSignatures.find((s) => s.dealId === dealId);
+      const now = new Date().toISOString();
+      const patch = {
+        status: 'customer_signed' as const,
+        customerSignatureMethod: signature.method,
+        customerSignatureData: signature.data,
+        customerConsentGiven: signature.consentGiven,
+        customerOtpVerified: true,
+        customerSignedAt: now,
+      };
+      const record = existing
+        ? patchInPlace(contractSignatures, existing.id, patch)
+        : (() => {
+            contractSignatureCounter += 1;
+            const created: ContractSignature = { id: `cs-new-${contractSignatureCounter}`, contractId: contract.id, dealId, isDemo: true, ...patch };
+            contractSignatures.push(created);
+            return created;
+          })();
+      // Mutual agreement now has a signed instrument on one side — visible
+      // downstream, but not yet the moment the deal is won.
+      patchInPlace(deals, dealId, { status: 'approved' as const });
+      return record;
+    }),
+
+  recordAiecCountersignature: (dealId, byUserId) =>
+    simulateWrite(() => {
+      const record = contractSignatures.find((s) => s.dealId === dealId);
+      if (!record) throw new RepositoryError('not_found');
+      if (record.status !== 'customer_signed') throw new RepositoryError('customer_has_not_signed_yet');
+      const now = new Date().toISOString();
+      const updated = patchInPlace(contractSignatures, record.id, {
+        status: 'fully_signed' as const,
+        aiecCountersignedBy: byUserId,
+        aiecCountersignedAt: now,
+      });
+      // The one moment this deal becomes formally, legally Closed Won.
+      patchInPlace(deals, dealId, { status: 'won' as const, closedAt: now });
+      return updated;
     }),
 
   /* -------------------------------------------------------- Operations */

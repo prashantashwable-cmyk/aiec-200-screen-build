@@ -10,6 +10,7 @@ import type {
   CommTemplate,
   CommissionEntry,
   Contract,
+  ContractSignature,
   Conversation,
   CounterOffer,
   Deal,
@@ -521,7 +522,7 @@ export const seedDeals: Deal[] = [
   { id: 'dl-3', code: 'AIEC-D-2103', leadId: 'l-3', customerId: 'u-cust-3', status: 'negotiating', quotedPrice: 4_320_000, agreedPrice: 4_120_000, marginAmount: 741_000, gstPercent: 18, supplierId: 'sp-1', negotiationRounds: 3, createdAt: daysAgo(18), isDemo: true },
   { id: 'dl-4', code: 'AIEC-D-2104', leadId: 'l-4', status: 'quoted', quotedPrice: 3_050_000, agreedPrice: 0, marginAmount: 549_000, gstPercent: 18, supplierId: 'sp-1', negotiationRounds: 0, createdAt: daysAgo(9), isDemo: true },
   { id: 'dl-5', code: 'AIEC-D-2105', leadId: 'l-5', status: 'quoted', quotedPrice: 1_450_000, agreedPrice: 0, marginAmount: 246_500, gstPercent: 18, supplierId: 'sp-3', negotiationRounds: 0, createdAt: daysAgo(7), isDemo: true },
-  { id: 'dl-6', code: 'AIEC-D-2106', leadId: 'l-15', status: 'negotiating', quotedPrice: 8_800_000, agreedPrice: 8_400_000, marginAmount: 1_512_000, gstPercent: 18, supplierId: 'sp-1', negotiationRounds: 4, createdAt: daysAgo(15), isDemo: true },
+  { id: 'dl-6', code: 'AIEC-D-2106', leadId: 'l-15', status: 'approved', quotedPrice: 8_800_000, agreedPrice: 8_400_000, marginAmount: 1_512_000, gstPercent: 18, supplierId: 'sp-1', negotiationRounds: 4, createdAt: daysAgo(15), isDemo: true },
   { id: 'dl-7', code: 'AIEC-D-2107', leadId: 'l-16', status: 'quoted', quotedPrice: 3_700_000, agreedPrice: 0, marginAmount: 629_000, gstPercent: 18, supplierId: 'sp-2', negotiationRounds: 0, createdAt: daysAgo(5), isDemo: true },
   { id: 'dl-8', code: 'AIEC-D-2108', leadId: 'l-13', status: 'lost', quotedPrice: 1_620_000, agreedPrice: 0, marginAmount: 0, gstPercent: 18, negotiationRounds: 2, createdAt: daysAgo(32), closedAt: daysAgo(18), isDemo: true },
 ];
@@ -814,6 +815,24 @@ export const seedContracts: Contract[] = [
     addenda: [],
     generatedAt: daysAgo(1),
     generatedBy: 'u-admin-1',
+    isDemo: true,
+  },
+];
+
+export const seedContractSignatures: ContractSignature[] = [
+  // dl-6 (Tech Park Block C) — the customer signed a day ago; AIEC's
+  // countersignature hasn't happened yet, so this deal shows as
+  // "Customer Signed, Pending Countersignature", not fully closed.
+  {
+    id: 'cs-1',
+    contractId: 'ct-2',
+    dealId: 'dl-6',
+    status: 'customer_signed',
+    customerSignatureMethod: 'typed',
+    customerSignatureData: 'Girish Rao',
+    customerConsentGiven: true,
+    customerOtpVerified: true,
+    customerSignedAt: daysAgo(1),
     isDemo: true,
   },
 ];
