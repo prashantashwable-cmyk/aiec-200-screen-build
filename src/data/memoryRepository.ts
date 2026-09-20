@@ -541,6 +541,18 @@ const INSTALLATION_COST_PER_STOP = 12_000;
 const TRANSPORT_COST_FLAT = 25_000;
 const CIVIL_WORK_PCT_OF_EQUIPMENT = 0.1;
 
+/** A government-announced GST change takes effect on its own date, not the
+ *  moment an Admin schedules it — every price computed on or after that
+ *  date uses the new rate automatically, with no manual step at midnight
+ *  and no mutation of the configured record (screen 070's own edge case). */
+function effectiveGstRatePct(pricing: PricingConfig): number {
+  const scheduled = pricing.scheduledGstChange;
+  if (scheduled && new Date(scheduled.effectiveDate).getTime() <= Date.now()) {
+    return scheduled.newRatePct;
+  }
+  return pricing.gstRatePct;
+}
+
 /** The one place a quote's price is computed — screens 061/062/065/067 all
  *  route through this, so a discount or spec change can never produce a
  *  number the margin floor didn't actually see. Every line is rounded to
@@ -561,7 +573,8 @@ function computeQuotationCost(spec: QuotationSpecInput, pricing: PricingConfig, 
   const marginPct = marginOverridePct ?? pricing.minimumMarginFloorPct + 5;
   const sellBeforeTax = Math.round(baseCost / (1 - marginPct / 100));
   const marginAmount = sellBeforeTax - baseCost;
-  const gstAmount = Math.round(sellBeforeTax * (pricing.gstRatePct / 100));
+  const gstRatePct = effectiveGstRatePct(pricing);
+  const gstAmount = Math.round(sellBeforeTax * (gstRatePct / 100));
   const finalPrice = sellBeforeTax + gstAmount;
 
   return {
@@ -570,7 +583,7 @@ function computeQuotationCost(spec: QuotationSpecInput, pricing: PricingConfig, 
     installationLaborCost,
     transportCost,
     perFloorCostDelta,
-    gstPercent: pricing.gstRatePct,
+    gstPercent: gstRatePct,
     gstAmount,
     marginPct,
     marginAmount,
@@ -1492,7 +1505,8 @@ export const memoryRepository: Repository = {
       const baseCost = equipmentCost + civilWorkEstimate + installationLaborCost + transportCost;
       const sellBeforeTax = Math.round(baseCost / (1 - marginPct / 100));
       const marginAmount = sellBeforeTax - baseCost;
-      const gstAmount = Math.round(sellBeforeTax * (pricingConfig.gstRatePct / 100));
+      const gstRatePct = effectiveGstRatePct(pricingConfig);
+      const gstAmount = Math.round(sellBeforeTax * (gstRatePct / 100));
       const cost: QuotationCostBreakdown = {
         equipmentCost,
         civilWorkEstimate,
@@ -1500,7 +1514,7 @@ export const memoryRepository: Repository = {
         installationLaborCost,
         transportCost,
         perFloorCostDelta,
-        gstPercent: pricingConfig.gstRatePct,
+        gstPercent: gstRatePct,
         gstAmount,
         marginPct,
         marginAmount,
@@ -1602,6 +1616,12 @@ export const memoryRepository: Repository = {
     simulateWrite(() => {
       if (patch.minimumMarginFloorPct !== undefined && patch.minimumMarginFloorPct <= 0) {
         throw new RepositoryError('margin_floor_must_be_positive');
+      }
+      if (patch.driveTypeBasePrice && Object.values(patch.driveTypeBasePrice).some((v) => v <= 0)) {
+        throw new RepositoryError('base_price_must_be_positive');
+      }
+      if (patch.perFloorIncrementPct && Object.values(patch.perFloorIncrementPct).some((v) => v < 0)) {
+        throw new RepositoryError('per_floor_increment_must_be_non_negative');
       }
       pricingConfig = { ...pricingConfig, ...patch, updatedAt: new Date().toISOString() };
       return { ...pricingConfig };
