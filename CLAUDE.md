@@ -65,25 +65,19 @@ After the **10th screen of a module**, run that module's checkpoint: click throu
 end to end, spot-check 2–3 screens from earlier modules for regressions, fix anything found, and add
 the module's section to `BUILD_README.md`.
 
-## Current status (as of 2026-09-17)
+## Current status (as of 2026-09-20)
 
-- Modules 1–6 (`001`–`060`) are built. Modules 5 and 6 are checkpoint-verified.
-- **Module 7 Auto-Quotation Engine:** `061`–`067` are built and pushed.
-- **Next: `068` Quotation Send & E-Delivery** (`068_auto-quotation_engine__quotation_send_e-delivery_screen.md`).
-  Notes going in:
-  - `repository.sendQuotation` already exists and moves the lead to Quoted, but it
-    **hard-codes `quotationTemplates[0]`**. Pick the correct active template instead.
-  - Opted-out channels must not be offered. Use the existing `isOptedOut(contactPhone, channel)`
-    (Module 6, screen 058).
-  - Edge cases: if WhatsApp bounces, fall back to email with a visible notice; if a scheduled send
-    targets a quote that has since been superseded, cancel it and notify; with both channels, report
-    a mixed result honestly (e.g. "WhatsApp delivered, Email failed").
-  - Suggested route: `/admin/quotes/:quotationId/send`, tab `quotes`.
-- Then **`069` Quotation Win/Loss Analytics** (`getQuotationAnalytics` already exists) and
-  **`070` Pricing Rules & Margin Config** (`getPricingConfig` / `updatePricingConfig` exist; block a
-  zero or negative margin floor; support scheduled GST changes; AMC tiers).
-- Then add a **"Go deeper" quick-links grid to 061** covering 062–070 (the same pattern as 041 and 051),
-  run the **Module 7 checkpoint**, and continue with Module 8 (`071`+).
+- Modules 1–7 (`001`–`070`) are built. Modules 5, 6 and 7 are checkpoint-verified.
+- **Module 7 Auto-Quotation Engine is done**, including the "Go deeper" quick-links grid on 061
+  (→ 063/065/066/067/069/070) and its checkpoint (all 10 screens clicked through, 3 earlier-module
+  screens spot-checked, nothing regressed — see `BUILD_README.md`'s Module 7 section for the full
+  writeup, including how `068`'s WhatsApp-bounce fallback, scheduled-send-cancels-on-supersede, and
+  `070`'s scheduled GST change actually work).
+- **Next: Module 8 — Negotiation & Deal Closing (`071`–`080`)**, starting with `071` Auto-Negotiation
+  Bot Configuration (`071_negotiation_deal_closing__auto-negotiation_bot_configuration_screen.md`).
+  No repository scaffolding for this module exists yet (no `Deal`-negotiation fields beyond the
+  `Deal.negotiationRounds` counter already in `types.ts`) — expect to extend the data model for
+  screen 071 same as every module's first screen does.
 
 ### Module 7 facts worth knowing
 

@@ -338,7 +338,7 @@ to compute it from yet.
 
 ---
 
-## Module 7 — Auto-Quotation Engine (`061`–`070`, in progress: 061–067 built)
+## Module 7 — Auto-Quotation Engine (`061`–`070`, checkpoint-verified)
 
 Everything under the **Quotes** tab (`/admin/quotes`). As with Modules 5 and 6,
 the data model was extended once up front (`Quotation`, `QuotationTemplate`,
@@ -387,7 +387,43 @@ Screens:
   floor (`URGENT_AUTO_APPROVE_BUFFER_PCT`) is approved automatically. Manual and
   automatic approval share `applyApprovedDiscount`, so both create
   the new version the same way.
+- **068 Quotation Send & E-Delivery** (`/admin/quotes/:quotationId/send`): channel
+  picker (WhatsApp/email), cover message defaulted from a template, optional
+  scheduling, and doubles as the delivery-confirmation view once sent. Picks
+  the active template by the quote's own building type and finish tier
+  instead of a fixed index. A bounced/opted-out WhatsApp number falls back to
+  email automatically when one is on file, with the real per-channel outcome
+  always shown (never one blended status). A quotation superseded while it
+  still has a pending scheduled send has that send cancelled immediately, in
+  both places a new version can be created (`createQuotationVersion` and the
+  discount-approval path) — a customer can never receive a stale price.
+  Reachable from **064**'s new "Send quotation" / "View delivery status" action.
+- **069 Quotation Analytics — Win/Loss** (`/admin/quotes/analytics`): win rate by
+  package tier, drive type, price band and territory, each row flagged
+  `lowSample` below 3 decided quotes. Decision-to-close time is split by
+  outcome (won vs lost) rather than one blended average. A residential/
+  commercial segment filter (by the lead's `buildingType`) keeps one large
+  commercial deal from skewing the blended price-band numbers. Every stat
+  card carries the real `quotationIds`/`leadIds` behind it for one-tap
+  drill-through to the lead. `getQuotationAnalytics` excludes `superseded`
+  quotations from every count — a revised quote is one decision, not two.
+- **070 Pricing Rules & Margin Configuration** (`/admin/quotes/pricing`): the
+  single governed root — base price and per-floor increment per drive type,
+  the margin floor, GST rate, and the three AMC tiers. Lowering the margin
+  floor needs an explicit confirmation and the danger-red treatment; zero or
+  negative is blocked outright. A per-floor increment outside the real-world
+  10-25% range warns without blocking, since the spec calls that a guideline.
+  `effectiveGstRatePct` (shared with `computeQuotationCost`) is what actually
+  makes a scheduled, future-dated GST change apply itself on the right day —
+  previously `scheduledGstChange` was stored but nothing ever read it.
+- **Go deeper grid on 061**: links to 063/065/066/067/069/070 (062/064/068
+  need a specific quotation id, so they're reached through the normal
+  061→062→064→068 flow instead, same as 042 is reached from 041's list).
 
-Still to build: **068** Send & E-Delivery, **069** Win/Loss Analytics,
-**070** Pricing Rules & Margin Config, then a quick-links grid on 061 and the
-Module 7 checkpoint. See `CLAUDE.md` for details.
+**Module 7 checkpoint (passed):** clicked through all 10 screens start to
+finish in Demo Mode — new draft → cost breakdown → template → customer
+preview → package comparison → send (compose, schedule, cancel, bounce/
+fallback, supersede-cancels-schedule) → version history → discount approval
+→ win/loss analytics → pricing config — no console errors. Spot-checked 021
+(Exec KPI), 011 (Live Map) and 043 (Lead Kanban) from earlier modules; all
+render exactly as before. Nothing regressed.

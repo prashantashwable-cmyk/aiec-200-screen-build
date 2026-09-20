@@ -74,6 +74,16 @@ export const QUOTATION_GENERATOR_KEYS = {
     saved: 'quotationGenerator.toast.saved',
     error: 'quotationGenerator.toast.error',
   },
+
+  quickLinks: {
+    heading: 'quotationGenerator.quickLinks.heading',
+    templates: 'quotationGenerator.quickLinks.templates',
+    compare: 'quotationGenerator.quickLinks.compare',
+    history: 'quotationGenerator.quickLinks.history',
+    discounts: 'quotationGenerator.quickLinks.discounts',
+    analytics: 'quotationGenerator.quickLinks.analytics',
+    pricing: 'quotationGenerator.quickLinks.pricing',
+  },
 } as const;
 
 export function statusBadgeKey(status: QuotationStatus): string {
