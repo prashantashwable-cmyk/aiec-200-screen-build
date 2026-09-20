@@ -18,6 +18,7 @@ export function controlModeOf(status: NegotiationStatus): ControlMode {
 
 export const NEGOTIATION_THREAD_KEYS = {
   title: 'negotiationThread.title',
+  finalizeTerms: 'negotiationThread.finalizeTerms',
   loading: 'negotiationThread.loading',
   error: { title: 'negotiationThread.error.title', body: 'negotiationThread.error.body' },
 

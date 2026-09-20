@@ -12,6 +12,7 @@ import type {
   Conversation,
   CounterOffer,
   Deal,
+  DealTerms,
   DiscountRequest,
   DuplicatePair,
   FollowUpTask,
@@ -641,6 +642,65 @@ export const seedCounterOffers: CounterOffer[] = [
   },
 ];
 
+export const seedDealTerms: DealTerms[] = [
+  // dl-3 (Skyline Corporate Park) — internally confirmed 5 days ago, still
+  // waiting on the customer. Feeds ft-7 below so the wait is never silent.
+  {
+    id: 'dt-1',
+    dealId: 'dl-3',
+    finalAgreedPrice: 4_120_000,
+    // The standard AIEC split already implicit in every seeded Payment
+    // (p-1..p-12): 25/35/30/10, plus a 5% retention on top.
+    paymentStagePlan: [
+      { stage: 'advance', percentage: 25 },
+      { stage: 'material', percentage: 35 },
+      { stage: 'installation', percentage: 30 },
+      { stage: 'handover', percentage: 10 },
+      { stage: 'retention', percentage: 5 },
+    ],
+    specialTermsNotes: "Installation to be completed within 6 weeks of the booking advance, per the customer's building handover timeline.",
+    status: 'awaiting_customer',
+    internalConfirmedBy: 'u-admin-1',
+    internalConfirmedAt: daysAgo(5),
+    bothPartyConfirmedFlag: false,
+    amendments: [],
+    createdAt: daysAgo(5),
+    updatedAt: daysAgo(5),
+    isDemo: true,
+  },
+  // dl-6 (Tech Park Block C) — both parties confirmed; a GST field mismatch
+  // found afterward was corrected as a logged amendment, not a silent edit.
+  {
+    id: 'dt-2',
+    dealId: 'dl-6',
+    finalAgreedPrice: 8_400_000,
+    paymentStagePlan: [
+      { stage: 'advance', percentage: 25 },
+      { stage: 'material', percentage: 35 },
+      { stage: 'installation', percentage: 30 },
+      { stage: 'handover', percentage: 10 },
+      { stage: 'retention', percentage: 5 },
+    ],
+    specialTermsNotes: '2-year comprehensive AMC bundled per the approved counter-offer; installation scheduling to begin within 10 days of the booking advance.',
+    status: 'confirmed',
+    internalConfirmedBy: 'u-admin-1',
+    internalConfirmedAt: daysAgo(10),
+    customerConfirmedAt: daysAgo(9),
+    bothPartyConfirmedFlag: true,
+    amendments: [
+      {
+        id: 'dta-1',
+        note: 'Corrected the GST rate on the confirmed terms from 12% to 18% after a data-entry check — the agreed price is unaffected, only the tax line was updated.',
+        amendedBy: 'u-admin-1',
+        amendedAt: daysAgo(2),
+      },
+    ],
+    createdAt: daysAgo(10),
+    updatedAt: daysAgo(2),
+    isDemo: true,
+  },
+];
+
 /* -------------------------------------------------------------------- Jobs */
 
 const installSteps = (completedCount: number): Job['steps'] => {
@@ -905,6 +965,7 @@ export const seedFollowUpTasks: FollowUpTask[] = [
   { id: 'ft-4', leadId: 'l-16', title: 'Follow up on Civic Health Centre quote', dueDate: daysAhead(1), assignedTo: 'u-srv-3', status: 'open', source: 'auto', createdAt: daysAgo(1), isDemo: true },
   { id: 'ft-5', leadId: 'l-18', title: 'Reconfirm site visit window', dueDate: daysAhead(2), assignedTo: 'u-srv-1', status: 'open', source: 'manual', createdAt: hoursAgo(10), isDemo: true },
   { id: 'ft-6', leadId: 'l-3', title: 'Negotiation round 4 — share revised terms', dueDate: daysAhead(1), assignedTo: 'u-srv-3', status: 'open', source: 'manual', createdAt: hoursAgo(20), isDemo: true },
+  { id: 'ft-7', leadId: 'l-3', title: 'Nudge customer — deal terms awaiting confirmation for 5 days', dueDate: daysAgo(0), assignedTo: 'u-admin-1', status: 'open', source: 'auto', createdAt: daysAgo(2), isDemo: true },
   { id: 'ft-7', leadId: 'l-1', title: 'Post-handover courtesy check-in', dueDate: daysAgo(20), assignedTo: 'u-srv-1', status: 'done', source: 'manual', createdAt: daysAgo(25), completedAt: daysAgo(19), isDemo: true },
   { id: 'ft-8', leadId: 'l-14', title: 'No contact in 5 days — schedule a follow-up call', dueDate: daysAgo(30), assignedTo: 'u-srv-2', status: 'cancelled', source: 'auto', createdAt: daysAgo(31), rescheduleReasonKey: 'followUp.reason.leadClosed', isDemo: true },
   { id: 'ft-9', leadId: 'l-7', title: 'Share revised timeline after client asked for delay', dueDate: daysAgo(3), assignedTo: 'u-srv-3', status: 'open', source: 'manual', createdAt: daysAgo(6), rescheduleReasonKey: 'followUp.reason.customerNotReachable', isDemo: true },

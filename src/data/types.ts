@@ -407,6 +407,50 @@ export interface CounterOffer {
   isDemo: boolean;
 }
 
+export type DealTermsStatus = 'draft' | 'awaiting_customer' | 'confirmed';
+
+/** A corrective note logged after both parties have already confirmed —
+ *  screen 074's answer to "a data issue turns up afterward": the record
+ *  stays confirmed and the fix is logged, never a silent retroactive edit. */
+export interface DealTermsAmendment {
+  id: string;
+  note: string;
+  amendedBy: string;
+  amendedAt: string;
+}
+
+/**
+ * The single choke point between "negotiation is happening" and "a binding
+ * deal exists" — screen 074. Nothing downstream (contract, payment
+ * schedule, supplier ordering) reads as final until `bothPartyConfirmedFlag`
+ * is true. `paymentStagePlan` reuses the exact `PaymentStage` vocabulary
+ * `Payment.stage` uses (see Payments, below) — the one source of truth the
+ * Payment Stage Schedule Setup screen reads directly, never re-derived.
+ * `advance`/`material`/`installation`/`handover` together must total 100%
+ * of `finalAgreedPrice`; a `retention` line, if present, is an additional
+ * holdback percentage on top of that 100%, matching how existing seeded
+ * payments already split (25/35/30/10, +5 retention).
+ */
+export interface DealTerms {
+  id: string;
+  dealId: string;
+  finalAgreedPrice: number;
+  paymentStagePlan: { stage: PaymentStage; percentage: number }[];
+  specialTermsNotes: string;
+  status: DealTermsStatus;
+  internalConfirmedBy?: string;
+  internalConfirmedAt?: string;
+  /** Simulated in this build via an explicit "on the customer's behalf"
+   *  action, since there is no live customer portal yet — never inferred
+   *  or auto-set from any internal action. */
+  customerConfirmedAt?: string;
+  bothPartyConfirmedFlag: boolean;
+  amendments: DealTermsAmendment[];
+  createdAt: string;
+  updatedAt: string;
+  isDemo: boolean;
+}
+
 /* ------------------------------------------------------------- Quotations */
 
 export type DriveType = 'hydraulic' | 'geared_traction' | 'gearless_traction' | 'mrl' | 'vacuum' | 'screw_driven';

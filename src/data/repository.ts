@@ -14,6 +14,7 @@ import type {
   Conversation,
   CounterOffer,
   Deal,
+  DealTerms,
   DiscountRequest,
   DiscountRequestStatus,
   DriveType,
@@ -164,6 +165,20 @@ export interface CounterOfferQueueItem extends CounterOffer {
   lead: Lead;
   deal: Deal;
   priorAskCount: number;
+}
+
+/** Screen 074's own read shape. `terms` is null exactly when nothing has
+ *  been saved yet for this deal — the screen then works from
+ *  `defaultFinalPrice` to offer a sensible starting draft rather than an
+ *  empty form. `currentQuotationId`/`negotiationId` back the "route back
+ *  upstream instead of an ad hoc edit here" requirement. */
+export interface DealTermsView {
+  terms: DealTerms | null;
+  deal: Deal;
+  lead: Lead;
+  defaultFinalPrice: number;
+  currentQuotationId: string | null;
+  negotiationId: string | null;
 }
 
 export interface SequenceTestStep {
@@ -457,6 +472,23 @@ export interface Repository {
     id: string,
     decision: { status: 'approved' | 'rejected' | 'countered'; approverId: string; rejectionReason?: string; counterPriceOffered?: number },
   ): Promise<CounterOffer>;
+
+  /* Deal terms finalization */
+  getDealTerms(dealId: string): Promise<DealTermsView | null>;
+  /** Creates the draft on first call, otherwise updates it in place — only
+   *  while still 'draft'. Once internal confirmation has happened, this
+   *  throws rather than silently patching a terms record already in
+   *  flight for customer sign-off. */
+  saveDealTermsDraft(dealId: string, patch: { paymentStagePlan: DealTerms['paymentStagePlan']; specialTermsNotes: string }): Promise<DealTerms>;
+  /** Requires the payment stage plan to sum to exactly 100%. */
+  confirmDealTermsInternal(dealId: string, byUserId: string): Promise<DealTerms>;
+  /** Simulates the customer's own confirmation — there is no live customer
+   *  portal in this build yet, so this is an explicit, clearly-labelled
+   *  stand-in, never inferred from an internal action. */
+  confirmDealTermsCustomer(dealId: string): Promise<DealTerms>;
+  /** Only valid once both parties have confirmed — logs a correction
+   *  without reopening or silently altering the confirmed record. */
+  amendDealTerms(dealId: string, note: string, byUserId: string): Promise<DealTerms>;
 
   /* Operations */
   listActivity(limit?: number): Promise<ActivityEvent[]>;

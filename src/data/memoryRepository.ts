@@ -12,6 +12,7 @@ import {
   seedCommissions,
   seedConversations,
   seedCounterOffers,
+  seedDealTerms,
   seedDeals,
   seedDiscountRequests,
   seedDuplicatePairs,
@@ -48,6 +49,7 @@ import type {
   CommunicationAnalytics,
   ConversationWithContext,
   CounterOfferQueueItem,
+  DealTermsView,
   ExecutiveKpis,
   FunnelStage,
   ImportPreview,
@@ -77,6 +79,7 @@ import type {
   CommTemplate,
   Conversation,
   CounterOffer,
+  DealTerms,
   DiscountRequest,
   DiscountRequestStatus,
   DriveType,
@@ -159,6 +162,9 @@ let pricingConfig: PricingConfig = { ...seedPricingConfig };
 const negotiations = [...seedNegotiations];
 let negotiationBotConfig: NegotiationBotConfig = { ...seedNegotiationBotConfig };
 const counterOffers = [...seedCounterOffers];
+const dealTermsRecords = [...seedDealTerms];
+let dealTermsCounter = 100;
+let dealTermsAmendmentCounter = 100;
 
 let leadCounter = 200;
 let timelineEventCounter = 900;
@@ -184,6 +190,11 @@ const resolveLead = (id: string): Lead | null =>
   byId(leads, id) ?? (id === duplicateCandidate.id ? duplicateCandidate : null);
 
 const nameOf = (userId: string): string => byId(users, userId)?.name ?? 'AIEC';
+
+/** The latest version in a lead's quotation chain — the one "current"
+ *  quotation, whatever its status, since a chain never skips versions. */
+const currentQuotationForLead = (leadId: string): Quotation | undefined =>
+  quotations.filter((q) => q.leadId === leadId).sort((a, b) => b.version - a.version)[0];
 
 function pushTimelineEvent(event: Omit<LeadTimelineEvent, 'id'>): LeadTimelineEvent {
   const full: LeadTimelineEvent = { ...event, id: `lt-${(timelineEventCounter += 1)}` };
@@ -1819,7 +1830,7 @@ export const memoryRepository: Repository = {
       // when it reached this queue; an Admin's own counter-number is new
       // input and gets the same "never below the true floor" check.
       if (decision.status === 'countered' && decision.counterPriceOffered !== undefined) {
-        const quotation = quotations.filter((q) => q.leadId === offer.leadId).sort((a, b) => b.version - a.version)[0];
+        const quotation = currentQuotationForLead(offer.leadId);
         if (quotation) {
           const baseCost = quotation.cost.equipmentCost + quotation.cost.civilWorkEstimate + quotation.cost.installationLaborCost + quotation.cost.transportCost;
           const sellBeforeTax = decision.counterPriceOffered / (1 + quotation.cost.gstPercent / 100);
@@ -1878,6 +1889,102 @@ export const memoryRepository: Repository = {
         }
       }
       return updated;
+    }),
+
+  getDealTerms: (dealId) =>
+    simulateRead(() => {
+      const deal = byId(deals, dealId);
+      if (!deal) return null;
+      const lead = resolveLead(deal.leadId);
+      if (!lead) return null;
+      const terms = dealTermsRecords.find((t) => t.dealId === dealId) ?? null;
+      const quotation = currentQuotationForLead(deal.leadId);
+      const negotiation = negotiations.find((n) => n.dealId === dealId);
+      const view: DealTermsView = {
+        terms,
+        deal,
+        lead,
+        defaultFinalPrice: deal.agreedPrice || deal.quotedPrice,
+        currentQuotationId: quotation?.id ?? null,
+        negotiationId: negotiation?.id ?? null,
+      };
+      return view;
+    }),
+
+  saveDealTermsDraft: (dealId, patch) =>
+    simulateWrite(() => {
+      const deal = byId(deals, dealId);
+      if (!deal) throw new RepositoryError('not_found');
+      const existing = dealTermsRecords.find((t) => t.dealId === dealId);
+      if (existing && existing.status !== 'draft') throw new RepositoryError('cannot_edit_after_confirmation');
+      const now = new Date().toISOString();
+      if (existing) {
+        return patchInPlace(dealTermsRecords, existing.id, {
+          paymentStagePlan: patch.paymentStagePlan,
+          specialTermsNotes: patch.specialTermsNotes,
+          updatedAt: now,
+        });
+      }
+      dealTermsCounter += 1;
+      const created: DealTerms = {
+        id: `dt-new-${dealTermsCounter}`,
+        dealId,
+        finalAgreedPrice: deal.agreedPrice || deal.quotedPrice,
+        paymentStagePlan: patch.paymentStagePlan,
+        specialTermsNotes: patch.specialTermsNotes,
+        status: 'draft',
+        bothPartyConfirmedFlag: false,
+        amendments: [],
+        createdAt: now,
+        updatedAt: now,
+        isDemo: true,
+      };
+      dealTermsRecords.push(created);
+      return created;
+    }),
+
+  confirmDealTermsInternal: (dealId, byUserId) =>
+    simulateWrite(() => {
+      const terms = dealTermsRecords.find((t) => t.dealId === dealId);
+      if (!terms) throw new RepositoryError('not_found');
+      if (terms.status !== 'draft') throw new RepositoryError('already_confirmed');
+      // 'retention' is an additional holdback on top of the price, never
+      // part of the 100% the other stages must account for.
+      const corePct = terms.paymentStagePlan.filter((s) => s.stage !== 'retention').reduce((sum, s) => sum + s.percentage, 0);
+      if (Math.abs(corePct - 100) > 0.01) throw new RepositoryError('payment_stages_must_total_100');
+      return patchInPlace(dealTermsRecords, terms.id, {
+        status: 'awaiting_customer' as const,
+        internalConfirmedBy: byUserId,
+        internalConfirmedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+    }),
+
+  confirmDealTermsCustomer: (dealId) =>
+    simulateWrite(() => {
+      const terms = dealTermsRecords.find((t) => t.dealId === dealId);
+      if (!terms) throw new RepositoryError('not_found');
+      if (terms.status !== 'awaiting_customer') throw new RepositoryError('not_awaiting_customer');
+      const now = new Date().toISOString();
+      return patchInPlace(dealTermsRecords, terms.id, {
+        status: 'confirmed' as const,
+        customerConfirmedAt: now,
+        bothPartyConfirmedFlag: true,
+        updatedAt: now,
+      });
+    }),
+
+  amendDealTerms: (dealId, note, byUserId) =>
+    simulateWrite(() => {
+      const terms = dealTermsRecords.find((t) => t.dealId === dealId);
+      if (!terms) throw new RepositoryError('not_found');
+      if (terms.status !== 'confirmed') throw new RepositoryError('not_confirmed_yet');
+      dealTermsAmendmentCounter += 1;
+      const now = new Date().toISOString();
+      return patchInPlace(dealTermsRecords, terms.id, {
+        amendments: [...terms.amendments, { id: `dta-new-${dealTermsAmendmentCounter}`, note, amendedBy: byUserId, amendedAt: now }],
+        updatedAt: now,
+      });
     }),
 
   /* -------------------------------------------------------- Operations */

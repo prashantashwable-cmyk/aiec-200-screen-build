@@ -68,7 +68,16 @@ export function NegotiationThreadView() {
 
   return (
     <Screen className="pb-action-bar">
-      <ScreenHeader title={lead.siteName} subtitle={deal.code} back={() => navigate(-1)} />
+      <ScreenHeader
+        title={lead.siteName}
+        subtitle={deal.code}
+        back={() => navigate(-1)}
+        action={
+          <Button size="sm" variant="secondary" onClick={() => navigate(`/admin/deals/${deal.id}/terms`)}>
+            {t(K.finalizeTerms)}
+          </Button>
+        }
+      />
 
       <Card className="mb-3">
         <div className="row between items-start gap-3 mb-3">

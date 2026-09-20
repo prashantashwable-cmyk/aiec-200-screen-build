@@ -101,7 +101,7 @@ export function CounterOfferApprovalView() {
                   <div className="row gap-2 items-start mb-2">
                     <Gift size={16} className="t-emerald shrink-0" style={{ marginTop: 1 }} />
                     <p className="t-xs t-muted">
-                      <strong className="t-text-primary">{t(K.row.bundledConcession)}</strong> {item.bundledConcessionNote}
+                      <strong className="t-semibold">{t(K.row.bundledConcession)}</strong> {item.bundledConcessionNote}
                     </p>
                   </div>
                 )}

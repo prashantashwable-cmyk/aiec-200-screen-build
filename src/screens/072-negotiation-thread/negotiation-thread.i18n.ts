@@ -4,6 +4,7 @@ const translations: ScreenTranslations = {
   en: {
     negotiationThread: {
       title: 'Negotiation thread',
+      finalizeTerms: 'Finalize deal terms',
       loading: 'Loading negotiation thread',
       error: { title: 'Could not load this negotiation', body: 'Check your connection and try again.' },
 
@@ -57,6 +58,7 @@ const translations: ScreenTranslations = {
   hi: {
     negotiationThread: {
       title: 'बातचीत थ्रेड',
+      finalizeTerms: 'डील शर्तें अंतिम करें',
       loading: 'बातचीत थ्रेड लोड हो रही है',
       error: { title: 'यह बातचीत लोड नहीं हो सकी', body: 'अपना कनेक्शन जांचें और फिर से कोशिश करें।' },
 
@@ -110,6 +112,7 @@ const translations: ScreenTranslations = {
   mr: {
     negotiationThread: {
       title: 'वाटाघाटी थ्रेड',
+      finalizeTerms: 'डील अटी अंतिम करा',
       loading: 'वाटाघाटी थ्रेड लोड होत आहे',
       error: { title: 'ही वाटाघाटी लोड होऊ शकली नाही', body: 'तुमचे कनेक्शन तपासा आणि पुन्हा प्रयत्न करा.' },
 
