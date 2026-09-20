@@ -61,7 +61,15 @@ export function NegotiationBotConfigView() {
 
   return (
     <Screen className="pb-action-bar">
-      <ScreenHeader title={t(K.title)} subtitle={t(K.subtitle)} />
+      <ScreenHeader
+        title={t(K.title)}
+        subtitle={t(K.subtitle)}
+        action={
+          <Button size="sm" variant="secondary" onClick={() => navigate('/admin/deals/counter-offers')}>
+            {t(K.counterOffersLink)}
+          </Button>
+        }
+      />
 
       <div className="stack gap-4 mb-4">
         <div>

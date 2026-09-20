@@ -8,6 +8,7 @@ const translations: ScreenTranslations = {
       loading: 'Loading negotiation bot configuration',
       error: { title: 'Could not load negotiation bot configuration', body: 'Check your connection and try again.' },
       save: 'Save configuration',
+      counterOffersLink: 'Counter-offers',
 
       guardrails: {
         heading: 'Price guardrail',
@@ -83,6 +84,7 @@ const translations: ScreenTranslations = {
       loading: 'नेगोशिएशन बॉट कॉन्फ़िगरेशन लोड हो रहा है',
       error: { title: 'नेगोशिएशन बॉट कॉन्फ़िगरेशन लोड नहीं हो सका', body: 'अपना कनेक्शन जांचें और फिर से प्रयास करें।' },
       save: 'कॉन्फ़िगरेशन सेव करें',
+      counterOffersLink: 'काउंटर-ऑफ़र',
 
       guardrails: {
         heading: 'कीमत सुरक्षा सीमा',
@@ -158,6 +160,7 @@ const translations: ScreenTranslations = {
       loading: 'निगोशिएशन बॉट कॉन्फिगरेशन लोड होत आहे',
       error: { title: 'निगोशिएशन बॉट कॉन्फिगरेशन लोड होऊ शकले नाही', body: 'तुमचे कनेक्शन तपासा आणि पुन्हा प्रयत्न करा.' },
       save: 'कॉन्फिगरेशन सेव्ह करा',
+      counterOffersLink: 'काउंटर-ऑफर',
 
       guardrails: {
         heading: 'किंमत सुरक्षा मर्यादा',

@@ -359,6 +359,11 @@ export interface Negotiation {
   status: NegotiationStatus;
   roundsUsed: number;
   currentOfferPrice: number;
+  /** The bot's own snapshotted floor (company floor + its margin buffer) —
+   *  never crossed on the bot's own authority. An ask below this but still
+   *  at or above the company's true floor is exactly the "borderline" case
+   *  the Counter-Offer Approval queue (screen 073) exists for; an ask below
+   *  the company's true floor is declined automatically and never queued. */
   floorPrice: number;
   maxRoundsAllowed: number;
   autoCloseAuthorityAllowed: boolean;
@@ -369,6 +374,36 @@ export interface Negotiation {
   lastActivityAt: string;
   takenOverBy?: string;
   takenOverAt?: string;
+  isDemo: boolean;
+}
+
+export type CounterOfferStatus = 'pending' | 'approved' | 'rejected' | 'countered' | 'superseded';
+
+/**
+ * A single genuinely-borderline ask the bot escalated because it falls
+ * outside its own authority (`Negotiation.floorPrice`) without being
+ * outright rejectable (still at or above the company's true margin
+ * floor) — screen 073. Shares its approve/reject/counter mechanics with
+ * `DiscountRequest`, just scoped to a live negotiation instead of a quote.
+ */
+export interface CounterOffer {
+  id: string;
+  negotiationId: string;
+  dealId: string;
+  leadId: string;
+  customerRequestedPrice: number;
+  /** Resulting margin if accepted at `customerRequestedPrice`, computed the
+   *  same way as `DiscountRequest.resultingMarginPct`. */
+  marginImpactPct: number;
+  /** A non-price ask riding alongside or instead of a price change (e.g. a
+   *  free AMC year) — always needs a human decision regardless of margin. */
+  bundledConcessionNote?: string;
+  status: CounterOfferStatus;
+  approverId?: string;
+  decidedAt?: string;
+  rejectionReason?: string;
+  counterPriceOffered?: number;
+  createdAt: string;
   isDemo: boolean;
 }
 

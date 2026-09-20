@@ -14,6 +14,7 @@ export const NEGOTIATION_BOT_CONFIG_KEYS = {
   loading: 'negotiationBotConfig.loading',
   error: { title: 'negotiationBotConfig.error.title', body: 'negotiationBotConfig.error.body' },
   save: 'negotiationBotConfig.save',
+  counterOffersLink: 'negotiationBotConfig.counterOffersLink',
 
   guardrails: {
     heading: 'negotiationBotConfig.guardrails.heading',

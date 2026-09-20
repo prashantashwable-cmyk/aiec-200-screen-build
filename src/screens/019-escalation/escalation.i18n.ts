@@ -19,6 +19,7 @@ const translations: ScreenTranslations = {
         gpsMismatch: 'Site photo GPS does not match the recorded site',
         technicianIdle: 'Technician has not checked in',
         qcFailed: 'Quality check failed',
+        counterOfferAging: 'Counter-offer waiting too long for a decision',
       },
     },
     escalation: {
@@ -74,6 +75,7 @@ const translations: ScreenTranslations = {
         gpsMismatch: 'साइट फ़ोटो का GPS दर्ज साइट से मेल नहीं खाता',
         technicianIdle: 'तकनीशियन ने चेक-इन नहीं किया',
         qcFailed: 'गुणवत्ता जाँच में फ़ेल',
+        counterOfferAging: 'काउंटर-ऑफ़र पर फ़ैसले का इंतज़ार बहुत लंबा हो गया है',
       },
     },
     escalation: {
@@ -129,6 +131,7 @@ const translations: ScreenTranslations = {
         gpsMismatch: 'साइट फोटोचा GPS नोंदलेल्या साइटशी जुळत नाही',
         technicianIdle: 'तंत्रज्ञाने चेक-इन केलेले नाही',
         qcFailed: 'गुणवत्ता तपासणीत नापास',
+        counterOfferAging: 'काउंटर-ऑफरवर निर्णयाची प्रतीक्षा खूप लांबली आहे',
       },
     },
     escalation: {

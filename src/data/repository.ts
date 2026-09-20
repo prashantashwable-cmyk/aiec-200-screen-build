@@ -12,6 +12,7 @@ import type {
   CommTemplate,
   CommissionEntry,
   Conversation,
+  CounterOffer,
   Deal,
   DiscountRequest,
   DiscountRequestStatus,
@@ -154,6 +155,15 @@ export interface NegotiationThread {
   lead: Lead;
   conversationId: string | null;
   messages: CommMessage[];
+}
+
+/** Screen 073's own read shape. `priorAskCount` is how many older pending
+ *  asks from this same customer this item already consolidates, so the
+ *  queue never shows confusing duplicate rows for one customer. */
+export interface CounterOfferQueueItem extends CounterOffer {
+  lead: Lead;
+  deal: Deal;
+  priorAskCount: number;
 }
 
 export interface SequenceTestStep {
@@ -435,6 +445,18 @@ export interface Repository {
    *  permanently disengaged by then, so there's no risk of a bot reply
    *  landing on top of this one. */
   sendNegotiationMessage(negotiationId: string, body: string, agentName: string): Promise<CommMessage>;
+  /** The borderline queue only — genuinely in-bounds asks are bot-handled
+   *  and genuinely out-of-bounds ones are declined automatically, neither
+   *  ever reaching here. */
+  listCounterOfferQueue(): Promise<CounterOfferQueueItem[]>;
+  /** Approving or countering writes the new price straight back onto the
+   *  live negotiation and, if the bot still owns that conversation, posts
+   *  the resolution into the thread itself — the same "never leave the
+   *  customer hanging" rule `decideDiscountRequest` follows for quotes. */
+  decideCounterOffer(
+    id: string,
+    decision: { status: 'approved' | 'rejected' | 'countered'; approverId: string; rejectionReason?: string; counterPriceOffered?: number },
+  ): Promise<CounterOffer>;
 
   /* Operations */
   listActivity(limit?: number): Promise<ActivityEvent[]>;

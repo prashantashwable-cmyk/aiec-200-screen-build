@@ -11,6 +11,7 @@ import {
   seedCommTemplates,
   seedCommissions,
   seedConversations,
+  seedCounterOffers,
   seedDeals,
   seedDiscountRequests,
   seedDuplicatePairs,
@@ -46,6 +47,7 @@ import type {
   BroadcastSegmentPreview,
   CommunicationAnalytics,
   ConversationWithContext,
+  CounterOfferQueueItem,
   ExecutiveKpis,
   FunnelStage,
   ImportPreview,
@@ -74,6 +76,7 @@ import type {
   CommSequence,
   CommTemplate,
   Conversation,
+  CounterOffer,
   DiscountRequest,
   DiscountRequestStatus,
   DriveType,
@@ -155,6 +158,7 @@ let pricingConfig: PricingConfig = { ...seedPricingConfig };
 
 const negotiations = [...seedNegotiations];
 let negotiationBotConfig: NegotiationBotConfig = { ...seedNegotiationBotConfig };
+const counterOffers = [...seedCounterOffers];
 
 let leadCounter = 200;
 let timelineEventCounter = 900;
@@ -1776,6 +1780,104 @@ export const memoryRepository: Repository = {
       patchInPlace(conversations, conversation.id, { lastMessageAt: now });
       patchInPlace(negotiations, negotiationId, { lastActivityAt: now });
       return message;
+    }),
+
+  listCounterOfferQueue: () =>
+    simulateRead(() => {
+      const pending = [...counterOffers].filter((o) => o.status === 'pending').sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      // Multiple pending asks from the same customer collapse into their
+      // latest — the rest count toward `priorAskCount` rather than showing
+      // as separate, confusing rows.
+      const latestByLead = new Map<string, CounterOffer>();
+      const priorCounts = new Map<string, number>();
+      for (const offer of pending) {
+        const current = latestByLead.get(offer.leadId);
+        if (!current || offer.createdAt > current.createdAt) {
+          if (current) priorCounts.set(offer.leadId, (priorCounts.get(offer.leadId) ?? 0) + 1);
+          latestByLead.set(offer.leadId, offer);
+        } else {
+          priorCounts.set(offer.leadId, (priorCounts.get(offer.leadId) ?? 0) + 1);
+        }
+      }
+      return Array.from(latestByLead.values())
+        .map((offer) => {
+          const lead = resolveLead(offer.leadId);
+          const deal = byId(deals, offer.dealId);
+          if (!lead || !deal) return null;
+          return { ...offer, lead, deal, priorAskCount: priorCounts.get(offer.leadId) ?? 0 };
+        })
+        .filter((item): item is CounterOfferQueueItem => item !== null)
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    }),
+
+  decideCounterOffer: (id, decision) =>
+    simulateWrite(() => {
+      const offer = byId(counterOffers, id);
+      if (!offer) throw new RepositoryError('not_found');
+      if (offer.status !== 'pending') throw new RepositoryError('already_decided');
+      // The customer's own ask was already vetted against the company floor
+      // when it reached this queue; an Admin's own counter-number is new
+      // input and gets the same "never below the true floor" check.
+      if (decision.status === 'countered' && decision.counterPriceOffered !== undefined) {
+        const quotation = quotations.filter((q) => q.leadId === offer.leadId).sort((a, b) => b.version - a.version)[0];
+        if (quotation) {
+          const baseCost = quotation.cost.equipmentCost + quotation.cost.civilWorkEstimate + quotation.cost.installationLaborCost + quotation.cost.transportCost;
+          const sellBeforeTax = decision.counterPriceOffered / (1 + quotation.cost.gstPercent / 100);
+          const marginPct = sellBeforeTax > 0 ? ((sellBeforeTax - baseCost) / sellBeforeTax) * 100 : 0;
+          if (marginPct < pricingConfig.minimumMarginFloorPct) throw new RepositoryError('counter_below_company_floor');
+        }
+      }
+      const now = new Date().toISOString();
+      const updated = patchInPlace(counterOffers, id, {
+        status: decision.status,
+        approverId: decision.approverId,
+        decidedAt: now,
+        rejectionReason: decision.rejectionReason,
+        counterPriceOffered: decision.counterPriceOffered,
+      });
+      // Any other still-pending ask from the same customer is resolved by
+      // this same decision — one governed decision per customer, never a
+      // stray duplicate left open once the consolidated item is settled.
+      for (const other of counterOffers) {
+        if (other.id !== id && other.leadId === offer.leadId && other.status === 'pending') {
+          patchInPlace(counterOffers, other.id, { status: 'superseded' as const });
+        }
+      }
+      const negotiation = byId(negotiations, offer.negotiationId);
+      if (negotiation) {
+        const resolvedPrice =
+          decision.status === 'approved'
+            ? offer.customerRequestedPrice
+            : decision.status === 'countered'
+              ? decision.counterPriceOffered ?? negotiation.currentOfferPrice
+              : negotiation.currentOfferPrice;
+        patchInPlace(negotiations, negotiation.id, { currentOfferPrice: resolvedPrice, lastActivityAt: now });
+        // The bot only speaks for itself while it still owns the
+        // conversation — once a human has taken over (or it's closed), the
+        // record updates silently and whoever is talking reads it live.
+        if (negotiation.status === 'bot_active' || negotiation.status === 'escalated') {
+          const conversation = conversations.find((c) => c.leadId === negotiation.leadId);
+          if (conversation) {
+            const bodyText =
+              decision.status === 'approved'
+                ? `We're able to offer ${formatINRCompact(offer.customerRequestedPrice)}${offer.bundledConcessionNote ? ', including what you asked for' : ''} — let's move ahead.`
+                : decision.status === 'countered'
+                  ? `We can offer ${formatINRCompact(decision.counterPriceOffered ?? negotiation.currentOfferPrice)} instead — let us know if that works for you.`
+                  : `We're not able to go that low, but we'd love to move ahead at ${formatINRCompact(negotiation.currentOfferPrice)}.`;
+            commMessages.push({
+              id: `cm-new-${(messageCounter += 1)}`,
+              conversationId: conversation.id,
+              channel: 'whatsapp',
+              sender: 'bot',
+              body: bodyText,
+              status: 'sent',
+              at: now,
+            });
+            patchInPlace(conversations, conversation.id, { lastMessageAt: now });
+          }
+        }
+      }
+      return updated;
     }),
 
   /* -------------------------------------------------------- Operations */

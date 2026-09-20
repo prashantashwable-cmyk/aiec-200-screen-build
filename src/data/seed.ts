@@ -10,6 +10,7 @@ import type {
   CommTemplate,
   CommissionEntry,
   Conversation,
+  CounterOffer,
   Deal,
   DiscountRequest,
   DuplicatePair,
@@ -579,6 +580,65 @@ export const seedNegotiations: Negotiation[] = [
     lastActivityAt: hoursAgo(9),
     isDemo: true,
   },
+  // dl-4 (Pinnacle Aurum) — already sitting at the bot's own floor (20%
+  // margin, its buffered limit), so any further ask needs an Admin's
+  // judgment call rather than the bot's own authority. Feeds screen 073.
+  {
+    id: 'ng-3',
+    dealId: 'dl-4',
+    leadId: 'l-4',
+    status: 'bot_active',
+    roundsUsed: 1,
+    currentOfferPrice: 3_377_777,
+    floorPrice: 3_377_777,
+    maxRoundsAllowed: 4,
+    autoCloseAuthorityAllowed: false,
+    startedAt: daysAgo(1),
+    lastActivityAt: hoursAgo(2),
+    isDemo: true,
+  },
+];
+
+export const seedCounterOffers: CounterOffer[] = [
+  // l-4 (Pinnacle Aurum) — the same customer asked twice within a day; the
+  // fresher ask is what the queue shows, consolidating the older one.
+  {
+    id: 'co-1',
+    negotiationId: 'ng-3',
+    dealId: 'dl-4',
+    leadId: 'l-4',
+    customerRequestedPrice: 3_300_000,
+    marginImpactPct: 18.3,
+    status: 'pending',
+    createdAt: hoursAgo(10),
+    isDemo: true,
+  },
+  {
+    id: 'co-2',
+    negotiationId: 'ng-3',
+    dealId: 'dl-4',
+    leadId: 'l-4',
+    customerRequestedPrice: 3_280_000,
+    marginImpactPct: 17.6,
+    status: 'pending',
+    createdAt: hoursAgo(2),
+    isDemo: true,
+  },
+  // l-3 (Skyline Corporate Park) — no price change asked, but a free AMC
+  // year is outside the bot's authority regardless of margin. Waiting long
+  // past a reasonable SLA, which is what raises al-9 below.
+  {
+    id: 'co-3',
+    negotiationId: 'ng-1',
+    dealId: 'dl-3',
+    leadId: 'l-3',
+    customerRequestedPrice: 4_180_000,
+    marginImpactPct: 19.9,
+    bundledConcessionNote: 'Wants a free 1-year AMC added at no extra cost in exchange for closing this week.',
+    status: 'pending',
+    createdAt: hoursAgo(9),
+    isDemo: true,
+  },
 ];
 
 /* -------------------------------------------------------------------- Jobs */
@@ -741,6 +801,7 @@ export const seedAlerts: Alert[] = [
   { id: 'al-6', code: 'ALT-9006', titleKey: 'alerts.type.gpsMismatch', context: 'AIEC-L-0119 · site photo GPS 340 m from recorded site', severity: 'medium', category: 'quality', status: 'open', raisedAt: minutesAgo(4), relatedId: 'l-dup-1', location: { lat: 18.5978, lng: 73.7624 }, isDemo: true },
   { id: 'al-7', code: 'ALT-9007', titleKey: 'alerts.type.technicianIdle', context: 'Ajay Nikam · no check-in for 9 hours during a scheduled job', severity: 'low', category: 'staffing', status: 'open', raisedAt: hoursAgo(9), relatedId: 'u-tech-3', isDemo: true },
   { id: 'al-8', code: 'ALT-9008', titleKey: 'alerts.type.qcFailed', context: 'AIEC-J-3102 · door operator alignment out of tolerance', severity: 'high', category: 'quality', status: 'resolved', raisedAt: daysAgo(3), acknowledgedBy: 'u-admin-1', relatedId: 'j-2', isDemo: true },
+  { id: 'al-9', code: 'ALT-9009', titleKey: 'alerts.type.counterOfferAging', context: 'AIEC-D-2103 · Skyline Corporate Park · counter-offer waiting 9h with no Admin decision yet', severity: 'medium', category: 'sla_breach', status: 'open', raisedAt: hoursAgo(9), relatedId: 'co-3', isDemo: true },
 ];
 
 /* ---------------------------------------------------------- Activity feed */
@@ -1026,7 +1087,7 @@ export const seedCommSequences: CommSequence[] = [
 
 export const seedConversations: Conversation[] = [
   { id: 'conv-1', leadId: 'l-3', assignedAgentId: 'u-admin-1', lastMessageAt: minutesAgo(40), isDemo: true },
-  { id: 'conv-2', leadId: 'l-4', lastMessageAt: hoursAgo(20), isDemo: true },
+  { id: 'conv-2', leadId: 'l-4', lastMessageAt: hoursAgo(2), isDemo: true },
   { id: 'conv-3', leadId: 'l-9', lastMessageAt: daysAgo(1), isDemo: true },
   { id: 'conv-4', leadId: 'l-15', assignedAgentId: 'u-admin-1', lastMessageAt: minutesAgo(30), sequencePausedUntil: hoursAhead(2), isDemo: true },
   { id: 'conv-5', leadId: 'l-10', lastMessageAt: daysAgo(9), isDemo: true },
@@ -1045,6 +1106,7 @@ export const seedCommMessages: CommMessage[] = [
   { id: 'cm-4d', conversationId: 'conv-1', channel: 'whatsapp', sender: 'bot', body: "We're not able to go that low on this configuration, but we can hold ₹41.80L with our AMC response-time guarantee included, which most vendors quote separately.", status: 'delivered', at: minutesAgo(40) },
 
   { id: 'cm-5', conversationId: 'conv-2', channel: 'whatsapp', sender: 'bot', body: 'Hi Amit Joshi, following up on the quote of ₹30.50L for Pinnacle Aurum. Any questions on our end?', templateGroupId: 'tpl-quote-followup', status: 'delivered', at: hoursAgo(20) },
+  { id: 'cm-5b', conversationId: 'conv-2', channel: 'whatsapp', sender: 'customer', body: 'Could you do ₹32.80L instead of the quoted price?', status: 'delivered', at: hoursAgo(2) },
 
   { id: 'cm-6', conversationId: 'conv-3', channel: 'sms', sender: 'bot', body: 'AIEC: Confirming our site visit at Nirman Elite on 18 Aug. Reply if this time no longer works.', templateGroupId: 'tpl-site-visit-confirm', status: 'delivered', at: daysAgo(1) },
   { id: 'cm-7', conversationId: 'conv-3', channel: 'sms', sender: 'customer', body: 'STOP', status: 'delivered', at: daysAgo(1), requiresHumanReview: true, handled: false },
