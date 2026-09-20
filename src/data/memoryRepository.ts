@@ -19,6 +19,8 @@ import {
   seedJobs,
   seedLeadTimeline,
   seedLeads,
+  seedNegotiationBotConfig,
+  seedNegotiations,
   seedOptOutEvents,
   seedPayments,
   seedPricingConfig,
@@ -83,6 +85,8 @@ import type {
   LeadSource,
   LeadSourceAttribution,
   LeadTimelineEvent,
+  Negotiation,
+  NegotiationBotConfig,
   OptOutChannel,
   OptOutEvent,
   PricingConfig,
@@ -148,6 +152,9 @@ const quotations = [...seedQuotations];
 const quotationTemplates = [...seedQuotationTemplates];
 const discountRequests = [...seedDiscountRequests];
 let pricingConfig: PricingConfig = { ...seedPricingConfig };
+
+const negotiations = [...seedNegotiations];
+let negotiationBotConfig: NegotiationBotConfig = { ...seedNegotiationBotConfig };
 
 let leadCounter = 200;
 let timelineEventCounter = 900;
@@ -1688,6 +1695,44 @@ export const memoryRepository: Repository = {
         avgDecisionDaysLost: Math.round(avgDecisionDaysLost * 10) / 10,
         commonLossFactors,
       };
+    }),
+
+  /* -------------------------------------------------------- Auto-negotiation */
+  getNegotiationBotConfig: () => simulateRead(() => ({ ...negotiationBotConfig })),
+
+  updateNegotiationBotConfig: (patch) =>
+    simulateWrite(() => {
+      if (patch.marginBufferPct !== undefined && patch.marginBufferPct < 0) {
+        throw new RepositoryError('margin_buffer_must_be_non_negative');
+      }
+      if (patch.maxNegotiationRounds !== undefined && patch.maxNegotiationRounds < 1) {
+        throw new RepositoryError('max_rounds_must_be_at_least_one');
+      }
+      negotiationBotConfig = { ...negotiationBotConfig, ...patch, updatedAt: new Date().toISOString() };
+      return { ...negotiationBotConfig };
+    }),
+
+  listActiveNegotiations: () =>
+    simulateRead(() =>
+      negotiations
+        .filter((n) => n.status !== 'closed_won' && n.status !== 'closed_lost')
+        .sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt)),
+    ),
+
+  takeOverNegotiation: (id, byUserId) =>
+    simulateWrite(() => {
+      const negotiation = byId(negotiations, id);
+      if (!negotiation) throw new RepositoryError('not_found');
+      if (negotiation.status === 'closed_won' || negotiation.status === 'closed_lost') {
+        throw new RepositoryError('negotiation_already_closed');
+      }
+      return patchInPlace(negotiations, id, {
+        status: 'human_takeover' as const,
+        takenOverBy: byUserId,
+        takenOverAt: new Date().toISOString(),
+        lastEscalationReason: negotiation.lastEscalationReason ?? 'manual_takeover',
+        lastActivityAt: new Date().toISOString(),
+      });
     }),
 
   /* -------------------------------------------------------- Operations */

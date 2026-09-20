@@ -21,6 +21,8 @@ import type {
   LeadImportBatch,
   LeadSource,
   LeadTimelineEvent,
+  Negotiation,
+  NegotiationBotConfig,
   OptOutEvent,
   Payment,
   PricingConfig,
@@ -519,6 +521,64 @@ export const seedDeals: Deal[] = [
   { id: 'dl-6', code: 'AIEC-D-2106', leadId: 'l-15', status: 'negotiating', quotedPrice: 8_800_000, agreedPrice: 8_400_000, marginAmount: 1_512_000, gstPercent: 18, supplierId: 'sp-1', negotiationRounds: 4, createdAt: daysAgo(15), isDemo: true },
   { id: 'dl-7', code: 'AIEC-D-2107', leadId: 'l-16', status: 'quoted', quotedPrice: 3_700_000, agreedPrice: 0, marginAmount: 629_000, gstPercent: 18, supplierId: 'sp-2', negotiationRounds: 0, createdAt: daysAgo(5), isDemo: true },
   { id: 'dl-8', code: 'AIEC-D-2108', leadId: 'l-13', status: 'lost', quotedPrice: 1_620_000, agreedPrice: 0, marginAmount: 0, gstPercent: 18, negotiationRounds: 2, createdAt: daysAgo(32), closedAt: daysAgo(18), isDemo: true },
+];
+
+export const seedNegotiationBotConfig: NegotiationBotConfig = {
+  // On top of the 15% company margin floor, so the bot never settles below 20%.
+  marginBufferPct: 5,
+  maxNegotiationRounds: 4,
+  toneKey: 'professional',
+  autoCloseAuthorityFlag: false,
+  objectionScenarios: [
+    {
+      objectionKey: 'price_too_high',
+      responseStrategy: 'Acknowledge the concern, restate the value (installation quality, AMC response time), then offer the smallest available step down within the approved band rather than the maximum immediately.',
+    },
+    {
+      objectionKey: 'competitor_comparison',
+      responseStrategy: 'Ask which specific line item the competitor is lower on before responding — never match a competitor price blind. Highlight AIEC-specific guarantees the competitor quote may not include.',
+    },
+    {
+      objectionKey: 'wants_to_delay',
+      responseStrategy: "Confirm the validity window on the current quote and offer to lock today's price for a short, named extension rather than an open-ended delay.",
+    },
+  ],
+  updatedAt: daysAgo(20),
+};
+
+export const seedNegotiations: Negotiation[] = [
+  // dl-3 (Skyline Corporate Park) — still bot-active, comfortably above floor.
+  {
+    id: 'ng-1',
+    dealId: 'dl-3',
+    leadId: 'l-3',
+    status: 'bot_active',
+    roundsUsed: 2,
+    currentOfferPrice: 4_180_000,
+    floorPrice: 3_950_000,
+    maxRoundsAllowed: 4,
+    autoCloseAuthorityAllowed: false,
+    startedAt: daysAgo(4),
+    lastActivityAt: hoursAgo(3),
+    isDemo: true,
+  },
+  // dl-6 (Tech Park Block C) — hit its round limit, forced to human handoff
+  // regardless of how close the conversation seemed to a close.
+  {
+    id: 'ng-2',
+    dealId: 'dl-6',
+    leadId: 'l-15',
+    status: 'escalated',
+    roundsUsed: 4,
+    currentOfferPrice: 8_450_000,
+    floorPrice: 8_100_000,
+    maxRoundsAllowed: 4,
+    autoCloseAuthorityAllowed: false,
+    lastEscalationReason: 'max_rounds_reached',
+    startedAt: daysAgo(6),
+    lastActivityAt: hoursAgo(9),
+    isDemo: true,
+  },
 ];
 
 /* -------------------------------------------------------------------- Jobs */

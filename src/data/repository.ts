@@ -26,6 +26,8 @@ import type {
   LeadImportBatch,
   LeadSourceAttribution,
   LeadTimelineEvent,
+  Negotiation,
+  NegotiationBotConfig,
   OptOutChannel,
   OptOutEvent,
   PackageTier,
@@ -405,6 +407,14 @@ export interface Repository {
   /** `segment` splits residential from commercial buildings so one large
    *  commercial deal never skews a blended price-band average. */
   getQuotationAnalytics(filter?: { segment?: QuotationAnalyticsSegment }): Promise<QuotationAnalytics>;
+
+  /* Auto-negotiation */
+  getNegotiationBotConfig(): Promise<NegotiationBotConfig>;
+  updateNegotiationBotConfig(patch: Partial<Omit<NegotiationBotConfig, 'updatedAt'>>): Promise<NegotiationBotConfig>;
+  /** Everything not yet closed — bot-active, escalated, or already taken
+   *  over by a human but still open — for the live monitoring dashboard. */
+  listActiveNegotiations(): Promise<Negotiation[]>;
+  takeOverNegotiation(id: string, byUserId: string): Promise<Negotiation>;
 
   /* Operations */
   listActivity(limit?: number): Promise<ActivityEvent[]>;

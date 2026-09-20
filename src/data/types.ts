@@ -312,6 +312,66 @@ export interface Deal {
   isDemo: boolean;
 }
 
+/* -------------------------------------------------------- Auto-Negotiation */
+
+/** Fixed taxonomy so the bot's response strategy is always traceable to one
+ *  of these, never an ad-hoc classification — an objection that matches
+ *  none of them is exactly the "genuinely novel" case that always escalates. */
+export type NegotiationObjectionKey = 'price_too_high' | 'competitor_comparison' | 'wants_to_delay';
+
+export interface NegotiationObjectionScenario {
+  objectionKey: NegotiationObjectionKey;
+  /** Admin-authored guidance for how the bot should respond — a strategy,
+   *  not a single canned line, since the actual reply still varies. */
+  responseStrategy: string;
+}
+
+export type NegotiationTone = 'professional' | 'warm' | 'concise' | 'firm';
+
+/** Deal-closing-specific bot configuration, layered on top of the general
+ *  Conversation AI Bot settings (`BotConfig`, screen 056) — screen 071.
+ *  The bot's own floor is always the Pricing Rules margin floor *plus*
+ *  this buffer, so it can only ever be more conservative, never less. */
+export interface NegotiationBotConfig {
+  marginBufferPct: number;
+  maxNegotiationRounds: number;
+  toneKey: NegotiationTone;
+  /** Off by default for a new deployment — Admin must deliberately opt in
+   *  once the bot's behaviour has earned that trust. */
+  autoCloseAuthorityFlag: boolean;
+  objectionScenarios: NegotiationObjectionScenario[];
+  updatedAt: string;
+}
+
+export type NegotiationStatus = 'bot_active' | 'escalated' | 'human_takeover' | 'closed_won' | 'closed_lost';
+
+/**
+ * One bot-run negotiation session against a `Deal`. Settings that govern it
+ * (`maxRoundsAllowed`, `autoCloseAuthorityAllowed`, `floorPrice`) are
+ * snapshotted at creation from `NegotiationBotConfig` and never re-read
+ * afterward, so an in-flight negotiation always finishes under the rules it
+ * started with even if Admin changes the configuration mid-conversation.
+ */
+export interface Negotiation {
+  id: string;
+  dealId: string;
+  leadId: string;
+  status: NegotiationStatus;
+  roundsUsed: number;
+  currentOfferPrice: number;
+  floorPrice: number;
+  maxRoundsAllowed: number;
+  autoCloseAuthorityAllowed: boolean;
+  /** Set once a customer message hasn't matched any objection scenario
+   *  above the bot's confidence threshold — always a human handoff. */
+  lastEscalationReason?: 'no_scenario_match' | 'max_rounds_reached' | 'manual_takeover';
+  startedAt: string;
+  lastActivityAt: string;
+  takenOverBy?: string;
+  takenOverAt?: string;
+  isDemo: boolean;
+}
+
 /* ------------------------------------------------------------- Quotations */
 
 export type DriveType = 'hydraulic' | 'geared_traction' | 'gearless_traction' | 'mrl' | 'vacuum' | 'screw_driven';

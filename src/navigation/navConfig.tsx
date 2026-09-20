@@ -6,6 +6,7 @@ import {
   Coins,
   Funnel,
   Gear,
+  Handshake,
   House,
   ListChecks,
   MapTrifold,
@@ -42,6 +43,7 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
     { id: 'leads', labelKey: 'nav.crm', path: '/admin/leads', icon: <Funnel size={ICON_SIZE} /> },
     { id: 'comm', labelKey: 'nav.comm', path: '/admin/comm/templates', icon: <ChatCircleText size={ICON_SIZE} /> },
     { id: 'quotes', labelKey: 'nav.quotes', path: '/admin/quotes', icon: <Receipt size={ICON_SIZE} /> },
+    { id: 'deals', labelKey: 'nav.deals', path: '/admin/deals/bot-config', icon: <Handshake size={ICON_SIZE} /> },
     {
       id: 'analytics',
       labelKey: 'nav.analytics',
