@@ -599,7 +599,18 @@ function winLossStat(key: string, group: Quotation[]): QuotationWinLossStat {
     wonCount: won,
     winRatePct: decided.length ? won / decided.length : 0,
     lowSample: decided.length < LOW_SAMPLE_THRESHOLD,
+    quotationIds: group.map((q) => q.id),
   };
+}
+
+/** Explainable, not opaque: every non-residential building type (office,
+ *  retail, hospital, hotel, industrial, institutional) is "commercial" —
+ *  the split screen 069 needs so one large commercial deal never skews a
+ *  blended residential price-band average. */
+function buildingSegmentOf(lead: Lead | null): 'residential' | 'commercial' | 'unknown' {
+  const type = lead?.spec?.buildingType;
+  if (!type) return 'unknown';
+  return type.startsWith('residential_') ? 'residential' : 'commercial';
 }
 
 function pushToMap<K>(map: Map<K, Quotation[]>, key: K, q: Quotation) {
@@ -1597,9 +1608,15 @@ export const memoryRepository: Repository = {
     }),
 
   /* -------------------------------------------------------- Quotation analytics */
-  getQuotationAnalytics: () =>
+  getQuotationAnalytics: (filter) =>
     simulateRead(() => {
-      const sentOrLater = quotations.filter((q) => q.status !== 'draft');
+      const segment = filter?.segment;
+      // Excludes 'draft' (never sent) and 'superseded' (an older version of a
+      // chain whose current version is counted instead) — one row per real
+      // decision, never a lead's whole version history double-counted.
+      const sentOrLater = quotations
+        .filter((q) => q.status !== 'draft' && q.status !== 'superseded')
+        .filter((q) => !segment || buildingSegmentOf(resolveLead(q.leadId)) === segment);
       const byTier = new Map<string, Quotation[]>();
       const byDrive = new Map<string, Quotation[]>();
       const byBand = new Map<string, Quotation[]>();
@@ -1612,24 +1629,34 @@ export const memoryRepository: Repository = {
         pushToMap(byTerritory, lead?.city ?? 'unknown', q);
       }
 
-      const decisionDays: number[] = [];
+      const wonDecisionDays: number[] = [];
+      const lostDecisionDays: number[] = [];
       for (const q of sentOrLater) {
         const lead = resolveLead(q.leadId);
         if (!lead || !q.sentAt) continue;
-        if (lead.stage === 'won' || lead.stage === 'lost') {
-          const days = (new Date(lead.stageEnteredAt).getTime() - new Date(q.sentAt).getTime()) / 86_400_000;
-          if (days >= 0) decisionDays.push(days);
-        }
+        if (lead.stage !== 'won' && lead.stage !== 'lost') continue;
+        const days = (new Date(lead.stageEnteredAt).getTime() - new Date(q.sentAt).getTime()) / 86_400_000;
+        if (days < 0) continue;
+        (lead.stage === 'won' ? wonDecisionDays : lostDecisionDays).push(days);
       }
-      const avgDecisionDays = decisionDays.length ? decisionDays.reduce((s, d) => s + d, 0) / decisionDays.length : 0;
+      const average = (values: number[]) => (values.length ? values.reduce((s, d) => s + d, 0) / values.length : 0);
+      const avgDecisionDaysWon = average(wonDecisionDays);
+      const avgDecisionDaysLost = average(lostDecisionDays);
+      const avgDecisionDays = average([...wonDecisionDays, ...lostDecisionDays]);
 
-      const lostLeads = leads.filter((l) => l.stage === 'lost' && quotations.some((q) => q.leadId === l.id));
-      const lossCounts = new Map<string, number>();
+      const lostLeads = leads.filter(
+        (l) => l.stage === 'lost' && quotations.some((q) => q.leadId === l.id) && (!segment || buildingSegmentOf(l) === segment),
+      );
+      const lossFactorLeadIds = new Map<string, string[]>();
       for (const l of lostLeads) {
         const key = l.lostReason ?? 'unknown';
-        lossCounts.set(key, (lossCounts.get(key) ?? 0) + 1);
+        const ids = lossFactorLeadIds.get(key);
+        if (ids) ids.push(l.id);
+        else lossFactorLeadIds.set(key, [l.id]);
       }
-      const commonLossFactors = [...lossCounts.entries()].map(([reasonKey, count]) => ({ reasonKey, count })).sort((a, b) => b.count - a.count);
+      const commonLossFactors = [...lossFactorLeadIds.entries()]
+        .map(([reasonKey, leadIds]) => ({ reasonKey, count: leadIds.length, leadIds }))
+        .sort((a, b) => b.count - a.count);
 
       return {
         byPackageTier: [...byTier.entries()].map(([k, g]) => winLossStat(k, g)),
@@ -1637,6 +1664,8 @@ export const memoryRepository: Repository = {
         byPriceBand: PRICE_BANDS.map((b) => winLossStat(b.key, byBand.get(b.key) ?? [])).filter((s) => s.quotesCount > 0),
         byTerritory: [...byTerritory.entries()].map(([k, g]) => winLossStat(k, g)),
         avgDecisionDays: Math.round(avgDecisionDays * 10) / 10,
+        avgDecisionDaysWon: Math.round(avgDecisionDaysWon * 10) / 10,
+        avgDecisionDaysLost: Math.round(avgDecisionDaysLost * 10) / 10,
         commonLossFactors,
       };
     }),

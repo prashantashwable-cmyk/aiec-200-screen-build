@@ -250,7 +250,11 @@ export interface QuotationWinLossStat {
   winRatePct: number;
   /** Too few quotes for the rate to be statistically meaningful. */
   lowSample: boolean;
+  /** Every quotation behind this row, for direct drill-through. */
+  quotationIds: string[];
 }
+
+export type QuotationAnalyticsSegment = 'residential' | 'commercial';
 
 export interface QuotationAnalytics {
   byPackageTier: QuotationWinLossStat[];
@@ -258,7 +262,11 @@ export interface QuotationAnalytics {
   byPriceBand: QuotationWinLossStat[];
   byTerritory: QuotationWinLossStat[];
   avgDecisionDays: number;
-  commonLossFactors: { reasonKey: string; count: number }[];
+  /** Split by outcome, since a slow decision and a fast one call for very
+   *  different fixes even when the blended average looks unremarkable. */
+  avgDecisionDaysWon: number;
+  avgDecisionDaysLost: number;
+  commonLossFactors: { reasonKey: string; count: number; leadIds: string[] }[];
 }
 
 export interface Repository {
@@ -394,7 +402,9 @@ export interface Repository {
   updatePricingConfig(patch: Partial<Omit<PricingConfig, 'updatedAt'>>): Promise<PricingConfig>;
 
   /* Quotation analytics */
-  getQuotationAnalytics(): Promise<QuotationAnalytics>;
+  /** `segment` splits residential from commercial buildings so one large
+   *  commercial deal never skews a blended price-band average. */
+  getQuotationAnalytics(filter?: { segment?: QuotationAnalyticsSegment }): Promise<QuotationAnalytics>;
 
   /* Operations */
   listActivity(limit?: number): Promise<ActivityEvent[]>;
