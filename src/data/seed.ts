@@ -15,6 +15,7 @@ import type {
   Conversation,
   CounterOffer,
   Deal,
+  DealCelebration,
   DealClosure,
   DealTerms,
   DiscountRequest,
@@ -859,6 +860,21 @@ export const seedDealClosures: DealClosure[] = [
     supplierPoFailed: true,
     commissionEntryIds: ['c-6'],
     voided: false,
+    isDemo: true,
+  },
+];
+
+export const seedDealCelebrations: DealCelebration[] = [
+  // dl-6 — already celebrated and acknowledged by Ganesh, with a feedback
+  // note only Admin can see (screen 080's own internal-only edge case).
+  {
+    id: 'dcel-1',
+    dealId: 'dl-6',
+    acknowledged: true,
+    acknowledgedBy: 'u-srv-1',
+    acknowledgedAt: hoursAgo(1),
+    feedbackNote: 'Customer nearly walked over the supplier lead-time question — worth adding a line about our multi-supplier sourcing to the initial pitch so it comes up before they ask.',
+    createdAt: hoursAgo(2),
     isDemo: true,
   },
 ];

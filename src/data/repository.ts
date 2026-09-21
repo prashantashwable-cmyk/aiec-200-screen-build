@@ -18,6 +18,7 @@ import type {
   Conversation,
   CounterOffer,
   Deal,
+  DealCelebration,
   DealClosure,
   DealTerms,
   DiscountRequest,
@@ -227,6 +228,28 @@ export interface DealClosureView {
   paymentRecords: Payment[];
   supplierPo: SupplierPurchaseOrder | null;
   eligibleToClose: boolean;
+}
+
+/** One involved staff member's commission slice of a deal — screen 080.
+ *  `entries` and `total` are read straight from `listCommissions`, the
+ *  exact same records that staff member's own Commission & Rewards Tracker
+ *  reads, never a separate calculation. */
+export interface DealCelebrationStaffSummary {
+  userId: string;
+  name: string;
+  role: 'original_surveyor' | 'current_surveyor';
+  entries: CommissionEntry[];
+  total: number;
+}
+
+/** Screen 080's own read shape. `celebration` is null until the deal has
+ *  first been viewed as won; `eligible` mirrors `Deal.status === 'won'`. */
+export interface DealCelebrationView {
+  celebration: DealCelebration | null;
+  deal: Deal;
+  lead: Lead;
+  staffSummaries: DealCelebrationStaffSummary[];
+  eligible: boolean;
 }
 
 /** One territory's (city's) slice of a script's effectiveness — screen
@@ -632,6 +655,22 @@ export interface Repository {
   /** Any sales user can raise this the moment they notice stale or
    *  inaccurate positioning, without needing Admin to notice first. */
   flagCompetitorForReview(id: string, reason: string, byName: string): Promise<Competitor>;
+
+  /* Deal closing: won-deal celebration (internal only) */
+  /** Pure read — never creates the record itself, same split as
+   *  `getDealClosure`. Returns null if the deal doesn't exist. `viewerRole`
+   *  decides whether `celebration.feedbackNote` comes back at all — a
+   *  non-admin viewer never sees it, including their own note. */
+  getDealCelebration(dealId: string, viewerRole: Role): Promise<DealCelebrationView | null>;
+  /** Idempotent — returns the existing record if one exists, otherwise
+   *  creates it. Called once an eligible deal's celebration is first
+   *  viewed, mirroring `triggerDealClosure`'s own split from its read, so
+   *  the moment persists for a staff member who was offline when the deal
+   *  actually closed rather than depending on a fleeting push. */
+  triggerDealCelebration(dealId: string): Promise<DealCelebration>;
+  /** `feedbackNote` is optional and, once set, is never returned to a
+   *  non-admin caller's own view of this record. */
+  acknowledgeDealCelebration(dealId: string, byUserId: string, feedbackNote?: string): Promise<DealCelebration>;
 
   /* Operations */
   listActivity(limit?: number): Promise<ActivityEvent[]>;

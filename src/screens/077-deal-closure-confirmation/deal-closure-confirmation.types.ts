@@ -38,6 +38,7 @@ export const DEAL_CLOSURE_CONFIRMATION_KEYS = {
     supplierPo: 'dealClosureConfirmation.internalSummary.supplierPo',
     supplierPoOk: 'dealClosureConfirmation.internalSummary.supplierPoOk',
     supplierPoFailed: 'dealClosureConfirmation.internalSummary.supplierPoFailed',
+    viewCelebration: 'dealClosureConfirmation.internalSummary.viewCelebration',
   },
 
   voidAction: {

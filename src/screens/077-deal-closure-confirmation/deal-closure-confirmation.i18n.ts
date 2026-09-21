@@ -38,6 +38,7 @@ const translations: ScreenTranslations = {
         supplierPo: 'Supplier purchase order',
         supplierPoOk: 'Triggered',
         supplierPoFailed: 'Failed — see Automation Health Monitor',
+        viewCelebration: 'View team celebration',
       },
 
       voidAction: {
@@ -92,6 +93,7 @@ const translations: ScreenTranslations = {
         supplierPo: 'आपूर्तिकर्ता खरीद आदेश',
         supplierPoOk: 'भेजा गया',
         supplierPoFailed: 'विफल — ऑटोमेशन हेल्थ मॉनिटर देखें',
+        viewCelebration: 'टीम उत्सव देखें',
       },
 
       voidAction: {
@@ -146,6 +148,7 @@ const translations: ScreenTranslations = {
         supplierPo: 'पुरवठादार खरेदी ऑर्डर',
         supplierPoOk: 'पाठवली',
         supplierPoFailed: 'अयशस्वी — ऑटोमेशन हेल्थ मॉनिटर पहा',
+        viewCelebration: 'टीम उत्सव पहा',
       },
 
       voidAction: {

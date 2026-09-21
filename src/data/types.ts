@@ -691,6 +691,30 @@ export interface Competitor {
   isDemo: boolean;
 }
 
+/**
+ * The internal-only celebratory counterpart to `DealClosure` — screen 080.
+ * Deliberately holds only what a human actually decides here (the
+ * acknowledgment and an optional feedback note); who was involved and what
+ * they earned are read live off `Lead`/`CommissionEntry` on every view, the
+ * same records the Commission & Rewards Tracker itself reads, so this is
+ * never a second, driftable calculation. Created the moment a deal is first
+ * viewed as won (mirroring `DealClosure`'s own creation), so the moment
+ * persists for a staff member who was offline when it actually closed
+ * rather than depending on a fleeting push they might miss.
+ */
+export interface DealCelebration {
+  id: string;
+  dealId: string;
+  acknowledged: boolean;
+  acknowledgedBy?: string;
+  acknowledgedAt?: string;
+  /** Admin-only content by design — never rendered back to a surveyor,
+   *  including the one who wrote it. */
+  feedbackNote?: string;
+  createdAt: string;
+  isDemo: boolean;
+}
+
 /* ------------------------------------------------------------- Quotations */
 
 export type DriveType = 'hydraulic' | 'geared_traction' | 'gearless_traction' | 'mrl' | 'vacuum' | 'screw_driven';

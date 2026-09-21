@@ -157,6 +157,9 @@ export function DealClosureConfirmationView() {
               )}
             </div>
           </Card>
+          <Button size="sm" variant="secondary" className="mt-2" onClick={() => navigate(`/deals/${deal.id}/celebration`)}>
+            {t(K.internalSummary.viewCelebration)}
+          </Button>
         </div>
       </div>
 

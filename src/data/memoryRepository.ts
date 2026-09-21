@@ -25,6 +25,7 @@ import {
   seedLeadTimeline,
   seedLeads,
   seedCompetitors,
+  seedDealCelebrations,
   seedNegotiationBotConfig,
   seedNegotiations,
   seedObjectionScripts,
@@ -57,6 +58,8 @@ import type {
   ContractView,
   ConversationWithContext,
   CounterOfferQueueItem,
+  DealCelebrationStaffSummary,
+  DealCelebrationView,
   DealClosureView,
   DealTermsView,
   ExecutiveKpis,
@@ -97,6 +100,7 @@ import type {
   Conversation,
   CounterOffer,
   Deal,
+  DealCelebration,
   DealClosure,
   DealTerms,
   DiscountRequest,
@@ -208,6 +212,8 @@ let objectionScriptCounter = 100;
 const objectionScriptUsages = [...seedObjectionScriptUsages];
 const competitors = [...seedCompetitors];
 let competitorCounter = 100;
+const dealCelebrations = [...seedDealCelebrations];
+let dealCelebrationCounter = 100;
 
 let leadCounter = 200;
 let timelineEventCounter = 900;
@@ -450,6 +456,33 @@ function buildObjectionScriptListItem(script: ObjectionScript): ObjectionScriptL
     territoryStats,
     usedByBot: BOT_SHARED_OBJECTION_CATEGORIES.includes(script.category),
   };
+}
+
+/**
+ * Everyone with a legitimate commission claim on this deal — screen 080.
+ * The original capturing surveyor keeps that entitlement forever regardless
+ * of reassignment (per `Lead.originalSurveyorId`'s own contract, screen
+ * 044), so they're always included; the current surveyor is only added
+ * separately when reassignment actually happened, so the ordinary
+ * single-surveyor case never shows a duplicate row.
+ */
+function buildDealCelebrationStaffSummaries(lead: Lead, deal: Deal): DealCelebrationStaffSummary[] {
+  const staff: { id: string; role: DealCelebrationStaffSummary['role'] }[] = [{ id: lead.originalSurveyorId, role: 'original_surveyor' }];
+  if (lead.surveyorId && lead.surveyorId !== lead.originalSurveyorId) {
+    staff.push({ id: lead.surveyorId, role: 'current_surveyor' });
+  }
+  return staff
+    .filter((s) => s.id)
+    .map(({ id, role }) => {
+      const entries = commissions.filter((c) => c.userId === id && (c.dealId === deal.id || c.leadId === lead.id));
+      return {
+        userId: id,
+        name: nameOf(id),
+        role,
+        entries,
+        total: entries.filter((e) => e.status !== 'forfeited').reduce((sum, e) => sum + e.amount, 0),
+      };
+    });
 }
 
 function pushTimelineEvent(event: Omit<LeadTimelineEvent, 'id'>): LeadTimelineEvent {
@@ -2535,6 +2568,55 @@ export const memoryRepository: Repository = {
         flagReason: reason,
         flaggedBy: byName,
         flaggedAt: new Date().toISOString(),
+      });
+    }),
+
+  /* -------------------------------------------------- Won-deal celebration */
+  getDealCelebration: (dealId, viewerRole) =>
+    simulateRead(() => {
+      const deal = byId(deals, dealId);
+      if (!deal) return null;
+      const lead = resolveLead(deal.leadId);
+      if (!lead) return null;
+      const celebration = dealCelebrations.find((c) => c.dealId === dealId) ?? null;
+      const visible = celebration && viewerRole !== 'admin' ? { ...celebration, feedbackNote: undefined } : celebration;
+      return {
+        celebration: visible,
+        deal,
+        lead,
+        staffSummaries: buildDealCelebrationStaffSummaries(lead, deal),
+        eligible: deal.status === 'won',
+      };
+    }),
+
+  triggerDealCelebration: (dealId) =>
+    simulateWrite(() => {
+      const existing = dealCelebrations.find((c) => c.dealId === dealId);
+      if (existing) return existing;
+      const deal = byId(deals, dealId);
+      if (!deal) throw new RepositoryError('not_found');
+      if (deal.status !== 'won') throw new RepositoryError('deal_not_fully_signed');
+      dealCelebrationCounter += 1;
+      const created: DealCelebration = {
+        id: `dcel-new-${dealCelebrationCounter}`,
+        dealId,
+        acknowledged: false,
+        createdAt: new Date().toISOString(),
+        isDemo: true,
+      };
+      dealCelebrations.push(created);
+      return created;
+    }),
+
+  acknowledgeDealCelebration: (dealId, byUserId, feedbackNote) =>
+    simulateWrite(() => {
+      const celebration = dealCelebrations.find((c) => c.dealId === dealId);
+      if (!celebration) throw new RepositoryError('not_found');
+      return patchInPlace(dealCelebrations, celebration.id, {
+        acknowledged: true,
+        acknowledgedBy: byUserId,
+        acknowledgedAt: new Date().toISOString(),
+        feedbackNote: feedbackNote ?? celebration.feedbackNote,
       });
     }),
 
