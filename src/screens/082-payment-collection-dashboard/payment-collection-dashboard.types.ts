@@ -17,6 +17,7 @@ export const LARGE_LINE_MULTIPLE = 2;
 export const PAYMENT_COLLECTION_DASHBOARD_KEYS = {
   title: 'paymentCollectionDashboard.title',
   subtitle: 'paymentCollectionDashboard.subtitle',
+  reminderSettingsLink: 'paymentCollectionDashboard.reminderSettingsLink',
   loading: 'paymentCollectionDashboard.loading',
   error: { title: 'paymentCollectionDashboard.error.title', body: 'paymentCollectionDashboard.error.body' },
   empty: { title: 'paymentCollectionDashboard.empty.title', body: 'paymentCollectionDashboard.empty.body' },

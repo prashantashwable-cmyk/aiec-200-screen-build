@@ -1013,6 +1013,62 @@ export interface PaymentSchedule {
   isDemo: boolean;
 }
 
+export type ReminderEscalationTier = 'friendly' | 'firm' | 'call_task';
+
+/**
+ * One step of the automated payment-reminder cadence — screen 083.
+ * `daysOffset` is signed against a payment stage's own due date (negative
+ * before, 0 on the day, positive after), so recalculating the whole
+ * timeline for a shifted due date is just re-adding this same offset to
+ * whatever the due date is now, never a stale cached date. `'call_task'`
+ * tier has no `templateGroupId` — it creates a `FollowUpTask` for the
+ * deal's owner instead of a customer-facing message, since escalating to a
+ * human call is explicitly not another automated nudge.
+ */
+export interface ReminderRuleStep {
+  id: string;
+  daysOffset: number;
+  escalationTier: ReminderEscalationTier;
+  channel: CommChannel;
+  /** Required for `'friendly'`/`'firm'` tiers — the Communication Templates
+   *  Library (051) group this step sends from. Omitted for `'call_task'`. */
+  templateGroupId?: string;
+}
+
+/** The one governed reminder cadence, applied to every deal's outstanding
+ *  payment stages alike — there is no second, per-deal copy of this. */
+export interface PaymentReminderConfig {
+  id: string;
+  steps: ReminderRuleStep[];
+  /** A reminder due outside this daily window waits for the window to
+   *  open, the same "don't message at 2am" courtesy the rest of the
+   *  Communication Engine already extends. No holiday calendar exists
+   *  anywhere in this build yet, so a public holiday is not checked. */
+  sendWindowStartHour: number;
+  sendWindowEndHour: number;
+  updatedAt: string;
+  updatedBy: string;
+  isDemo: boolean;
+}
+
+/**
+ * A deliberate, logged override that stops every automated reminder for
+ * one deal's stages — never a silent mute. `paused` toggles; the record
+ * keeps whichever of the pause/resume pairs happened most recently rather
+ * than being deleted, so the history of why a deal went quiet is never lost.
+ */
+export interface PaymentReminderPause {
+  id: string;
+  dealId: string;
+  paused: boolean;
+  reason: string;
+  pausedBy: string;
+  pausedAt: string;
+  resumedBy?: string;
+  resumedAt?: string;
+  isDemo: boolean;
+}
+
 /* --------------------------------------------------------------- Suppliers */
 
 export interface Supplier {

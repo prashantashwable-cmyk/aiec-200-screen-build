@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
-import { Bell, Flag, Scales, Warning, WarningCircle } from '@phosphor-icons/react';
+import { useNavigate } from 'react-router-dom';
+import { Bell, Flag, GearSix, Scales, Warning, WarningCircle } from '@phosphor-icons/react';
 import {
   ActionBar,
   Badge,
@@ -30,6 +31,7 @@ const BUCKET_TONE: Record<string, BadgeTone> = { current: 'success', d30: 'warni
 
 export function PaymentCollectionDashboardView() {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
   const toast = useToast();
   const s = usePaymentCollectionDashboard();
 
@@ -53,7 +55,15 @@ export function PaymentCollectionDashboardView() {
 
   return (
     <Screen width="wide">
-      <ScreenHeader title={t(K.title)} subtitle={t(K.subtitle)} />
+      <ScreenHeader
+        title={t(K.title)}
+        subtitle={t(K.subtitle)}
+        action={
+          <button type="button" className="tappable" aria-label={t(K.reminderSettingsLink)} onClick={() => navigate('/admin/analytics/collections/reminders')}>
+            <GearSix size={20} className="t-emerald" />
+          </button>
+        }
+      />
 
       <div className="grid-auto mb-4" style={{ ['--min' as string]: '160px' }}>
         <Card>

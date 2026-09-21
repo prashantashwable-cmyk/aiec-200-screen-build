@@ -5,6 +5,7 @@ const translations: ScreenTranslations = {
     paymentCollectionDashboard: {
       title: 'Payment Collections',
       subtitle: 'Every deal\'s payment stage, at a glance',
+      reminderSettingsLink: 'Reminder settings',
       loading: 'Loading collections',
       error: { title: 'Could not load collections', body: 'Check your connection and try again.' },
       empty: { title: 'No payment stages yet', body: 'Payment stages will appear here once deals are closed.' },
@@ -86,6 +87,7 @@ const translations: ScreenTranslations = {
     paymentCollectionDashboard: {
       title: 'भुगतान संग्रह',
       subtitle: 'हर डील का भुगतान चरण, एक नज़र में',
+      reminderSettingsLink: 'याद-दिलाना सेटिंग्स',
       loading: 'संग्रह लोड हो रहा है',
       error: { title: 'संग्रह लोड नहीं हो सका', body: 'अपना कनेक्शन जांचें और फिर से कोशिश करें।' },
       empty: { title: 'अभी कोई भुगतान चरण नहीं', body: 'डील बंद होने पर भुगतान चरण यहां दिखाई देंगे।' },
@@ -167,6 +169,7 @@ const translations: ScreenTranslations = {
     paymentCollectionDashboard: {
       title: 'पेमेंट संकलन',
       subtitle: 'प्रत्येक डीलचा पेमेंट टप्पा, एका दृष्टीक्षेपात',
+      reminderSettingsLink: 'स्मरणपत्र सेटिंग्ज',
       loading: 'संकलन लोड होत आहे',
       error: { title: 'संकलन लोड होऊ शकले नाही', body: 'तुमचे कनेक्शन तपासा आणि पुन्हा प्रयत्न करा.' },
       empty: { title: 'अजून कोणताही पेमेंट टप्पा नाही', body: 'डील बंद झाल्यावर पेमेंट टप्पे इथे दिसतील.' },

@@ -193,7 +193,7 @@ export function usePaymentScheduleSetup(): PaymentScheduleSetupState {
     try {
       if (autosaveTimer.current) window.clearTimeout(autosaveTimer.current);
       await persist();
-      await repository.activatePaymentSchedule(dealId, user.id);
+      await repository.activatePaymentSchedule(dealId, user.name);
       await load();
       return true;
     } catch {

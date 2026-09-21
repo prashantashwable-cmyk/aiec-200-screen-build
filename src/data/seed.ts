@@ -34,6 +34,8 @@ import type {
   ObjectionScriptUsage,
   OptOutEvent,
   Payment,
+  PaymentReminderConfig,
+  PaymentReminderPause,
   PaymentSchedule,
   PricingConfig,
   Quotation,
@@ -968,9 +970,38 @@ export const seedPaymentSchedules: PaymentSchedule[] = [
     ],
     activated: true,
     activatedAt: daysAgo(40),
-    activatedBy: 'u-admin-1',
+    activatedBy: 'Prashant Vasant Wable',
     updatedAt: daysAgo(40),
     updatedBy: 'Prashant Vasant Wable',
+    isDemo: true,
+  },
+];
+
+export const seedPaymentReminderConfig: PaymentReminderConfig = {
+  id: 'prc-1',
+  steps: [
+    { id: 'rrs-1', daysOffset: -3, escalationTier: 'friendly', channel: 'sms', templateGroupId: 'tpl-payment-reminder' },
+    { id: 'rrs-2', daysOffset: 0, escalationTier: 'friendly', channel: 'whatsapp', templateGroupId: 'tpl-payment-reminder' },
+    { id: 'rrs-3', daysOffset: 3, escalationTier: 'firm', channel: 'whatsapp', templateGroupId: 'tpl-payment-reminder-firm' },
+    { id: 'rrs-4', daysOffset: 7, escalationTier: 'call_task', channel: 'call' },
+  ],
+  sendWindowStartHour: 9,
+  sendWindowEndHour: 19,
+  updatedAt: daysAgo(60),
+  updatedBy: 'Prashant Vasant Wable',
+  isDemo: true,
+};
+
+export const seedPaymentReminderPauses: PaymentReminderPause[] = [
+  // Left on 45 days ago — long enough that screen 083's own "review a
+  // long-standing pause" nudge should surface it, not let it sit forever.
+  {
+    id: 'rrp-1',
+    dealId: 'dl-3',
+    paused: true,
+    reason: 'Customer confirmed by phone that both remaining payments will be settled once their own client payment clears — asked us to hold off on automated nudges in the meantime.',
+    pausedBy: 'Prashant Vasant Wable',
+    pausedAt: daysAgo(45),
     isDemo: true,
   },
 ];
@@ -1615,6 +1646,20 @@ const templateSeeds: TemplateSeed[] = [
       en: 'AIEC: Reminder - payment of {{quoteAmount}} is due for {{buildingName}}. Please complete at your earliest convenience.',
       hi: 'AIEC: याद दिलाना - {{buildingName}} के लिए {{quoteAmount}} का भुगतान बाकी है। कृपया जल्द पूरा करें।',
       mr: 'AIEC: स्मरण - {{buildingName}} साठी {{quoteAmount}} रक्कम देय आहे. कृपया लवकरात लवकर पूर्ण करा.',
+    },
+  },
+  // The escalated-tone follow-up screen 083's reminder cadence steps up to
+  // once the friendly first nudge has passed without payment.
+  {
+    groupId: 'tpl-payment-reminder-firm',
+    name: 'Payment Reminder — Firm Follow-Up',
+    channel: 'whatsapp',
+    associatedStage: 'won',
+    mergeFields: ['customerName', 'buildingName', 'quoteAmount'],
+    body: {
+      en: 'AIEC: Hi {{customerName}}, the payment of {{quoteAmount}} for {{buildingName}} is now overdue. Please arrange payment as soon as possible, or contact us if there is an issue.',
+      hi: 'AIEC: नमस्ते {{customerName}}, {{buildingName}} के लिए {{quoteAmount}} का भुगतान अब अतिदेय है। कृपया जल्द से जल्द भुगतान करें, या किसी समस्या के लिए हमसे संपर्क करें।',
+      mr: 'AIEC: नमस्कार {{customerName}}, {{buildingName}} साठी {{quoteAmount}} रक्कम आता मुदतबाह्य आहे. कृपया लवकरात लवकर पेमेंट करा, किंवा काही अडचण असल्यास आमच्याशी संपर्क साधा.',
     },
   },
   {

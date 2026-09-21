@@ -31,6 +31,8 @@ import {
   seedObjectionScripts,
   seedObjectionScriptUsages,
   seedOptOutEvents,
+  seedPaymentReminderConfig,
+  seedPaymentReminderPauses,
   seedPaymentSchedules,
   seedPayments,
   seedPricingConfig,
@@ -70,8 +72,11 @@ import type {
   LeadFilter,
   ObjectionScriptListItem,
   ObjectionScriptTerritoryStat,
+  PaymentReminderPauseView,
   PaymentScheduleStageResolved,
   PaymentScheduleView,
+  ReminderRunResult,
+  ReminderTimelineEntry,
   QuotationAnalytics,
   QuotationSpecInput,
   QuotationWinLossStat,
@@ -111,6 +116,7 @@ import type {
   DriveType,
   DuplicatePair,
   FollowUpTask,
+  ReminderRuleStep,
   GeoZone,
   Lead,
   LeadImportBatch,
@@ -127,6 +133,8 @@ import type {
   OptOutChannel,
   OptOutEvent,
   Payment,
+  PaymentReminderConfig,
+  PaymentReminderPause,
   PaymentSchedule,
   PaymentScheduleStage,
   PricingConfig,
@@ -150,7 +158,7 @@ import type {
 import { formatINR, formatINRCompact, haversineKm } from '@/design-system/format';
 import { MAX_SAFE_BOT_DISCOUNT_PCT } from '@/features/communication/botRules';
 import { extractMergeFields, renderTemplateBody } from '@/features/communication/templateRender';
-import { remainingBalance } from '@/features/payments/aging';
+import { isOutstanding, remainingBalance } from '@/features/payments/aging';
 
 /**
  * The in-memory implementation backing Demo Mode.
@@ -223,6 +231,10 @@ let dealCelebrationCounter = 100;
 const paymentSchedules = [...seedPaymentSchedules];
 let paymentScheduleCounter = 100;
 let paymentScheduleStageCounter = 100;
+let paymentReminderConfig: PaymentReminderConfig = { ...seedPaymentReminderConfig };
+let reminderStepCounter = 100;
+const paymentReminderPauses = [...seedPaymentReminderPauses];
+let reminderPauseCounter = 100;
 
 let leadCounter = 200;
 let timelineEventCounter = 900;
@@ -527,6 +539,69 @@ function resolvePaymentScheduleStages(dealId: string, stages: PaymentScheduleSta
       stage,
       resolvedDueDate: stage.dueTrigger === 'fixed_date' ? (stage.fixedDueDate ?? null) : resolveMilestoneDueDate(dealId, stage.triggerMilestone ?? ''),
     }));
+}
+
+function sendReminderMessage(payment: Payment, lead: Lead, byName: string, channel: CommChannel, templateGroupId: string): CommMessage {
+  const template = templateInGroup(templateGroupId, 'en');
+  const body = template
+    ? renderTemplateBody(template.body, { customerName: lead.contactName, buildingName: lead.siteName, quoteAmount: formatINRCompact(remainingBalance(payment)) })
+    : `Reminder: payment of ${formatINRCompact(remainingBalance(payment))} is due for ${lead.siteName}.`;
+  let conversation = conversations.find((c) => c.leadId === lead.id) ?? null;
+  const now = new Date().toISOString();
+  if (!conversation) {
+    conversationCounter += 1;
+    conversation = { id: `conv-new-${conversationCounter}`, leadId: lead.id, lastMessageAt: now, isDemo: true };
+    conversations.push(conversation);
+  }
+  messageCounter += 1;
+  const message: CommMessage = {
+    id: `cm-new-${messageCounter}`,
+    conversationId: conversation.id,
+    channel,
+    sender: 'agent',
+    senderName: byName,
+    body,
+    templateGroupId,
+    status: 'sent',
+    at: now,
+    handled: true,
+  };
+  commMessages.push(message);
+  patchInPlace(conversations, conversation.id, { lastMessageAt: now });
+  return message;
+}
+
+const activeDealPause = (dealId: string) => paymentReminderPauses.find((p) => p.dealId === dealId && p.paused);
+
+/** Resolves the reminder cadence against one payment's real, current due
+ *  date — recomputed fresh every call, so a milestone-shifted due date (see
+ *  081) is reflected immediately with no separate recalculation step. A
+ *  currently-paused deal skips every step outright; an opted-out contact
+ *  only skips the one step on that channel. */
+function buildReminderTimeline(payment: Payment, lead: Lead, config: PaymentReminderConfig, now: number): ReminderTimelineEntry[] {
+  const paused = Boolean(activeDealPause(payment.dealId));
+  const dueTime = new Date(payment.dueDate).getTime();
+  const dayMs = 86_400_000;
+  // Calendar-date string comparison, not a rounded time difference — must
+  // match runDueRemindersNow's own todayKey check exactly, or the preview
+  // can call a step "due today" that the real run (fired minutes later)
+  // classifies as already past or still upcoming.
+  const todayKey = new Date(now).toISOString().slice(0, 10);
+  return [...config.steps]
+    .sort((a, b) => a.daysOffset - b.daysOffset)
+    .map((step) => {
+      const fireDate = new Date(dueTime + step.daysOffset * dayMs).toISOString();
+      let outcome: ReminderTimelineEntry['outcome'];
+      if (paused) {
+        outcome = 'skipped_paused';
+      } else if (step.channel !== 'call' && isOptedOutSync(lead.contactPhone, step.channel)) {
+        outcome = 'skipped_opted_out';
+      } else {
+        const fireDateKey = fireDate.slice(0, 10);
+        outcome = fireDateKey < todayKey ? 'sent_in_past' : fireDateKey === todayKey ? 'due_today' : 'upcoming';
+      }
+      return { step, fireDate, outcome };
+    });
 }
 
 function pushTimelineEvent(event: Omit<LeadTimelineEvent, 'id'>): LeadTimelineEvent {
@@ -1622,33 +1697,7 @@ export const memoryRepository: Repository = {
       if (!deal) throw new RepositoryError('not_found');
       const lead = resolveLead(deal.leadId);
       if (!lead) throw new RepositoryError('not_found');
-      const template = templateInGroup('tpl-payment-reminder', 'en');
-      const body = template
-        ? renderTemplateBody(template.body, { customerName: lead.contactName, buildingName: lead.siteName, quoteAmount: formatINRCompact(remainingBalance(payment)) })
-        : `Reminder: payment of ${formatINRCompact(remainingBalance(payment))} is due for ${lead.siteName}.`;
-      let conversation = conversations.find((c) => c.leadId === lead.id) ?? null;
-      const now = new Date().toISOString();
-      if (!conversation) {
-        conversationCounter += 1;
-        conversation = { id: `conv-new-${conversationCounter}`, leadId: lead.id, lastMessageAt: now, isDemo: true };
-        conversations.push(conversation);
-      }
-      messageCounter += 1;
-      const message: CommMessage = {
-        id: `cm-new-${messageCounter}`,
-        conversationId: conversation.id,
-        channel: 'sms',
-        sender: 'agent',
-        senderName: byName,
-        body,
-        templateGroupId: 'tpl-payment-reminder',
-        status: 'sent',
-        at: now,
-        handled: true,
-      };
-      commMessages.push(message);
-      patchInPlace(conversations, conversation.id, { lastMessageAt: now });
-      return message;
+      return sendReminderMessage(payment, lead, byName, 'sms', 'tpl-payment-reminder');
     }),
 
   escalatePayment: (paymentId) =>
@@ -1674,6 +1723,128 @@ export const memoryRepository: Repository = {
       };
       alerts.push(created);
       return created;
+    }),
+
+  getPaymentReminderConfig: () => simulateRead(() => paymentReminderConfig),
+
+  savePaymentReminderConfig: (steps, sendWindow, editedBy) =>
+    simulateWrite(() => {
+      const withIds: ReminderRuleStep[] = steps.map((s) => {
+        reminderStepCounter += 1;
+        return { ...s, id: `rrs-new-${reminderStepCounter}` };
+      });
+      paymentReminderConfig = {
+        ...paymentReminderConfig,
+        steps: withIds,
+        sendWindowStartHour: sendWindow.startHour,
+        sendWindowEndHour: sendWindow.endHour,
+        updatedAt: new Date().toISOString(),
+        updatedBy: editedBy,
+      };
+      return paymentReminderConfig;
+    }),
+
+  previewReminderTimeline: (paymentId) =>
+    simulateRead(() => {
+      const payment = byId(payments, paymentId);
+      if (!payment) throw new RepositoryError('not_found');
+      const deal = byId(deals, payment.dealId);
+      if (!deal) throw new RepositoryError('not_found');
+      const lead = resolveLead(deal.leadId);
+      if (!lead) throw new RepositoryError('not_found');
+      return buildReminderTimeline(payment, lead, paymentReminderConfig, Date.now());
+    }),
+
+  listPaymentReminderPauses: () =>
+    simulateRead(() => {
+      const longStandingThresholdMs = 30 * 86_400_000;
+      const now = Date.now();
+      return paymentReminderPauses
+        .filter((p) => p.paused)
+        .map((pause) => {
+          const deal = byId(deals, pause.dealId);
+          const lead = deal ? resolveLead(deal.leadId) : null;
+          return {
+            pause,
+            dealCode: deal?.code ?? pause.dealId,
+            siteName: lead?.siteName ?? '',
+            isLongStanding: now - new Date(pause.pausedAt).getTime() > longStandingThresholdMs,
+          };
+        })
+        .sort((a, b) => a.pause.pausedAt.localeCompare(b.pause.pausedAt));
+    }),
+
+  setDealReminderPause: (dealId, paused, reason, byName) =>
+    simulateWrite(() => {
+      const deal = byId(deals, dealId);
+      if (!deal) throw new RepositoryError('not_found');
+      const now = new Date().toISOString();
+      const existing = paymentReminderPauses.find((p) => p.dealId === dealId);
+      if (paused && !reason?.trim()) throw new RepositoryError('reason_required');
+      if (existing) {
+        return patchInPlace(paymentReminderPauses, existing.id, paused ? { paused: true, reason: reason!.trim(), pausedBy: byName, pausedAt: now } : { paused: false, resumedBy: byName, resumedAt: now });
+      }
+      reminderPauseCounter += 1;
+      const created: PaymentReminderPause = {
+        id: `rrp-new-${reminderPauseCounter}`,
+        dealId,
+        paused,
+        reason: reason?.trim() ?? '',
+        pausedBy: byName,
+        pausedAt: now,
+        isDemo: true,
+      };
+      paymentReminderPauses.push(created);
+      return created;
+    }),
+
+  runDueRemindersNow: (byName) =>
+    simulateWrite(() => {
+      const result: ReminderRunResult = { sent: 0, callTasksCreated: 0, skippedOptedOut: 0, skippedPaused: 0, skippedOutsideWindow: 0 };
+      const now = new Date();
+      const withinWindow = now.getHours() >= paymentReminderConfig.sendWindowStartHour && now.getHours() < paymentReminderConfig.sendWindowEndHour;
+      const todayKey = now.toISOString().slice(0, 10);
+      for (const payment of payments.filter(isOutstanding)) {
+        const deal = byId(deals, payment.dealId);
+        if (!deal) continue;
+        const lead = resolveLead(deal.leadId);
+        if (!lead) continue;
+        const paused = Boolean(activeDealPause(deal.id));
+        const dueTime = new Date(payment.dueDate).getTime();
+        for (const step of paymentReminderConfig.steps) {
+          const fireDate = new Date(dueTime + step.daysOffset * 86_400_000);
+          if (fireDate.toISOString().slice(0, 10) !== todayKey) continue;
+          if (paused) {
+            result.skippedPaused += 1;
+            continue;
+          }
+          if (!withinWindow) {
+            result.skippedOutsideWindow += 1;
+            continue;
+          }
+          if (step.escalationTier === 'call_task') {
+            followUpTaskCounter += 1;
+            followUpTasks.push({
+              id: `ft-new-${followUpTaskCounter}`,
+              leadId: lead.id,
+              title: `Call ${lead.contactName} about the overdue payment for ${lead.siteName}`,
+              dueDate: new Date().toISOString(),
+              assignedTo: lead.surveyorId || 'u-admin-1',
+              status: 'open',
+              source: 'auto',
+              createdAt: new Date().toISOString(),
+              isDemo: true,
+            });
+            result.callTasksCreated += 1;
+          } else if (isOptedOutSync(lead.contactPhone, step.channel)) {
+            result.skippedOptedOut += 1;
+          } else {
+            sendReminderMessage(payment, lead, byName, step.channel, step.templateGroupId ?? 'tpl-payment-reminder');
+            result.sent += 1;
+          }
+        }
+      }
+      return result;
     }),
 
   listSuppliers: () => simulateRead(() => [...suppliers]),
@@ -2837,7 +3008,7 @@ export const memoryRepository: Repository = {
       return created;
     }),
 
-  activatePaymentSchedule: (dealId, byUserId) =>
+  activatePaymentSchedule: (dealId, byName) =>
     simulateWrite(() => {
       const deal = byId(deals, dealId);
       if (!deal) throw new RepositoryError('not_found');
@@ -2851,7 +3022,7 @@ export const memoryRepository: Repository = {
       return patchInPlace(paymentSchedules, schedule.id, {
         activated: true,
         activatedAt: new Date().toISOString(),
-        activatedBy: byUserId,
+        activatedBy: byName,
       });
     }),
 

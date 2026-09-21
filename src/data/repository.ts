@@ -43,6 +43,8 @@ import type {
   OptOutEvent,
   PackageTier,
   Payment,
+  PaymentReminderConfig,
+  PaymentReminderPause,
   PaymentSchedule,
   PaymentScheduleStage,
   PaymentScheduleType,
@@ -51,6 +53,7 @@ import type {
   QuotationDeliveryChannel,
   QuotationStatus,
   QuotationTemplate,
+  ReminderRuleStep,
   Role,
   RoutePlan,
   ScoreWeightingProfile,
@@ -282,6 +285,38 @@ export interface PaymentScheduleView {
   reconciledAmount: number;
   reconciles: boolean;
   canSetUp: boolean;
+}
+
+export type ReminderTimelineOutcome = 'sent_in_past' | 'due_today' | 'upcoming' | 'skipped_opted_out' | 'skipped_paused';
+
+/** One step of the reminder cadence resolved against a real sample
+ *  payment's actual due date — screen 083's own preview. `sent_in_past`/
+ *  `due_today`/`upcoming` are purely date-relative (this build has no
+ *  background scheduler that has actually been running them); the two
+ *  `skipped_*` outcomes reflect the same opt-out and pause checks a real
+ *  send would make. */
+export interface ReminderTimelineEntry {
+  step: ReminderRuleStep;
+  fireDate: string;
+  outcome: ReminderTimelineOutcome;
+}
+
+/** One deal's reminder-pause state joined with enough context to render —
+ *  `isLongStanding` flags a pause old enough that screen 083's own nudge
+ *  suggests Admin review it, rather than letting it persist unnoticed. */
+export interface PaymentReminderPauseView {
+  pause: PaymentReminderPause;
+  dealCode: string;
+  siteName: string;
+  isLongStanding: boolean;
+}
+
+export interface ReminderRunResult {
+  sent: number;
+  callTasksCreated: number;
+  skippedOptedOut: number;
+  skippedPaused: number;
+  skippedOutsideWindow: number;
 }
 
 /** One payment stage joined with enough deal/lead context to render and
@@ -535,6 +570,29 @@ export interface Repository {
    *  alert the existing Escalation screen (019) already reads — idempotent
    *  per payment, so repeated clicks don't pile up duplicate alerts. */
   escalatePayment(paymentId: string): Promise<Alert>;
+
+  /* Payments & Financing: automated reminder configuration */
+  getPaymentReminderConfig(): Promise<PaymentReminderConfig>;
+  savePaymentReminderConfig(
+    steps: Array<Omit<ReminderRuleStep, 'id'>>,
+    sendWindow: { startHour: number; endHour: number },
+    editedBy: string,
+  ): Promise<PaymentReminderConfig>;
+  /** Computed live against the payment's real, current due date — never a
+   *  cached timeline — so a milestone-shifted due date is reflected on the
+   *  very next preview with no separate recalculation step. */
+  previewReminderTimeline(paymentId: string): Promise<ReminderTimelineEntry[]>;
+  listPaymentReminderPauses(): Promise<PaymentReminderPauseView[]>;
+  /** The one deliberate, logged override — never a silent mute. Passing
+   *  `paused: false` resumes and still updates the same record rather than
+   *  deleting the history of why it was paused. */
+  setDealReminderPause(dealId: string, paused: boolean, reason: string | undefined, byName: string): Promise<PaymentReminderPause>;
+  /** Stands in for the background scheduler this demo has no cron for —
+   *  fires every step actually due today (inside the send window, not
+   *  paused, not opted out) for real, through the same channels 082's own
+   *  "Send reminder" button uses. */
+  runDueRemindersNow(byName: string): Promise<ReminderRunResult>;
+
   listSuppliers(): Promise<Supplier[]>;
   getSupplier(id: string): Promise<Supplier | null>;
 
@@ -760,7 +818,7 @@ export interface Repository {
   ): Promise<PaymentSchedule>;
   /** Blocked unless the stage amounts reconcile exactly to the deal's
    *  agreed price — the one hard rule this screen enforces. */
-  activatePaymentSchedule(dealId: string, byUserId: string): Promise<PaymentSchedule>;
+  activatePaymentSchedule(dealId: string, byName: string): Promise<PaymentSchedule>;
 
   /* Operations */
   listActivity(limit?: number): Promise<ActivityEvent[]>;
