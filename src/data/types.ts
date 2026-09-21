@@ -573,6 +573,78 @@ export interface DealClosure {
   isDemo: boolean;
 }
 
+/**
+ * Fixed taxonomy for the customer-concern script library — screen 078.
+ * `competitor_comparison`, `price_too_high` and `wants_to_delay` reuse the
+ * exact literal values `NegotiationObjectionKey` already uses, so the human
+ * quick-reference and the bot's Objection Scenario Map (screen 071) draw
+ * from the same well on those three, never two independently drifting
+ * classifications. The other three are concerns the bot doesn't yet handle.
+ */
+export type ObjectionCategory =
+  | 'safety_new_brand'
+  | 'installation_disruption'
+  | 'timeline_worry'
+  | 'competitor_comparison'
+  | 'price_too_high'
+  | 'wants_to_delay'
+  | 'other';
+
+/** One saved edit of a script's response text — same shape as
+ *  `TemplateVersion` (screen 051) so both content libraries keep a
+ *  reviewable, revertible history the same way. */
+export interface ObjectionScriptVersion {
+  version: number;
+  responseText: string;
+  editedBy: string;
+  editedAt: string;
+}
+
+export type ObjectionScriptStatus = 'approved' | 'suggested' | 'archived';
+
+/**
+ * One approved talking point for a customer concern, used verbatim by human
+ * sales staff and referenced when configuring the bot's Objection Scenario
+ * Map. A `suggested` script is a pattern a sales user noticed emerging in a
+ * real conversation (Customer Reply Inbox or Live Negotiation Thread) that
+ * isn't in the library yet — `sourceNote` records where it came from — and
+ * sits for review before an admin promotes it to `approved`, so a real
+ * emerging pattern is never just lost.
+ */
+export interface ObjectionScript {
+  id: string;
+  code: string;
+  category: ObjectionCategory;
+  responseText: string;
+  /** Real BIS/IS or other standard references the response cites, kept
+   *  separate from the prose so a safety/compliance claim can be checked
+   *  for currency without re-reading the whole script. */
+  citedStandards?: string[];
+  status: ObjectionScriptStatus;
+  sourceNote?: string;
+  versions: ObjectionScriptVersion[];
+  updatedAt: string;
+  updatedBy: string;
+  isDemo: boolean;
+}
+
+/**
+ * One real instance of a script being used with a lead, the raw material
+ * for effectiveness scoring. Kept separate from `ObjectionScript` itself so
+ * the same before/after stage-movement approach the Communication Analytics
+ * screen's conversion-influence metric uses (did the lead this was used on
+ * go on to reach "won"?) can be computed per script, and per territory
+ * (grouped by `Lead.city`, since a script performing well in one city's
+ * customer base doesn't guarantee the same elsewhere).
+ */
+export interface ObjectionScriptUsage {
+  id: string;
+  scriptId: string;
+  leadId: string;
+  usedAt: string;
+  isDemo: boolean;
+}
+
 /* ------------------------------------------------------------- Quotations */
 
 export type DriveType = 'hydraulic' | 'geared_traction' | 'gearless_traction' | 'mrl' | 'vacuum' | 'screw_driven';

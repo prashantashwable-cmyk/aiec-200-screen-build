@@ -26,6 +26,8 @@ import {
   seedLeads,
   seedNegotiationBotConfig,
   seedNegotiations,
+  seedObjectionScripts,
+  seedObjectionScriptUsages,
   seedOptOutEvents,
   seedPayments,
   seedPricingConfig,
@@ -61,6 +63,8 @@ import type {
   ImportPreview,
   ImportValidationRow,
   LeadFilter,
+  ObjectionScriptListItem,
+  ObjectionScriptTerritoryStat,
   QuotationAnalytics,
   QuotationSpecInput,
   QuotationWinLossStat,
@@ -106,6 +110,11 @@ import type {
   LeadTimelineEvent,
   Negotiation,
   NegotiationBotConfig,
+  NegotiationObjectionKey,
+  ObjectionCategory,
+  ObjectionScript,
+  ObjectionScriptStatus,
+  ObjectionScriptUsage,
   OptOutChannel,
   OptOutEvent,
   Payment,
@@ -192,6 +201,9 @@ let dealClosureCounter = 100;
 let closurePaymentCounter = 900;
 let closureCommissionCounter = 900;
 let alertCounter = 900;
+const objectionScripts = [...seedObjectionScripts];
+let objectionScriptCounter = 100;
+const objectionScriptUsages = [...seedObjectionScriptUsages];
 
 let leadCounter = 200;
 let timelineEventCounter = 900;
@@ -394,6 +406,46 @@ function triggerSupplierPo(deal: Deal): { id: string; failed: boolean } {
   }
 
   return { id: created.id, failed };
+}
+
+/** Same "positive stage move" proxy the Communication Analytics screen's
+ *  conversion-influence metric uses — did the lead this was used on go on
+ *  to reach "won"? — kept below this row count, `earlyData` says so instead
+ *  of a misleadingly confident percentage. */
+const OBJECTION_SCRIPT_EARLY_DATA_THRESHOLD = 3;
+
+/** The three categories the bot's Objection Scenario Map (screen 071) also
+ *  classifies negotiation replies into — literally the same string values
+ *  as `NegotiationObjectionKey`, never a second drifting taxonomy. */
+const BOT_SHARED_OBJECTION_CATEGORIES: ObjectionCategory[] = ['competitor_comparison', 'price_too_high', 'wants_to_delay'] satisfies NegotiationObjectionKey[];
+
+function effectivenessScoreFor(usages: ObjectionScriptUsage[]): number | null {
+  if (usages.length === 0) return null;
+  const wonCount = usages.filter((u) => resolveLead(u.leadId)?.stage === 'won').length;
+  return Math.round((wonCount / usages.length) * 100);
+}
+
+function buildObjectionScriptListItem(script: ObjectionScript): ObjectionScriptListItem {
+  const usages = objectionScriptUsages.filter((u) => u.scriptId === script.id);
+  const byTerritory = new Map<string, ObjectionScriptUsage[]>();
+  for (const usage of usages) {
+    const territory = resolveLead(usage.leadId)?.city ?? 'unknown';
+    const list = byTerritory.get(territory) ?? [];
+    list.push(usage);
+    byTerritory.set(territory, list);
+  }
+  const territoryStats: ObjectionScriptTerritoryStat[] = [...byTerritory.entries()]
+    .map(([territory, rows]) => ({ territory, usageCount: rows.length, effectivenessScore: effectivenessScoreFor(rows) }))
+    .sort((a, b) => b.usageCount - a.usageCount);
+
+  return {
+    script,
+    usageCount: usages.length,
+    effectivenessScore: effectivenessScoreFor(usages),
+    earlyData: usages.length < OBJECTION_SCRIPT_EARLY_DATA_THRESHOLD,
+    territoryStats,
+    usedByBot: BOT_SHARED_OBJECTION_CATEGORIES.includes(script.category),
+  };
 }
 
 function pushTimelineEvent(event: Omit<LeadTimelineEvent, 'id'>): LeadTimelineEvent {
@@ -2376,6 +2428,46 @@ export const memoryRepository: Repository = {
         voidedAt: new Date().toISOString(),
       });
     }),
+
+  /* ---------------------------------------- Objection/concern script library */
+  listObjectionScripts: () => simulateRead(() => objectionScripts.map(buildObjectionScriptListItem)),
+
+  createObjectionScript: (input) =>
+    simulateWrite(() => {
+      objectionScriptCounter += 1;
+      const now = new Date().toISOString();
+      const created: ObjectionScript = {
+        id: `objs-new-${objectionScriptCounter}`,
+        code: `AIEC-OBJ-${objectionScriptCounter}`,
+        category: input.category,
+        responseText: input.responseText,
+        citedStandards: input.citedStandards,
+        status: 'suggested',
+        sourceNote: input.sourceNote,
+        versions: [{ version: 1, responseText: input.responseText, editedBy: input.createdBy, editedAt: now }],
+        updatedAt: now,
+        updatedBy: input.createdBy,
+        isDemo: true,
+      };
+      objectionScripts.push(created);
+      return created;
+    }),
+
+  saveObjectionScriptResponse: (id, responseText, editedBy) =>
+    simulateWrite(() => {
+      const script = byId(objectionScripts, id);
+      if (!script) throw new RepositoryError('not_found');
+      const now = new Date().toISOString();
+      const nextVersion = (script.versions.at(-1)?.version ?? 0) + 1;
+      return patchInPlace(objectionScripts, id, {
+        responseText,
+        updatedAt: now,
+        updatedBy: editedBy,
+        versions: [...script.versions, { version: nextVersion, responseText, editedBy, editedAt: now }],
+      });
+    }),
+
+  setObjectionScriptStatus: (id, status) => simulateWrite(() => patchInPlace(objectionScripts, id, { status })),
 
   /* -------------------------------------------------------- Operations */
   listActivity: (limit = 50) =>

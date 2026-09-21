@@ -33,6 +33,9 @@ import type {
   LeadTimelineEvent,
   Negotiation,
   NegotiationBotConfig,
+  ObjectionCategory,
+  ObjectionScript,
+  ObjectionScriptStatus,
   OptOutChannel,
   OptOutEvent,
   PackageTier,
@@ -222,6 +225,27 @@ export interface DealClosureView {
   paymentRecords: Payment[];
   supplierPo: SupplierPurchaseOrder | null;
   eligibleToClose: boolean;
+}
+
+/** One territory's (city's) slice of a script's effectiveness — screen
+ *  078's per-territory tracking, computed on read rather than stored. */
+export interface ObjectionScriptTerritoryStat {
+  territory: string;
+  usageCount: number;
+  effectivenessScore: number | null;
+}
+
+/** Screen 078's own read shape, one per `ObjectionScript`. `effectivenessScore`
+ *  is null until enough usage exists to mean anything (`earlyData`).
+ *  `usedByBot` flags a category that also drives the Auto-Negotiation Bot's
+ *  Objection Scenario Map (screen 071), so the UI can point there. */
+export interface ObjectionScriptListItem {
+  script: ObjectionScript;
+  usageCount: number;
+  effectivenessScore: number | null;
+  earlyData: boolean;
+  territoryStats: ObjectionScriptTerritoryStat[];
+  usedByBot: boolean;
 }
 
 export interface SequenceTestStep {
@@ -571,6 +595,18 @@ export interface Repository {
   /** Logs a reversal on the existing record — never deletes it — for the
    *  "closed deal needs to be voided" edge case. */
   voidDealClosure(dealId: string, reason: string, byUserId: string): Promise<DealClosure>;
+
+  /* Deal closing: objection/concern script library */
+  listObjectionScripts(): Promise<ObjectionScriptListItem[]>;
+  /** `sourceNote` records where a sales user saw this pattern (e.g. a
+   *  specific reply-inbox conversation or negotiation thread) — created as
+   *  `suggested`, never `approved`, until an admin reviews it. */
+  createObjectionScript(input: { category: ObjectionCategory; responseText: string; citedStandards?: string[]; sourceNote?: string; createdBy: string }): Promise<ObjectionScript>;
+  /** Creates a new version and updates the live response text — earlier
+   *  versions stay in `versions[]` for review, same pattern as
+   *  `saveCommTemplateBody`. */
+  saveObjectionScriptResponse(id: string, responseText: string, editedBy: string): Promise<ObjectionScript>;
+  setObjectionScriptStatus(id: string, status: ObjectionScriptStatus): Promise<ObjectionScript>;
 
   /* Operations */
   listActivity(limit?: number): Promise<ActivityEvent[]>;

@@ -28,6 +28,8 @@ import type {
   LeadTimelineEvent,
   Negotiation,
   NegotiationBotConfig,
+  ObjectionScript,
+  ObjectionScriptUsage,
   OptOutEvent,
   Payment,
   PricingConfig,
@@ -390,7 +392,7 @@ const leadSeeds: LeadSeed[] = [
   { id: 'l-12', code: 'AIEC-L-0112', stage: 'captured', surveyorId: 'u-srv-2', builderName: 'Aundh Anand', contactName: 'Shweta Kale', phone: '9822044012', siteName: 'Anand Residency', address: 'ITI Road, Aundh', city: 'Pune', pincode: '411007', lat: 18.559, lng: 73.8077, value: 1_260_000, ageDays: 0, stageDays: 0, floors: 5, capacity: 6, score: 49 },
   { id: 'l-13', code: 'AIEC-L-0113', stage: 'lost', surveyorId: 'u-srv-4', builderName: 'Katraj Constructions', contactName: 'Ramesh Gore', phone: '9822044013', siteName: 'Katraj Crown', address: 'Katraj Kondhwa Road', city: 'Pune', pincode: '411046', lat: 18.4529, lng: 73.8567, value: 1_540_000, ageDays: 40, stageDays: 15, floors: 6, capacity: 6, score: 34, lostReason: 'price' },
   { id: 'l-14', code: 'AIEC-L-0114', stage: 'lost', surveyorId: 'u-srv-2', builderName: 'Hadapsar Heights', contactName: 'Anita Sawant', phone: '9822044014', siteName: 'Hadapsar Orchid', address: 'Solapur Road, Hadapsar', city: 'Pune', pincode: '411028', lat: 18.5089, lng: 73.926, value: 990_000, ageDays: 35, stageDays: 20, floors: 4, capacity: 4, score: 28, lostReason: 'competitor' },
-  { id: 'l-15', code: 'AIEC-L-0115', stage: 'negotiation', surveyorId: 'u-srv-1', builderName: 'Hinjawadi Tech Park', contactName: 'Girish Rao', phone: '9822044015', siteName: 'Tech Park Block C', address: 'Phase 3, Hinjawadi', city: 'Pune', pincode: '411057', lat: 18.5945, lng: 73.7315, value: 8_400_000, ageDays: 26, stageDays: 8, floors: 18, capacity: 20, score: 90 },
+  { id: 'l-15', code: 'AIEC-L-0115', stage: 'won', surveyorId: 'u-srv-1', builderName: 'Hinjawadi Tech Park', contactName: 'Girish Rao', phone: '9822044015', siteName: 'Tech Park Block C', address: 'Phase 3, Hinjawadi', city: 'Pune', pincode: '411057', lat: 18.5945, lng: 73.7315, value: 8_400_000, ageDays: 26, stageDays: 8, floors: 18, capacity: 20, score: 90 },
   { id: 'l-16', code: 'AIEC-L-0116', stage: 'quoted', surveyorId: 'u-srv-3', builderName: 'PCMC Civic Trust', contactName: 'Sanjay Bhoir', phone: '9822044016', siteName: 'Civic Health Centre', address: 'Nigdi, PCMC', city: 'Pimpri-Chinchwad', pincode: '411044', lat: 18.6512, lng: 73.7679, value: 3_700_000, ageDays: 16, stageDays: 5, floors: 7, capacity: 13, score: 74 },
   { id: 'l-17', code: 'AIEC-L-0117', stage: 'site_visit', surveyorId: 'u-srv-2', builderName: 'Koregaon Luxe', contactName: 'Tanvi Mehta', phone: '9822044017', siteName: 'Luxe Boutique Hotel', address: 'Koregaon Park', city: 'Pune', pincode: '411001', lat: 18.5362, lng: 73.8939, value: 6_200_000, ageDays: 12, stageDays: 1, floors: 9, capacity: 10, score: 83 },
   { id: 'l-18', code: 'AIEC-L-0118', stage: 'contacted', surveyorId: 'u-srv-1', builderName: 'Baner Bloom', contactName: 'Kiran Zende', phone: '9822044018', siteName: 'Bloom Apartments', address: 'Pashan Link Road', city: 'Pune', pincode: '411021', lat: 18.5385, lng: 73.7845, value: 1_390_000, ageDays: 6, stageDays: 4, floors: 6, capacity: 6, score: 55 },
@@ -941,6 +943,189 @@ export const seedSupplierPurchaseOrders: SupplierPurchaseOrder[] = [
     triggeredAt: hoursAgo(2),
     isDemo: true,
   },
+];
+
+/* ------------------------------------------- Objection/concern scripts (M8) */
+
+export const seedObjectionScripts: ObjectionScript[] = [
+  // Updated once IS 14665's ARD requirement became standard — version 1 is
+  // kept in `versions[]` for screen 078's update-history edge case.
+  {
+    id: 'objs-1',
+    code: 'AIEC-OBJ-001',
+    category: 'safety_new_brand',
+    responseText:
+      "AIEC lifts are manufactured and installed to IS 14665, the same national safety code every established brand in India must follow — being newer to the market doesn't mean a different, lower bar. Every unit ships with the mandatory Automatic Rescue Device and passes third-party safety inspection before handover. Offer to show the inspection certificate and IS 14665 compliance note alongside the quotation.",
+    citedStandards: ['IS 14665'],
+    status: 'approved',
+    versions: [
+      {
+        version: 1,
+        responseText:
+          'AIEC lifts are built to the national safety code every established brand must follow — being newer to the market doesn\'t mean a different, lower bar. Offer to show the safety inspection certificate alongside the quotation.',
+        editedBy: 'Prashant Vasant Wable',
+        editedAt: daysAgo(140),
+      },
+      {
+        version: 2,
+        responseText:
+          "AIEC lifts are manufactured and installed to IS 14665, the same national safety code every established brand in India must follow — being newer to the market doesn't mean a different, lower bar. Every unit ships with the mandatory Automatic Rescue Device and passes third-party safety inspection before handover. Offer to show the inspection certificate and IS 14665 compliance note alongside the quotation.",
+        editedBy: 'Prashant Vasant Wable',
+        editedAt: daysAgo(35),
+      },
+    ],
+    updatedAt: daysAgo(35),
+    updatedBy: 'Prashant Vasant Wable',
+    isDemo: true,
+  },
+  {
+    id: 'objs-2',
+    code: 'AIEC-OBJ-002',
+    category: 'installation_disruption',
+    responseText:
+      "Installation is scheduled and sequenced so the lift shaft area is the only zone affected — we don't need to shut down the building or other floors' power. A typical residential installation runs 3-5 working days once the shaft is ready, and our technician shares a day-by-day plan up front so the housing society knows exactly when noise or access will be limited.",
+    status: 'approved',
+    versions: [
+      {
+        version: 1,
+        responseText:
+          "Installation is scheduled and sequenced so the lift shaft area is the only zone affected — we don't need to shut down the building or other floors' power. A typical residential installation runs 3-5 working days once the shaft is ready, and our technician shares a day-by-day plan up front so the housing society knows exactly when noise or access will be limited.",
+        editedBy: 'Prashant Vasant Wable',
+        editedAt: daysAgo(120),
+      },
+    ],
+    updatedAt: daysAgo(120),
+    updatedBy: 'Prashant Vasant Wable',
+    isDemo: true,
+  },
+  {
+    id: 'objs-3',
+    code: 'AIEC-OBJ-003',
+    category: 'timeline_worry',
+    responseText:
+      "We commit to a written installation timeline before the advance payment is even collected, and the payment schedule itself is staged to match real construction milestones, not one upfront date. If site readiness slips on the builder's side, we flag it immediately rather than letting the customer discover a delay on the day the technician doesn't show up.",
+    status: 'approved',
+    versions: [
+      {
+        version: 1,
+        responseText:
+          "We commit to a written installation timeline before the advance payment is even collected, and the payment schedule itself is staged to match real construction milestones, not one upfront date. If site readiness slips on the builder's side, we flag it immediately rather than letting the customer discover a delay on the day the technician doesn't show up.",
+        editedBy: 'Prashant Vasant Wable',
+        editedAt: daysAgo(120),
+      },
+    ],
+    updatedAt: daysAgo(120),
+    updatedBy: 'Prashant Vasant Wable',
+    isDemo: true,
+  },
+  // Shares its category literal with NegotiationObjectionKey — also drives
+  // the bot's Objection Scenario Map (screen 071).
+  {
+    id: 'objs-4',
+    code: 'AIEC-OBJ-004',
+    category: 'competitor_comparison',
+    responseText:
+      "That's a fair question — can you tell me which specific line item their quote is lower on? I don't want to guess-match a number without knowing what's actually being compared. What I can tell you for certain is what AIEC includes that's easy to miss on a lower quote: IS 14665 compliance, a fixed first-year AMC price, and a local Pune-based service team.",
+    status: 'approved',
+    versions: [
+      {
+        version: 1,
+        responseText:
+          "That's a fair question — can you tell me which specific line item their quote is lower on? I don't want to guess-match a number without knowing what's actually being compared. What I can tell you for certain is what AIEC includes that's easy to miss on a lower quote: IS 14665 compliance, a fixed first-year AMC price, and a local Pune-based service team.",
+        editedBy: 'Prashant Vasant Wable',
+        editedAt: daysAgo(120),
+      },
+    ],
+    updatedAt: daysAgo(120),
+    updatedBy: 'Prashant Vasant Wable',
+    isDemo: true,
+  },
+  {
+    id: 'objs-5',
+    code: 'AIEC-OBJ-005',
+    category: 'price_too_high',
+    responseText:
+      "I hear you — let's look at where the value sits before we talk numbers. Your quote already reflects installation quality and AMC response time that a lower quote often strips out. If budget is genuinely the blocker, I can look at what's possible within our approved range, starting with the smallest adjustment rather than jumping to our lowest number.",
+    status: 'approved',
+    versions: [
+      {
+        version: 1,
+        responseText:
+          "I hear you — let's look at where the value sits before we talk numbers. Your quote already reflects installation quality and AMC response time that a lower quote often strips out. If budget is genuinely the blocker, I can look at what's possible within our approved range, starting with the smallest adjustment rather than jumping to our lowest number.",
+        editedBy: 'Prashant Vasant Wable',
+        editedAt: daysAgo(120),
+      },
+    ],
+    updatedAt: daysAgo(120),
+    updatedBy: 'Prashant Vasant Wable',
+    isDemo: true,
+  },
+  {
+    id: 'objs-6',
+    code: 'AIEC-OBJ-006',
+    category: 'wants_to_delay',
+    responseText:
+      "Totally understand wanting more time. Your current quote is valid until its expiry date — if you need longer, I can lock today's price for a short, named extension so you're not starting the conversation over from scratch later.",
+    status: 'approved',
+    versions: [
+      {
+        version: 1,
+        responseText:
+          "Totally understand wanting more time. Your current quote is valid until its expiry date — if you need longer, I can lock today's price for a short, named extension so you're not starting the conversation over from scratch later.",
+        editedBy: 'Prashant Vasant Wable',
+        editedAt: daysAgo(120),
+      },
+    ],
+    updatedAt: daysAgo(120),
+    updatedBy: 'Prashant Vasant Wable',
+    isDemo: true,
+  },
+  // A genuinely new pattern a sales user noticed in the Reply Inbox — sits
+  // as `suggested` until Admin reviews and approves it, so it isn't lost.
+  {
+    id: 'objs-7',
+    code: 'AIEC-OBJ-007',
+    category: 'other',
+    responseText:
+      'Our AMC does cover monsoon-related water ingress issues in the pit and machine room as standard, provided the building\'s own drainage is functioning — worth confirming that drainage point during the site visit so it is never a surprise later.',
+    status: 'suggested',
+    sourceNote: 'Seen twice this week in the Customer Reply Inbox — customers asking whether the AMC covers monsoon water ingress in the lift pit.',
+    versions: [
+      {
+        version: 1,
+        responseText:
+          'Our AMC does cover monsoon-related water ingress issues in the pit and machine room as standard, provided the building\'s own drainage is functioning — worth confirming that drainage point during the site visit so it is never a surprise later.',
+        editedBy: 'Meera Kulkarni',
+        editedAt: daysAgo(2),
+      },
+    ],
+    updatedAt: daysAgo(2),
+    updatedBy: 'Meera Kulkarni',
+    isDemo: true,
+  },
+];
+
+export const seedObjectionScriptUsages: ObjectionScriptUsage[] = [
+  // objs-1 (safety_new_brand): 1 of 3 reached "won" — 33%.
+  { id: 'oju-1', scriptId: 'objs-1', leadId: 'l-6', usedAt: daysAgo(12), isDemo: true },
+  { id: 'oju-2', scriptId: 'objs-1', leadId: 'l-1', usedAt: daysAgo(60), isDemo: true },
+  { id: 'oju-3', scriptId: 'objs-1', leadId: 'l-17', usedAt: daysAgo(9), isDemo: true },
+  // objs-2 (installation_disruption): early data, 0 of 2 reached "won" yet.
+  { id: 'oju-4', scriptId: 'objs-2', leadId: 'l-4', usedAt: daysAgo(15), isDemo: true },
+  { id: 'oju-5', scriptId: 'objs-2', leadId: 'l-7', usedAt: daysAgo(8), isDemo: true },
+  // objs-3 (timeline_worry): 2 of 3 reached "won" — both in Pune (100%),
+  // the one in Pimpri-Chinchwad didn't (0%) — exactly the per-territory
+  // variation edge case this screen is meant to surface.
+  { id: 'oju-6', scriptId: 'objs-3', leadId: 'l-1', usedAt: daysAgo(58), isDemo: true },
+  { id: 'oju-7', scriptId: 'objs-3', leadId: 'l-2', usedAt: daysAgo(40), isDemo: true },
+  { id: 'oju-8', scriptId: 'objs-3', leadId: 'l-16', usedAt: daysAgo(10), isDemo: true },
+  // objs-4 (competitor_comparison): early data, neither reached "won".
+  { id: 'oju-9', scriptId: 'objs-4', leadId: 'l-14', usedAt: daysAgo(30), isDemo: true },
+  { id: 'oju-10', scriptId: 'objs-4', leadId: 'l-13', usedAt: daysAgo(35), isDemo: true },
+  // objs-5 (price_too_high): early data, 1 of 2 reached "won" — 50%.
+  { id: 'oju-11', scriptId: 'objs-5', leadId: 'l-1', usedAt: daysAgo(55), isDemo: true },
+  { id: 'oju-12', scriptId: 'objs-5', leadId: 'l-3', usedAt: daysAgo(14), isDemo: true },
+  // objs-6 (wants_to_delay) has no usage yet — "not enough data" state.
 ];
 
 /* ------------------------------------------------------------- Geo-fencing */
