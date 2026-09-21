@@ -645,6 +645,52 @@ export interface ObjectionScriptUsage {
   isDemo: boolean;
 }
 
+export type CompetitorPricePosition = 'premium' | 'comparable' | 'budget';
+
+/** Same version-history shape as `ObjectionScriptVersion` / `TemplateVersion`
+ *  — this content asset gets reviewed and refreshed periodically, not
+ *  automated, so a reviewable history matters the same way. */
+export interface CompetitorVersion {
+  version: number;
+  priceSummary: string;
+  strengths: string[];
+  differentiationPoints: string[];
+  editedBy: string;
+  editedAt: string;
+}
+
+/**
+ * One competitor's sales-enablement battlecard — screen 079. Internal-only
+ * by design: `internalOnlyFlag` is always `true` and this type is never
+ * read by anything in the communication engine (`CommTemplate`,
+ * `NegotiationBotConfig`, etc.), so it is structurally impossible for this
+ * content to reach a customer message, not just a UI convention.
+ */
+export interface Competitor {
+  id: string;
+  code: string;
+  name: string;
+  pricePosition: CompetitorPricePosition;
+  priceSummary: string;
+  /** Constructive, factual points — genuine competitor strengths, not
+   *  disparagement. */
+  strengths: string[];
+  /** Grounded in AIEC's actual capabilities (aggregator breadth, automated
+   *  responsiveness, transparent stage tracking), never unverifiable claims. */
+  differentiationPoints: string[];
+  internalOnlyFlag: true;
+  /** Any sales user can raise this the moment they notice stale or
+   *  inaccurate positioning — Admin doesn't have to notice independently. */
+  flaggedForReview: boolean;
+  flagReason?: string;
+  flaggedBy?: string;
+  flaggedAt?: string;
+  versions: CompetitorVersion[];
+  lastReviewedAt: string;
+  lastReviewedBy: string;
+  isDemo: boolean;
+}
+
 /* ------------------------------------------------------------- Quotations */
 
 export type DriveType = 'hydraulic' | 'geared_traction' | 'gearless_traction' | 'mrl' | 'vacuum' | 'screw_driven';

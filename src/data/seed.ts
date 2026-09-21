@@ -9,6 +9,7 @@ import type {
   CommSequence,
   CommTemplate,
   CommissionEntry,
+  Competitor,
   Contract,
   ContractSignature,
   Conversation,
@@ -1126,6 +1127,148 @@ export const seedObjectionScriptUsages: ObjectionScriptUsage[] = [
   { id: 'oju-11', scriptId: 'objs-5', leadId: 'l-1', usedAt: daysAgo(55), isDemo: true },
   { id: 'oju-12', scriptId: 'objs-5', leadId: 'l-3', usedAt: daysAgo(14), isDemo: true },
   // objs-6 (wants_to_delay) has no usage yet — "not enough data" state.
+];
+
+export const seedCompetitors: Competitor[] = [
+  {
+    id: 'comp-1',
+    code: 'AIEC-CMP-001',
+    name: 'Meridian Elevators',
+    pricePosition: 'premium',
+    priceSummary: 'Typically 10-18% above AIEC on a comparable spec, reflecting decades of brand recognition and a large legacy service network.',
+    strengths: ['Long operating history and strong name recognition with builders', 'Very wide physical service-centre footprint across the state'],
+    differentiationPoints: [
+      'AIEC\'s aggregator model keeps overheads — and price — down without cutting installation quality: the same IS 14665 compliance and ARD on every unit.',
+      'AIEC\'s automated quotation engine turns a site survey into a firm quote same-day; Meridian\'s branch-approval process typically takes a week.',
+      'Every stage of the AIEC installation is visible to the customer in-app, not just on request from a branch office.',
+    ],
+    internalOnlyFlag: true,
+    flaggedForReview: false,
+    versions: [
+      {
+        version: 1,
+        priceSummary: 'Typically 12-20% above AIEC on a comparable spec, reflecting decades of brand recognition and a large legacy service network.',
+        strengths: ['Long operating history and strong name recognition with builders', 'Very wide physical service-centre footprint across the state'],
+        differentiationPoints: [
+          'AIEC\'s aggregator model keeps overheads — and price — down without cutting installation quality.',
+          'AIEC\'s automated quotation engine turns a site survey into a firm quote same-day.',
+        ],
+        editedBy: 'Prashant Vasant Wable',
+        editedAt: daysAgo(150),
+      },
+      {
+        version: 2,
+        priceSummary: 'Typically 10-18% above AIEC on a comparable spec, reflecting decades of brand recognition and a large legacy service network.',
+        strengths: ['Long operating history and strong name recognition with builders', 'Very wide physical service-centre footprint across the state'],
+        differentiationPoints: [
+          'AIEC\'s aggregator model keeps overheads — and price — down without cutting installation quality: the same IS 14665 compliance and ARD on every unit.',
+          'AIEC\'s automated quotation engine turns a site survey into a firm quote same-day; Meridian\'s branch-approval process typically takes a week.',
+          'Every stage of the AIEC installation is visible to the customer in-app, not just on request from a branch office.',
+        ],
+        editedBy: 'Prashant Vasant Wable',
+        editedAt: daysAgo(20),
+      },
+    ],
+    lastReviewedAt: daysAgo(20),
+    lastReviewedBy: 'Prashant Vasant Wable',
+    isDemo: true,
+  },
+  {
+    id: 'comp-2',
+    code: 'AIEC-CMP-002',
+    name: 'Horizon Lift Systems',
+    pricePosition: 'comparable',
+    priceSummary: 'Pricing lands within a few percent of AIEC on most specs; the real difference shows up in whose projects get priority.',
+    strengths: ['Deep, long-standing relationships with a handful of large builders', 'Dedicated account managers for its top-tier developer clients'],
+    differentiationPoints: [
+      'Horizon\'s sales model prioritises its large-account developers first — mid-size builders and individual housing societies often wait longest in the queue. AIEC treats every lead the same, tracked the same way, regardless of order size.',
+      'AIEC sends automated WhatsApp updates at every job stage; Horizon\'s updates are typically a manual call from the project manager, only when there\'s time.',
+    ],
+    internalOnlyFlag: true,
+    flaggedForReview: false,
+    versions: [
+      {
+        version: 1,
+        priceSummary: 'Pricing lands within a few percent of AIEC on most specs; the real difference shows up in whose projects get priority.',
+        strengths: ['Deep, long-standing relationships with a handful of large builders', 'Dedicated account managers for its top-tier developer clients'],
+        differentiationPoints: [
+          'Horizon\'s sales model prioritises its large-account developers first — mid-size builders and individual housing societies often wait longest in the queue. AIEC treats every lead the same, tracked the same way, regardless of order size.',
+          'AIEC sends automated WhatsApp updates at every job stage; Horizon\'s updates are typically a manual call from the project manager, only when there\'s time.',
+        ],
+        editedBy: 'Prashant Vasant Wable',
+        editedAt: daysAgo(95),
+      },
+    ],
+    lastReviewedAt: daysAgo(95),
+    lastReviewedBy: 'Prashant Vasant Wable',
+    isDemo: true,
+  },
+  // Flagged by a surveyor after a recent site visit — the "content might be
+  // stale" edge case screen 079 exists to catch without Admin having to
+  // notice independently.
+  {
+    id: 'comp-3',
+    code: 'AIEC-CMP-003',
+    name: 'Skyline Elevators Co',
+    pricePosition: 'budget',
+    priceSummary: 'The lowest sticker price in most Pune/PCMC comparisons — often 15-25% under AIEC on the quoted number alone.',
+    strengths: ['Lowest headline price in the region', 'Fast initial quote turnaround for a simple residential spec'],
+    differentiationPoints: [
+      'AIEC\'s quoted price already includes true installation and AMC costs; several customers have reported Skyline addenda appearing after signing for items AIEC includes upfront.',
+      'Every AIEC unit ships with the mandatory Automatic Rescue Device and passes third-party safety inspection before handover — worth confirming this is standard, not an add-on, on any budget quote.',
+    ],
+    internalOnlyFlag: true,
+    flaggedForReview: true,
+    flagReason: 'Customer at a recent site visit said Skyline has started including the ARD as standard too — worth confirming before we keep using this as a differentiator.',
+    flaggedBy: 'Rohit Jadhav',
+    flaggedAt: daysAgo(3),
+    versions: [
+      {
+        version: 1,
+        priceSummary: 'The lowest sticker price in most Pune/PCMC comparisons — often 15-25% under AIEC on the quoted number alone.',
+        strengths: ['Lowest headline price in the region', 'Fast initial quote turnaround for a simple residential spec'],
+        differentiationPoints: [
+          'AIEC\'s quoted price already includes true installation and AMC costs; several customers have reported Skyline addenda appearing after signing for items AIEC includes upfront.',
+          'Every AIEC unit ships with the mandatory Automatic Rescue Device and passes third-party safety inspection before handover — worth confirming this is standard, not an add-on, on any budget quote.',
+        ],
+        editedBy: 'Prashant Vasant Wable',
+        editedAt: daysAgo(60),
+      },
+    ],
+    lastReviewedAt: daysAgo(60),
+    lastReviewedBy: 'Prashant Vasant Wable',
+    isDemo: true,
+  },
+  {
+    id: 'comp-4',
+    code: 'AIEC-CMP-004',
+    name: 'Continental Elevator Corp',
+    pricePosition: 'premium',
+    priceSummary: 'Priced highest in most comparisons, largely on the strength of an imported-components story.',
+    strengths: ['Perceived prestige of imported components', 'Strong showroom presence in premium commercial developments'],
+    differentiationPoints: [
+      'AIEC sources components locally, which typically means a much faster AMC response and spare-parts turnaround than waiting on an imported supply chain.',
+      'AIEC\'s components still meet the same IS 14665 code Continental\'s do — the safety bar is the same standard, not a lesser one.',
+    ],
+    internalOnlyFlag: true,
+    flaggedForReview: false,
+    versions: [
+      {
+        version: 1,
+        priceSummary: 'Priced highest in most comparisons, largely on the strength of an imported-components story.',
+        strengths: ['Perceived prestige of imported components', 'Strong showroom presence in premium commercial developments'],
+        differentiationPoints: [
+          'AIEC sources components locally, which typically means a much faster AMC response and spare-parts turnaround than waiting on an imported supply chain.',
+          'AIEC\'s components still meet the same IS 14665 code Continental\'s do — the safety bar is the same standard, not a lesser one.',
+        ],
+        editedBy: 'Prashant Vasant Wable',
+        editedAt: daysAgo(110),
+      },
+    ],
+    lastReviewedAt: daysAgo(110),
+    lastReviewedBy: 'Prashant Vasant Wable',
+    isDemo: true,
+  },
 ];
 
 /* ------------------------------------------------------------- Geo-fencing */

@@ -11,6 +11,8 @@ import type {
   CommSequence,
   CommTemplate,
   CommissionEntry,
+  Competitor,
+  CompetitorPricePosition,
   Contract,
   ContractSignature,
   Conversation,
@@ -607,6 +609,29 @@ export interface Repository {
    *  `saveCommTemplateBody`. */
   saveObjectionScriptResponse(id: string, responseText: string, editedBy: string): Promise<ObjectionScript>;
   setObjectionScriptStatus(id: string, status: ObjectionScriptStatus): Promise<ObjectionScript>;
+
+  /* Deal closing: competitor battlecards (internal only, never customer-facing) */
+  listCompetitors(): Promise<Competitor[]>;
+  createCompetitor(input: {
+    name: string;
+    pricePosition: CompetitorPricePosition;
+    priceSummary: string;
+    strengths: string[];
+    differentiationPoints: string[];
+    createdBy: string;
+  }): Promise<Competitor>;
+  /** Creates a new version, updates the live positioning, clears any
+   *  pending review flag, and stamps `lastReviewedAt/By` — this is the
+   *  deliberate content-refresh action, distinct from the always-live
+   *  automated modules elsewhere in the app. */
+  updateCompetitorPositioning(
+    id: string,
+    changes: { priceSummary: string; strengths: string[]; differentiationPoints: string[] },
+    editedBy: string,
+  ): Promise<Competitor>;
+  /** Any sales user can raise this the moment they notice stale or
+   *  inaccurate positioning, without needing Admin to notice first. */
+  flagCompetitorForReview(id: string, reason: string, byName: string): Promise<Competitor>;
 
   /* Operations */
   listActivity(limit?: number): Promise<ActivityEvent[]>;

@@ -24,6 +24,7 @@ import {
   seedJobs,
   seedLeadTimeline,
   seedLeads,
+  seedCompetitors,
   seedNegotiationBotConfig,
   seedNegotiations,
   seedObjectionScripts,
@@ -89,6 +90,7 @@ import type {
   CommMessage,
   CommSequence,
   CommTemplate,
+  Competitor,
   Contract,
   ContractClause,
   ContractSignature,
@@ -204,6 +206,8 @@ let alertCounter = 900;
 const objectionScripts = [...seedObjectionScripts];
 let objectionScriptCounter = 100;
 const objectionScriptUsages = [...seedObjectionScriptUsages];
+const competitors = [...seedCompetitors];
+let competitorCounter = 100;
 
 let leadCounter = 200;
 let timelineEventCounter = 900;
@@ -2468,6 +2472,71 @@ export const memoryRepository: Repository = {
     }),
 
   setObjectionScriptStatus: (id, status) => simulateWrite(() => patchInPlace(objectionScripts, id, { status })),
+
+  /* -------------------------------------------- Competitor battlecards */
+  listCompetitors: () => simulateRead(() => [...competitors].sort((a, b) => a.name.localeCompare(b.name))),
+
+  createCompetitor: (input) =>
+    simulateWrite(() => {
+      competitorCounter += 1;
+      const now = new Date().toISOString();
+      const created: Competitor = {
+        id: `comp-new-${competitorCounter}`,
+        code: `AIEC-CMP-${competitorCounter}`,
+        name: input.name,
+        pricePosition: input.pricePosition,
+        priceSummary: input.priceSummary,
+        strengths: input.strengths,
+        differentiationPoints: input.differentiationPoints,
+        internalOnlyFlag: true,
+        flaggedForReview: false,
+        versions: [
+          {
+            version: 1,
+            priceSummary: input.priceSummary,
+            strengths: input.strengths,
+            differentiationPoints: input.differentiationPoints,
+            editedBy: input.createdBy,
+            editedAt: now,
+          },
+        ],
+        lastReviewedAt: now,
+        lastReviewedBy: input.createdBy,
+        isDemo: true,
+      };
+      competitors.push(created);
+      return created;
+    }),
+
+  updateCompetitorPositioning: (id, changes, editedBy) =>
+    simulateWrite(() => {
+      const competitor = byId(competitors, id);
+      if (!competitor) throw new RepositoryError('not_found');
+      const now = new Date().toISOString();
+      const nextVersion = (competitor.versions.at(-1)?.version ?? 0) + 1;
+      return patchInPlace(competitors, id, {
+        ...changes,
+        flaggedForReview: false,
+        flagReason: undefined,
+        flaggedBy: undefined,
+        flaggedAt: undefined,
+        lastReviewedAt: now,
+        lastReviewedBy: editedBy,
+        versions: [...competitor.versions, { version: nextVersion, ...changes, editedBy, editedAt: now }],
+      });
+    }),
+
+  flagCompetitorForReview: (id, reason, byName) =>
+    simulateWrite(() => {
+      const competitor = byId(competitors, id);
+      if (!competitor) throw new RepositoryError('not_found');
+      return patchInPlace(competitors, id, {
+        flaggedForReview: true,
+        flagReason: reason,
+        flaggedBy: byName,
+        flaggedAt: new Date().toISOString(),
+      });
+    }),
 
   /* -------------------------------------------------------- Operations */
   listActivity: (limit = 50) =>
