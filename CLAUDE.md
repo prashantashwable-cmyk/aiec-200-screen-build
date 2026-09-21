@@ -65,30 +65,35 @@ After the **10th screen of a module**, run that module's checkpoint: click throu
 end to end, spot-check 2–3 screens from earlier modules for regressions, fix anything found, and add
 the module's section to `BUILD_README.md`.
 
-## Current status (as of 2026-09-20)
+## Current status (as of 2026-09-21)
 
-- Modules 1–7 (`001`–`070`) are built. Modules 5, 6 and 7 are checkpoint-verified.
-- **Module 7 Auto-Quotation Engine is done**, including the "Go deeper" quick-links grid on 061
-  (→ 063/065/066/067/069/070) and its checkpoint (all 10 screens clicked through, 3 earlier-module
-  screens spot-checked, nothing regressed — see `BUILD_README.md`'s Module 7 section for the full
-  writeup, including how `068`'s WhatsApp-bounce fallback, scheduled-send-cancels-on-supersede, and
-  `070`'s scheduled GST change actually work).
-- **Next: Module 8 — Negotiation & Deal Closing (`071`–`080`)**, starting with `071` Auto-Negotiation
-  Bot Configuration (`071_negotiation_deal_closing__auto-negotiation_bot_configuration_screen.md`).
-  No repository scaffolding for this module exists yet (no `Deal`-negotiation fields beyond the
-  `Deal.negotiationRounds` counter already in `types.ts`) — expect to extend the data model for
-  screen 071 same as every module's first screen does.
+- Modules 1–8 (`001`–`080`) are built. Modules 5, 6, 7 and 8 are checkpoint-verified.
+- **Module 8 Negotiation & Deal Closing is done**, including the forward link from 077 to 080 and its
+  checkpoint (all 10 screens clicked through, 3 earlier-module screens spot-checked, nothing
+  regressed — see `BUILD_README.md`'s Module 8 section for the full writeup, including how the
+  074→077 state-machine spine, the shared objection-category taxonomy between 078 and 071's bot, and
+  080's admin-only feedback-note redaction actually work). Also fixed a seed inconsistency found
+  along the way: lead `l-15` (dl-6) was left at stage `negotiation` despite its deal already being
+  Closed Won — corrected to `won`.
+- **Next: Module 9 — Payments & Financing (`081`–`090`)**, starting with `081` Payment Stage/Schedule
+  Setup (`081_payments_financing__payment_stage_schedule_setup_screen.md`). Real `Payment` records
+  and a real `PaymentStage` enum already exist (Module 2's Finance screen, and 074's
+  `DealTerms.paymentStagePlan`) — expect to extend that model rather than starting from nothing, same
+  as Module 8 did with `Deal`.
 
-### Module 7 facts worth knowing
+### Module 8 facts worth knowing
 
-- `computeQuotationCost` in `memoryRepository.ts` is the only pricing engine. Line items are rounded
-  and then summed, so they always match the total.
-- Quotation versions form a chain through `supersedesQuotationId`. A change creates a new version;
-  sent versions are never edited.
-- `CustomerQuotationView` / `getQuotationForCustomer` deliberately have no cost or margin fields.
-- Seed margin floor is 15%. A new draft's margin is floor + 5.
-  `URGENT_AUTO_APPROVE_BUFFER_PCT = 3`: an urgent discount request is approved automatically when the
-  resulting margin is at least 18%. Approvals go through the shared `applyApprovedDiscount`.
+- `triggerDealClosure` (077) is the one idempotent kickoff: CRM stage to `'won'`, `Payment` schedule
+  from `DealTerms.paymentStagePlan`, supplier PO attempt, commission entry. A repeat call returns the
+  existing `DealClosure` rather than re-running any of it.
+- `DealCelebration` (080) mirrors that exact read/trigger split (`getDealCelebration` is a pure read;
+  `triggerDealCelebration` is the idempotent create), and its commission summary is a live read of
+  the same `CommissionEntry` rows 038's tracker reads — never a second calculation.
+- Three of 078's `ObjectionCategory` values (`competitor_comparison`, `price_too_high`,
+  `wants_to_delay`) are the literal same strings as `NegotiationObjectionKey` (071's bot config), on
+  purpose — one taxonomy, not two that could drift.
+- `Competitor` (079) is internal-only by construction, not just a UI label: nothing in the
+  communication engine (`CommTemplate`, `NegotiationBotConfig`, etc.) ever reads that type.
 
 ## Git
 

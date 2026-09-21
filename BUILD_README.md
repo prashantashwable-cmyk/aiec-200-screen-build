@@ -427,3 +427,128 @@ fallback, supersede-cancels-schedule) → version history → discount approval
 → win/loss analytics → pricing config — no console errors. Spot-checked 021
 (Exec KPI), 011 (Live Map) and 043 (Lead Kanban) from earlier modules; all
 render exactly as before. Nothing regressed.
+
+## Module 8 — Negotiation & Deal Closing (`071`–`080`, checkpoint-verified)
+
+Everything under the **Deals** tab (`/admin/deals/...`), plus one screen
+(`080`) reachable by Admin *and* Surveyor at `/deals/:dealId/celebration` —
+the first screen in this build that isn't role-siloed to one tab bar. Where
+the brief's "auto-negotiate with customer and make deal automatically"
+becomes real: a bounded, monitored bot, a human escalation path, and a clean
+contract close. Extended the data model once per screen as each one needed
+it, rather than all up front — this module's records chain together tightly
+enough (a negotiation becomes a counter-offer becomes deal terms becomes a
+contract becomes a signature becomes a closure becomes a celebration) that
+front-loading the whole shape would have meant guessing at fields the
+earlier screens couldn't yet justify.
+
+- **The bot's floor is always the company's floor plus a buffer, never
+  less.** `NegotiationBotConfig.marginBufferPct` sits on top of
+  `PricingConfig.minimumMarginFloorPct` (070); a `Negotiation` snapshots its
+  own `floorPrice`/`maxRoundsAllowed`/`autoCloseAuthorityAllowed` at creation
+  so an in-flight negotiation always finishes under the rules it started
+  with, even if Admin changes the bot config mid-conversation.
+- **One version chain per deal, not per screen.** `DealTerms` amendments,
+  `Contract` regeneration, and `ContractSignature` all follow the same
+  "new version supersedes the old, nothing is edited in place" discipline
+  Module 7's `Quotation` chain established — `Contract.status` moves
+  `active`→`superseded` exactly like a quotation does.
+- **The state-machine spine (074→077):** `DealTerms.status`
+  (`draft`→`awaiting_customer`→`confirmed`) → `Contract` generated from the
+  confirmed terms → `ContractSignature.status`
+  (`unsigned`→`customer_signed`→`fully_signed`) → `Deal.status` becomes
+  `'approved'` the moment the customer signs and `'won'` (with `closedAt`
+  stamped) the moment AIEC countersigns. That AIEC-countersign instant is
+  the one and only "Closed Won" moment everything downstream reads.
+- **The closure kickoff is one idempotent event, not three.**
+  `triggerDealClosure` (077) fires once per deal — CRM stage to `'won'`,
+  `Payment` schedule from `DealTerms.paymentStagePlan`, supplier PO attempt,
+  commission entry — and returns the existing `DealClosure` on any repeat
+  call rather than re-running side effects. `080`'s celebration and its
+  commission summary are a read of that same event, never a second
+  calculation: the numbers shown there are the exact `CommissionEntry` rows
+  the Commission & Rewards Tracker (038) itself reads.
+- **Two internal-only content libraries feed both the human and the bot
+  from one well.** Objection scripts (078) and competitor battlecards (079)
+  are never customer-facing — battlecards structurally so, since nothing in
+  the communication engine ever reads `Competitor`. Three of 078's
+  categories (`competitor_comparison`, `price_too_high`, `wants_to_delay`)
+  reuse `NegotiationObjectionKey`'s own literal values so the bot's
+  Objection Scenario Map (071) and the human quick-reference can never
+  drift into two different classifications of the same conversation.
+
+Screens:
+
+- **071 Auto-Negotiation Bot Configuration** (`/admin/deals/bot-config`):
+  guardrails (margin buffer, max rounds, tone, auto-close authority — off by
+  default), the objection-scenario map, and a live dashboard of in-flight
+  negotiations.
+- **072 Live Negotiation Thread** (`/admin/deals/:negotiationId/thread`):
+  the bot's conversation with a customer, reusing the existing
+  `Conversation`/`CommMessage` shape rather than a parallel message model.
+- **073 Counter-Offer Approval** (`/admin/deals/counter-offers`): the queue
+  for asks outside the bot's own authority but still at or above the
+  company's true floor — approve, reject, or counter, shared mechanics with
+  067's `DiscountRequest`.
+- **074 Deal Terms Finalization** (`/admin/deals/:dealId/terms`): locks in
+  the payment split (`DealTerms.paymentStagePlan`, reusing the real
+  `PaymentStage` enum from Module 2's Finance screen rather than inventing a
+  second one) and both-party confirmation before a contract can generate.
+- **075 Digital Contract Generator** (`/admin/deals/:dealId/contract`):
+  assembles clauses from confirmed deal terms plus the state-specific Lift
+  Act layer (reusing 061's `QuotationTemplate.legalBoilerplate`/
+  `stateOverrides` mechanism); a state with no clause set configured falls
+  back to the national default and flags Admin rather than blocking.
+- **076 E-Signature Capture** (`/admin/deals/:dealId/signature`): OTP
+  identity re-verification (same demo pattern as login's own OTP screen,
+  `123456`) with a manual-confirmation fallback after repeated wrong codes,
+  a canvas `SignaturePad` (new design-system component, DPI-aware, flattens
+  to a PNG data URL), and the customer-sign → AIEC-countersign sequence that
+  produces Closed Won.
+- **077 Deal Closure Confirmation** (`/admin/deals/:dealId/closure`): the
+  technical kickoff screen — customer-facing payment schedule and point of
+  contact, plus an admin-only internal summary (commission, payment
+  schedule, supplier PO status) and a void-closure action that logs a
+  reversal rather than deleting the record. Links to **080**.
+- **078 Customer Objection/Concern Handling Script Screen**
+  (`/admin/deals/objection-scripts`): a searchable, versioned library of
+  approved responses (safety of a newer brand, installation disruption,
+  timeline worries, price, stalling, comparison to bigger players), each
+  with effectiveness scored the same before/after "did the lead reach won"
+  logic Communication Analytics (060) uses, broken down per territory. A
+  sales user can submit a newly-noticed concern as `suggested`, pending
+  Admin review, so an emerging pattern is never lost. Swipe-to-copy on each
+  row for a rep mid-call.
+- **079 Competitor Comparison Battlecard Screen** (`/admin/deals/battlecards`):
+  internal-only positioning against named (fictional) competitors — genuine
+  strengths stated constructively, AIEC differentiation grounded only in
+  real capabilities. Any sales user can flag a card as stale without
+  waiting for Admin to notice; links to 078's "comparison to bigger
+  players" category for any "why not brand X" conversation.
+- **080 Deal Won — Celebration & Next Steps** (`/deals/:dealId/celebration`,
+  Admin **and** Surveyor): the internal, emotionally distinct counterpart to
+  077's customer-facing confirmation — recognition and an exact commission
+  breakdown for the original capturing surveyor (and the current owner too,
+  when a lead was reassigned, per 044's own fairness rule that the capture
+  bonus stays with the original surveyor regardless). One-tap acknowledgment
+  doubles as an optional feedback prompt whose note is admin-only by
+  construction, redacted server-side for any non-admin viewer including the
+  person who wrote it. `DealCelebration` mirrors `DealClosure`'s own
+  read/trigger split so the moment persists for a staff member who was
+  offline when the deal actually closed.
+
+**Module 8 checkpoint (passed):** clicked through all 10 screens — bot
+config → negotiation thread → counter-offer approval → deal terms → contract
+generator → e-signature (OTP, drawn/typed signature, countersign) → closure
+confirmation (payment schedule, void/restore) → objection scripts (search,
+approve/edit/archive a suggestion, swipe-to-copy) → battlecards (flag,
+edit-new-version, add) → celebration (auto-trigger, acknowledge with
+feedback, admin-only note redaction for a surveyor viewer) — no console
+errors. Also fixed a seed-data inconsistency surfaced along the way: lead
+`l-15` (Tech Park Block C, deal `dl-6`) had been left at stage `negotiation`
+even though its deal had already been Closed Won for hours — corrected to
+`won` so the Lead Kanban board agrees with the deal record. Spot-checked 027
+(Automation Health Monitor), 028 (Finance cash-flow) and 043 (Lead Kanban)
+from earlier modules — the `dl-6` supplier-PO failure and its new Payment
+rows both surfaced correctly with no separate calculation; nothing
+regressed.
