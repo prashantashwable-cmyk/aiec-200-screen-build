@@ -926,7 +926,7 @@ export interface Job {
 /* ---------------------------------------------------------------- Payments */
 
 export type PaymentStage = 'advance' | 'material' | 'installation' | 'handover' | 'retention';
-export type PaymentStatus = 'due' | 'pending' | 'paid' | 'overdue' | 'failed' | 'refunded';
+export type PaymentStatus = 'due' | 'pending' | 'paid' | 'overdue' | 'failed' | 'refunded' | 'disputed';
 
 export interface Payment {
   id: string;
@@ -938,6 +938,22 @@ export interface Payment {
   dueDate: string;
   paidAt?: string;
   method?: 'upi' | 'neft' | 'card' | 'cash' | 'cheque' | 'financing';
+  /** Set once any amount has actually come in against this stage — may be
+   *  less than `amount` (a common real-world partial payment). The
+   *  remaining balance is `amount - amountReceived`, never forced into an
+   *  all-or-nothing paid/unpaid state. Only reaches `status: 'paid'` once
+   *  this covers the full amount. */
+  amountReceived?: number;
+  /** Set only when Admin records a bank transfer or other payment received
+   *  outside the app's own gateway — always paired with a reference
+   *  number, and kept distinct from a gateway-confirmed automatic payment. */
+  manualReferenceNumber?: string;
+  recordedManuallyBy?: string;
+  /** Set when moved to `'disputed'` — pauses automated reminders/escalation
+   *  for this specific stage without touching the deal's other stages. */
+  disputeReason?: string;
+  disputedBy?: string;
+  disputedAt?: string;
   isDemo: boolean;
 }
 

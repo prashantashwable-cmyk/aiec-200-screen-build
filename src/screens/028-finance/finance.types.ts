@@ -1,12 +1,17 @@
 /** Screen 028 — Financial Overview: Cash Flow & Receivables. Types and keys. */
 
 import type { Payment } from '@/data/types';
+import type { AgingBucket } from '@/features/payments/aging';
 
 export type FinanceStatus = 'loading' | 'ready' | 'error';
 
-export type AgingBucket = 'current' | 'd30' | 'd60' | 'd90plus' | 'disputed';
-
-export const AGING_BUCKETS: AgingBucket[] = ['current', 'd30', 'd60', 'd90plus', 'disputed'];
+/** The aging-bucket vocabulary and its one definition live in
+ *  `@/features/payments/aging` — shared with screen 082's Payment
+ *  Collection Dashboard so the two screens can never disagree on what
+ *  "overdue" means. Re-exported here so this screen's own files don't need
+ *  to change their import path. */
+export { AGING_BUCKETS, OUTLIER_MULTIPLE } from '@/features/payments/aging';
+export type { AgingBucket };
 
 export interface AgingGroup {
   bucket: AgingBucket;
@@ -28,9 +33,6 @@ export interface FinanceSummary {
   /** True when one payment is large enough to distort the total on its own. */
   skewedByOutlier: boolean;
 }
-
-/** A single receivable this many times the median counts as an outlier. */
-export const OUTLIER_MULTIPLE = 3;
 
 export const FINANCE_KEYS = {
   title: 'finance.title',

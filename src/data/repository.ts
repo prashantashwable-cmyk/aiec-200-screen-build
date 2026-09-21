@@ -284,6 +284,20 @@ export interface PaymentScheduleView {
   canSetUp: boolean;
 }
 
+/** One payment stage joined with enough deal/lead context to render and
+ *  filter a Payment Collection Dashboard row (082) — `ownerUserId`/
+ *  `ownerName` is the lead's *current* owner (`Lead.surveyorId`), since
+ *  collections follow-up is the current relationship owner's job, unlike
+ *  the capture-bonus commission which always stays with
+ *  `originalSurveyorId` regardless of reassignment. */
+export interface PaymentCollectionLine {
+  payment: Payment;
+  dealCode: string;
+  siteName: string;
+  ownerUserId: string;
+  ownerName: string;
+}
+
 /** One territory's (city's) slice of a script's effectiveness — screen
  *  078's per-territory tracking, computed on read rather than stored. */
 export interface ObjectionScriptTerritoryStat {
@@ -495,6 +509,32 @@ export interface Repository {
   listJobs(filter?: { technicianId?: string; status?: Job['status'][] }): Promise<Job[]>;
   getJob(id: string): Promise<Job | null>;
   listPayments(filter?: { dealId?: string; status?: Payment['status'][] }): Promise<Payment[]>;
+  /** Every payment stage joined with the deal/lead/current-owner context
+   *  the Payment Collection Dashboard (082) needs to render and filter a
+   *  line — the aging-bucket classification itself stays screen-owned
+   *  (via `@/features/payments/aging`), same as screen 028's own split. */
+  getPaymentCollectionLines(): Promise<PaymentCollectionLine[]>;
+  /** The only way this build records a payment against a stage — there is
+   *  no live payment gateway (see CLAUDE.md's stubbed-deliberately list),
+   *  so every recording here is inherently the "received outside the
+   *  gateway" case the spec describes: always logged with its reference
+   *  number, distinct from an unattributed status flip. Supports a partial
+   *  amount — the stage only reaches `'paid'` once the cumulative total
+   *  received covers `amount`. */
+  recordPaymentReceived(paymentId: string, input: { amountReceived: number; referenceNumber: string; method?: Payment['method']; byUserId: string }): Promise<Payment>;
+  /** Pauses this specific stage's reminders/escalation without touching
+   *  the deal's other stages — the aging bucket already treats `disputed`
+   *  as its own bucket rather than blending it into an overdue count. */
+  disputePayment(paymentId: string, reason: string, byUserId: string): Promise<Payment>;
+  /** Sends a real reminder through the existing communication engine using
+   *  the same `tpl-payment-reminder` template group the automated
+   *  follow-up sequence already sends from — never a second, one-off
+   *  message string invented just for this button. */
+  sendPaymentReminder(paymentId: string, byName: string): Promise<CommMessage>;
+  /** Raises the same `alerts.type.paymentOverdue` / `category: 'payment'`
+   *  alert the existing Escalation screen (019) already reads — idempotent
+   *  per payment, so repeated clicks don't pile up duplicate alerts. */
+  escalatePayment(paymentId: string): Promise<Alert>;
   listSuppliers(): Promise<Supplier[]>;
   getSupplier(id: string): Promise<Supplier | null>;
 

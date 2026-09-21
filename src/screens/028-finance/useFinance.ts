@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useData } from '@/data/DataProvider';
 import type { Payment } from '@/data/types';
-import { OUTLIER_MULTIPLE } from './finance.types';
+import { bucketFor, computeCashIn, computeTotalReceivable, isOutstanding, OUTLIER_MULTIPLE, remainingBalance } from '@/features/payments/aging';
 import type { AgingBucket, AgingGroup, FinanceStatus, FinanceSummary, UpcomingOutflow } from './finance.types';
 
 type WindowId = '7' | '30';
@@ -14,17 +14,6 @@ interface FinanceState {
   window: WindowId;
   setWindow: (window: WindowId) => void;
   reload: () => Promise<void>;
-}
-
-/** Which aging bucket a receivable falls into, from its own due date — not the
- *  deal's close date, since a multi-stage plan has several individual dates. */
-function bucketFor(payment: Payment, now: number): AgingBucket {
-  const daysOverdue = Math.floor((now - new Date(payment.dueDate).getTime()) / 86_400_000);
-  if (payment.status === 'failed') return 'disputed';
-  if (daysOverdue <= 0) return 'current';
-  if (daysOverdue <= 30) return 'd30';
-  if (daysOverdue <= 60) return 'd60';
-  return 'd90plus';
 }
 
 function median(values: number[]): number {
@@ -65,10 +54,7 @@ export function useFinance(): FinanceState {
 
   const now = Date.now();
 
-  const outstanding = useMemo(
-    () => payments.filter((p) => p.status === 'due' || p.status === 'pending' || p.status === 'overdue'),
-    [payments],
-  );
+  const outstanding = useMemo(() => payments.filter(isOutstanding), [payments]);
 
   const agingGroups = useMemo<AgingGroup[]>(() => {
     const buckets: Record<AgingBucket, Payment[]> = {
@@ -84,7 +70,7 @@ export function useFinance(): FinanceState {
     return (Object.keys(buckets) as AgingBucket[]).map((bucket) => ({
       bucket,
       payments: buckets[bucket],
-      total: buckets[bucket].reduce((sum, p) => sum + p.amount, 0),
+      total: buckets[bucket].reduce((sum, p) => sum + remainingBalance(p), 0),
     }));
   }, [outstanding, now]);
 
@@ -103,7 +89,7 @@ export function useFinance(): FinanceState {
 
   const summary = useMemo<FinanceSummary | null>(() => {
     if (status !== 'ready') return null;
-    const cashIn = payments.filter((p) => p.status === 'paid').reduce((sum, p) => sum + p.amount, 0);
+    const cashIn = computeCashIn(payments);
     // Supplier and payout outflows are not separately modelled in this build's
     // data yet, so cashOut reflects what is actually tracked: retention held
     // and refunds. Documented here rather than inventing a second figure.
@@ -111,9 +97,9 @@ export function useFinance(): FinanceState {
       .filter((p) => p.status === 'refunded')
       .reduce((sum, p) => sum + p.amount, 0);
 
-    const amounts = outstanding.map((p) => p.amount);
+    const amounts = outstanding.map(remainingBalance);
     const med = median(amounts);
-    const totalReceivable = amounts.reduce((sum, v) => sum + v, 0);
+    const totalReceivable = computeTotalReceivable(payments);
     const skewedByOutlier = amounts.some((v) => med > 0 && v >= med * OUTLIER_MULTIPLE);
 
     return {

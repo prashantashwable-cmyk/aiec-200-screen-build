@@ -919,11 +919,16 @@ export const seedJobs: Job[] = [
 export const seedPayments: Payment[] = [
   { id: 'p-1', code: 'AIEC-P-4101', dealId: 'dl-1', stage: 'advance', amount: 660_000, status: 'paid', dueDate: daysAgo(46), paidAt: daysAgo(45), method: 'neft', isDemo: true },
   { id: 'p-2', code: 'AIEC-P-4102', dealId: 'dl-1', stage: 'material', amount: 924_000, status: 'paid', dueDate: daysAgo(30), paidAt: daysAgo(29), method: 'neft', isDemo: true },
-  { id: 'p-3', code: 'AIEC-P-4103', dealId: 'dl-1', stage: 'installation', amount: 792_000, status: 'overdue', dueDate: daysAgo(6), isDemo: true },
+  // A partial bank transfer came in against this already-overdue,
+  // already-escalated (see al-2) stage — the remaining ₹3,92,000 is still
+  // overdue, screen 082's own partial-payment reconciliation edge case.
+  { id: 'p-3', code: 'AIEC-P-4103', dealId: 'dl-1', stage: 'installation', amount: 792_000, status: 'overdue', dueDate: daysAgo(6), amountReceived: 400_000, manualReferenceNumber: 'NEFT240811', recordedManuallyBy: 'u-admin-1', isDemo: true },
   { id: 'p-4', code: 'AIEC-P-4104', dealId: 'dl-1', stage: 'handover', amount: 264_000, status: 'due', dueDate: daysAhead(20), isDemo: true },
   { id: 'p-5', code: 'AIEC-P-4105', dealId: 'dl-2', stage: 'advance', amount: 470_000, status: 'paid', dueDate: daysAgo(32), paidAt: daysAgo(32), method: 'upi', isDemo: true },
   { id: 'p-6', code: 'AIEC-P-4106', dealId: 'dl-2', stage: 'material', amount: 658_000, status: 'paid', dueDate: daysAgo(20), paidAt: daysAgo(19), method: 'neft', isDemo: true },
-  { id: 'p-7', code: 'AIEC-P-4107', dealId: 'dl-2', stage: 'installation', amount: 564_000, status: 'pending', dueDate: daysAhead(2), isDemo: true },
+  // Disputed rather than merely pending — pauses this one stage's reminders
+  // without touching dl-2's other stages (screen 082's own dispute edge case).
+  { id: 'p-7', code: 'AIEC-P-4107', dealId: 'dl-2', stage: 'installation', amount: 564_000, status: 'disputed', dueDate: daysAhead(2), disputeReason: 'Customer says the installation-stage invoice includes a change-order item that was never approved.', disputedBy: 'u-admin-1', disputedAt: hoursAgo(8), isDemo: true },
   { id: 'p-8', code: 'AIEC-P-4108', dealId: 'dl-2', stage: 'handover', amount: 188_000, status: 'due', dueDate: daysAhead(24), isDemo: true },
   { id: 'p-9', code: 'AIEC-P-4109', dealId: 'dl-3', stage: 'advance', amount: 1_030_000, status: 'due', dueDate: daysAhead(5), isDemo: true },
   { id: 'p-10', code: 'AIEC-P-4110', dealId: 'dl-6', stage: 'advance', amount: 2_100_000, status: 'due', dueDate: daysAhead(9), isDemo: true },
@@ -936,6 +941,10 @@ export const seedPayments: Payment[] = [
   { id: 'p-14', code: 'AIEC-P-4114', dealId: 'dl-6', stage: 'installation', amount: 2_520_000, status: 'due', dueDate: daysAhead(40), isDemo: true },
   { id: 'p-15', code: 'AIEC-P-4115', dealId: 'dl-6', stage: 'handover', amount: 840_000, status: 'due', dueDate: daysAhead(65), isDemo: true },
   { id: 'p-16', code: 'AIEC-P-4116', dealId: 'dl-6', stage: 'retention', amount: 420_000, status: 'due', dueDate: daysAhead(120), isDemo: true },
+  // A large overdue receivable sitting alongside many small ones — screen
+  // 082's own "don't let a big risk get lost in a sea of small normal
+  // items" edge case.
+  { id: 'p-17', code: 'AIEC-P-4117', dealId: 'dl-3', stage: 'installation', amount: 1_236_000, status: 'overdue', dueDate: daysAgo(45), isDemo: true },
 ];
 
 export const seedPaymentSchedules: PaymentSchedule[] = [

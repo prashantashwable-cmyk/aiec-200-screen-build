@@ -150,6 +150,7 @@ import type {
 import { formatINR, formatINRCompact, haversineKm } from '@/design-system/format';
 import { MAX_SAFE_BOT_DISCOUNT_PCT } from '@/features/communication/botRules';
 import { extractMergeFields, renderTemplateBody } from '@/features/communication/templateRender';
+import { remainingBalance } from '@/features/payments/aging';
 
 /**
  * The in-memory implementation backing Demo Mode.
@@ -1567,6 +1568,113 @@ export const memoryRepository: Repository = {
         .filter((p) => !filter?.status || filter.status.includes(p.status))
         .sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
     ),
+
+  getPaymentCollectionLines: () =>
+    simulateRead(() =>
+      payments
+        .map((payment) => {
+          const deal = byId(deals, payment.dealId);
+          const lead = deal ? resolveLead(deal.leadId) : null;
+          return {
+            payment,
+            dealCode: deal?.code ?? payment.code,
+            siteName: lead?.siteName ?? '',
+            ownerUserId: lead?.surveyorId ?? '',
+            ownerName: lead?.surveyorId ? nameOf(lead.surveyorId) : '',
+          };
+        })
+        .sort((a, b) => a.payment.dueDate.localeCompare(b.payment.dueDate)),
+    ),
+
+  recordPaymentReceived: (paymentId, input) =>
+    simulateWrite(() => {
+      const payment = byId(payments, paymentId);
+      if (!payment) throw new RepositoryError('not_found');
+      const totalReceived = (payment.amountReceived ?? 0) + input.amountReceived;
+      const fullyPaid = totalReceived >= payment.amount;
+      return patchInPlace(payments, paymentId, {
+        amountReceived: totalReceived,
+        manualReferenceNumber: input.referenceNumber,
+        recordedManuallyBy: input.byUserId,
+        method: input.method ?? payment.method,
+        status: fullyPaid ? 'paid' : payment.status,
+        paidAt: fullyPaid ? new Date().toISOString() : payment.paidAt,
+      });
+    }),
+
+  disputePayment: (paymentId, reason, byUserId) =>
+    simulateWrite(() => {
+      const payment = byId(payments, paymentId);
+      if (!payment) throw new RepositoryError('not_found');
+      return patchInPlace(payments, paymentId, {
+        status: 'disputed',
+        disputeReason: reason,
+        disputedBy: byUserId,
+        disputedAt: new Date().toISOString(),
+      });
+    }),
+
+  sendPaymentReminder: (paymentId, byName) =>
+    simulateWrite(() => {
+      const payment = byId(payments, paymentId);
+      if (!payment) throw new RepositoryError('not_found');
+      const deal = byId(deals, payment.dealId);
+      if (!deal) throw new RepositoryError('not_found');
+      const lead = resolveLead(deal.leadId);
+      if (!lead) throw new RepositoryError('not_found');
+      const template = templateInGroup('tpl-payment-reminder', 'en');
+      const body = template
+        ? renderTemplateBody(template.body, { customerName: lead.contactName, buildingName: lead.siteName, quoteAmount: formatINRCompact(remainingBalance(payment)) })
+        : `Reminder: payment of ${formatINRCompact(remainingBalance(payment))} is due for ${lead.siteName}.`;
+      let conversation = conversations.find((c) => c.leadId === lead.id) ?? null;
+      const now = new Date().toISOString();
+      if (!conversation) {
+        conversationCounter += 1;
+        conversation = { id: `conv-new-${conversationCounter}`, leadId: lead.id, lastMessageAt: now, isDemo: true };
+        conversations.push(conversation);
+      }
+      messageCounter += 1;
+      const message: CommMessage = {
+        id: `cm-new-${messageCounter}`,
+        conversationId: conversation.id,
+        channel: 'sms',
+        sender: 'agent',
+        senderName: byName,
+        body,
+        templateGroupId: 'tpl-payment-reminder',
+        status: 'sent',
+        at: now,
+        handled: true,
+      };
+      commMessages.push(message);
+      patchInPlace(conversations, conversation.id, { lastMessageAt: now });
+      return message;
+    }),
+
+  escalatePayment: (paymentId) =>
+    simulateWrite(() => {
+      const payment = byId(payments, paymentId);
+      if (!payment) throw new RepositoryError('not_found');
+      const existing = alerts.find((a) => a.relatedId === paymentId && a.titleKey === 'alerts.type.paymentOverdue' && a.status === 'open');
+      if (existing) return existing;
+      const deal = byId(deals, payment.dealId);
+      const daysLate = Math.floor((Date.now() - new Date(payment.dueDate).getTime()) / 86_400_000);
+      alertCounter += 1;
+      const created: Alert = {
+        id: `al-new-${alertCounter}`,
+        code: `ALT-${9000 + alertCounter}`,
+        titleKey: 'alerts.type.paymentOverdue',
+        context: `${deal?.code ?? payment.code} · ${formatINR(remainingBalance(payment))} · ${daysLate} days past due`,
+        severity: daysLate > 60 ? 'critical' : daysLate > 30 ? 'high' : 'medium',
+        category: 'payment',
+        status: 'open',
+        raisedAt: new Date().toISOString(),
+        relatedId: paymentId,
+        isDemo: true,
+      };
+      alerts.push(created);
+      return created;
+    }),
 
   listSuppliers: () => simulateRead(() => [...suppliers]),
 
