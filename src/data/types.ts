@@ -937,7 +937,7 @@ export interface Payment {
   status: PaymentStatus;
   dueDate: string;
   paidAt?: string;
-  method?: 'upi' | 'neft' | 'card' | 'cash' | 'cheque' | 'financing';
+  method?: 'upi' | 'netbanking' | 'neft' | 'card' | 'cash' | 'cheque' | 'financing';
   /** Set once any amount has actually come in against this stage — may be
    *  less than `amount` (a common real-world partial payment). The
    *  remaining balance is `amount - amountReceived`, never forced into an
@@ -949,6 +949,10 @@ export interface Payment {
    *  number, and kept distinct from a gateway-confirmed automatic payment. */
   manualReferenceNumber?: string;
   recordedManuallyBy?: string;
+  /** Set only when screen 084's gateway checkout confirms this stage —
+   *  the gateway's own reference, stored verbatim for reconciliation and
+   *  dispute-resolution, distinct from `manualReferenceNumber`. */
+  gatewayTransactionRef?: string;
   /** Set when moved to `'disputed'` — pauses automated reminders/escalation
    *  for this specific stage without touching the deal's other stages. */
   disputeReason?: string;

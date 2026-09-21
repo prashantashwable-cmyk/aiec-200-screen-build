@@ -235,6 +235,7 @@ let paymentReminderConfig: PaymentReminderConfig = { ...seedPaymentReminderConfi
 let reminderStepCounter = 100;
 const paymentReminderPauses = [...seedPaymentReminderPauses];
 let reminderPauseCounter = 100;
+let gatewayTransactionCounter = 100;
 
 let leadCounter = 200;
 let timelineEventCounter = 900;
@@ -1723,6 +1724,60 @@ export const memoryRepository: Repository = {
       };
       alerts.push(created);
       return created;
+    }),
+
+  getPaymentCheckoutView: (paymentId, customerId) =>
+    simulateRead(() => {
+      const payment = byId(payments, paymentId);
+      if (!payment) return null;
+      const deal = byId(deals, payment.dealId);
+      if (!deal || deal.customerId !== customerId) return null;
+      const lead = resolveLead(deal.leadId);
+      return {
+        payment,
+        dealCode: deal.code,
+        siteName: lead?.siteName ?? '',
+        amountDue: remainingBalance(payment),
+      };
+    }),
+
+  attemptPaymentGatewayCheckout: (paymentId, customerId, method, isRetry) =>
+    simulateWrite(() => {
+      const payment = byId(payments, paymentId);
+      if (!payment) throw new RepositoryError('not_found');
+      const deal = byId(deals, payment.dealId);
+      if (!deal || deal.customerId !== customerId) throw new RepositoryError('not_found');
+      if (payment.status === 'paid') throw new RepositoryError('already_paid');
+      if (method === 'card' && !isRetry) {
+        return { outcome: 'failed', payment };
+      }
+      if (method === 'netbanking') {
+        const updated = patchInPlace(payments, payment.id, { status: 'pending', method });
+        return { outcome: 'processing', payment: updated };
+      }
+      gatewayTransactionCounter += 1;
+      const updated = patchInPlace(payments, payment.id, {
+        status: 'paid',
+        paidAt: new Date().toISOString(),
+        amountReceived: payment.amount,
+        method,
+        gatewayTransactionRef: `PAYU-GW-${gatewayTransactionCounter}`,
+      });
+      return { outcome: 'paid', payment: updated };
+    }),
+
+  reconcilePaymentGatewayStatus: (paymentId) =>
+    simulateWrite(() => {
+      const payment = byId(payments, paymentId);
+      if (!payment) throw new RepositoryError('not_found');
+      if (payment.status === 'paid') return payment;
+      gatewayTransactionCounter += 1;
+      return patchInPlace(payments, payment.id, {
+        status: 'paid',
+        paidAt: new Date().toISOString(),
+        amountReceived: payment.amount,
+        gatewayTransactionRef: `PAYU-GW-${gatewayTransactionCounter}`,
+      });
     }),
 
   getPaymentReminderConfig: () => simulateRead(() => paymentReminderConfig),

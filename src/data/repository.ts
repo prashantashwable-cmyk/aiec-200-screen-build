@@ -333,6 +333,23 @@ export interface PaymentCollectionLine {
   ownerName: string;
 }
 
+/** Screen 084's own read shape — everything the checkout screen shows,
+ *  already scoped to the customer who owns it. `amountDue` is
+ *  `remainingBalance(payment)`, not `payment.amount`. */
+export interface PaymentCheckoutView {
+  payment: Payment;
+  dealCode: string;
+  siteName: string;
+  amountDue: number;
+}
+
+export type PaymentGatewayMethod = 'upi' | 'card' | 'netbanking';
+
+export interface PaymentGatewayAttemptResult {
+  outcome: 'paid' | 'processing' | 'failed';
+  payment: Payment;
+}
+
 /** One territory's (city's) slice of a script's effectiveness — screen
  *  078's per-territory tracking, computed on read rather than stored. */
 export interface ObjectionScriptTerritoryStat {
@@ -549,13 +566,12 @@ export interface Repository {
    *  line — the aging-bucket classification itself stays screen-owned
    *  (via `@/features/payments/aging`), same as screen 028's own split. */
   getPaymentCollectionLines(): Promise<PaymentCollectionLine[]>;
-  /** The only way this build records a payment against a stage — there is
-   *  no live payment gateway (see CLAUDE.md's stubbed-deliberately list),
-   *  so every recording here is inherently the "received outside the
-   *  gateway" case the spec describes: always logged with its reference
-   *  number, distinct from an unattributed status flip. Supports a partial
-   *  amount — the stage only reaches `'paid'` once the cumulative total
-   *  received covers `amount`. */
+  /** Records a payment received outside the app's own gateway (bank
+   *  transfer, cash, cheque) — always logged with its reference number,
+   *  distinct from a gateway-confirmed payment's `gatewayTransactionRef`
+   *  (see `attemptPaymentGatewayCheckout`, 084). Supports a partial amount
+   *  — the stage only reaches `'paid'` once the cumulative total received
+   *  covers `amount`. */
   recordPaymentReceived(paymentId: string, input: { amountReceived: number; referenceNumber: string; method?: Payment['method']; byUserId: string }): Promise<Payment>;
   /** Pauses this specific stage's reminders/escalation without touching
    *  the deal's other stages — the aging bucket already treats `disputed`
@@ -570,6 +586,34 @@ export interface Repository {
    *  alert the existing Escalation screen (019) already reads — idempotent
    *  per payment, so repeated clicks don't pile up duplicate alerts. */
   escalatePayment(paymentId: string): Promise<Alert>;
+
+  /* Payments & Financing: online gateway checkout (084) */
+  /** Null (never a thrown error) when the payment doesn't exist or doesn't
+   *  belong to this customer's own deal — a checkout link is exactly the
+   *  kind of URL a customer might forward, so ownership is never assumed
+   *  from the id alone. `amountDue` is the live remaining balance, not
+   *  `payment.amount` — a stage already partly settled (e.g. by a manual
+   *  bank-transfer record) only ever asks the gateway for what's actually
+   *  still owed. */
+  getPaymentCheckoutView(paymentId: string, customerId: string): Promise<PaymentCheckoutView | null>;
+  /** The one gateway-side attempt this build simulates, structured so the
+   *  charged amount is never a client-supplied number — it's always the
+   *  same live remaining balance `getPaymentCheckoutView` just showed.
+   *  Throws if the stage has already been paid (belt-and-suspenders: the
+   *  screen itself blocks this from ever being reachable once loaded).
+   *  `card` fails its first attempt every time (a deterministic stand-in
+   *  for a real bank timeout, not randomness) so the safe-retry path is
+   *  actually exercisable; `isRetry: true` is what turns that into a
+   *  success. `netbanking` always returns `'processing'` and moves the
+   *  stage to `'pending'` — the redirect-and-wait shape a real net-banking
+   *  gateway has — for `reconcilePaymentGatewayStatus` to resolve shortly
+   *  after, standing in for the webhook this demo has no server to receive. */
+  attemptPaymentGatewayCheckout(paymentId: string, customerId: string, method: PaymentGatewayMethod, isRetry: boolean): Promise<PaymentGatewayAttemptResult>;
+  /** Resolves a `'pending'` gateway attempt to `'paid'` — idempotent if it's
+   *  already settled. Stands in for the confirmation webhook a real
+   *  gateway would deliver; the screen calls this itself a few seconds
+   *  after `attemptPaymentGatewayCheckout` returns `'processing'`. */
+  reconcilePaymentGatewayStatus(paymentId: string): Promise<Payment>;
 
   /* Payments & Financing: automated reminder configuration */
   getPaymentReminderConfig(): Promise<PaymentReminderConfig>;
