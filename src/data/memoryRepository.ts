@@ -31,6 +31,7 @@ import {
   seedObjectionScripts,
   seedObjectionScriptUsages,
   seedOptOutEvents,
+  seedPaymentSchedules,
   seedPayments,
   seedPricingConfig,
   seedQuotationTemplates,
@@ -69,6 +70,8 @@ import type {
   LeadFilter,
   ObjectionScriptListItem,
   ObjectionScriptTerritoryStat,
+  PaymentScheduleStageResolved,
+  PaymentScheduleView,
   QuotationAnalytics,
   QuotationSpecInput,
   QuotationWinLossStat,
@@ -124,6 +127,8 @@ import type {
   OptOutChannel,
   OptOutEvent,
   Payment,
+  PaymentSchedule,
+  PaymentScheduleStage,
   PricingConfig,
   Quotation,
   QuotationCostBreakdown,
@@ -214,6 +219,9 @@ const competitors = [...seedCompetitors];
 let competitorCounter = 100;
 const dealCelebrations = [...seedDealCelebrations];
 let dealCelebrationCounter = 100;
+const paymentSchedules = [...seedPaymentSchedules];
+let paymentScheduleCounter = 100;
+let paymentScheduleStageCounter = 100;
 
 let leadCounter = 200;
 let timelineEventCounter = 900;
@@ -483,6 +491,41 @@ function buildDealCelebrationStaffSummaries(lead: Lead, deal: Deal): DealCelebra
         total: entries.filter((e) => e.status !== 'forfeited').reduce((sum, e) => sum + e.amount, 0),
       };
     });
+}
+
+/** Resolves a milestone-triggered stage's due date live from the deal's own
+ *  primary installation job — never stored, so a delayed milestone shifts
+ *  the due date on the very next read with no separate update anywhere.
+ *  Deliberately only the first job created for the deal: a deal can pick
+ *  up unrelated later jobs (a second wing, a standalone service call) once
+ *  it's underway, and those should never resolve a payment stage's
+ *  milestone that was never about them. */
+function resolveMilestoneDueDate(dealId: string, triggerMilestone: string): string | null {
+  const primaryJob = jobs.find((j) => j.dealId === dealId);
+  if (!primaryJob) return null;
+  const step = primaryJob.steps.find((s) => s.labelKey === triggerMilestone);
+  return step && step.status === 'complete' && step.completedAt ? step.completedAt : null;
+}
+
+/** What the schedule's stages must sum to exactly — derived from the
+ *  confirmed `paymentStagePlan`'s own percentages against the deal value,
+ *  since that plan's percentages summing past 100 (a retention holdback on
+ *  top) is the AIEC norm, not something this screen should silently
+ *  correct back down to a flat 100%. Falls back to the deal value itself
+ *  if no plan exists yet (shouldn't happen once `canSetUp` gates this). */
+function expectedPaymentScheduleTotal(dealValue: number, dealTerms: DealTerms | null): number {
+  if (!dealTerms || dealTerms.paymentStagePlan.length === 0) return dealValue;
+  const totalPct = dealTerms.paymentStagePlan.reduce((sum, p) => sum + p.percentage, 0);
+  return Math.round((dealValue * totalPct) / 100);
+}
+
+function resolvePaymentScheduleStages(dealId: string, stages: PaymentScheduleStage[]): PaymentScheduleStageResolved[] {
+  return [...stages]
+    .sort((a, b) => a.sequenceOrder - b.sequenceOrder)
+    .map((stage) => ({
+      stage,
+      resolvedDueDate: stage.dueTrigger === 'fixed_date' ? (stage.fixedDueDate ?? null) : resolveMilestoneDueDate(dealId, stage.triggerMilestone ?? ''),
+    }));
 }
 
 function pushTimelineEvent(event: Omit<LeadTimelineEvent, 'id'>): LeadTimelineEvent {
@@ -2617,6 +2660,90 @@ export const memoryRepository: Repository = {
         acknowledgedBy: byUserId,
         acknowledgedAt: new Date().toISOString(),
         feedbackNote: feedbackNote ?? celebration.feedbackNote,
+      });
+    }),
+
+  /* -------------------------------------------- Payment schedule setup */
+  getPaymentSchedule: (dealId) =>
+    simulateRead(() => {
+      const deal = byId(deals, dealId);
+      if (!deal) return null;
+      const lead = resolveLead(deal.leadId);
+      if (!lead) return null;
+      const dealTerms = dealTermsRecords.find((t) => t.dealId === dealId) ?? null;
+      const schedule = paymentSchedules.find((s) => s.dealId === dealId) ?? null;
+      const dealValue = deal.agreedPrice || deal.quotedPrice;
+      const expectedTotal = expectedPaymentScheduleTotal(dealValue, dealTerms);
+      const resolvedStages = schedule ? resolvePaymentScheduleStages(dealId, schedule.stages) : [];
+      const reconciledAmount = schedule ? schedule.stages.reduce((sum, s) => sum + s.amount, 0) : 0;
+      return {
+        schedule,
+        resolvedStages,
+        deal,
+        lead,
+        dealTerms,
+        dealValue,
+        expectedTotal,
+        reconciledAmount,
+        reconciles: schedule !== null && reconciledAmount === expectedTotal,
+        canSetUp: dealTerms?.status === 'confirmed',
+      };
+    }),
+
+  savePaymentSchedule: (dealId, input, editedBy) =>
+    simulateWrite(() => {
+      const deal = byId(deals, dealId);
+      if (!deal) throw new RepositoryError('not_found');
+      const now = new Date().toISOString();
+      const stages: PaymentScheduleStage[] = input.stages.map((s) => {
+        paymentScheduleStageCounter += 1;
+        return { ...s, id: `pss-new-${paymentScheduleStageCounter}`, isDemo: true };
+      });
+      const existing = paymentSchedules.find((s) => s.dealId === dealId);
+      if (existing) {
+        return patchInPlace(paymentSchedules, existing.id, {
+          scheduleType: input.scheduleType,
+          customNote: input.customNote,
+          stages,
+          // Any further edit reopens the schedule for review.
+          activated: false,
+          activatedAt: undefined,
+          activatedBy: undefined,
+          updatedAt: now,
+          updatedBy: editedBy,
+        });
+      }
+      paymentScheduleCounter += 1;
+      const created: PaymentSchedule = {
+        id: `psch-new-${paymentScheduleCounter}`,
+        dealId,
+        scheduleType: input.scheduleType,
+        customNote: input.customNote,
+        stages,
+        activated: false,
+        updatedAt: now,
+        updatedBy: editedBy,
+        isDemo: true,
+      };
+      paymentSchedules.push(created);
+      return created;
+    }),
+
+  activatePaymentSchedule: (dealId, byUserId) =>
+    simulateWrite(() => {
+      const deal = byId(deals, dealId);
+      if (!deal) throw new RepositoryError('not_found');
+      const schedule = paymentSchedules.find((s) => s.dealId === dealId);
+      if (!schedule) throw new RepositoryError('not_found');
+      const dealTerms = dealTermsRecords.find((t) => t.dealId === dealId) ?? null;
+      const dealValue = deal.agreedPrice || deal.quotedPrice;
+      const expectedTotal = expectedPaymentScheduleTotal(dealValue, dealTerms);
+      const reconciledAmount = schedule.stages.reduce((sum, s) => sum + s.amount, 0);
+      if (reconciledAmount !== expectedTotal) throw new RepositoryError('schedule_does_not_reconcile');
+      return patchInPlace(paymentSchedules, schedule.id, {
+        activated: true,
+        activatedAt: new Date().toISOString(),
+        activatedBy: byUserId,
       });
     }),
 

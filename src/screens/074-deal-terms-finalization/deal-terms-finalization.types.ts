@@ -66,6 +66,7 @@ export const DEAL_TERMS_FINALIZATION_KEYS = {
     waitingOnCustomer: 'dealTermsFinalization.confirmation.waitingOnCustomer',
     bothConfirmed: 'dealTermsFinalization.confirmation.bothConfirmed',
     generateContract: 'dealTermsFinalization.confirmation.generateContract',
+    setUpSchedule: 'dealTermsFinalization.confirmation.setUpSchedule',
   },
 
   amendments: {

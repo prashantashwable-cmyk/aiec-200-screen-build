@@ -44,6 +44,7 @@ const translations: ScreenTranslations = {
         waitingOnCustomer: 'Waiting on the customer to confirm. A follow-up nudge is tracked automatically if this runs long.',
         bothConfirmed: 'Both parties have confirmed. This deal is binding — contract and payment setup can proceed.',
         generateContract: 'Generate contract',
+        setUpSchedule: 'Set up payment schedule',
       },
 
       amendments: {
@@ -107,6 +108,7 @@ const translations: ScreenTranslations = {
         waitingOnCustomer: 'ग्राहक की पुष्टि का इंतज़ार है। इसमें ज़्यादा समय लगने पर एक फ़ॉलो-अप याद-दिलाना अपने आप ट्रैक होता है।',
         bothConfirmed: 'दोनों पक्षों ने पुष्टि कर दी है। यह डील बाध्यकारी है — अनुबंध और भुगतान सेटअप आगे बढ़ सकते हैं।',
         generateContract: 'अनुबंध तैयार करें',
+        setUpSchedule: 'भुगतान अनुसूची सेट करें',
       },
 
       amendments: {
@@ -170,6 +172,7 @@ const translations: ScreenTranslations = {
         waitingOnCustomer: 'ग्राहकाच्या पुष्टीची वाट पाहत आहोत. यास जास्त वेळ लागल्यास फॉलो-अप आठवण आपोआप ट्रॅक होते.',
         bothConfirmed: 'दोन्ही पक्षांनी पुष्टी केली आहे. ही डील बंधनकारक आहे — करार आणि पेमेंट सेटअप पुढे जाऊ शकतात.',
         generateContract: 'करार तयार करा',
+        setUpSchedule: 'पेमेंट वेळापत्रक सेट करा',
       },
 
       amendments: {

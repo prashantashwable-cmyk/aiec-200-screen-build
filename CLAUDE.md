@@ -59,7 +59,17 @@ The login screen (002) has a Demo Mode tab. Admin screens live under `/admin/...
 5. Verify in the browser against real seed values: exercise the edge-case paths, not only the
    happy path. (If simulated clicks time out, dispatching clicks and native value-setter
    `input`/`change` events from JavaScript worked reliably.)
-6. Commit one screen per commit, `Add screen NNN — Title`, then push.
+6. **Every screen must actually be adaptive, not just non-overflowing at mobile width** — check
+   at a tablet (~820px) and desktop (~1440px) viewport too, not only the 390px phone width
+   everything is designed from. In practice this means: use `Screen`'s `width` variant on
+   purpose (`narrow` for a form/wizard/detail so a long line length doesn't hurt readability —
+   don't "fix" this by cramming a narrow form's fields into columns; `default`/`wide` for a
+   list/dashboard, which already reflows via the shared `.ds-screen` max-width and the app
+   shell's sidebar-on-desktop nav) rather than leaving every screen at one implicit width. Reuse
+   `.grid-auto`/`.grid-2` for any content that should genuinely gain columns on a wider screen.
+   Confirmed clean (no horizontal overflow, sensible use of extra width) across 077-081 as of
+   this note; keep checking it per screen rather than assuming the pattern holds forever.
+7. Commit one screen per commit, `Add screen NNN — Title`, then push.
 
 After the **10th screen of a module**, run that module's checkpoint: click through all 10 screens
 end to end, spot-check 2–3 screens from earlier modules for regressions, fix anything found, and add

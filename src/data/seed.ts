@@ -34,6 +34,7 @@ import type {
   ObjectionScriptUsage,
   OptOutEvent,
   Payment,
+  PaymentSchedule,
   PricingConfig,
   Quotation,
   QuotationTemplate,
@@ -935,6 +936,34 @@ export const seedPayments: Payment[] = [
   { id: 'p-14', code: 'AIEC-P-4114', dealId: 'dl-6', stage: 'installation', amount: 2_520_000, status: 'due', dueDate: daysAhead(40), isDemo: true },
   { id: 'p-15', code: 'AIEC-P-4115', dealId: 'dl-6', stage: 'handover', amount: 840_000, status: 'due', dueDate: daysAhead(65), isDemo: true },
   { id: 'p-16', code: 'AIEC-P-4116', dealId: 'dl-6', stage: 'retention', amount: 420_000, status: 'due', dueDate: daysAhead(120), isDemo: true },
+];
+
+export const seedPaymentSchedules: PaymentSchedule[] = [
+  // dl-1 — already activated, standard split, mirroring the real amounts
+  // already on its Payment records (p-1/p-2/p-3/p-4/p-11) exactly. Material
+  // and handover are milestone-triggered against j-1's own steps: material
+  // resolves live (materialsReceived is already complete on j-1) while
+  // handover stays pending (finishHandover isn't complete yet) — screen
+  // 081's own live due-date resolution, demonstrated with real seed data
+  // rather than only through a live test.
+  {
+    id: 'psch-1',
+    dealId: 'dl-1',
+    scheduleType: 'standard',
+    stages: [
+      { id: 'pss-1', stage: 'advance', label: 'Booking Advance', amount: 660_000, sequenceOrder: 1, dueTrigger: 'fixed_date', fixedDueDate: daysAgo(46), isDemo: true },
+      { id: 'pss-2', stage: 'material', label: 'Material Order Payment', amount: 924_000, sequenceOrder: 2, dueTrigger: 'milestone', triggerMilestone: 'job.step.materialsReceived', isDemo: true },
+      { id: 'pss-3', stage: 'installation', label: 'Pre-Installation Payment', amount: 792_000, sequenceOrder: 3, dueTrigger: 'fixed_date', fixedDueDate: daysAgo(6), isDemo: true },
+      { id: 'pss-4', stage: 'handover', label: 'Final Handover Payment', amount: 264_000, sequenceOrder: 4, dueTrigger: 'milestone', triggerMilestone: 'job.step.finishHandover', isDemo: true },
+      { id: 'pss-5', stage: 'retention', label: 'Retention', amount: 132_000, sequenceOrder: 5, dueTrigger: 'fixed_date', fixedDueDate: daysAhead(75), isDemo: true },
+    ],
+    activated: true,
+    activatedAt: daysAgo(40),
+    activatedBy: 'u-admin-1',
+    updatedAt: daysAgo(40),
+    updatedBy: 'Prashant Vasant Wable',
+    isDemo: true,
+  },
 ];
 
 /* --------------------------------------------------------------- Suppliers */

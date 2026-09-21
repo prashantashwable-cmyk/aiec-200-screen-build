@@ -43,6 +43,9 @@ import type {
   OptOutEvent,
   PackageTier,
   Payment,
+  PaymentSchedule,
+  PaymentScheduleStage,
+  PaymentScheduleType,
   PricingConfig,
   Quotation,
   QuotationDeliveryChannel,
@@ -250,6 +253,35 @@ export interface DealCelebrationView {
   lead: Lead;
   staffSummaries: DealCelebrationStaffSummary[];
   eligible: boolean;
+}
+
+/** One `PaymentScheduleStage` plus its live-resolved due date — screen 081.
+ *  For a `'milestone'` trigger, `resolvedDueDate` is null until that job
+ *  step actually completes; for `'fixed_date'` it's just `fixedDueDate`. */
+export interface PaymentScheduleStageResolved {
+  stage: PaymentScheduleStage;
+  resolvedDueDate: string | null;
+}
+
+/** Screen 081's own read shape. `schedule` is null until Admin first saves
+ *  a draft; `canSetUp` mirrors `DealTerms.status === 'confirmed'` — the
+ *  only state this schedule can be built from. `expectedTotal` is what the
+ *  stage amounts must sum to exactly before activation — derived from
+ *  `DealTerms.paymentStagePlan`'s own percentages against `dealValue`,
+ *  which is `dealValue` itself only when that plan has no retention or
+ *  other addition on top (percentages summing past 100 is the AIEC norm,
+ *  not an error — see `paymentStagePlan`'s own seed comment). */
+export interface PaymentScheduleView {
+  schedule: PaymentSchedule | null;
+  resolvedStages: PaymentScheduleStageResolved[];
+  deal: Deal;
+  lead: Lead;
+  dealTerms: DealTerms | null;
+  dealValue: number;
+  expectedTotal: number;
+  reconciledAmount: number;
+  reconciles: boolean;
+  canSetUp: boolean;
 }
 
 /** One territory's (city's) slice of a script's effectiveness — screen
@@ -671,6 +703,24 @@ export interface Repository {
   /** `feedbackNote` is optional and, once set, is never returned to a
    *  non-admin caller's own view of this record. */
   acknowledgeDealCelebration(dealId: string, byUserId: string, feedbackNote?: string): Promise<DealCelebration>;
+
+  /* Payments & Financing: payment schedule setup */
+  getPaymentSchedule(dealId: string): Promise<PaymentScheduleView | null>;
+  /** Full replace of the stage list, keyed by `dealId` — there is at most
+   *  one schedule per deal. Never activates it; `activatePaymentSchedule`
+   *  is the separate, deliberate step that does. */
+  savePaymentSchedule(
+    dealId: string,
+    input: {
+      scheduleType: PaymentScheduleType;
+      customNote?: string;
+      stages: Array<Omit<PaymentScheduleStage, 'id' | 'isDemo'>>;
+    },
+    editedBy: string,
+  ): Promise<PaymentSchedule>;
+  /** Blocked unless the stage amounts reconcile exactly to the deal's
+   *  agreed price — the one hard rule this screen enforces. */
+  activatePaymentSchedule(dealId: string, byUserId: string): Promise<PaymentSchedule>;
 
   /* Operations */
   listActivity(limit?: number): Promise<ActivityEvent[]>;

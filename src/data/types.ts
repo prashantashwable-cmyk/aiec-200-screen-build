@@ -941,6 +941,62 @@ export interface Payment {
   isDemo: boolean;
 }
 
+export type PaymentDueTriggerType = 'fixed_date' | 'milestone';
+
+export type PaymentScheduleType = 'standard' | 'custom' | 'bank_guarantee';
+
+/**
+ * One line of a deal's payment schedule — screen 081. `stage` keeps every
+ * line traceable to the real `PaymentStage` taxonomy even on a fully
+ * customised schedule; `label` is the admin-authored display name (default
+ * seeded from the stage preset, freely editable) and, like other
+ * admin-authored content in this build (objection scripts, competitor
+ * positioning), is never machine-translated three ways.
+ *
+ * A `milestone` trigger names a real `Job.steps[].labelKey` (e.g.
+ * `'job.step.materialsReceived'`) rather than storing a date at all — the
+ * due date is resolved live from that job's own `completedAt` every time
+ * this schedule is read, so a delayed milestone automatically pushes the
+ * due date out with no separate update needed, and a due date is never set
+ * before the event that's actually supposed to trigger it.
+ */
+export interface PaymentScheduleStage {
+  id: string;
+  stage: PaymentStage;
+  label: string;
+  amount: number;
+  sequenceOrder: number;
+  dueTrigger: PaymentDueTriggerType;
+  /** Only meaningful when `dueTrigger` is `'fixed_date'`. */
+  fixedDueDate?: string;
+  /** Only meaningful when `dueTrigger` is `'milestone'`. */
+  triggerMilestone?: string;
+  isDemo: boolean;
+}
+
+/**
+ * The one governed payment schedule for a deal, built from
+ * `DealTerms.paymentStagePlan` once terms are confirmed. `activated` gates
+ * it from being read as a live source anywhere else — an unactivated
+ * schedule is still a draft, however far it's been edited. `scheduleType`
+ * `'bank_guarantee'` is the very-large-commercial-deal edge case requiring
+ * a documented note for Admin's direct oversight, distinct from a merely
+ * `'custom'` stage count/split.
+ */
+export interface PaymentSchedule {
+  id: string;
+  dealId: string;
+  scheduleType: PaymentScheduleType;
+  stages: PaymentScheduleStage[];
+  activated: boolean;
+  activatedAt?: string;
+  activatedBy?: string;
+  customNote?: string;
+  updatedAt: string;
+  updatedBy: string;
+  isDemo: boolean;
+}
+
 /* --------------------------------------------------------------- Suppliers */
 
 export interface Supplier {

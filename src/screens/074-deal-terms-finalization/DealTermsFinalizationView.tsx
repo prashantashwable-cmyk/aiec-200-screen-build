@@ -174,6 +174,9 @@ export function DealTermsFinalizationView() {
                   <Button size="sm" onClick={() => navigate(`/admin/deals/${deal.id}/contract`)}>
                     {t(K.confirmation.generateContract)}
                   </Button>
+                  <Button size="sm" variant="secondary" onClick={() => navigate(`/admin/deals/${deal.id}/schedule`)}>
+                    {t(K.confirmation.setUpSchedule)}
+                  </Button>
                 </>
               )}
               {status === 'awaiting_customer' && <p className="t-xs t-muted">{t(K.confirmation.waitingOnCustomer)}</p>}
