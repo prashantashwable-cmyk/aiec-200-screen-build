@@ -25,6 +25,7 @@ import type {
   DiscountRequestStatus,
   DriveType,
   DuplicatePair,
+  FinancingPartnerRate,
   FollowUpTask,
   FollowUpTaskStatus,
   GeoZone,
@@ -34,6 +35,8 @@ import type {
   LeadImportBatch,
   LeadSourceAttribution,
   LeadTimelineEvent,
+  LoanApplication,
+  LoanEligibilityPrecheck,
   Negotiation,
   NegotiationBotConfig,
   ObjectionCategory,
@@ -350,6 +353,20 @@ export interface PaymentGatewayAttemptResult {
   payment: Payment;
 }
 
+/** Screen 085's own read shape. `activeApplication` is the deal's most
+ *  recent non-draft application, if any — its presence is what switches
+ *  the screen from the intake wizard to the status tracker. */
+export interface LoanApplicationView {
+  dealCode: string;
+  siteName: string;
+  remainingBalance: number;
+  /** The earliest-due stage still outstanding, if any — what the tracker's
+   *  "pay the remaining balance" CTA links to (084's own checkout), so a
+   *  gap left after disbursement always has a concrete next step. */
+  firstRemainingPaymentId: string | null;
+  activeApplication: LoanApplication | null;
+}
+
 /** One territory's (city's) slice of a script's effectiveness — screen
  *  078's per-territory tracking, computed on read rather than stored. */
 export interface ObjectionScriptTerritoryStat {
@@ -614,6 +631,33 @@ export interface Repository {
    *  gateway would deliver; the screen calls this itself a few seconds
    *  after `attemptPaymentGatewayCheckout` returns `'processing'`. */
   reconcilePaymentGatewayStatus(paymentId: string): Promise<Payment>;
+
+  /* Payments & Financing: loan/EMI application (085) */
+  /** Null when the deal doesn't exist or isn't this customer's own — same
+   *  ownership discipline as 084's checkout link. */
+  getLoanApplicationView(dealId: string, customerId: string): Promise<LoanApplicationView | null>;
+  /** The partner's full current rate table. Its first call always throws
+   *  `'partner_unavailable'` (a deterministic stand-in for a real outage,
+   *  not randomness) so the "temporarily unavailable, try again" edge case
+   *  is actually reachable; `isRetry: true` is what succeeds. */
+  getFinancingPartnerRates(isRetry: boolean): Promise<FinancingPartnerRate[]>;
+  /** Creates the one application a deal may have active at a time,
+   *  `status: 'submitted'`. The rate/EMI/total passed in are exactly what
+   *  the customer saw and locked in during the details step — never
+   *  recomputed here, so what they agreed to is what gets recorded. */
+  submitLoanApplication(
+    dealId: string,
+    customerId: string,
+    input: { precheck: LoanEligibilityPrecheck; requestedAmount: number; tenureMonths: number; interestRatePercent: number; emiAmount: number; totalRepayment: number },
+  ): Promise<LoanApplication>;
+  /** Moves the application exactly one status forward — idempotent past
+   *  `'disbursed'`. AIEC never decides the outcome here: `'under_review'`
+   *  → `'approved'` and the disbursed amount are both the financing
+   *  partner's call, this just records it. The `'approved'` → `'disbursed'`
+   *  transition is the one moment this settles real `Payment` rows — up to
+   *  `approvedAmount`, oldest due date first, tagged `method: 'financing'`,
+   *  via the exact same partial-payment mechanics 082/084 already use. */
+  advanceLoanApplication(applicationId: string): Promise<LoanApplication>;
 
   /* Payments & Financing: automated reminder configuration */
   getPaymentReminderConfig(): Promise<PaymentReminderConfig>;

@@ -961,6 +961,60 @@ export interface Payment {
   isDemo: boolean;
 }
 
+/* ------------------------------------------------------ Loan / EMI (085) */
+
+export type LoanIncomeRange = 'below_5l' | '5l_10l' | '10l_25l' | 'above_25l';
+
+export type LoanApplicationStatus = 'submitted' | 'under_review' | 'approved' | 'disbursed';
+
+/** The quick, non-binding fit check — screen 085 shows its result plainly
+ *  but never hard-blocks a full application on it, per the brief's own
+ *  edge case. */
+export interface LoanEligibilityPrecheck {
+  incomeRange: LoanIncomeRange;
+  tenurePreferenceMonths: number;
+  eligible: boolean;
+  /** Set only when `eligible` is false — the plain-language reason shown. */
+  reasonKey?: string;
+}
+
+/** One customer's application to convert a deal's remaining balance to
+ *  EMI through the financing partner. AIEC never decides approval here —
+ *  `advanceLoanApplication` only ever moves this one step at a time, and
+ *  the `disbursed` transition is the one moment this screen touches
+ *  `Payment` at all: it settles the deal's outstanding stages up to
+ *  `approvedAmount`, via the same partial-payment mechanics 082/084
+ *  already use, tagged `method: 'financing'`. */
+export interface LoanApplication {
+  id: string;
+  dealId: string;
+  customerId: string;
+  precheck: LoanEligibilityPrecheck;
+  requestedAmount: number;
+  tenureMonths: number;
+  interestRatePercent: number;
+  emiAmount: number;
+  totalRepayment: number;
+  status: LoanApplicationStatus;
+  /** Set once `status` reaches `'approved'` — may be less than
+   *  `requestedAmount`; the gap is left for the customer to cover another
+   *  way (084's per-stage checkout still works for whatever's left). */
+  approvedAmount?: number;
+  submittedAt: string;
+  underReviewAt?: string;
+  approvedAt?: string;
+  disbursedAt?: string;
+  isDemo: boolean;
+}
+
+/** The financing partner's own published rate for a tenure — fetched live
+ *  each time (`getFinancingPartnerRates`), never cached or estimated, so
+ *  the rate a customer locks in at application time is always current. */
+export interface FinancingPartnerRate {
+  tenureMonths: number;
+  annualRatePercent: number;
+}
+
 export type PaymentDueTriggerType = 'fixed_date' | 'milestone';
 
 export type PaymentScheduleType = 'standard' | 'custom' | 'bank_guarantee';

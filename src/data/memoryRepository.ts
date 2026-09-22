@@ -24,6 +24,8 @@ import {
   seedJobs,
   seedLeadTimeline,
   seedLeads,
+  seedLoanApplications,
+  financingPartnerRates,
   seedCompetitors,
   seedDealCelebrations,
   seedNegotiationBotConfig,
@@ -123,6 +125,8 @@ import type {
   LeadSource,
   LeadSourceAttribution,
   LeadTimelineEvent,
+  LoanApplication,
+  LoanIncomeRange,
   Negotiation,
   NegotiationBotConfig,
   NegotiationObjectionKey,
@@ -236,6 +240,8 @@ let reminderStepCounter = 100;
 const paymentReminderPauses = [...seedPaymentReminderPauses];
 let reminderPauseCounter = 100;
 let gatewayTransactionCounter = 100;
+const loanApplications = [...seedLoanApplications];
+let loanApplicationCounter = 100;
 
 let leadCounter = 200;
 let timelineEventCounter = 900;
@@ -603,6 +609,46 @@ function buildReminderTimeline(payment: Payment, lead: Lead, config: PaymentRemi
       }
       return { step, fireDate, outcome };
     });
+}
+
+/** The financing partner's own underwriting call, standing in for a real
+ *  decision this build has no lender to make — deterministic on the
+ *  precheck's income bracket (never randomness), so the same application
+ *  always resolves the same way. Lower brackets cap the approved amount
+ *  below what was requested, which is exactly what exercises 085's
+ *  "approved for less than requested" edge case. */
+function approvedAmountFor(incomeRange: LoanIncomeRange, requestedAmount: number): number {
+  const cap: Record<LoanIncomeRange, number> = {
+    below_5l: 300_000,
+    '5l_10l': 600_000,
+    '10l_25l': Infinity,
+    above_25l: Infinity,
+  };
+  return Math.min(requestedAmount, cap[incomeRange]);
+}
+
+/** The one moment a loan application touches `Payment` — settles the
+ *  deal's outstanding stages, oldest due date first, up to `amount`,
+ *  using the exact same partial-payment mechanics 082/084 already use
+ *  (`amountReceived` accumulates, `status` only flips to `'paid'` once it
+ *  covers the stage in full). If `amount` runs out partway, later stages
+ *  are deliberately left exactly as owed — that gap is what 085's
+ *  "approved for less" state points the customer back to 084 to cover. */
+function settleDealPaymentsWithFinancing(dealId: string, amount: number): void {
+  let remaining = amount;
+  const outstanding = payments.filter((p) => p.dealId === dealId && isOutstanding(p)).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  for (const p of outstanding) {
+    if (remaining <= 0) break;
+    const applied = Math.min(remainingBalance(p), remaining);
+    const newReceived = (p.amountReceived ?? 0) + applied;
+    patchInPlace(payments, p.id, {
+      amountReceived: newReceived,
+      method: 'financing',
+      status: newReceived >= p.amount ? 'paid' : p.status,
+      paidAt: newReceived >= p.amount ? new Date().toISOString() : p.paidAt,
+    });
+    remaining -= applied;
+  }
 }
 
 function pushTimelineEvent(event: Omit<LeadTimelineEvent, 'id'>): LeadTimelineEvent {
@@ -1778,6 +1824,72 @@ export const memoryRepository: Repository = {
         amountReceived: payment.amount,
         gatewayTransactionRef: `PAYU-GW-${gatewayTransactionCounter}`,
       });
+    }),
+
+  getLoanApplicationView: (dealId, customerId) =>
+    simulateRead(() => {
+      const deal = byId(deals, dealId);
+      if (!deal || deal.customerId !== customerId) return null;
+      const lead = resolveLead(deal.leadId);
+      const outstandingPayments = payments.filter((p) => p.dealId === dealId && isOutstanding(p)).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+      const remaining = outstandingPayments.reduce((sum, p) => sum + remainingBalance(p), 0);
+      const active = loanApplications
+        .filter((a) => a.dealId === dealId)
+        .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))[0];
+      return {
+        dealCode: deal.code,
+        siteName: lead?.siteName ?? '',
+        remainingBalance: remaining,
+        firstRemainingPaymentId: outstandingPayments[0]?.id ?? null,
+        activeApplication: active ?? null,
+      };
+    }),
+
+  getFinancingPartnerRates: (isRetry) =>
+    simulateRead(() => {
+      if (!isRetry) throw new RepositoryError('partner_unavailable');
+      return [...financingPartnerRates];
+    }),
+
+  submitLoanApplication: (dealId, customerId, input) =>
+    simulateWrite(() => {
+      const deal = byId(deals, dealId);
+      if (!deal || deal.customerId !== customerId) throw new RepositoryError('not_found');
+      loanApplicationCounter += 1;
+      const created: LoanApplication = {
+        id: `loan-${loanApplicationCounter}`,
+        dealId,
+        customerId,
+        precheck: input.precheck,
+        requestedAmount: input.requestedAmount,
+        tenureMonths: input.tenureMonths,
+        interestRatePercent: input.interestRatePercent,
+        emiAmount: input.emiAmount,
+        totalRepayment: input.totalRepayment,
+        status: 'submitted',
+        submittedAt: new Date().toISOString(),
+        isDemo: true,
+      };
+      loanApplications.push(created);
+      return created;
+    }),
+
+  advanceLoanApplication: (applicationId) =>
+    simulateWrite(() => {
+      const app = byId(loanApplications, applicationId);
+      if (!app) throw new RepositoryError('not_found');
+      if (app.status === 'submitted') {
+        return patchInPlace(loanApplications, app.id, { status: 'under_review', underReviewAt: new Date().toISOString() });
+      }
+      if (app.status === 'under_review') {
+        const approvedAmount = approvedAmountFor(app.precheck.incomeRange, app.requestedAmount);
+        return patchInPlace(loanApplications, app.id, { status: 'approved', approvedAmount, approvedAt: new Date().toISOString() });
+      }
+      if (app.status === 'approved') {
+        settleDealPaymentsWithFinancing(app.dealId, app.approvedAmount ?? app.requestedAmount);
+        return patchInPlace(loanApplications, app.id, { status: 'disbursed', disbursedAt: new Date().toISOString() });
+      }
+      return app;
     }),
 
   getPaymentReminderConfig: () => simulateRead(() => paymentReminderConfig),

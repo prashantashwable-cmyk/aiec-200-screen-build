@@ -27,7 +27,9 @@ import type {
   Lead,
   LeadImportBatch,
   LeadSource,
+  FinancingPartnerRate,
   LeadTimelineEvent,
+  LoanApplication,
   Negotiation,
   NegotiationBotConfig,
   ObjectionScript,
@@ -1004,6 +1006,19 @@ export const seedPaymentReminderPauses: PaymentReminderPause[] = [
     pausedAt: daysAgo(45),
     isDemo: true,
   },
+];
+
+export const seedLoanApplications: LoanApplication[] = [];
+
+/** Suvidha Finance Ltd's published EMI rates by tenure — screen 085 always
+ *  fetches this "live" rather than assuming it, per the spec's own "never
+ *  a stale number" requirement. */
+export const financingPartnerRates: FinancingPartnerRate[] = [
+  { tenureMonths: 12, annualRatePercent: 11.5 },
+  { tenureMonths: 24, annualRatePercent: 12.5 },
+  { tenureMonths: 36, annualRatePercent: 13.5 },
+  { tenureMonths: 48, annualRatePercent: 14.5 },
+  { tenureMonths: 60, annualRatePercent: 15.5 },
 ];
 
 /* --------------------------------------------------------------- Suppliers */
