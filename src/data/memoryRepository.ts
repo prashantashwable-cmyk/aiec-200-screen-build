@@ -72,6 +72,8 @@ import type {
   ImportPreview,
   ImportValidationRow,
   LeadFilter,
+  LoanApplicationAdminRow,
+  LoanPartnerStat,
   ObjectionScriptListItem,
   ObjectionScriptTerritoryStat,
   PaymentReminderPauseView,
@@ -610,6 +612,16 @@ function buildReminderTimeline(payment: Payment, lead: Lead, config: PaymentRemi
       return { step, fireDate, outcome };
     });
 }
+
+/** This build's one financing partner — a real, comparable value on every
+ *  `LoanApplication`, not a UI-only label, so 086's per-partner stats mean
+ *  something even with only one row today. */
+const FINANCING_PARTNER_NAME = 'Suvidha Finance Ltd';
+
+/** How long an `'approved'` application may sit before 086 treats it as
+ *  stuck and surfaces an Alert rather than leaving it to be discovered by
+ *  chance — the spec's own "not sit silently" edge case. */
+const LOAN_STUCK_WINDOW_DAYS = 5;
 
 /** The financing partner's own underwriting call, standing in for a real
  *  decision this build has no lender to make — deterministic on the
@@ -1834,7 +1846,7 @@ export const memoryRepository: Repository = {
       const outstandingPayments = payments.filter((p) => p.dealId === dealId && isOutstanding(p)).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
       const remaining = outstandingPayments.reduce((sum, p) => sum + remainingBalance(p), 0);
       const active = loanApplications
-        .filter((a) => a.dealId === dealId)
+        .filter((a) => a.dealId === dealId && a.status !== 'cancelled')
         .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))[0];
       return {
         dealCode: deal.code,
@@ -1860,6 +1872,7 @@ export const memoryRepository: Repository = {
         id: `loan-${loanApplicationCounter}`,
         dealId,
         customerId,
+        partnerName: FINANCING_PARTNER_NAME,
         precheck: input.precheck,
         requestedAmount: input.requestedAmount,
         tenureMonths: input.tenureMonths,
@@ -1886,10 +1899,96 @@ export const memoryRepository: Repository = {
         return patchInPlace(loanApplications, app.id, { status: 'approved', approvedAmount, approvedAt: new Date().toISOString() });
       }
       if (app.status === 'approved') {
-        settleDealPaymentsWithFinancing(app.dealId, app.approvedAmount ?? app.requestedAmount);
-        return patchInPlace(loanApplications, app.id, { status: 'disbursed', disbursedAt: new Date().toISOString() });
+        const disbursedAmountReceived = app.approvedAmount ?? app.requestedAmount;
+        settleDealPaymentsWithFinancing(app.dealId, disbursedAmountReceived);
+        return patchInPlace(loanApplications, app.id, { status: 'disbursed', disbursedAmountReceived, disbursedAt: new Date().toISOString() });
       }
       return app;
+    }),
+
+  cancelLoanApplication: (applicationId, reason, byName) =>
+    simulateWrite(() => {
+      const app = byId(loanApplications, applicationId);
+      if (!app) throw new RepositoryError('not_found');
+      if (app.status === 'disbursed') throw new RepositoryError('already_disbursed');
+      if (app.status === 'cancelled') return app;
+      return patchInPlace(loanApplications, app.id, {
+        status: 'cancelled',
+        cancelReason: reason.trim(),
+        cancelledBy: byName,
+        cancelledAt: new Date().toISOString(),
+      });
+    }),
+
+  listLoanApplicationsForAdmin: () =>
+    simulateRead(() => {
+      const now = Date.now();
+      return loanApplications
+        .map((application): LoanApplicationAdminRow => {
+          const deal = byId(deals, application.dealId);
+          const lead = deal ? resolveLead(deal.leadId) : null;
+          const isStuck = application.status === 'approved' && !!application.approvedAt && now - new Date(application.approvedAt).getTime() > LOAN_STUCK_WINDOW_DAYS * 86_400_000;
+          const disbursementShortfall = application.status === 'disbursed' && application.approvedAmount !== undefined && application.disbursedAmountReceived !== undefined ? Math.max(0, application.approvedAmount - application.disbursedAmountReceived) : 0;
+          return {
+            application,
+            dealCode: deal?.code ?? application.dealId,
+            siteName: lead?.siteName ?? '',
+            customerName: nameOf(application.customerId),
+            isStuck,
+            disbursementShortfall,
+          };
+        })
+        .sort((a, b) => b.application.submittedAt.localeCompare(a.application.submittedAt));
+    }),
+
+  getLoanPartnerStats: () =>
+    simulateRead(() => {
+      const byPartner = new Map<string, LoanApplication[]>();
+      for (const app of loanApplications) {
+        const list = byPartner.get(app.partnerName) ?? [];
+        list.push(app);
+        byPartner.set(app.partnerName, list);
+      }
+      return [...byPartner.entries()].map(([partnerName, apps]): LoanPartnerStat => {
+        const decided = apps.filter((a) => a.status === 'approved' || a.status === 'disbursed');
+        const disbursed = apps.filter((a) => a.status === 'disbursed' && a.disbursedAt);
+        const avgDays =
+          disbursed.length === 0
+            ? null
+            : disbursed.reduce((sum, a) => sum + (new Date(a.disbursedAt!).getTime() - new Date(a.submittedAt).getTime()), 0) / disbursed.length / 86_400_000;
+        return {
+          partnerName,
+          totalApplications: apps.length,
+          approvedOrDisbursedCount: decided.length,
+          approvalRatePercent: apps.length === 0 ? 0 : Math.round((decided.length / apps.length) * 100),
+          avgDaysToDisbursement: avgDays === null ? null : Math.round(avgDays * 10) / 10,
+        };
+      });
+    }),
+
+  escalateLoanApplication: (applicationId) =>
+    simulateWrite(() => {
+      const app = byId(loanApplications, applicationId);
+      if (!app) throw new RepositoryError('not_found');
+      const existing = alerts.find((a) => a.relatedId === applicationId && a.titleKey === 'alerts.type.loanDisbursementDelayed' && a.status === 'open');
+      if (existing) return existing;
+      const deal = byId(deals, app.dealId);
+      const daysStuck = app.approvedAt ? Math.floor((Date.now() - new Date(app.approvedAt).getTime()) / 86_400_000) : 0;
+      alertCounter += 1;
+      const created: Alert = {
+        id: `al-new-${alertCounter}`,
+        code: `ALT-${9000 + alertCounter}`,
+        titleKey: 'alerts.type.loanDisbursementDelayed',
+        context: `${deal?.code ?? app.dealId} · ${app.partnerName} · approved ${daysStuck} days ago, not yet disbursed`,
+        severity: daysStuck > 14 ? 'critical' : daysStuck > 7 ? 'high' : 'medium',
+        category: 'payment',
+        status: 'open',
+        raisedAt: new Date().toISOString(),
+        relatedId: applicationId,
+        isDemo: true,
+      };
+      alerts.push(created);
+      return created;
     }),
 
   getPaymentReminderConfig: () => simulateRead(() => paymentReminderConfig),

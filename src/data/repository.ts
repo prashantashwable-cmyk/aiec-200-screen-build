@@ -367,6 +367,35 @@ export interface LoanApplicationView {
   activeApplication: LoanApplication | null;
 }
 
+/** Screen 086's own row — one loan application across ANY customer/deal,
+ *  joined with just enough context to list and reconcile it. */
+export interface LoanApplicationAdminRow {
+  application: LoanApplication;
+  dealCode: string;
+  siteName: string;
+  customerName: string;
+  /** `true` once `approved` has sat unresolved past the reasonable
+   *  disbursement window — computed live against `now`, never stored, so
+   *  it's always current the moment this screen is read. */
+  isStuck: boolean;
+  /** `approvedAmount - disbursedAmountReceived` once disbursed — positive
+   *  means a genuine shortfall still owed elsewhere, 0 an exact match. */
+  disbursementShortfall: number;
+}
+
+/** One financing partner's aggregate numbers across every application —
+ *  today always one row (Suvidha Finance Ltd), grouped by
+ *  `LoanApplication.partnerName` so a second partner would just add a
+ *  second, directly comparable row. */
+export interface LoanPartnerStat {
+  partnerName: string;
+  totalApplications: number;
+  approvedOrDisbursedCount: number;
+  approvalRatePercent: number;
+  /** Null until at least one application from this partner has disbursed. */
+  avgDaysToDisbursement: number | null;
+}
+
 /** One territory's (city's) slice of a script's effectiveness — screen
  *  078's per-territory tracking, computed on read rather than stored. */
 export interface ObjectionScriptTerritoryStat {
@@ -655,9 +684,31 @@ export interface Repository {
    *  → `'approved'` and the disbursed amount are both the financing
    *  partner's call, this just records it. The `'approved'` → `'disbursed'`
    *  transition is the one moment this settles real `Payment` rows — up to
-   *  `approvedAmount`, oldest due date first, tagged `method: 'financing'`,
-   *  via the exact same partial-payment mechanics 082/084 already use. */
+   *  `disbursedAmountReceived` (never `approvedAmount` — a partner's fee
+   *  can make the two differ), oldest due date first, tagged
+   *  `method: 'financing'`, via the exact same partial-payment mechanics
+   *  082/084 already use. */
   advanceLoanApplication(applicationId: string): Promise<LoanApplication>;
+  /** Withdraws an application that hasn't disbursed yet — never allowed
+   *  once it has, since real money has moved by then and this build has
+   *  no reversal for it. Nothing to revert on `Payment` either way: unlike
+   *  `advanceLoanApplication`'s `'disbursed'` step, no earlier status ever
+   *  touches a `Payment` row, so cancelling before disbursement is always
+   *  a clean no-op on the deal's own schedule. */
+  cancelLoanApplication(applicationId: string, reason: string, byName: string): Promise<LoanApplication>;
+
+  /* Payments & Financing: loan partner integration & status (086, Admin) */
+  /** Every application across every customer/deal — 086's own list, never
+   *  scoped to one customer the way 085's `getLoanApplicationView` is. */
+  listLoanApplicationsForAdmin(): Promise<LoanApplicationAdminRow[]>;
+  getLoanPartnerStats(): Promise<LoanPartnerStat[]>;
+  /** Raises the same kind of alert `escalatePayment` (082) already does —
+   *  idempotent per application, `category: 'payment'`, read by the
+   *  existing Escalation screen (019). Called automatically the moment
+   *  086 finds a stuck application (never silent, per the spec's own edge
+   *  case) and again by its own manual "Escalate" button, which simply
+   *  confirms the same alert rather than risking a duplicate. */
+  escalateLoanApplication(applicationId: string): Promise<Alert>;
 
   /* Payments & Financing: automated reminder configuration */
   getPaymentReminderConfig(): Promise<PaymentReminderConfig>;

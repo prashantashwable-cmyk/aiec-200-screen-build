@@ -965,7 +965,7 @@ export interface Payment {
 
 export type LoanIncomeRange = 'below_5l' | '5l_10l' | '10l_25l' | 'above_25l';
 
-export type LoanApplicationStatus = 'submitted' | 'under_review' | 'approved' | 'disbursed';
+export type LoanApplicationStatus = 'submitted' | 'under_review' | 'approved' | 'disbursed' | 'cancelled';
 
 /** The quick, non-binding fit check — screen 085 shows its result plainly
  *  but never hard-blocks a full application on it, per the brief's own
@@ -983,12 +983,19 @@ export interface LoanEligibilityPrecheck {
  *  `advanceLoanApplication` only ever moves this one step at a time, and
  *  the `disbursed` transition is the one moment this screen touches
  *  `Payment` at all: it settles the deal's outstanding stages up to
- *  `approvedAmount`, via the same partial-payment mechanics 082/084
- *  already use, tagged `method: 'financing'`. */
+ *  `disbursedAmountReceived`, via the same partial-payment mechanics
+ *  082/084 already use, tagged `method: 'financing'`.
+ *
+ * `partnerName` is real data (not translated UI copy) so 086's admin
+ * reconciliation view can genuinely group and compare by partner if AIEC
+ * ever integrates a second one — today every application has the same
+ * value, which is exactly what "supports comparing them fairly" should
+ * degrade to with only one partner. */
 export interface LoanApplication {
   id: string;
   dealId: string;
   customerId: string;
+  partnerName: string;
   precheck: LoanEligibilityPrecheck;
   requestedAmount: number;
   tenureMonths: number;
@@ -1000,6 +1007,17 @@ export interface LoanApplication {
    *  `requestedAmount`; the gap is left for the customer to cover another
    *  way (084's per-stage checkout still works for whatever's left). */
   approvedAmount?: number;
+  /** Set once `status` reaches `'disbursed'` — the amount that actually
+   *  landed in AIEC's account, which a partner's processing fee can leave
+   *  lower than `approvedAmount` even when nothing else went wrong. This,
+   *  not `approvedAmount`, is what actually gets applied to `Payment`. */
+  disbursedAmountReceived?: number;
+  /** Set only when cancelled before disbursement — see
+   *  `cancelLoanApplication`. Never set once `disbursed`: real money has
+   *  moved by then, so this build has no reversal for it. */
+  cancelReason?: string;
+  cancelledAt?: string;
+  cancelledBy?: string;
   submittedAt: string;
   underReviewAt?: string;
   approvedAt?: string;

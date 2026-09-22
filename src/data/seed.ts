@@ -933,11 +933,14 @@ export const seedPayments: Payment[] = [
   // Disputed rather than merely pending — pauses this one stage's reminders
   // without touching dl-2's other stages (screen 082's own dispute edge case).
   { id: 'p-7', code: 'AIEC-P-4107', dealId: 'dl-2', stage: 'installation', amount: 564_000, status: 'disputed', dueDate: daysAhead(2), disputeReason: 'Customer says the installation-stage invoice includes a change-order item that was never approved.', disputedBy: 'u-admin-1', disputedAt: hoursAgo(8), isDemo: true },
-  { id: 'p-8', code: 'AIEC-P-4108', dealId: 'dl-2', stage: 'handover', amount: 188_000, status: 'due', dueDate: daysAhead(24), isDemo: true },
+  { id: 'p-8', code: 'AIEC-P-4108', dealId: 'dl-2', stage: 'handover', amount: 188_000, status: 'paid', dueDate: daysAhead(24), amountReceived: 188_000, method: 'financing', paidAt: daysAgo(15), isDemo: true },
   { id: 'p-9', code: 'AIEC-P-4109', dealId: 'dl-3', stage: 'advance', amount: 1_030_000, status: 'due', dueDate: daysAhead(5), isDemo: true },
   { id: 'p-10', code: 'AIEC-P-4110', dealId: 'dl-6', stage: 'advance', amount: 2_100_000, status: 'due', dueDate: daysAhead(9), isDemo: true },
   { id: 'p-11', code: 'AIEC-P-4111', dealId: 'dl-1', stage: 'retention', amount: 132_000, status: 'due', dueDate: daysAhead(75), isDemo: true },
-  { id: 'p-12', code: 'AIEC-P-4112', dealId: 'dl-2', stage: 'retention', amount: 94_000, status: 'due', dueDate: daysAhead(90), isDemo: true },
+  // Left at 82,000 of 94,000 — the same loan-seed-2 disbursement that fully
+  // covered p-8 above ran out partway through this stage, exercising 086's
+  // "disbursed amount doesn't exactly match what's due" reconciliation flag.
+  { id: 'p-12', code: 'AIEC-P-4112', dealId: 'dl-2', stage: 'retention', amount: 94_000, status: 'due', dueDate: daysAhead(90), amountReceived: 82_000, method: 'financing', isDemo: true },
   // dl-6's material/installation/handover/retention stages, created by
   // screen 077's closure kickoff — p-10 (advance) already existed from
   // before closure, so the kickoff only ever creates the remaining stages.
@@ -1008,7 +1011,56 @@ export const seedPaymentReminderPauses: PaymentReminderPause[] = [
   },
 ];
 
-export const seedLoanApplications: LoanApplication[] = [];
+export const seedLoanApplications: LoanApplication[] = [
+  // dl-3 (Skyline Corporate Park) — approved 10 days ago and never
+  // disbursed, well past 086's 5-day reasonable window. Demonstrates the
+  // "delayed disbursement surfaces as a risk" edge case directly on load,
+  // without waiting on the live wizard's own compressed timers.
+  {
+    id: 'loan-seed-1',
+    dealId: 'dl-3',
+    customerId: 'u-cust-3',
+    partnerName: 'Suvidha Finance Ltd',
+    precheck: { incomeRange: '10l_25l', tenurePreferenceMonths: 36, eligible: true },
+    requestedAmount: 2_266_000,
+    tenureMonths: 36,
+    interestRatePercent: 13.5,
+    emiAmount: 76_900,
+    totalRepayment: 2_768_400,
+    status: 'approved',
+    approvedAmount: 2_266_000,
+    submittedAt: daysAgo(14),
+    underReviewAt: daysAgo(13),
+    approvedAt: daysAgo(10),
+    isDemo: true,
+  },
+  // dl-2 (Kulkarni Signature) — approved in full, but Suvidha Finance's
+  // processing fee left only 270,000 of the 282,000 actually landing in
+  // AIEC's account. Settled p-8 in full and part of p-12 (see seedPayments
+  // above) — the "disbursed amount doesn't exactly match what's due"
+  // reconciliation edge case, already fully consistent in the seed rather
+  // than requiring a live disbursement to demonstrate.
+  {
+    id: 'loan-seed-2',
+    dealId: 'dl-2',
+    customerId: 'u-cust-2',
+    partnerName: 'Suvidha Finance Ltd',
+    precheck: { incomeRange: '10l_25l', tenurePreferenceMonths: 24, eligible: true },
+    requestedAmount: 282_000,
+    tenureMonths: 24,
+    interestRatePercent: 12.5,
+    emiAmount: 13_340,
+    totalRepayment: 320_160,
+    status: 'disbursed',
+    approvedAmount: 282_000,
+    disbursedAmountReceived: 270_000,
+    submittedAt: daysAgo(20),
+    underReviewAt: daysAgo(19),
+    approvedAt: daysAgo(16),
+    disbursedAt: daysAgo(15),
+    isDemo: true,
+  },
+];
 
 /** Suvidha Finance Ltd's published EMI rates by tenure — screen 085 always
  *  fetches this "live" rather than assuming it, per the spec's own "never

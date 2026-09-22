@@ -20,6 +20,7 @@ const translations: ScreenTranslations = {
         technicianIdle: 'Technician has not checked in',
         qcFailed: 'Quality check failed',
         counterOfferAging: 'Counter-offer waiting too long for a decision',
+        loanDisbursementDelayed: 'Loan disbursement delayed past a reasonable window',
       },
     },
     escalation: {
@@ -76,6 +77,7 @@ const translations: ScreenTranslations = {
         technicianIdle: 'तकनीशियन ने चेक-इन नहीं किया',
         qcFailed: 'गुणवत्ता जाँच में फ़ेल',
         counterOfferAging: 'काउंटर-ऑफ़र पर फ़ैसले का इंतज़ार बहुत लंबा हो गया है',
+        loanDisbursementDelayed: 'लोन वितरण उचित समय-सीमा से आगे टल गया है',
       },
     },
     escalation: {
@@ -132,6 +134,7 @@ const translations: ScreenTranslations = {
         technicianIdle: 'तंत्रज्ञाने चेक-इन केलेले नाही',
         qcFailed: 'गुणवत्ता तपासणीत नापास',
         counterOfferAging: 'काउंटर-ऑफरवर निर्णयाची प्रतीक्षा खूप लांबली आहे',
+        loanDisbursementDelayed: 'लोन वितरण योग्य कालमर्यादेपेक्षा जास्त लांबले आहे',
       },
     },
     escalation: {

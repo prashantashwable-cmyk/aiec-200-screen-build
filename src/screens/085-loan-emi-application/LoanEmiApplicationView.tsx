@@ -7,9 +7,14 @@ import type { LoanApplicationStatus } from '@/data/types';
 import { LOAN_STEPS, useLoanEmiApplication } from './useLoanEmiApplication';
 import { INCOME_RANGES, LOAN_EMI_APPLICATION_KEYS as K, TENURE_OPTIONS } from './loan-emi-application.types';
 
+// Cancellation (086, Admin-only, pre-disbursement) branches off this linear
+// rail rather than extending it — an application can never reach this view
+// while cancelled (`getLoanApplicationView` excludes it from
+// `activeApplication`, so a customer sees a fresh wizard instead), but the
+// status type still covers it, so these stay exhaustive rather than partial.
 const TRACKER_STATUSES: LoanApplicationStatus[] = ['submitted', 'under_review', 'approved', 'disbursed'];
-const TRACKER_RANK: Record<LoanApplicationStatus, number> = { submitted: 0, under_review: 1, approved: 2, disbursed: 3 };
-const STATUS_TONE: Record<LoanApplicationStatus, BadgeTone> = { submitted: 'neutral', under_review: 'warning', approved: 'accent', disbursed: 'success' };
+const TRACKER_RANK: Record<LoanApplicationStatus, number> = { submitted: 0, under_review: 1, approved: 2, disbursed: 3, cancelled: -1 };
+const STATUS_TONE: Record<LoanApplicationStatus, BadgeTone> = { submitted: 'neutral', under_review: 'warning', approved: 'accent', disbursed: 'success', cancelled: 'error' };
 
 export function LoanEmiApplicationView() {
   const { t } = useTranslation();
@@ -89,6 +94,7 @@ export function LoanEmiApplicationView() {
               {app.status === 'under_review' && t(K.tracker.underReviewBody)}
               {app.status === 'approved' && !approvedLess && t(K.tracker.approvedFullBody)}
               {app.status === 'disbursed' && t(K.tracker.disbursedBody)}
+              {app.status === 'cancelled' && t(K.tracker.cancelledBody)}
             </p>
           </div>
 
