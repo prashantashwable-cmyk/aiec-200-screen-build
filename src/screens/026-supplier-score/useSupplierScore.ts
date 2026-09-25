@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useData } from '@/data/DataProvider';
 import type { Supplier } from '@/data/types';
+import { computeSupplierPerformanceScore } from '@/features/suppliers/performanceScore';
 import {
   DEFAULT_WEIGHTS,
   EARLY_DATA_ORDER_COUNT,
@@ -103,11 +104,7 @@ export function useSupplierScore(): SupplierScoreState {
         const priceScore = 0.7;
         const responsivenessScore = 0.7;
 
-        const overallScore =
-          supplier.onTimeRate * weights.onTime +
-          (supplier.qualityScore / 5) * weights.quality +
-          priceScore * weights.price +
-          responsivenessScore * weights.responsiveness;
+        const overallScore = computeSupplierPerformanceScore(supplier, weights);
 
         const isEarlyData = supplier.openOrders + 1 <= EARLY_DATA_ORDER_COUNT;
         // Two consecutive months below threshold auto-lands a supplier on the

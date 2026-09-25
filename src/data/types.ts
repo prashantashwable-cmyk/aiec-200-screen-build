@@ -1234,13 +1234,32 @@ export interface PaymentReminderPause {
 
 /* --------------------------------------------------------------- Suppliers */
 
+export type SupplierKycStatus = 'pending' | 'approved' | 'rejected';
+
 export interface Supplier {
   id: string;
   name: string;
   status: 'active' | 'pending_approval' | 'suspended';
+  /** Tracked separately from `status` — screen 091's own structural gate:
+   *  only `'approved'` may ever be eligible for a Purchase Order, whatever
+   *  `status` says, enforced through `@/features/suppliers/eligibility`. */
+  kycStatus: SupplierKycStatus;
+  kycReviewedBy?: string;
+  kycReviewedAt?: string;
   city: string;
   gstin?: string;
+  contactName?: string;
+  contactPhone?: string;
+  /** Component categories this supplier manufactures/supplies (e.g.
+   *  `'traction_machine'`, `'controller'`) — screen 093's own catalogue
+   *  taxonomy, distinct from `driveTypeSpecialties` below. */
   categories: string[];
+  /** Free-form, not the closed `DriveType` union — 091's own edge case
+   *  requires letting Admin add a genuinely new specialty (e.g. a niche
+   *  accessibility-lift component) rather than forcing a mismatch into an
+   *  existing one. Seeded from `DriveType`'s own values where they fit. */
+  driveTypeSpecialties: string[];
+  regionsServed: string[];
   /** 0..1 — share of orders delivered by the promised date. */
   onTimeRate: number;
   qualityScore: number;
@@ -1248,6 +1267,16 @@ export interface Supplier {
   openOrders: number;
   totalOrderValue: number;
   rating: number;
+  invitedBy?: string;
+  invitedAt?: string;
+  suspendedReason?: string;
+  suspendedBy?: string;
+  suspendedAt?: string;
+  /** Set only on the record retired into a canonical duplicate after a
+   *  merge — its own order history is never rewound or deleted, only its
+   *  future purchase orders and deal links are reassigned to the
+   *  canonical supplier so both records' history reads under one id. */
+  mergedIntoSupplierId?: string;
   isDemo: boolean;
 }
 

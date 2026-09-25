@@ -1079,11 +1079,38 @@ export const financingPartnerRates: FinancingPartnerRate[] = [
 /* --------------------------------------------------------------- Suppliers */
 
 export const seedSuppliers: Supplier[] = [
-  { id: 'sp-1', name: 'Vertex Elevator Components Pvt Ltd', status: 'active', city: 'Mumbai', gstin: '27AABCV1234A1Z5', categories: ['traction_machine', 'controller', 'cabin', 'door_operator'], onTimeRate: 0.94, qualityScore: 4.7, avgLeadTimeDays: 18, openOrders: 6, totalOrderValue: 14_800_000, rating: 4.7, isDemo: true },
-  { id: 'sp-2', name: 'Sanghvi Lift Works', status: 'active', city: 'Pune', gstin: '27AACFS9012C1Z8', categories: ['cabin', 'guide_rails', 'ropes'], onTimeRate: 0.81, qualityScore: 4.1, avgLeadTimeDays: 12, openOrders: 4, totalOrderValue: 6_200_000, rating: 4.1, isDemo: true },
-  { id: 'sp-3', name: 'Konark Drives & Controls', status: 'active', city: 'Nashik', gstin: '27AAECK3456D1Z1', categories: ['controller', 'vfd', 'wiring'], onTimeRate: 0.88, qualityScore: 4.4, avgLeadTimeDays: 21, openOrders: 3, totalOrderValue: 4_950_000, rating: 4.4, isDemo: true },
-  { id: 'sp-4', name: 'Deccan Structural Steel', status: 'active', city: 'Pune', categories: ['guide_rails', 'brackets', 'counterweight'], onTimeRate: 0.72, qualityScore: 3.6, avgLeadTimeDays: 9, openOrders: 2, totalOrderValue: 2_100_000, rating: 3.6, isDemo: true },
-  { id: 'sp-5', name: 'Rathi Lift Systems', status: 'pending_approval', city: 'Ahmedabad', gstin: '24AACFR5678B1Z2', categories: ['traction_machine', 'controller'], onTimeRate: 0, qualityScore: 0, avgLeadTimeDays: 0, openOrders: 0, totalOrderValue: 0, rating: 0, isDemo: true },
+  {
+    id: 'sp-1', name: 'Vertex Elevator Components Pvt Ltd', status: 'active', kycStatus: 'approved', city: 'Mumbai', gstin: '27AABCV1234A1Z5',
+    contactName: 'Vikram Anand', contactPhone: '9821044201',
+    categories: ['traction_machine', 'controller', 'cabin', 'door_operator'], driveTypeSpecialties: ['geared_traction', 'gearless_traction'], regionsServed: ['Maharashtra', 'Gujarat'],
+    onTimeRate: 0.94, qualityScore: 4.7, avgLeadTimeDays: 18, openOrders: 6, totalOrderValue: 14_800_000, rating: 4.7, isDemo: true,
+  },
+  {
+    id: 'sp-2', name: 'Sanghvi Lift Works', status: 'active', kycStatus: 'approved', city: 'Pune', gstin: '27AACFS9012C1Z8',
+    contactName: 'Meenal Sanghvi', contactPhone: '9821044202',
+    categories: ['cabin', 'guide_rails', 'ropes'], driveTypeSpecialties: ['hydraulic', 'geared_traction'], regionsServed: ['Maharashtra'],
+    onTimeRate: 0.81, qualityScore: 4.1, avgLeadTimeDays: 12, openOrders: 4, totalOrderValue: 6_200_000, rating: 4.1, isDemo: true,
+  },
+  {
+    id: 'sp-3', name: 'Konark Drives & Controls', status: 'active', kycStatus: 'approved', city: 'Nashik', gstin: '27AAECK3456D1Z1',
+    contactName: 'Suresh Konark', contactPhone: '9821044203',
+    categories: ['controller', 'vfd', 'wiring'], driveTypeSpecialties: ['geared_traction', 'gearless_traction', 'mrl'], regionsServed: ['Maharashtra'],
+    onTimeRate: 0.88, qualityScore: 4.4, avgLeadTimeDays: 21, openOrders: 3, totalOrderValue: 4_950_000, rating: 4.4, isDemo: true,
+  },
+  {
+    id: 'sp-4', name: 'Deccan Structural Steel', status: 'active', kycStatus: 'approved', city: 'Pune',
+    contactName: 'Ajay Deshpande', contactPhone: '9821044204',
+    categories: ['guide_rails', 'brackets', 'counterweight'], driveTypeSpecialties: ['hydraulic', 'geared_traction', 'gearless_traction'], regionsServed: ['Maharashtra', 'Karnataka'],
+    onTimeRate: 0.72, qualityScore: 3.6, avgLeadTimeDays: 9, openOrders: 2, totalOrderValue: 2_100_000, rating: 3.6, isDemo: true,
+  },
+  // Not yet KYC-approved — 077's own closure kickoff for dl-6 already
+  // relies on this exact fact (spo-1 fails against sp-5 for this reason).
+  {
+    id: 'sp-5', name: 'Rathi Lift Systems', status: 'pending_approval', kycStatus: 'pending', city: 'Ahmedabad', gstin: '24AACFR5678B1Z2',
+    contactName: 'Rathi Patel', contactPhone: '9821044205',
+    categories: ['traction_machine', 'controller'], driveTypeSpecialties: ['geared_traction'], regionsServed: ['Gujarat', 'Rajasthan'],
+    onTimeRate: 0, qualityScore: 0, avgLeadTimeDays: 0, openOrders: 0, totalOrderValue: 0, rating: 0, isDemo: true,
+  },
 ];
 
 export const seedSupplierPurchaseOrders: SupplierPurchaseOrder[] = [

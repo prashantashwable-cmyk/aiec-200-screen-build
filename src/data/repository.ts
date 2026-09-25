@@ -674,6 +674,26 @@ export interface QuotationAnalytics {
   commonLossFactors: { reasonKey: string; count: number; leadIds: string[] }[];
 }
 
+/** One supplier joined with what screen 091's directory needs to render
+ *  and filter a row — `performanceScore` and `eligibleForPO` are always
+ *  read live from the shared `@/features/suppliers` helpers, never stored
+ *  on `Supplier` itself, so they can never drift out of sync with it. */
+export interface SupplierDirectoryRow {
+  supplier: Supplier;
+  performanceScore: number;
+  eligibleForPO: boolean;
+}
+
+export interface SupplierInviteInput {
+  name: string;
+  contactName?: string;
+  contactPhone: string;
+  city: string;
+  categories: string[];
+  driveTypeSpecialties: string[];
+  regionsServed: string[];
+}
+
 export interface Repository {
   /* Users */
   listUsers(filter?: { role?: Role; status?: User['status'] }): Promise<User[]>;
@@ -945,6 +965,40 @@ export interface Repository {
 
   listSuppliers(): Promise<Supplier[]>;
   getSupplier(id: string): Promise<Supplier | null>;
+
+  /* Supplier & Manufacturer Management: directory & onboarding (091, Admin) */
+  /** Every supplier, live-joined with the one performance figure
+   *  `@/features/suppliers/performanceScore` computes (the exact same
+   *  formula 026's own Scorecard reads, at its default weights — never a
+   *  second, independently maintained rating) and PO eligibility from
+   *  `@/features/suppliers/eligibility`. */
+  getSupplierDirectory(): Promise<SupplierDirectoryRow[]>;
+  /** Creates the new record immediately, `status: 'pending_approval'`,
+   *  `kycStatus: 'pending'` — the account exists from the moment Admin
+   *  invites, structurally ineligible for any Purchase Order until KYC is
+   *  reviewed and approved. */
+  inviteSupplier(input: SupplierInviteInput, byName: string): Promise<Supplier>;
+  /** Approves or rejects a pending supplier's KYC. Approving also moves
+   *  `status` to `'active'` — the two are set together here since nothing
+   *  else in this build ever brings a supplier live without it. Rejecting
+   *  leaves `status` at `'pending_approval'`, never silently suspended. */
+  setSupplierKycStatus(supplierId: string, kycStatus: 'approved' | 'rejected', byName: string): Promise<Supplier>;
+  /** The serious, logged action — in-flight Purchase Orders are untouched
+   *  (they complete under close monitoring per the spec's own edge case);
+   *  this only ever stops *new* ones, immediately and structurally, via
+   *  `isSupplierEligibleForPO` reading `status` live. */
+  suspendSupplier(supplierId: string, reason: string, byName: string): Promise<Supplier>;
+  /** Adds a genuinely new drive-type specialty this supplier serves that
+   *  AIEC hasn't catalogued before, rather than forcing a mismatch into an
+   *  existing one — idempotent if the supplier already lists it. */
+  addSupplierSpecialty(supplierId: string, specialty: string): Promise<Supplier>;
+  /** Folds a duplicate record into the canonical one: every Purchase Order
+   *  and Deal currently pointing at `duplicateId` is reassigned to
+   *  `canonicalId` (so both records' order history reads under the one
+   *  canonical id going forward, never split across two), and the
+   *  duplicate is retired (`status: 'suspended'`, `mergedIntoSupplierId`)
+   *  rather than deleted. */
+  mergeSuppliers(canonicalId: string, duplicateId: string, byName: string): Promise<Supplier>;
 
   /* Quotations */
   listQuotations(filter?: { leadId?: string; status?: QuotationStatus[] }): Promise<Quotation[]>;

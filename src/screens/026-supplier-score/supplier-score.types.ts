@@ -1,23 +1,17 @@
 /** Screen 026 — Supplier Performance Scorecard. Types and keys only. */
 
 import type { Supplier } from '@/data/types';
+import { DEFAULT_SUPPLIER_SCORE_WEIGHTS } from '@/features/suppliers/performanceScore';
+import type { SupplierScoreWeights } from '@/features/suppliers/performanceScore';
 
 export type ScoreStatus = 'loading' | 'ready' | 'empty' | 'error';
 
-/** The four inputs to the composite score, each admin-weightable. */
-export interface ScoreWeights {
-  onTime: number;
-  quality: number;
-  price: number;
-  responsiveness: number;
-}
+/** The four inputs to the composite score, each admin-weightable — the
+ *  same shape `@/features/suppliers/performanceScore` (091's own read)
+ *  uses, aliased here for this screen's own naming. */
+export type ScoreWeights = SupplierScoreWeights;
 
-export const DEFAULT_WEIGHTS: ScoreWeights = {
-  onTime: 0.35,
-  quality: 0.35,
-  price: 0.15,
-  responsiveness: 0.15,
-};
+export const DEFAULT_WEIGHTS: ScoreWeights = DEFAULT_SUPPLIER_SCORE_WEIGHTS;
 
 export const WATCHLIST_THRESHOLD = 0.65;
 /** A brand-new supplier's score is a snapshot, not yet a track record. */

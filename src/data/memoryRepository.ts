@@ -97,6 +97,8 @@ import type {
   Repository,
   SignatureView,
   SequenceTestStep,
+  SupplierDirectoryRow,
+  SupplierInviteInput,
   SurveyorScore,
   TechnicianScore,
   TriggerRuleEvaluation,
@@ -165,6 +167,7 @@ import type {
   SiteVisitVerification,
   SmsBroadcast,
   SmsFailureReason,
+  Supplier,
   SupplierPurchaseOrder,
   TemplateStat,
   TriggerRule,
@@ -174,6 +177,8 @@ import { formatINR, formatINRCompact, haversineKm } from '@/design-system/format
 import { MAX_SAFE_BOT_DISCOUNT_PCT } from '@/features/communication/botRules';
 import { extractMergeFields, renderTemplateBody } from '@/features/communication/templateRender';
 import { computeTotalReceivable, daysOverdue, isOutstanding, receivedAmountOf, remainingBalance } from '@/features/payments/aging';
+import { isSupplierEligibleForPO } from '@/features/suppliers/eligibility';
+import { computeSupplierPerformanceScore } from '@/features/suppliers/performanceScore';
 
 /**
  * The in-memory implementation backing Demo Mode.
@@ -231,6 +236,7 @@ const contractSignatures = [...seedContractSignatures];
 let contractSignatureCounter = 100;
 const supplierPurchaseOrders = [...seedSupplierPurchaseOrders];
 let supplierPurchaseOrderCounter = 100;
+let supplierCounter = 100;
 const dealClosures = [...seedDealClosures];
 let dealClosureCounter = 100;
 let closurePaymentCounter = 900;
@@ -411,7 +417,7 @@ function createOrReuseLeadConvertedCommission(deal: Deal, lead: Lead): string {
  *  other automation failure in this build does. */
 function triggerSupplierPo(deal: Deal): { id: string; failed: boolean } {
   const supplier = deal.supplierId ? byId(suppliers, deal.supplierId) : null;
-  const failed = !supplier || supplier.status !== 'active';
+  const failed = !supplier || !isSupplierEligibleForPO(supplier);
   const failureReason = !supplier
     ? 'No supplier is assigned to this deal yet.'
     : failed
@@ -2579,6 +2585,115 @@ export const memoryRepository: Repository = {
   listSuppliers: () => simulateRead(() => [...suppliers]),
 
   getSupplier: (id) => simulateRead(() => byId(suppliers, id)),
+
+  /* ------------------- Supplier directory & onboarding (091, Admin) */
+  getSupplierDirectory: () =>
+    simulateRead(() =>
+      suppliers
+        // A merged-away duplicate is retired, not deleted — but it never
+        // reads as a live, selectable entry in its own right again.
+        .filter((s) => !s.mergedIntoSupplierId)
+        .map(
+          (supplier): SupplierDirectoryRow => ({
+            supplier,
+            performanceScore: computeSupplierPerformanceScore(supplier),
+            eligibleForPO: isSupplierEligibleForPO(supplier),
+          }),
+        )
+        .sort((a, b) => b.performanceScore - a.performanceScore),
+    ),
+
+  inviteSupplier: (input, byName) =>
+    simulateWrite(() => {
+      if (!input.name.trim() || !input.contactPhone.trim()) throw new RepositoryError('invalid_input');
+      supplierCounter += 1;
+      const created: Supplier = {
+        id: `sp-new-${supplierCounter}`,
+        name: input.name.trim(),
+        status: 'pending_approval',
+        kycStatus: 'pending',
+        city: input.city.trim(),
+        contactName: input.contactName?.trim() || undefined,
+        contactPhone: input.contactPhone.trim(),
+        categories: input.categories,
+        driveTypeSpecialties: input.driveTypeSpecialties,
+        regionsServed: input.regionsServed,
+        onTimeRate: 0,
+        qualityScore: 0,
+        avgLeadTimeDays: 0,
+        openOrders: 0,
+        totalOrderValue: 0,
+        rating: 0,
+        invitedBy: byName,
+        invitedAt: new Date().toISOString(),
+        isDemo: true,
+      };
+      suppliers.push(created);
+      return created;
+    }),
+
+  setSupplierKycStatus: (supplierId, kycStatus, byName) =>
+    simulateWrite(() => {
+      const supplier = byId(suppliers, supplierId);
+      if (!supplier) throw new RepositoryError('not_found');
+      return patchInPlace(suppliers, supplierId, {
+        kycStatus,
+        // Approving brings the account live in the same step — nothing
+        // else in this build ever activates a supplier without it.
+        status: kycStatus === 'approved' ? 'active' : supplier.status,
+        kycReviewedBy: byName,
+        kycReviewedAt: new Date().toISOString(),
+      });
+    }),
+
+  suspendSupplier: (supplierId, reason, byName) =>
+    simulateWrite(() => {
+      const supplier = byId(suppliers, supplierId);
+      if (!supplier) throw new RepositoryError('not_found');
+      if (!reason.trim()) throw new RepositoryError('reason_required');
+      return patchInPlace(suppliers, supplierId, {
+        status: 'suspended',
+        suspendedReason: reason.trim(),
+        suspendedBy: byName,
+        suspendedAt: new Date().toISOString(),
+      });
+    }),
+
+  addSupplierSpecialty: (supplierId, specialty) =>
+    simulateWrite(() => {
+      const supplier = byId(suppliers, supplierId);
+      if (!supplier) throw new RepositoryError('not_found');
+      const trimmed = specialty.trim();
+      if (!trimmed) throw new RepositoryError('invalid_input');
+      if (supplier.driveTypeSpecialties.includes(trimmed)) return supplier;
+      return patchInPlace(suppliers, supplierId, { driveTypeSpecialties: [...supplier.driveTypeSpecialties, trimmed] });
+    }),
+
+  mergeSuppliers: (canonicalId, duplicateId, byName) =>
+    simulateWrite(() => {
+      if (canonicalId === duplicateId) throw new RepositoryError('invalid_input');
+      const canonical = byId(suppliers, canonicalId);
+      const duplicate = byId(suppliers, duplicateId);
+      if (!canonical || !duplicate) throw new RepositoryError('not_found');
+      supplierPurchaseOrders.forEach((po) => {
+        if (po.supplierId === duplicateId) patchInPlace(supplierPurchaseOrders, po.id, { supplierId: canonicalId });
+      });
+      deals.forEach((d) => {
+        if (d.supplierId === duplicateId) patchInPlace(deals, d.id, { supplierId: canonicalId });
+      });
+      const now = new Date().toISOString();
+      patchInPlace(suppliers, duplicateId, {
+        status: 'suspended',
+        mergedIntoSupplierId: canonicalId,
+        suspendedReason: `Merged into ${canonical.name} as a duplicate record.`,
+        suspendedBy: byName,
+        suspendedAt: now,
+      });
+      return patchInPlace(suppliers, canonicalId, {
+        totalOrderValue: canonical.totalOrderValue + duplicate.totalOrderValue,
+        openOrders: canonical.openOrders + duplicate.openOrders,
+      });
+    }),
 
   /* ------------------------------------------------------- Quotations */
   listQuotations: (filter) =>
