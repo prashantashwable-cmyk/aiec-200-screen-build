@@ -74,6 +74,8 @@ import type {
   InvoiceDealView,
   InvoiceLineView,
   LeadFilter,
+  PaymentHistoryView,
+  PaymentReceiptLine,
   LoanApplicationAdminRow,
   LoanPartnerStat,
   ObjectionScriptListItem,
@@ -167,7 +169,7 @@ import type {
 import { formatINR, formatINRCompact, haversineKm } from '@/design-system/format';
 import { MAX_SAFE_BOT_DISCOUNT_PCT } from '@/features/communication/botRules';
 import { extractMergeFields, renderTemplateBody } from '@/features/communication/templateRender';
-import { isOutstanding, remainingBalance } from '@/features/payments/aging';
+import { computeTotalReceivable, isOutstanding, receivedAmountOf, remainingBalance } from '@/features/payments/aging';
 
 /**
  * The in-memory implementation backing Demo Mode.
@@ -672,6 +674,22 @@ function ensureStageInvoices(dealId: string, deal: Deal, lead: Lead | null): voi
   }
 }
 
+/** One payment as 088's receipt list shows it — always looked up against
+ *  whatever invoice `ensureStageInvoices` has (or hasn't yet) generated
+ *  for it, never a second, independent invoice reference. */
+function buildReceiptLine(payment: Payment, deal: Deal, lead: Lead | null): PaymentReceiptLine {
+  const invoice = invoices.find((inv) => inv.paymentId === payment.id);
+  return {
+    payment,
+    receivedAmount: receivedAmountOf(payment),
+    dealCode: deal.code,
+    siteName: lead?.siteName ?? '',
+    customerName: deal.customerId ? nameOf(deal.customerId) : (lead?.contactName ?? ''),
+    invoiceId: invoice?.id ?? null,
+    invoiceCode: invoice?.code ?? null,
+  };
+}
+
 /** How long an `'approved'` application may sit before 086 treats it as
  *  stuck and surfaces an Alert rather than leaving it to be discovered by
  *  chance — the spec's own "not sit silently" edge case. */
@@ -712,6 +730,7 @@ function settleDealPaymentsWithFinancing(dealId: string, amount: number): void {
       method: 'financing',
       status: newReceived >= p.amount ? 'paid' : p.status,
       paidAt: newReceived >= p.amount ? new Date().toISOString() : p.paidAt,
+      lastReceivedAt: new Date().toISOString(),
     });
     remaining -= applied;
   }
@@ -1787,6 +1806,7 @@ export const memoryRepository: Repository = {
         method: input.method ?? payment.method,
         status: fullyPaid ? 'paid' : payment.status,
         paidAt: fullyPaid ? new Date().toISOString() : payment.paidAt,
+        lastReceivedAt: new Date().toISOString(),
       });
     }),
 
@@ -1872,6 +1892,7 @@ export const memoryRepository: Repository = {
         status: 'paid',
         paidAt: new Date().toISOString(),
         amountReceived: payment.amount,
+        lastReceivedAt: new Date().toISOString(),
         method,
         gatewayTransactionRef: `PAYU-GW-${gatewayTransactionCounter}`,
       });
@@ -1888,6 +1909,7 @@ export const memoryRepository: Repository = {
         status: 'paid',
         paidAt: new Date().toISOString(),
         amountReceived: payment.amount,
+        lastReceivedAt: new Date().toISOString(),
         gatewayTransactionRef: `PAYU-GW-${gatewayTransactionCounter}`,
       });
     }),
@@ -2170,6 +2192,43 @@ export const memoryRepository: Repository = {
       const deal = byId(deals, dealId);
       if (!deal) throw new RepositoryError('not_found');
       return patchInPlace(deals, dealId, { customerGstin: gstin.trim() });
+    }),
+
+  getPaymentHistoryForCustomer: (customerId) =>
+    simulateRead(() => {
+      const customerDeals = deals.filter((d) => d.customerId === customerId);
+      const customerPayments = payments.filter((p) => customerDeals.some((d) => d.id === p.dealId));
+      for (const deal of customerDeals) {
+        ensureStageInvoices(deal.id, deal, resolveLead(deal.leadId));
+      }
+      const lines = customerPayments
+        .filter((p) => receivedAmountOf(p) > 0)
+        .map((p) => {
+          const deal = customerDeals.find((d) => d.id === p.dealId)!;
+          return buildReceiptLine(p, deal, resolveLead(deal.leadId));
+        })
+        .sort((a, b) => (b.payment.lastReceivedAt ?? b.payment.paidAt ?? '').localeCompare(a.payment.lastReceivedAt ?? a.payment.paidAt ?? ''));
+      return {
+        totalPaidToDate: lines.reduce((sum, l) => sum + l.receivedAmount, 0),
+        totalRemaining: computeTotalReceivable(customerPayments),
+        lines,
+      };
+    }),
+
+  listPaymentHistoryForAdmin: () =>
+    simulateRead(() => {
+      for (const deal of deals) {
+        ensureStageInvoices(deal.id, deal, resolveLead(deal.leadId));
+      }
+      return payments
+        .filter((p) => receivedAmountOf(p) > 0)
+        .map((p) => {
+          const deal = byId(deals, p.dealId);
+          if (!deal) return null;
+          return buildReceiptLine(p, deal, resolveLead(deal.leadId));
+        })
+        .filter((line): line is PaymentReceiptLine => line !== null)
+        .sort((a, b) => (b.payment.lastReceivedAt ?? b.payment.paidAt ?? '').localeCompare(a.payment.lastReceivedAt ?? a.payment.paidAt ?? ''));
     }),
 
   getPaymentReminderConfig: () => simulateRead(() => paymentReminderConfig),

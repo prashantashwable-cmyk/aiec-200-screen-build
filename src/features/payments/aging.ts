@@ -41,11 +41,19 @@ export function remainingBalance(payment: Payment): number {
   return payment.amount - (payment.amountReceived ?? 0);
 }
 
+/** The actual amount collected on this one payment — its full amount once
+ *  `'paid'`, or whatever partial amount has come in on a stage still
+ *  open. Per-payment version of `computeCashIn`'s own rule — 088's own
+ *  receipt list reads this directly rather than re-deriving it. */
+export function receivedAmountOf(payment: Payment): number {
+  return payment.status === 'paid' ? payment.amount : (payment.amountReceived ?? 0);
+}
+
 /** Money actually collected — a fully paid stage's full amount, plus any
  *  partial amount already received on a stage still open. The one
  *  definition of "cash in" both 028 and 082 read. */
 export function computeCashIn(payments: Payment[]): number {
-  return payments.reduce((sum, p) => sum + (p.status === 'paid' ? p.amount : (p.amountReceived ?? 0)), 0);
+  return payments.reduce((sum, p) => sum + receivedAmountOf(p), 0);
 }
 
 /** Money still owed across every outstanding stage, net of any partial

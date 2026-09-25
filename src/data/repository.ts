@@ -423,6 +423,35 @@ export interface InvoiceDealView {
   invoices: InvoiceLineView[];
 }
 
+/** One payment 088 shows as a receipt — `receivedAmount` is
+ *  `receivedAmountOf(payment)` (@/features/payments/aging), never
+ *  `payment.amount` directly, so a partial receipt shows exactly what
+ *  came in, not the full stage amount. `invoiceCode`/`invoiceId` are null
+ *  only in the narrow window before 087's own read next backfills one —
+ *  every genuinely paid stage gets one eventually. */
+export interface PaymentReceiptLine {
+  payment: Payment;
+  receivedAmount: number;
+  dealCode: string;
+  siteName: string;
+  customerName: string;
+  invoiceId: string | null;
+  invoiceCode: string | null;
+}
+
+/** Screen 088's own read shape for one customer — aggregated across every
+ *  deal with that `customerId`, not assumed to be exactly one, since
+ *  nothing in the data model guarantees a customer has only one deal.
+ *  `totalRemaining` is computed the same way 028/082 already do
+ *  (`computeTotalReceivable`), never as agreedPrice-minus-paid, so it
+ *  stays correct even against a schedule that reconciles to more than
+ *  100% (e.g. a retention holdback). */
+export interface PaymentHistoryView {
+  totalPaidToDate: number;
+  totalRemaining: number;
+  lines: PaymentReceiptLine[];
+}
+
 /** One territory's (city's) slice of a script's effectiveness — screen
  *  078's per-territory tracking, computed on read rather than stored. */
 export interface ObjectionScriptTerritoryStat {
@@ -767,6 +796,17 @@ export interface Repository {
    *  no earlier screen this build captures it on yet) — never required,
    *  never fabricated when absent. */
   setDealCustomerGstin(dealId: string, gstin: string): Promise<Deal>;
+
+  /* Payments & Financing: payment receipt & history (088, Customer + Admin) */
+  /** Every payment actually received (`receivedAmountOf(payment) > 0`)
+   *  across every deal owned by this customer, not just one deal — the
+   *  read-only presentation layer the spec describes, over the exact same
+   *  `Payment` rows 028/082/087 already read. */
+  getPaymentHistoryForCustomer(customerId: string): Promise<PaymentHistoryView>;
+  /** The same lines across every customer — Admin's cross-customer view,
+   *  filtering (deal, date range, method) done client-side same as 086's
+   *  own status filter, since this demo's whole ledger is small. */
+  listPaymentHistoryForAdmin(): Promise<PaymentReceiptLine[]>;
 
   /* Payments & Financing: automated reminder configuration */
   getPaymentReminderConfig(): Promise<PaymentReminderConfig>;

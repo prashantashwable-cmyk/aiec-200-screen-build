@@ -948,6 +948,11 @@ export interface Payment {
    *  all-or-nothing paid/unpaid state. Only reaches `status: 'paid'` once
    *  this covers the full amount. */
   amountReceived?: number;
+  /** Set on every write that moves `amountReceived`, partial or full —
+   *  unlike `paidAt` (only ever set once the stage is fully `'paid'`),
+   *  this is the one field 088's receipt history can always sort and
+   *  display by, even for a stage still only partly received. */
+  lastReceivedAt?: string;
   /** Set only when Admin records a bank transfer or other payment received
    *  outside the app's own gateway — always paired with a reference
    *  number, and kept distinct from a gateway-confirmed automatic payment. */

@@ -926,7 +926,7 @@ export const seedPayments: Payment[] = [
   // A partial bank transfer came in against this already-overdue,
   // already-escalated (see al-2) stage — the remaining ₹3,92,000 is still
   // overdue, screen 082's own partial-payment reconciliation edge case.
-  { id: 'p-3', code: 'AIEC-P-4103', dealId: 'dl-1', stage: 'installation', amount: 792_000, status: 'overdue', dueDate: daysAgo(6), amountReceived: 400_000, manualReferenceNumber: 'NEFT240811', recordedManuallyBy: 'u-admin-1', isDemo: true },
+  { id: 'p-3', code: 'AIEC-P-4103', dealId: 'dl-1', stage: 'installation', amount: 792_000, status: 'overdue', dueDate: daysAgo(6), amountReceived: 400_000, method: 'neft', manualReferenceNumber: 'NEFT240811', recordedManuallyBy: 'u-admin-1', lastReceivedAt: daysAgo(4), isDemo: true },
   { id: 'p-4', code: 'AIEC-P-4104', dealId: 'dl-1', stage: 'handover', amount: 264_000, status: 'due', dueDate: daysAhead(20), isDemo: true },
   { id: 'p-5', code: 'AIEC-P-4105', dealId: 'dl-2', stage: 'advance', amount: 470_000, status: 'paid', dueDate: daysAgo(32), paidAt: daysAgo(32), method: 'upi', isDemo: true },
   { id: 'p-6', code: 'AIEC-P-4106', dealId: 'dl-2', stage: 'material', amount: 658_000, status: 'paid', dueDate: daysAgo(20), paidAt: daysAgo(19), method: 'neft', isDemo: true },
@@ -940,7 +940,7 @@ export const seedPayments: Payment[] = [
   // Left at 82,000 of 94,000 — the same loan-seed-2 disbursement that fully
   // covered p-8 above ran out partway through this stage, exercising 086's
   // "disbursed amount doesn't exactly match what's due" reconciliation flag.
-  { id: 'p-12', code: 'AIEC-P-4112', dealId: 'dl-2', stage: 'retention', amount: 94_000, status: 'due', dueDate: daysAhead(90), amountReceived: 82_000, method: 'financing', isDemo: true },
+  { id: 'p-12', code: 'AIEC-P-4112', dealId: 'dl-2', stage: 'retention', amount: 94_000, status: 'due', dueDate: daysAhead(90), amountReceived: 82_000, method: 'financing', lastReceivedAt: daysAgo(15), isDemo: true },
   // dl-6's material/installation/handover/retention stages, created by
   // screen 077's closure kickoff — p-10 (advance) already existed from
   // before closure, so the kickoff only ever creates the remaining stages.
