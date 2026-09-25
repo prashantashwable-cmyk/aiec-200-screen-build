@@ -180,18 +180,22 @@ export function PaymentCollectionDashboardView() {
                   </Button>
                 </div>
               )}
-              {s.openLine.payment.status !== 'paid' && (
-                <div className="row gap-2">
+              <div className="row gap-2">
+                {s.openLine.payment.status !== 'paid' && (
                   <Button block icon={<Scales size={16} />} onClick={s.openMarkPaid}>
                     {t(K.detail.markPaid)}
                   </Button>
-                  {s.openLine.payment.status !== 'disputed' && (
-                    <Button block variant="ghost" icon={<Flag size={16} />} onClick={s.openDispute}>
-                      {t(K.detail.dispute)}
-                    </Button>
-                  )}
-                </div>
-              )}
+                )}
+                {/* A paid stage can still be disputed — a customer noticing a
+                    quality issue after the fact is exactly screen 090's own
+                    refund scenario, not something only an unpaid stage can
+                    reach. */}
+                {s.openLine.payment.status !== 'disputed' && s.openLine.payment.status !== 'refunded' && (
+                  <Button block variant="ghost" icon={<Flag size={16} />} onClick={s.openDispute}>
+                    {t(K.detail.dispute)}
+                  </Button>
+                )}
+              </div>
             </div>
           )
         }

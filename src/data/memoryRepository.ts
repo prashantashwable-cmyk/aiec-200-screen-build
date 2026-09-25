@@ -73,9 +73,11 @@ import type {
   ImportValidationRow,
   InvoiceDealView,
   InvoiceLineView,
+  DisputeResolutionType,
   EscalationTier,
   LeadFilter,
   OverdueEscalationRow,
+  PaymentDisputeRow,
   PaymentHistoryView,
   PaymentReceiptLine,
   LoanApplicationAdminRow,
@@ -643,6 +645,11 @@ const FINANCING_PARTNER_NAME = 'Suvidha Finance Ltd';
  *  translated UI string; every invoice 087 issues carries it. */
 const AIEC_GSTIN = '27AABCA1234B1Z5';
 
+/** Screen 090's own SLA target for resolving a payment dispute — 5 days,
+ *  a reasonable ceiling for a financial-trust issue per the spec's own
+ *  framing of unresolved disputes as a reputational risk. */
+const DISPUTE_SLA_HOURS = 120;
+
 /** Splits a GST-inclusive total into its taxable value and GST amount —
  *  every `Payment.amount`/`Deal.agreedPrice` in this build is already
  *  GST-inclusive (see `QuotationCostBreakdown.finalPrice`), so every
@@ -662,7 +669,13 @@ function customerAddressOf(lead: Lead | null): string {
  *  `getInvoicesForDeal`'s own doc comment for why this, not a live event,
  *  is what "auto-generates as it's collected" resolves to here. */
 function ensureStageInvoices(dealId: string, deal: Deal, lead: Lead | null): void {
-  const paidWithoutInvoice = payments.filter((p) => p.dealId === dealId && p.status === 'paid' && !invoices.some((inv) => inv.paymentId === p.id));
+  // Also backfills a stage that's *now* `'disputed'` but was fully `'paid'`
+  // right before the dispute (090's own refund flow needs a real invoice to
+  // issue a credit note against, even when nobody happened to open the
+  // Invoice screen while the stage was still simply `'paid'`).
+  const paidWithoutInvoice = payments.filter(
+    (p) => p.dealId === dealId && (p.status === 'paid' || (p.status === 'disputed' && p.preDisputeStatus === 'paid')) && !invoices.some((inv) => inv.paymentId === p.id),
+  );
   for (const payment of paidWithoutInvoice) {
     const { taxableValue, gstAmount } = splitGst(payment.amount, deal.gstPercent);
     invoiceCounter += 1;
@@ -686,6 +699,48 @@ function ensureStageInvoices(dealId: string, deal: Deal, lead: Lead | null): voi
       isDemo: true,
     });
   }
+}
+
+/** What was actually collected on a disputed payment, for screen 090 —
+ *  `receivedAmountOf` alone isn't enough here, because it keys off the
+ *  payment's *current* status, and disputing a stage moves that status
+ *  away from `'paid'` to `'disputed'` (a seeded record may also never have
+ *  had `amountReceived` set explicitly if it simply started `'paid'`).
+ *  `preDisputeStatus` — snapshotted the moment the dispute was raised — is
+ *  the one durable record of whether this stage was genuinely paid in
+ *  full before the dispute, and stays authoritative through resolution. */
+function amountCollectedForDispute(payment: Payment): number {
+  if (payment.preDisputeStatus === 'paid') return payment.amount;
+  return receivedAmountOf(payment);
+}
+
+/** Shared by `issueCreditNote` (087) and 090's own refund resolution —
+ *  one credit-note-creation path, never two independent ones that could
+ *  drift on the GST split. */
+function createCreditNote(original: Invoice, amount: number, reason: string, byName: string): Invoice {
+  const { taxableValue, gstAmount } = splitGst(amount, original.gstPercent);
+  invoiceCounter += 1;
+  const created: Invoice = {
+    id: `inv-${invoiceCounter}`,
+    code: `AIEC-CN-${4000 + invoiceCounter}`,
+    dealId: original.dealId,
+    type: 'credit_note',
+    customerName: original.customerName,
+    customerAddress: original.customerAddress,
+    customerGstin: original.customerGstin,
+    aiecGstin: original.aiecGstin,
+    taxableValue,
+    gstPercent: original.gstPercent,
+    gstAmount,
+    totalAmount: amount,
+    issuedAt: new Date().toISOString(),
+    issuedBy: byName,
+    referencesInvoiceId: original.id,
+    creditNoteReason: reason.trim(),
+    isDemo: true,
+  };
+  invoices.push(created);
+  return created;
 }
 
 /** One payment as 088's receipt list shows it — always looked up against
@@ -1833,6 +1888,16 @@ export const memoryRepository: Repository = {
         disputeReason: reason,
         disputedBy: byUserId,
         disputedAt: new Date().toISOString(),
+        // Screen 090's own resolution needs to know what to restore on a
+        // rejected (or non-full-refund) outcome — never invented, always
+        // whatever this stage genuinely was right before the dispute.
+        preDisputeStatus: payment.status,
+        // A `'paid'` stage's `amountReceived` was allowed to stay unset
+        // (status alone said it all) until disputing it moved status away
+        // from `'paid'` — every other screen's remaining-balance math reads
+        // `amountReceived` directly, so this stops that math from reading
+        // a fully-paid, now-disputed stage as if nothing had been received.
+        amountReceived: payment.status === 'paid' ? payment.amount : payment.amountReceived,
       });
     }),
 
@@ -2148,29 +2213,7 @@ export const memoryRepository: Repository = {
       const original = byId(invoices, invoiceId);
       if (!original) throw new RepositoryError('not_found');
       if (!reason.trim()) throw new RepositoryError('reason_required');
-      const { taxableValue, gstAmount } = splitGst(amount, original.gstPercent);
-      invoiceCounter += 1;
-      const created: Invoice = {
-        id: `inv-${invoiceCounter}`,
-        code: `AIEC-CN-${4000 + invoiceCounter}`,
-        dealId: original.dealId,
-        type: 'credit_note',
-        customerName: original.customerName,
-        customerAddress: original.customerAddress,
-        customerGstin: original.customerGstin,
-        aiecGstin: original.aiecGstin,
-        taxableValue,
-        gstPercent: original.gstPercent,
-        gstAmount,
-        totalAmount: amount,
-        issuedAt: new Date().toISOString(),
-        issuedBy: byName,
-        referencesInvoiceId: original.id,
-        creditNoteReason: reason.trim(),
-        isDemo: true,
-      };
-      invoices.push(created);
-      return created;
+      return createCreditNote(original, amount, reason, byName);
     }),
 
   reissueInvoice: (invoiceId, reason, byName) =>
@@ -2443,6 +2486,94 @@ export const memoryRepository: Repository = {
         });
       }
       return held;
+    }),
+
+  /* ------------------------- Refund & dispute management (090, Admin) */
+  getDisputeQueue: () =>
+    simulateRead(() => {
+      const now = Date.now();
+      return payments
+        .filter((p) => p.disputedAt)
+        .map((payment): PaymentDisputeRow | null => {
+          const deal = byId(deals, payment.dealId);
+          if (!deal) return null;
+          const lead = resolveLead(deal.leadId);
+          if (!lead) return null;
+          const closure = dealClosures.find((dc) => dc.dealId === deal.id && !dc.voided);
+          const supplierAllocated = Boolean(closure?.supplierPoId) && !closure?.supplierPoFailed;
+          const commissionPaidOut = (closure?.commissionEntryIds ?? []).some((id) => byId(commissions, id)?.status === 'paid');
+          const slaHours = Math.floor((now - new Date(payment.disputedAt!).getTime()) / 3_600_000);
+          return {
+            payment,
+            dealId: deal.id,
+            dealCode: deal.code,
+            leadId: lead.id,
+            siteName: lead.siteName,
+            customerName: deal.customerId ? nameOf(deal.customerId) : lead.contactName,
+            amountPaid: amountCollectedForDispute(payment),
+            slaHours,
+            slaBreached: !payment.resolvedAt && slaHours >= DISPUTE_SLA_HOURS,
+            isResolved: Boolean(payment.resolvedAt),
+            isFinancingPayment: payment.method === 'financing',
+            hasDownstreamAllocation: supplierAllocated || commissionPaidOut,
+          };
+        })
+        .filter((row): row is PaymentDisputeRow => row !== null)
+        .sort((a, b) => {
+          if (a.isResolved !== b.isResolved) return a.isResolved ? 1 : -1;
+          return b.slaHours - a.slaHours;
+        });
+    }),
+
+  resolvePaymentDispute: (paymentId, input) =>
+    simulateWrite(() => {
+      const payment = byId(payments, paymentId);
+      if (!payment) throw new RepositoryError('not_found');
+      if (payment.status !== 'disputed') throw new RepositoryError('invalid_state');
+      if (!input.note.trim()) throw new RepositoryError('reason_required');
+      const deal = byId(deals, payment.dealId);
+      if (!deal) throw new RepositoryError('not_found');
+      const now = new Date().toISOString();
+      let creditNote: Invoice | null = null;
+
+      if (input.resolutionType === 'rejected') {
+        patchInPlace(payments, paymentId, {
+          status: payment.preDisputeStatus ?? 'due',
+          resolutionType: 'rejected',
+          resolutionNote: input.note.trim(),
+          resolvedBy: input.byName,
+          resolvedAt: now,
+        });
+      } else {
+        const available = amountCollectedForDispute(payment);
+        const refundAmount = input.resolutionType === 'full_refund' ? available : (input.resolutionAmount ?? 0);
+        if (refundAmount <= 0 || refundAmount > available) throw new RepositoryError('invalid_amount');
+        const lead = resolveLead(deal.leadId);
+        ensureStageInvoices(deal.id, deal, lead);
+        const original = invoices.find((inv) => inv.paymentId === payment.id && inv.type === 'stage');
+        if (original) creditNote = createCreditNote(original, refundAmount, input.note, input.byName);
+        patchInPlace(payments, paymentId, {
+          status: input.resolutionType === 'full_refund' ? 'refunded' : (payment.preDisputeStatus ?? 'paid'),
+          resolutionType: input.resolutionType,
+          resolutionAmount: refundAmount,
+          resolutionNote: input.note.trim(),
+          resolvedBy: input.byName,
+          resolvedAt: now,
+          refundRoutedToFinancingPartner: payment.method === 'financing' ? true : undefined,
+        });
+      }
+
+      const lead = resolveLead(deal.leadId);
+      if (lead) {
+        pushTimelineEvent({
+          leadId: lead.id,
+          kind: 'note_added',
+          actorName: input.byName,
+          at: now,
+          detail: `Dispute resolved (${input.resolutionType}) for ${payment.code}: ${input.note.trim()}`,
+        });
+      }
+      return { payment: byId(payments, paymentId)!, creditNote };
     }),
 
   listSuppliers: () => simulateRead(() => [...suppliers]),

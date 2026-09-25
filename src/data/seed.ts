@@ -935,7 +935,7 @@ export const seedPayments: Payment[] = [
   { id: 'p-6', code: 'AIEC-P-4106', dealId: 'dl-2', stage: 'material', amount: 658_000, status: 'paid', dueDate: daysAgo(20), paidAt: daysAgo(19), method: 'neft', isDemo: true },
   // Disputed rather than merely pending — pauses this one stage's reminders
   // without touching dl-2's other stages (screen 082's own dispute edge case).
-  { id: 'p-7', code: 'AIEC-P-4107', dealId: 'dl-2', stage: 'installation', amount: 564_000, status: 'disputed', dueDate: daysAhead(2), disputeReason: 'Customer says the installation-stage invoice includes a change-order item that was never approved.', disputedBy: 'u-admin-1', disputedAt: hoursAgo(8), isDemo: true },
+  { id: 'p-7', code: 'AIEC-P-4107', dealId: 'dl-2', stage: 'installation', amount: 564_000, status: 'disputed', dueDate: daysAhead(2), disputeReason: 'Customer says the installation-stage invoice includes a change-order item that was never approved.', disputedBy: 'u-admin-1', disputedAt: hoursAgo(8), preDisputeStatus: 'due', isDemo: true },
   { id: 'p-8', code: 'AIEC-P-4108', dealId: 'dl-2', stage: 'handover', amount: 188_000, status: 'paid', dueDate: daysAhead(24), amountReceived: 188_000, method: 'financing', paidAt: daysAgo(15), isDemo: true },
   { id: 'p-9', code: 'AIEC-P-4109', dealId: 'dl-3', stage: 'advance', amount: 1_030_000, status: 'due', dueDate: daysAhead(5), isDemo: true },
   { id: 'p-10', code: 'AIEC-P-4110', dealId: 'dl-6', stage: 'advance', amount: 2_100_000, status: 'due', dueDate: daysAhead(9), isDemo: true },

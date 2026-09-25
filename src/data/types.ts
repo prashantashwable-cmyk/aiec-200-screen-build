@@ -975,6 +975,24 @@ export interface Payment {
   disputeReason?: string;
   disputedBy?: string;
   disputedAt?: string;
+  /** Snapshotted the moment `disputePayment` fires — what `status` was
+   *  right before the dispute, so screen 090's resolution can restore it
+   *  (a rejected or non-`'full_refund'` dispute never invents a new status
+   *  out of thin air). */
+  preDisputeStatus?: PaymentStatus;
+  /** Set once screen 090 resolves the dispute — one of the three outcomes
+   *  the spec names. `resolutionAmount` is only set for a refund, and is
+   *  never more than what was actually received. */
+  resolutionType?: 'full_refund' | 'partial_refund' | 'rejected';
+  resolutionAmount?: number;
+  resolutionNote?: string;
+  resolvedBy?: string;
+  resolvedAt?: string;
+  /** True when a refund had to be routed to the financing partner rather
+   *  than paid back to the customer directly, because `method` was
+   *  `'financing'` at resolution time — AIEC never held this money from
+   *  the customer personally, so it was never AIEC's to hand back to them. */
+  refundRoutedToFinancingPartner?: boolean;
   isDemo: boolean;
 }
 

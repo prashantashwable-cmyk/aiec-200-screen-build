@@ -492,6 +492,41 @@ export interface OverdueEscalationRow {
   safetyStepInProgress: boolean;
 }
 
+/** Screen 090's three resolution outcomes — always requires a stated
+ *  reason (`resolutionNote`), both for the customer's own understanding
+ *  and so a recurring systemic issue is spottable later. */
+export type DisputeResolutionType = 'full_refund' | 'partial_refund' | 'rejected';
+
+/** One `Payment` that has ever been disputed (`disputedAt` set), open or
+ *  already resolved — the same underlying `Payment.status === 'disputed'`
+ *  the Payment Collection Dashboard (082) reads, so a disputed payment is
+ *  never shown differently in the two screens. */
+export interface PaymentDisputeRow {
+  payment: Payment;
+  dealId: string;
+  dealCode: string;
+  leadId: string;
+  siteName: string;
+  customerName: string;
+  /** What was actually collected before the dispute — 0 when the disputed
+   *  stage was never paid (disputing the charge itself, not asking money
+   *  back), which is what gates the two refund actions off entirely. */
+  amountPaid: number;
+  slaHours: number;
+  slaBreached: boolean;
+  isResolved: boolean;
+  /** True when `payment.method === 'financing'` — a refund here was never
+   *  AIEC's own money to hand back to the customer directly; it has to be
+   *  routed through the financing partner relationship instead. */
+  isFinancingPayment: boolean;
+  /** True when this deal's supplier PO already went out and/or a
+   *  commission on it has already paid out — the broader ripple effect
+   *  the spec asks to flag for Admin awareness before finalizing a refund,
+   *  read from the exact same `DealClosure`/`CommissionEntry` records
+   *  screens 038/080 already show, never a second calculation. */
+  hasDownstreamAllocation: boolean;
+}
+
 /** One territory's (city's) slice of a script's effectiveness — screen
  *  078's per-territory tracking, computed on read rather than stored. */
 export interface ObjectionScriptTerritoryStat {
@@ -889,6 +924,24 @@ export interface Repository {
    *  the screen requires an explicit acknowledgment first, elevated when
    *  `OverdueEscalationRow.safetyStepInProgress` is true. */
   flagInstallationHold(dealId: string, reason: string, byName: string): Promise<Job[]>;
+
+  /* Payments & Financing: refund & dispute management (090, Admin) */
+  /** Every payment that has ever been disputed, open and resolved alike —
+   *  the full audit trail the spec asks for, sorted open-and-oldest-first
+   *  so the longest-waiting case surfaces first. */
+  getDisputeQueue(): Promise<PaymentDisputeRow[]>;
+  /** The one resolution action. `'rejected'` restores `preDisputeStatus`
+   *  exactly as it was; a refund idempotently backfills this stage's
+   *  invoice if it doesn't have one yet (same mechanism 087's own read
+   *  already uses) and issues a real credit note against it through the
+   *  same `createCreditNote` path `issueCreditNote` (087) uses — never a
+   *  second, independent accounting document. Throws if the payment isn't
+   *  currently `'disputed'`, if no reason is given, or if a refund amount
+   *  is missing/exceeds what was actually collected. */
+  resolvePaymentDispute(
+    paymentId: string,
+    input: { resolutionType: DisputeResolutionType; resolutionAmount?: number; note: string; byName: string },
+  ): Promise<{ payment: Payment; creditNote: Invoice | null }>;
 
   listSuppliers(): Promise<Supplier[]>;
   getSupplier(id: string): Promise<Supplier | null>;
