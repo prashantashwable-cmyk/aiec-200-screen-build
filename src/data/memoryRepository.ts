@@ -45,6 +45,7 @@ import {
   seedSeries,
   seedSiteVisits,
   seedSuppliers,
+  seedSupplierCatalogItems,
   seedSupplierPurchaseOrders,
   seedTriggerRules,
   seedUsers,
@@ -97,6 +98,9 @@ import type {
   Repository,
   SignatureView,
   SequenceTestStep,
+  PurchaseOrderDealView,
+  PurchaseOrderView,
+  PurchaseOrderLineView,
   SupplierDirectoryRow,
   SupplierInviteInput,
   SurveyorScore,
@@ -130,6 +134,8 @@ import type {
   DriveType,
   DuplicatePair,
   FollowUpTask,
+  PurchaseOrderLineItem,
+  SupplierCatalogItem,
   ReminderRuleStep,
   GeoZone,
   Invoice,
@@ -235,8 +241,10 @@ let contractAddendumCounter = 100;
 const contractSignatures = [...seedContractSignatures];
 let contractSignatureCounter = 100;
 const supplierPurchaseOrders = [...seedSupplierPurchaseOrders];
+const supplierCatalogItems = [...seedSupplierCatalogItems];
 let supplierPurchaseOrderCounter = 100;
 let supplierCounter = 100;
+let poLineItemCounter = 100;
 const dealClosures = [...seedDealClosures];
 let dealClosureCounter = 100;
 let closurePaymentCounter = 900;
@@ -463,6 +471,100 @@ function triggerSupplierPo(deal: Deal): { id: string; failed: boolean } {
   }
 
   return { id: created.id, failed };
+}
+
+/** Screen 092's own fixed baseline — every elevator installation needs
+ *  these six regardless of drive type or finish tier; a real per-config
+ *  bill of materials belongs to a later, deeper module than this one. */
+const REQUIRED_PO_CATEGORIES = ['traction_machine', 'controller', 'cabin', 'door_operator', 'guide_rails', 'ropes'];
+
+/** How far `agreedUnitPrice` may drift from the catalog price before a PO
+ *  needs Admin's explicit approval to send — protects the deal's
+ *  already-locked-in margin per the spec's own business rule. */
+const PO_PRICE_TOLERANCE_PCT = 0.05;
+
+function catalogPriceFor(supplierId: string, category: string): number | null {
+  return supplierCatalogItems.find((c) => c.supplierId === supplierId && c.category === category)?.unitPrice ?? null;
+}
+
+function categoryDescription(category: string): string {
+  return supplierCatalogItems.find((c) => c.category === category)?.description ?? category;
+}
+
+/** The deal's own assigned supplier wins a category it's eligible for and
+ *  carries; otherwise the highest-scoring eligible supplier that carries
+ *  it — never an ineligible one, structurally enforcing 092's own
+ *  compliance rule at the point of matching, not just at send time. */
+function bestEligibleSupplierFor(category: string, preferredSupplierId?: string): Supplier | null {
+  const candidates = suppliers.filter((s) => isSupplierEligibleForPO(s) && s.categories.includes(category));
+  if (candidates.length === 0) return null;
+  const preferred = preferredSupplierId ? candidates.find((s) => s.id === preferredSupplierId) : undefined;
+  if (preferred) return preferred;
+  return [...candidates].sort((a, b) => computeSupplierPerformanceScore(b) - computeSupplierPerformanceScore(a))[0];
+}
+
+/** Idempotent auto-draft: groups every required category by its best-fit
+ *  eligible supplier and creates one PO per supplier needed — naturally
+ *  splitting into more than one linked PO when no single eligible
+ *  supplier covers everything, the spec's own edge case, never forced
+ *  into an artificial single-supplier PO. */
+function draftPurchaseOrdersForDeal(deal: Deal): SupplierPurchaseOrder[] {
+  const bySupplier = new Map<string, string[]>();
+  for (const category of REQUIRED_PO_CATEGORIES) {
+    const supplier = bestEligibleSupplierFor(category, deal.supplierId);
+    if (!supplier) continue;
+    const list = bySupplier.get(supplier.id) ?? [];
+    list.push(category);
+    bySupplier.set(supplier.id, list);
+  }
+  const now = new Date().toISOString();
+  const created: SupplierPurchaseOrder[] = [];
+  for (const [supplierId, categories] of bySupplier) {
+    const lineItems: PurchaseOrderLineItem[] = categories.map((category) => {
+      const price = catalogPriceFor(supplierId, category) ?? 0;
+      poLineItemCounter += 1;
+      return {
+        id: `poli-${poLineItemCounter}`,
+        category,
+        description: categoryDescription(category),
+        quantity: 1,
+        catalogUnitPriceAtDraft: price,
+        agreedUnitPrice: price,
+      };
+    });
+    supplierPurchaseOrderCounter += 1;
+    const po: SupplierPurchaseOrder = {
+      id: `spo-new-${supplierPurchaseOrderCounter}`,
+      code: `AIEC-PO-${9000 + supplierPurchaseOrderCounter}`,
+      dealId: deal.id,
+      supplierId,
+      status: 'draft',
+      triggeredAt: now,
+      lineItems,
+      isDemo: true,
+    };
+    supplierPurchaseOrders.push(po);
+    created.push(po);
+  }
+  return created;
+}
+
+function purchaseOrderNeedsApproval(lines: PurchaseOrderLineItem[]): boolean {
+  return lines.some((l) => l.catalogUnitPriceAtDraft > 0 && Math.abs(l.agreedUnitPrice - l.catalogUnitPriceAtDraft) / l.catalogUnitPriceAtDraft > PO_PRICE_TOLERANCE_PCT);
+}
+
+function buildPurchaseOrderView(po: SupplierPurchaseOrder): PurchaseOrderView {
+  const supplier = po.supplierId ? byId(suppliers, po.supplierId) : null;
+  const lines = po.lineItems ?? [];
+  const requiresApproval = purchaseOrderNeedsApproval(lines) && !po.approvedAt;
+  return {
+    po,
+    supplierName: supplier?.name ?? '',
+    supplierEligible: supplier ? isSupplierEligibleForPO(supplier) : false,
+    lines: lines.map((line): PurchaseOrderLineView => ({ ...line, currentCatalogUnitPrice: po.supplierId ? catalogPriceFor(po.supplierId, line.category) : null })),
+    totalAmount: lines.reduce((sum, l) => sum + l.quantity * l.agreedUnitPrice, 0),
+    requiresApproval,
+  };
 }
 
 /** Same "positive stage move" proxy the Communication Analytics screen's
@@ -2693,6 +2795,86 @@ export const memoryRepository: Repository = {
         totalOrderValue: canonical.totalOrderValue + duplicate.totalOrderValue,
         openOrders: canonical.openOrders + duplicate.openOrders,
       });
+    }),
+
+  /* ------------------- Purchase order generator (092, Admin) */
+  getPurchaseOrdersForDeal: (dealId) =>
+    simulateRead(() => {
+      const deal = byId(deals, dealId);
+      if (!deal) return null;
+      const lead = resolveLead(deal.leadId);
+      const existing = supplierPurchaseOrders.filter((po) => po.dealId === dealId && po.lineItems);
+      if (existing.length === 0 && deal.status === 'won') {
+        draftPurchaseOrdersForDeal(deal);
+      }
+      const purchaseOrders = supplierPurchaseOrders.filter((po) => po.dealId === dealId && po.lineItems).map(buildPurchaseOrderView);
+      return {
+        dealId: deal.id,
+        dealCode: deal.code,
+        siteName: lead?.siteName ?? '',
+        purchaseOrders,
+        eligibleSuppliers: suppliers.filter(isSupplierEligibleForPO),
+      };
+    }),
+
+  reassignPurchaseOrderSupplier: (poId, newSupplierId) =>
+    simulateWrite(() => {
+      const po = byId(supplierPurchaseOrders, poId);
+      if (!po) throw new RepositoryError('not_found');
+      const newSupplier = byId(suppliers, newSupplierId);
+      if (!newSupplier) throw new RepositoryError('not_found');
+      const repriced = (po.lineItems ?? []).map((line): PurchaseOrderLineItem => {
+        const price = catalogPriceFor(newSupplierId, line.category) ?? 0;
+        return { ...line, catalogUnitPriceAtDraft: price, agreedUnitPrice: price };
+      });
+      return patchInPlace(supplierPurchaseOrders, poId, {
+        supplierId: newSupplierId,
+        lineItems: repriced,
+        approvedBy: undefined,
+        approvedAt: undefined,
+      });
+    }),
+
+  updatePurchaseOrderLine: (poId, lineItemId, input) =>
+    simulateWrite(() => {
+      const po = byId(supplierPurchaseOrders, poId);
+      if (!po) throw new RepositoryError('not_found');
+      const lines = po.lineItems ?? [];
+      if (!lines.some((l) => l.id === lineItemId)) throw new RepositoryError('not_found');
+      const updatedLines = lines.map((l) => (l.id === lineItemId ? { ...l, ...input } : l));
+      return patchInPlace(supplierPurchaseOrders, poId, {
+        lineItems: updatedLines,
+        // A fresh price edit always asks again, even if it happens to
+        // land back within tolerance — the earlier approval was for the
+        // earlier number, never silently carried forward onto a new one.
+        approvedBy: input.agreedUnitPrice !== undefined ? undefined : po.approvedBy,
+        approvedAt: input.agreedUnitPrice !== undefined ? undefined : po.approvedAt,
+      });
+    }),
+
+  setPurchaseOrderExpectedDelivery: (poId, expectedDeliveryDate) =>
+    simulateWrite(() => {
+      const po = byId(supplierPurchaseOrders, poId);
+      if (!po) throw new RepositoryError('not_found');
+      return patchInPlace(supplierPurchaseOrders, poId, { expectedDeliveryDate });
+    }),
+
+  approvePurchaseOrderPricing: (poId, byName) =>
+    simulateWrite(() => {
+      const po = byId(supplierPurchaseOrders, poId);
+      if (!po) throw new RepositoryError('not_found');
+      if (!purchaseOrderNeedsApproval(po.lineItems ?? [])) throw new RepositoryError('invalid_state');
+      return patchInPlace(supplierPurchaseOrders, poId, { approvedBy: byName, approvedAt: new Date().toISOString() });
+    }),
+
+  sendPurchaseOrder: (poId, byName) =>
+    simulateWrite(() => {
+      const po = byId(supplierPurchaseOrders, poId);
+      if (!po) throw new RepositoryError('not_found');
+      const supplier = po.supplierId ? byId(suppliers, po.supplierId) : null;
+      if (!supplier || !isSupplierEligibleForPO(supplier)) throw new RepositoryError('supplier_not_eligible');
+      if (purchaseOrderNeedsApproval(po.lineItems ?? []) && !po.approvedAt) throw new RepositoryError('approval_required');
+      return patchInPlace(supplierPurchaseOrders, poId, { status: 'sent', sentBy: byName, sentAt: new Date().toISOString() });
     }),
 
   /* ------------------------------------------------------- Quotations */

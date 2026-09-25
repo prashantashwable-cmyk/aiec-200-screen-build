@@ -48,6 +48,7 @@ import type {
   SiteVisitVerification,
   SmsBroadcast,
   Supplier,
+  SupplierCatalogItem,
   SupplierPurchaseOrder,
   TriggerRule,
   User,
@@ -1111,6 +1112,27 @@ export const seedSuppliers: Supplier[] = [
     categories: ['traction_machine', 'controller'], driveTypeSpecialties: ['geared_traction'], regionsServed: ['Gujarat', 'Rajasthan'],
     onTimeRate: 0, qualityScore: 0, avgLeadTimeDays: 0, openOrders: 0, totalOrderValue: 0, rating: 0, isDemo: true,
   },
+];
+
+/** Screen 092's own minimal catalog seed — one entry per category each
+ *  supplier already lists in `categories`, real enough to price a real PO
+ *  line and to demonstrate a since-changed price after a reassignment. */
+export const seedSupplierCatalogItems: SupplierCatalogItem[] = [
+  { id: 'sci-1', supplierId: 'sp-1', category: 'traction_machine', description: 'Geared/gearless traction machine unit', unitPrice: 210_000, isDemo: true },
+  { id: 'sci-2', supplierId: 'sp-1', category: 'controller', description: 'Microprocessor lift controller', unitPrice: 95_000, isDemo: true },
+  { id: 'sci-3', supplierId: 'sp-1', category: 'cabin', description: 'Passenger cabin, standard finish', unitPrice: 165_000, isDemo: true },
+  { id: 'sci-4', supplierId: 'sp-1', category: 'door_operator', description: 'Automatic door operator', unitPrice: 52_000, isDemo: true },
+  { id: 'sci-5', supplierId: 'sp-2', category: 'cabin', description: 'Passenger cabin, standard finish', unitPrice: 158_000, isDemo: true },
+  { id: 'sci-6', supplierId: 'sp-2', category: 'guide_rails', description: 'T-section guide rail set', unitPrice: 38_000, isDemo: true },
+  { id: 'sci-7', supplierId: 'sp-2', category: 'ropes', description: 'Steel suspension ropes, per set', unitPrice: 19_000, isDemo: true },
+  { id: 'sci-8', supplierId: 'sp-3', category: 'controller', description: 'Microprocessor lift controller', unitPrice: 92_000, isDemo: true },
+  { id: 'sci-9', supplierId: 'sp-3', category: 'vfd', description: 'Variable frequency drive', unitPrice: 41_000, isDemo: true },
+  { id: 'sci-10', supplierId: 'sp-3', category: 'wiring', description: 'Traveling cable and shaft wiring', unitPrice: 16_000, isDemo: true },
+  { id: 'sci-11', supplierId: 'sp-4', category: 'guide_rails', description: 'T-section guide rail set', unitPrice: 36_000, isDemo: true },
+  { id: 'sci-12', supplierId: 'sp-4', category: 'brackets', description: 'Guide rail mounting brackets', unitPrice: 12_500, isDemo: true },
+  { id: 'sci-13', supplierId: 'sp-4', category: 'counterweight', description: 'Counterweight assembly', unitPrice: 26_000, isDemo: true },
+  { id: 'sci-14', supplierId: 'sp-5', category: 'traction_machine', description: 'Geared traction machine unit', unitPrice: 205_000, isDemo: true },
+  { id: 'sci-15', supplierId: 'sp-5', category: 'controller', description: 'Microprocessor lift controller', unitPrice: 89_000, isDemo: true },
 ];
 
 export const seedSupplierPurchaseOrders: SupplierPurchaseOrder[] = [

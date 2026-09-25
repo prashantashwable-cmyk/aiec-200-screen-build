@@ -532,12 +532,36 @@ export interface ContractSignature {
   isDemo: boolean;
 }
 
-export type SupplierPurchaseOrderStatus = 'triggered' | 'failed';
+/** `'triggered'`/`'failed'` are 077's own bare kickoff-attempt marker,
+ *  unchanged since Module 8. The later four are screen 092's real
+ *  purchase-order lifecycle, which only ever appears on a record 092
+ *  itself created (always carrying real `lineItems`) — 092 never adopts
+ *  or edits an old bare 077 stub, it drafts its own alongside it. */
+export type SupplierPurchaseOrderStatus = 'triggered' | 'failed' | 'draft' | 'pending_approval' | 'approved' | 'sent';
+
+/** One component line on a real (092-drafted) PO. `catalogUnitPriceAtDraft`
+ *  is snapshotted from the supplier's catalog at the moment this line was
+ *  drafted (or last reassigned to a different supplier) — 092's own UI
+ *  compares it live against the supplier's *current* catalog price to
+ *  flag a since-changed cost, never stored as a second "current price"
+ *  that could go stale itself. */
+export interface PurchaseOrderLineItem {
+  id: string;
+  category: string;
+  description: string;
+  quantity: number;
+  catalogUnitPriceAtDraft: number;
+  agreedUnitPrice: number;
+}
 
 /** A minimal record that a supplier PO was kicked off by a deal closure —
- *  not a full purchase-order management system, which belongs to a later
- *  module. Just enough for screen 077 to report the kickoff honestly and
- *  for screen 080 to reference it. */
+ *  now also screen 092's own real purchase-order record once `lineItems`
+ *  is populated. Whether it currently *needs* approval (any line's
+ *  `agreedUnitPrice` deviating from `catalogUnitPriceAtDraft` beyond 092's
+ *  own tolerance) is always computed live from `lineItems`, never stored,
+ *  so it can never go stale after an edit — `approvedBy`/`approvedAt` are
+ *  the only stored trace, cleared by any further price edit so a second
+ *  deviation always asks again. */
 export interface SupplierPurchaseOrder {
   id: string;
   code: string;
@@ -546,6 +570,24 @@ export interface SupplierPurchaseOrder {
   status: SupplierPurchaseOrderStatus;
   failureReason?: string;
   triggeredAt: string;
+  lineItems?: PurchaseOrderLineItem[];
+  expectedDeliveryDate?: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  sentBy?: string;
+  sentAt?: string;
+  isDemo: boolean;
+}
+
+/** Screen 092's own minimal read of what a supplier can supply and at what
+ *  price — enough to auto-draft and price a PO's line items. Not the full
+ *  catalog-management surface, which belongs to screen 093. */
+export interface SupplierCatalogItem {
+  id: string;
+  supplierId: string;
+  category: string;
+  description: string;
+  unitPrice: number;
   isDemo: boolean;
 }
 

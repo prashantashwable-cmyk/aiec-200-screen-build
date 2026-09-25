@@ -65,7 +65,9 @@ import type {
   SignatureMethod,
   SiteVisitVerification,
   SmsBroadcast,
+  PurchaseOrderLineItem,
   Supplier,
+  SupplierCatalogItem,
   SupplierPurchaseOrder,
   TemplateStat,
   TriggerRule,
@@ -694,6 +696,38 @@ export interface SupplierInviteInput {
   regionsServed: string[];
 }
 
+/** Screen 092's own per-line read — `currentCatalogUnitPrice` is looked up
+ *  live against the assigned supplier's catalog every read, compared
+ *  against `catalogUnitPriceAtDraft`; null only when the supplier's
+ *  catalog no longer carries this category at all. */
+export interface PurchaseOrderLineView extends PurchaseOrderLineItem {
+  currentCatalogUnitPrice: number | null;
+}
+
+/** One real (092-drafted) purchase order, joined with what the screen
+ *  needs to render it — `requiresApproval` is always computed live from
+ *  `lines`, per `SupplierPurchaseOrder`'s own doc comment. */
+export interface PurchaseOrderView {
+  po: SupplierPurchaseOrder;
+  supplierName: string;
+  supplierEligible: boolean;
+  lines: PurchaseOrderLineView[];
+  totalAmount: number;
+  requiresApproval: boolean;
+}
+
+/** Screen 092's own per-deal read — every real PO already drafted for
+ *  this deal (auto-drafted on first read if the deal is `'won'` and none
+ *  exist yet), plus every currently-eligible supplier for the manual
+ *  reassignment edge case. */
+export interface PurchaseOrderDealView {
+  dealId: string;
+  dealCode: string;
+  siteName: string;
+  purchaseOrders: PurchaseOrderView[];
+  eligibleSuppliers: Supplier[];
+}
+
 export interface Repository {
   /* Users */
   listUsers(filter?: { role?: Role; status?: User['status'] }): Promise<User[]>;
@@ -999,6 +1033,34 @@ export interface Repository {
    *  duplicate is retired (`status: 'suspended'`, `mergedIntoSupplierId`)
    *  rather than deleted. */
   mergeSuppliers(canonicalId: string, duplicateId: string, byName: string): Promise<Supplier>;
+
+  /* Supplier & Manufacturer Management: purchase order generator (092, Admin) */
+  /** Null when the deal doesn't exist. For a `'won'` deal with no real PO
+   *  yet, idempotently auto-drafts one PO per best-fit eligible supplier
+   *  needed to cover every required component category — split into more
+   *  than one PO when no single eligible supplier covers everything,
+   *  same "ensure on read" idiom 087/089 already use. Never touches or
+   *  adopts an old bare 077 kickoff-attempt record. */
+  getPurchaseOrdersForDeal(dealId: string): Promise<PurchaseOrderDealView | null>;
+  /** Re-prices every line from the new supplier's own current catalog
+   *  (falling back to 0, flagged, if that supplier doesn't carry a
+   *  category at all) and clears any pending approval — a reassignment
+   *  is a genuinely new price basis, never carried over from the old
+   *  supplier. */
+  reassignPurchaseOrderSupplier(poId: string, newSupplierId: string): Promise<SupplierPurchaseOrder>;
+  /** Edits one line's quantity and/or agreed unit price. Any price edit
+   *  clears a prior approval — a fresh deviation always asks again. */
+  updatePurchaseOrderLine(poId: string, lineItemId: string, input: { quantity?: number; agreedUnitPrice?: number }): Promise<SupplierPurchaseOrder>;
+  setPurchaseOrderExpectedDelivery(poId: string, expectedDeliveryDate: string): Promise<SupplierPurchaseOrder>;
+  /** The deliberate confirmation for a PO currently over price tolerance —
+   *  throws if it isn't. Sending doesn't require this call when nothing's
+   *  over tolerance in the first place. */
+  approvePurchaseOrderPricing(poId: string, byName: string): Promise<SupplierPurchaseOrder>;
+  /** Throws if the assigned supplier isn't currently KYC-approved and
+   *  active (`@/features/suppliers/eligibility`, structurally connecting
+   *  this screen to the Supplier Directory's own compliance gating), or
+   *  if the PO still needs approval and hasn't received it. */
+  sendPurchaseOrder(poId: string, byName: string): Promise<SupplierPurchaseOrder>;
 
   /* Quotations */
   listQuotations(filter?: { leadId?: string; status?: QuotationStatus[] }): Promise<Quotation[]>;
