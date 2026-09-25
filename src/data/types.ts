@@ -924,6 +924,14 @@ export interface Job {
   startedAt?: string;
   completedAt?: string;
   steps: JobStep[];
+  /** Set only when `status` moves to `'on_hold'` via screen 089's own
+   *  "Flag to Pause Installation Progress" action — a payments escalation
+   *  reaching into the installation module's own gating logic, never a
+   *  silent status flip. Resuming (clearing these) is the installation
+   *  module's own concern, not this screen's. */
+  holdReason?: string;
+  heldBy?: string;
+  heldAt?: string;
   isDemo: boolean;
 }
 

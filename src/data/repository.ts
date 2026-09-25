@@ -452,6 +452,46 @@ export interface PaymentHistoryView {
   lines: PaymentReceiptLine[];
 }
 
+/** Screen 089's own three-level read of how a human should treat one
+ *  overdue stage — a recommendation shown as a badge, never a gate on which
+ *  of the row's three actions Admin may take; the judgment of when to use
+ *  a stronger action than suggested is exactly the human discretion this
+ *  screen exists to support. */
+export type EscalationTier = 'call' | 'formal_notice' | 'installation_hold';
+
+/** One overdue payment stage that has exhausted the automated reminder
+ *  cadence — `overdueDays >= ` the cadence config's own furthest
+ *  `daysOffset`, computed live against the real due date every read, never
+ *  a persisted "exhausted" flag, since nothing in this demo fires an event
+ *  the moment a cadence finishes. A deal with an open reminder pause
+ *  (screen 083) never produces a row at all — that customer is already
+ *  being handled in good faith, so it never reaches a human twice. */
+export interface OverdueEscalationRow {
+  payment: Payment;
+  dealId: string;
+  dealCode: string;
+  leadId: string;
+  siteName: string;
+  customerName: string;
+  overdueAmount: number;
+  overdueDays: number;
+  tier: EscalationTier;
+  /** Every other stage on this same deal is either already paid or not yet
+   *  overdue/disputed — the relationship-history weighting the spec calls
+   *  for, tempering `tier` down one level rather than treating a good
+   *  customer's one late stage identically to any other overdue account. */
+  goodStanding: boolean;
+  /** This deal's Jobs still in progress (excludes `'completed'` and
+   *  already-`'on_hold'`) — what `flagInstallationHold` would actually
+   *  pause. Empty when there's nothing left to pause. */
+  activeJobs: Job[];
+  /** True when one of `activeJobs` has a step that's both `requiresEvidence`
+   *  and `'current'` — a technician genuinely mid-way through a
+   *  safety-critical step on site, not just any open job. Drives the
+   *  elevated acknowledgment warning on `flagInstallationHold`. */
+  safetyStepInProgress: boolean;
+}
+
 /** One territory's (city's) slice of a script's effectiveness — screen
  *  078's per-territory tracking, computed on read rather than stored. */
 export interface ObjectionScriptTerritoryStat {
@@ -829,6 +869,26 @@ export interface Repository {
    *  paused, not opted out) for real, through the same channels 082's own
    *  "Send reminder" button uses. */
   runDueRemindersNow(byName: string): Promise<ReminderRunResult>;
+
+  /* Payments & Financing: overdue payment escalation (089, Admin) */
+  /** The subset of overdue stages automation alone couldn't resolve —
+   *  deliberately narrow, so only genuinely hard cases reach Admin. Sorted
+   *  most-overdue first. */
+  getOverdueEscalationQueue(): Promise<OverdueEscalationRow[]>;
+  /** Sends the same formal-notice template through the existing
+   *  communication engine `sendPaymentReminder` (082) already uses, just a
+   *  more formal `tpl-payment-formal-notice` group and channel — never a
+   *  one-off message string invented just for this button. */
+  sendFormalPaymentNotice(paymentId: string, byName: string): Promise<CommMessage>;
+  /** The one serious, logged action connecting this screen to the
+   *  Installation module's own progress gating — sets every one of the
+   *  deal's still-active Jobs (excludes already-`'completed'` or
+   *  `'on_hold'`) to `'on_hold'` with a reason, who, and when. Throws if the
+   *  deal has no active Job left to pause; the screen itself gates this
+   *  action from ever being reachable in that case. Never fires silently —
+   *  the screen requires an explicit acknowledgment first, elevated when
+   *  `OverdueEscalationRow.safetyStepInProgress` is true. */
+  flagInstallationHold(dealId: string, reason: string, byName: string): Promise<Job[]>;
 
   listSuppliers(): Promise<Supplier[]>;
   getSupplier(id: string): Promise<Supplier | null>;

@@ -73,7 +73,9 @@ import type {
   ImportValidationRow,
   InvoiceDealView,
   InvoiceLineView,
+  EscalationTier,
   LeadFilter,
+  OverdueEscalationRow,
   PaymentHistoryView,
   PaymentReceiptLine,
   LoanApplicationAdminRow,
@@ -169,7 +171,7 @@ import type {
 import { formatINR, formatINRCompact, haversineKm } from '@/design-system/format';
 import { MAX_SAFE_BOT_DISCOUNT_PCT } from '@/features/communication/botRules';
 import { extractMergeFields, renderTemplateBody } from '@/features/communication/templateRender';
-import { computeTotalReceivable, isOutstanding, receivedAmountOf, remainingBalance } from '@/features/payments/aging';
+import { computeTotalReceivable, daysOverdue, isOutstanding, receivedAmountOf, remainingBalance } from '@/features/payments/aging';
 
 /**
  * The in-memory implementation backing Demo Mode.
@@ -588,6 +590,18 @@ function sendReminderMessage(payment: Payment, lead: Lead, byName: string, chann
 }
 
 const activeDealPause = (dealId: string) => paymentReminderPauses.find((p) => p.dealId === dealId && p.paused);
+
+/** Screen 089's tier badge — days-overdue and remaining amount set the base
+ *  level, then a good-standing customer's one late stage is tempered down
+ *  exactly one level (never suppressed outright: the money is still owed),
+ *  the relationship-history weighting the spec calls for. */
+function computeEscalationTier(overdueDays: number, overdueAmount: number, goodStanding: boolean): EscalationTier {
+  let severity: 0 | 1 | 2 = 0;
+  if (overdueDays >= 21 || overdueAmount >= 500_000) severity = 2;
+  else if (overdueDays >= 14 || overdueAmount >= 200_000) severity = 1;
+  if (goodStanding && severity > 0) severity = (severity - 1) as 0 | 1;
+  return severity === 2 ? 'installation_hold' : severity === 1 ? 'formal_notice' : 'call';
+}
 
 /** Resolves the reminder cadence against one payment's real, current due
  *  date — recomputed fresh every call, so a milestone-shifted due date (see
@@ -2351,6 +2365,84 @@ export const memoryRepository: Repository = {
         }
       }
       return result;
+    }),
+
+  /* --------------------------- Overdue payment escalation (089, Admin) */
+  getOverdueEscalationQueue: () =>
+    simulateRead(() => {
+      const now = Date.now();
+      const maxOffset = Math.max(...paymentReminderConfig.steps.map((s) => s.daysOffset));
+      const otherPaymentIsFine = (p: Payment) => p.status === 'paid' || (p.status !== 'disputed' && daysOverdue(p, now) <= 0);
+      return payments
+        .filter((p) => isOutstanding(p) && p.status !== 'disputed' && daysOverdue(p, now) >= maxOffset && !activeDealPause(p.dealId))
+        .map((payment): OverdueEscalationRow | null => {
+          const deal = byId(deals, payment.dealId);
+          if (!deal) return null;
+          const lead = resolveLead(deal.leadId);
+          if (!lead) return null;
+          const otherPayments = payments.filter((p) => p.dealId === deal.id && p.id !== payment.id);
+          const goodStanding = otherPayments.length > 0 && otherPayments.some((p) => p.status === 'paid') && otherPayments.every(otherPaymentIsFine);
+          const activeJobs = jobs.filter((j) => j.dealId === deal.id && j.status !== 'completed' && j.status !== 'on_hold');
+          const safetyStepInProgress = activeJobs.some((j) => j.steps.some((s) => s.status === 'current' && s.requiresEvidence));
+          const overdueDays = daysOverdue(payment, now);
+          const overdueAmount = remainingBalance(payment);
+          return {
+            payment,
+            dealId: deal.id,
+            dealCode: deal.code,
+            leadId: lead.id,
+            siteName: lead.siteName,
+            customerName: deal.customerId ? nameOf(deal.customerId) : lead.contactName,
+            overdueAmount,
+            overdueDays,
+            tier: computeEscalationTier(overdueDays, overdueAmount, goodStanding),
+            goodStanding,
+            activeJobs,
+            safetyStepInProgress,
+          };
+        })
+        .filter((row): row is OverdueEscalationRow => row !== null)
+        .sort((a, b) => b.overdueDays - a.overdueDays);
+    }),
+
+  sendFormalPaymentNotice: (paymentId, byName) =>
+    simulateWrite(() => {
+      const payment = byId(payments, paymentId);
+      if (!payment) throw new RepositoryError('not_found');
+      const deal = byId(deals, payment.dealId);
+      if (!deal) throw new RepositoryError('not_found');
+      const lead = resolveLead(deal.leadId);
+      if (!lead) throw new RepositoryError('not_found');
+      const message = sendReminderMessage(payment, lead, byName, 'whatsapp', 'tpl-payment-formal-notice');
+      pushTimelineEvent({
+        leadId: lead.id,
+        kind: 'communication_sent',
+        actorName: byName,
+        at: new Date().toISOString(),
+        detail: `Formal payment notice sent for ${payment.code} (${formatINR(remainingBalance(payment))} overdue)`,
+      });
+      return message;
+    }),
+
+  flagInstallationHold: (dealId, reason, byName) =>
+    simulateWrite(() => {
+      const deal = byId(deals, dealId);
+      if (!deal) throw new RepositoryError('not_found');
+      const toHold = jobs.filter((j) => j.dealId === dealId && j.status !== 'completed' && j.status !== 'on_hold');
+      if (toHold.length === 0) throw new RepositoryError('invalid_state');
+      const now = new Date().toISOString();
+      const held = toHold.map((job) => patchInPlace(jobs, job.id, { status: 'on_hold', holdReason: reason, heldBy: byName, heldAt: now }));
+      const lead = resolveLead(deal.leadId);
+      if (lead) {
+        pushTimelineEvent({
+          leadId: lead.id,
+          kind: 'note_added',
+          actorName: byName,
+          at: now,
+          detail: `Installation paused pending overdue payment — ${reason}`,
+        });
+      }
+      return held;
     }),
 
   listSuppliers: () => simulateRead(() => [...suppliers]),

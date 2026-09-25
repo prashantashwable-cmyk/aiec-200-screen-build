@@ -926,7 +926,10 @@ export const seedPayments: Payment[] = [
   // A partial bank transfer came in against this already-overdue,
   // already-escalated (see al-2) stage — the remaining ₹3,92,000 is still
   // overdue, screen 082's own partial-payment reconciliation edge case.
-  { id: 'p-3', code: 'AIEC-P-4103', dealId: 'dl-1', stage: 'installation', amount: 792_000, status: 'overdue', dueDate: daysAgo(6), amountReceived: 400_000, method: 'neft', manualReferenceNumber: 'NEFT240811', recordedManuallyBy: 'u-admin-1', lastReceivedAt: daysAgo(4), isDemo: true },
+  // 10 days overdue (past the reminder cadence's last step, at day 7) —
+  // deliberately past cadence-exhaustion so 089's escalation queue has a
+  // real, eligible row on a deal (dl-1) that also has active Jobs.
+  { id: 'p-3', code: 'AIEC-P-4103', dealId: 'dl-1', stage: 'installation', amount: 792_000, status: 'overdue', dueDate: daysAgo(10), amountReceived: 400_000, method: 'neft', manualReferenceNumber: 'NEFT240811', recordedManuallyBy: 'u-admin-1', lastReceivedAt: daysAgo(4), isDemo: true },
   { id: 'p-4', code: 'AIEC-P-4104', dealId: 'dl-1', stage: 'handover', amount: 264_000, status: 'due', dueDate: daysAhead(20), isDemo: true },
   { id: 'p-5', code: 'AIEC-P-4105', dealId: 'dl-2', stage: 'advance', amount: 470_000, status: 'paid', dueDate: daysAgo(32), paidAt: daysAgo(32), method: 'upi', isDemo: true },
   { id: 'p-6', code: 'AIEC-P-4106', dealId: 'dl-2', stage: 'material', amount: 658_000, status: 'paid', dueDate: daysAgo(20), paidAt: daysAgo(19), method: 'neft', isDemo: true },
@@ -1516,7 +1519,7 @@ export const seedAutomations: AutomationRule[] = [
 
 export const seedAlerts: Alert[] = [
   { id: 'al-1', code: 'ALT-9001', titleKey: 'alerts.type.safetyStepBlocked', context: 'AIEC-J-3106 · Kulkarni Signature — Basement · load test blocked, no evidence attached', severity: 'critical', category: 'safety', status: 'open', raisedAt: hoursAgo(2), relatedId: 'j-6', location: { lat: 18.5509, lng: 73.9462 }, isDemo: true },
-  { id: 'al-2', code: 'ALT-9002', titleKey: 'alerts.type.paymentOverdue', context: 'AIEC-P-4103 · ₹7,92,000 · 6 days past due', severity: 'high', category: 'payment', status: 'open', raisedAt: daysAgo(1), relatedId: 'p-3', isDemo: true },
+  { id: 'al-2', code: 'ALT-9002', titleKey: 'alerts.type.paymentOverdue', context: 'AIEC-P-4103 · ₹7,92,000 · 10 days past due', severity: 'high', category: 'payment', status: 'open', raisedAt: daysAgo(1), relatedId: 'p-3', isDemo: true },
   { id: 'al-3', code: 'ALT-9003', titleKey: 'alerts.type.automationFailing', context: 'Nightly commission accrual failed on last run', severity: 'high', category: 'automation', status: 'acknowledged', raisedAt: hoursAgo(11), acknowledgedBy: 'u-admin-1', relatedId: 'a-8', isDemo: true },
   { id: 'al-4', code: 'ALT-9004', titleKey: 'alerts.type.leadStalled', context: 'AIEC-L-0109 · Nirman Elite · 6 days at Contacted, SLA is 3', severity: 'medium', category: 'sla_breach', status: 'open', raisedAt: hoursAgo(6), relatedId: 'l-9', isDemo: true },
   { id: 'al-5', code: 'ALT-9005', titleKey: 'alerts.type.supplierLate', context: 'Deccan Structural Steel · on-time rate fell to 72%', severity: 'medium', category: 'supplier', status: 'open', raisedAt: daysAgo(2), relatedId: 'sp-4', isDemo: true },
@@ -1727,6 +1730,21 @@ const templateSeeds: TemplateSeed[] = [
       en: 'AIEC: Hi {{customerName}}, the payment of {{quoteAmount}} for {{buildingName}} is now overdue. Please arrange payment as soon as possible, or contact us if there is an issue.',
       hi: 'AIEC: नमस्ते {{customerName}}, {{buildingName}} के लिए {{quoteAmount}} का भुगतान अब अतिदेय है। कृपया जल्द से जल्द भुगतान करें, या किसी समस्या के लिए हमसे संपर्क करें।',
       mr: 'AIEC: नमस्कार {{customerName}}, {{buildingName}} साठी {{quoteAmount}} रक्कम आता मुदतबाह्य आहे. कृपया लवकरात लवकर पेमेंट करा, किंवा काही अडचण असल्यास आमच्याशी संपर्क साधा.',
+    },
+  },
+  // Sent only by screen 089, after the automated cadence (through the
+  // call_task step) has already run its course with no resolution — a
+  // deliberately more formal register than tpl-payment-reminder-firm.
+  {
+    groupId: 'tpl-payment-formal-notice',
+    name: 'Payment — Formal Notice',
+    channel: 'whatsapp',
+    associatedStage: 'won',
+    mergeFields: ['customerName', 'buildingName', 'quoteAmount'],
+    body: {
+      en: 'AIEC: Dear {{customerName}}, this is a formal notice that the payment of {{quoteAmount}} for {{buildingName}} remains overdue despite earlier reminders. Please settle this at the earliest, or contact us directly to discuss.',
+      hi: 'AIEC: प्रिय {{customerName}}, यह एक औपचारिक सूचना है कि {{buildingName}} के लिए {{quoteAmount}} का भुगतान पहले की याद-दिलाने के बावजूद अभी भी बकाया है। कृपया इसे जल्द से जल्द निपटाएं, या चर्चा के लिए सीधे हमसे संपर्क करें।',
+      mr: 'AIEC: प्रिय {{customerName}}, ही एक औपचारिक सूचना आहे की {{buildingName}} साठी {{quoteAmount}} चे पेमेंट आधीच्या स्मरणपत्रांनंतरही अजून थकीत आहे. कृपया लवकरात लवकर हे निकाली काढा, किंवा चर्चेसाठी थेट आमच्याशी संपर्क साधा.',
     },
   },
   {
