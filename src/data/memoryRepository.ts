@@ -71,6 +71,8 @@ import type {
   FunnelStage,
   ImportPreview,
   ImportValidationRow,
+  InvoiceDealView,
+  InvoiceLineView,
   LeadFilter,
   LoanApplicationAdminRow,
   LoanPartnerStat,
@@ -122,6 +124,7 @@ import type {
   FollowUpTask,
   ReminderRuleStep,
   GeoZone,
+  Invoice,
   Lead,
   LeadImportBatch,
   LeadSource,
@@ -244,6 +247,8 @@ let reminderPauseCounter = 100;
 let gatewayTransactionCounter = 100;
 const loanApplications = [...seedLoanApplications];
 let loanApplicationCounter = 100;
+const invoices: Invoice[] = [];
+let invoiceCounter = 100;
 
 let leadCounter = 200;
 let timelineEventCounter = 900;
@@ -617,6 +622,55 @@ function buildReminderTimeline(payment: Payment, lead: Lead, config: PaymentRemi
  *  `LoanApplication`, not a UI-only label, so 086's per-partner stats mean
  *  something even with only one row today. */
 const FINANCING_PARTNER_NAME = 'Suvidha Finance Ltd';
+
+/** AIEC's own GSTIN — real invoice data, so it's a plain constant, not a
+ *  translated UI string; every invoice 087 issues carries it. */
+const AIEC_GSTIN = '27AABCA1234B1Z5';
+
+/** Splits a GST-inclusive total into its taxable value and GST amount —
+ *  every `Payment.amount`/`Deal.agreedPrice` in this build is already
+ *  GST-inclusive (see `QuotationCostBreakdown.finalPrice`), so every
+ *  invoice figure is derived by working backward from it, never entered
+ *  independently. */
+function splitGst(totalInclusive: number, gstPercent: number): { taxableValue: number; gstAmount: number } {
+  const taxableValue = Math.round(totalInclusive / (1 + gstPercent / 100));
+  return { taxableValue, gstAmount: totalInclusive - taxableValue };
+}
+
+function customerAddressOf(lead: Lead | null): string {
+  return lead ? `${lead.address}, ${lead.city} ${lead.pincode}` : '';
+}
+
+/** Idempotently backfills a `'stage'` invoice for every `Payment` on this
+ *  deal that's `'paid'` and doesn't already have one — see
+ *  `getInvoicesForDeal`'s own doc comment for why this, not a live event,
+ *  is what "auto-generates as it's collected" resolves to here. */
+function ensureStageInvoices(dealId: string, deal: Deal, lead: Lead | null): void {
+  const paidWithoutInvoice = payments.filter((p) => p.dealId === dealId && p.status === 'paid' && !invoices.some((inv) => inv.paymentId === p.id));
+  for (const payment of paidWithoutInvoice) {
+    const { taxableValue, gstAmount } = splitGst(payment.amount, deal.gstPercent);
+    invoiceCounter += 1;
+    invoices.push({
+      id: `inv-${invoiceCounter}`,
+      code: `AIEC-INV-${4000 + invoiceCounter}`,
+      dealId,
+      paymentId: payment.id,
+      stage: payment.stage,
+      type: 'stage',
+      customerName: deal.customerId ? nameOf(deal.customerId) : (lead?.contactName ?? ''),
+      customerAddress: customerAddressOf(lead),
+      customerGstin: deal.customerGstin,
+      aiecGstin: AIEC_GSTIN,
+      taxableValue,
+      gstPercent: deal.gstPercent,
+      gstAmount,
+      totalAmount: payment.amount,
+      issuedAt: payment.paidAt ?? new Date().toISOString(),
+      issuedBy: 'AIEC',
+      isDemo: true,
+    });
+  }
+}
 
 /** How long an `'approved'` application may sit before 086 treats it as
  *  stuck and surfaces an Alert rather than leaving it to be discovered by
@@ -1989,6 +2043,133 @@ export const memoryRepository: Repository = {
       };
       alerts.push(created);
       return created;
+    }),
+
+  getInvoicesForDeal: (dealId, viewer) =>
+    simulateRead(() => {
+      const deal = byId(deals, dealId);
+      if (!deal) return null;
+      if (viewer.role === 'customer' && deal.customerId !== viewer.id) return null;
+      const lead = resolveLead(deal.leadId);
+      ensureStageInvoices(dealId, deal, lead);
+      const dealPayments = payments.filter((p) => p.dealId === dealId);
+      const allStagesPaid = dealPayments.length > 0 && dealPayments.every((p) => p.status === 'paid');
+      const dealInvoices = invoices.filter((inv) => inv.dealId === dealId).sort((a, b) => a.issuedAt.localeCompare(b.issuedAt));
+      const lines: InvoiceLineView[] = dealInvoices.map((invoice) => ({
+        invoice,
+        isSuperseded: dealInvoices.some((other) => other.supersedesInvoiceId === invoice.id),
+      }));
+      return {
+        dealCode: deal.code,
+        siteName: lead?.siteName ?? '',
+        customerName: deal.customerId ? nameOf(deal.customerId) : (lead?.contactName ?? ''),
+        customerAddress: customerAddressOf(lead),
+        customerGstin: deal.customerGstin,
+        aiecGstin: AIEC_GSTIN,
+        agreedPrice: deal.agreedPrice,
+        gstPercent: deal.gstPercent,
+        allStagesPaid,
+        hasFinalInvoice: dealInvoices.some((inv) => inv.type === 'final' && !dealInvoices.some((other) => other.supersedesInvoiceId === inv.id)),
+        invoices: lines,
+      };
+    }),
+
+  generateFinalInvoice: (dealId, byName) =>
+    simulateWrite(() => {
+      const deal = byId(deals, dealId);
+      if (!deal) throw new RepositoryError('not_found');
+      const dealPayments = payments.filter((p) => p.dealId === dealId);
+      if (dealPayments.length === 0 || !dealPayments.every((p) => p.status === 'paid')) throw new RepositoryError('stages_unpaid');
+      const dealInvoices = invoices.filter((inv) => inv.dealId === dealId);
+      const existing = dealInvoices.find((inv) => inv.type === 'final' && !dealInvoices.some((other) => other.supersedesInvoiceId === inv.id));
+      if (existing) return existing;
+      const lead = resolveLead(deal.leadId);
+      const { taxableValue, gstAmount } = splitGst(deal.agreedPrice, deal.gstPercent);
+      invoiceCounter += 1;
+      const created: Invoice = {
+        id: `inv-${invoiceCounter}`,
+        code: `AIEC-INV-${4000 + invoiceCounter}`,
+        dealId,
+        type: 'final',
+        customerName: deal.customerId ? nameOf(deal.customerId) : (lead?.contactName ?? ''),
+        customerAddress: customerAddressOf(lead),
+        customerGstin: deal.customerGstin,
+        aiecGstin: AIEC_GSTIN,
+        taxableValue,
+        gstPercent: deal.gstPercent,
+        gstAmount,
+        totalAmount: deal.agreedPrice,
+        issuedAt: new Date().toISOString(),
+        issuedBy: byName,
+        isDemo: true,
+      };
+      invoices.push(created);
+      return created;
+    }),
+
+  issueCreditNote: (invoiceId, amount, reason, byName) =>
+    simulateWrite(() => {
+      const original = byId(invoices, invoiceId);
+      if (!original) throw new RepositoryError('not_found');
+      if (!reason.trim()) throw new RepositoryError('reason_required');
+      const { taxableValue, gstAmount } = splitGst(amount, original.gstPercent);
+      invoiceCounter += 1;
+      const created: Invoice = {
+        id: `inv-${invoiceCounter}`,
+        code: `AIEC-CN-${4000 + invoiceCounter}`,
+        dealId: original.dealId,
+        type: 'credit_note',
+        customerName: original.customerName,
+        customerAddress: original.customerAddress,
+        customerGstin: original.customerGstin,
+        aiecGstin: original.aiecGstin,
+        taxableValue,
+        gstPercent: original.gstPercent,
+        gstAmount,
+        totalAmount: amount,
+        issuedAt: new Date().toISOString(),
+        issuedBy: byName,
+        referencesInvoiceId: original.id,
+        creditNoteReason: reason.trim(),
+        isDemo: true,
+      };
+      invoices.push(created);
+      return created;
+    }),
+
+  reissueInvoice: (invoiceId, reason, byName) =>
+    simulateWrite(() => {
+      const original = byId(invoices, invoiceId);
+      if (!original) throw new RepositoryError('not_found');
+      if (!reason.trim()) throw new RepositoryError('reason_required');
+      const deal = byId(deals, original.dealId);
+      if (!deal) throw new RepositoryError('not_found');
+      const lead = resolveLead(deal.leadId);
+      invoiceCounter += 1;
+      const created: Invoice = {
+        ...original,
+        id: `inv-${invoiceCounter}`,
+        code: `AIEC-INV-${4000 + invoiceCounter}`,
+        type: 'reissue',
+        customerName: deal.customerId ? nameOf(deal.customerId) : (lead?.contactName ?? ''),
+        customerAddress: customerAddressOf(lead),
+        customerGstin: deal.customerGstin,
+        issuedAt: new Date().toISOString(),
+        issuedBy: byName,
+        supersedesInvoiceId: original.id,
+        reissueReason: reason.trim(),
+        referencesInvoiceId: undefined,
+        creditNoteReason: undefined,
+      };
+      invoices.push(created);
+      return created;
+    }),
+
+  setDealCustomerGstin: (dealId, gstin) =>
+    simulateWrite(() => {
+      const deal = byId(deals, dealId);
+      if (!deal) throw new RepositoryError('not_found');
+      return patchInPlace(deals, dealId, { customerGstin: gstin.trim() });
     }),
 
   getPaymentReminderConfig: () => simulateRead(() => paymentReminderConfig),

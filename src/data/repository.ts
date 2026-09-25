@@ -29,6 +29,7 @@ import type {
   FollowUpTask,
   FollowUpTaskStatus,
   GeoZone,
+  Invoice,
   Job,
   Language,
   Lead,
@@ -396,6 +397,32 @@ export interface LoanPartnerStat {
   avgDaysToDisbursement: number | null;
 }
 
+/** One invoice as 087 lists it, already knowing whether it's the live
+ *  version — `isSuperseded` is computed (does some other invoice's
+ *  `supersedesInvoiceId` point at this one), never stored, so it can
+ *  never itself drift out of sync with the reissue that made it true. */
+export interface InvoiceLineView {
+  invoice: Invoice;
+  isSuperseded: boolean;
+}
+
+/** Screen 087's own read shape for one deal — everything both Admin and
+ *  the owning customer see, `invoices` sorted oldest first so a reissue
+ *  or credit note always reads directly after what it refers to. */
+export interface InvoiceDealView {
+  dealCode: string;
+  siteName: string;
+  customerName: string;
+  customerAddress: string;
+  customerGstin?: string;
+  aiecGstin: string;
+  agreedPrice: number;
+  gstPercent: number;
+  allStagesPaid: boolean;
+  hasFinalInvoice: boolean;
+  invoices: InvoiceLineView[];
+}
+
 /** One territory's (city's) slice of a script's effectiveness — screen
  *  078's per-territory tracking, computed on read rather than stored. */
 export interface ObjectionScriptTerritoryStat {
@@ -709,6 +736,37 @@ export interface Repository {
    *  case) and again by its own manual "Escalate" button, which simply
    *  confirms the same alert rather than risking a duplicate. */
   escalateLoanApplication(applicationId: string): Promise<Alert>;
+
+  /* Payments & Financing: invoice generator (087, Admin + Customer) */
+  /** Null when the deal doesn't exist, or (for a `'customer'` viewer only)
+   *  isn't theirs — same ownership discipline as 084/085. Before reading,
+   *  idempotently backfills a `'stage'` invoice for any `Payment` on this
+   *  deal that's `'paid'` and doesn't have one yet — the actual mechanism
+   *  behind "auto-generates as it's collected": there's no event this
+   *  demo can react to the instant a payment clears, so it guarantees the
+   *  same outcome (every paid stage has its invoice) by the next time
+   *  anyone looks, the same shape 086's stuck-alert auto-raise already
+   *  uses. Never touches an already-superseded or credit-noted invoice. */
+  getInvoicesForDeal(dealId: string, viewer: { role: Role; id: string }): Promise<InvoiceDealView | null>;
+  /** Admin-only in practice (screen-enforced): the deliberate action that
+   *  covers the full `agreedPrice` once every stage has actually paid —
+   *  "option," not automatic, unlike the per-stage invoices. Idempotent:
+   *  returns the existing final invoice if one already exists and hasn't
+   *  been superseded, throws if any stage is still unpaid. */
+  generateFinalInvoice(dealId: string, byName: string): Promise<Invoice>;
+  /** A partial refund after invoicing gets its own linked document rather
+   *  than an edit to the original — `amount` is the taxable+GST total
+   *  being credited back, broken down at the invoice's own `gstPercent`. */
+  issueCreditNote(invoiceId: string, amount: number, reason: string, byName: string): Promise<Invoice>;
+  /** A name/address correction discovered after issue: creates a new
+   *  invoice with the deal's *current* customerName/Address snapshotted
+   *  in, `supersedesInvoiceId` pointing at the original, which itself is
+   *  never edited — only ever read as `isSuperseded` from then on. */
+  reissueInvoice(invoiceId: string, reason: string, byName: string): Promise<Invoice>;
+  /** Admin-only: sets or corrects the deal's own customerGstin (there is
+   *  no earlier screen this build captures it on yet) — never required,
+   *  never fabricated when absent. */
+  setDealCustomerGstin(dealId: string, gstin: string): Promise<Deal>;
 
   /* Payments & Financing: automated reminder configuration */
   getPaymentReminderConfig(): Promise<PaymentReminderConfig>;

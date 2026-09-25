@@ -309,6 +309,10 @@ export interface Deal {
   negotiationRounds: number;
   createdAt: string;
   closedAt?: string;
+  /** Only for a business/commercial purchase eligible for input tax
+   *  credit — screen 087's invoices carry this when set, and never
+   *  fabricate one when it isn't. */
+  customerGstin?: string;
   isDemo: boolean;
 }
 
@@ -1031,6 +1035,58 @@ export interface LoanApplication {
 export interface FinancingPartnerRate {
   tenureMonths: number;
   annualRatePercent: number;
+}
+
+/* -------------------------------------------------------- Invoicing (087) */
+
+export type InvoiceType = 'stage' | 'final' | 'credit_note' | 'reissue';
+
+/**
+ * A GST-compliant document generated only from a real, already-paid
+ * `Payment` (`type: 'stage'`) or a deal's full agreed price once every
+ * stage has paid (`type: 'final'`) — there is no independent amount entry
+ * anywhere, so nothing here can ever drift from what was actually charged
+ * and paid. `customerName`/`customerAddress` are snapshotted at issue
+ * time, not read live from the lead, so an already-issued invoice reads
+ * exactly as it did the day it was issued even if the lead's own address
+ * changes later — the whole reason a correction needs a `'reissue'`
+ * rather than an edit.
+ *
+ * Immutable once created: a `'reissue'` supersedes an earlier invoice
+ * (`supersedesInvoiceId`) rather than changing it, and a `'credit_note'`
+ * references one (`referencesInvoiceId`) rather than editing or deleting
+ * it — both are how this build satisfies "never silently edit a past
+ * invoice."
+ */
+export interface Invoice {
+  id: string;
+  code: string;
+  dealId: string;
+  /** Set only for `type: 'stage'` — the exact Payment this invoice was
+   *  generated from. */
+  paymentId?: string;
+  /** Snapshotted from `paymentId`'s own Payment at creation — set only
+   *  for `type: 'stage'`, so the detail view never needs a second lookup
+   *  just to say which stage this invoice covers. */
+  stage?: PaymentStage;
+  type: InvoiceType;
+  customerName: string;
+  customerAddress: string;
+  customerGstin?: string;
+  aiecGstin: string;
+  taxableValue: number;
+  gstPercent: number;
+  gstAmount: number;
+  totalAmount: number;
+  issuedAt: string;
+  issuedBy: string;
+  /** Set only on a `'reissue'` — the invoice it supersedes. */
+  supersedesInvoiceId?: string;
+  reissueReason?: string;
+  /** Set only on a `'credit_note'` — the invoice it's issued against. */
+  referencesInvoiceId?: string;
+  creditNoteReason?: string;
+  isDemo: boolean;
 }
 
 export type PaymentDueTriggerType = 'fixed_date' | 'milestone';
