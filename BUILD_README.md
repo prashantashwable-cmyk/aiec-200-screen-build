@@ -552,3 +552,130 @@ even though its deal had already been Closed Won for hours — corrected to
 from earlier modules — the `dl-6` supplier-PO failure and its new Payment
 rows both surfaced correctly with no separate calculation; nothing
 regressed.
+
+## Module 9 — Payments & Financing (`081`–`090`, checkpoint-verified)
+
+Everything under **Analytics → Collections/Financing** (`/admin/analytics/...`)
+plus the customer-facing payment/financing screens (`/customer/...`,
+`/payments/history`, `/deals/:dealId/invoices`). Real `Payment` records and
+a real `PaymentStage` enum already existed from Module 2's Finance screen
+(028) and 074's `DealTerms.paymentStagePlan` — this module extends that
+shape rather than starting from nothing, the same way Module 8 extended
+`Deal`. The spine is a schedule (081) that real money moves against, through
+a gateway (084) or financing (085), collected and chased (082/083), reaching
+a human only when automation alone can't resolve it (089), documented
+(087/088), and — when something goes wrong — refunded or disputed (090)
+without ever losing the accounting thread.
+
+- **One aging vocabulary for the whole module.** `@/features/payments/aging`
+  (`bucketFor`, `isOutstanding`, `remainingBalance`, `computeCashIn`,
+  `computeTotalReceivable`, `receivedAmountOf`, `daysOverdue`) is the single
+  definition of "overdue" and "collected" every screen in this module reads
+  — 028, 082, 088, 089 and 090 can never quietly disagree on what those words
+  mean, which the spec is explicit is a data-integrity bug if it ever
+  happens.
+- **GST-inclusive money, always.** `Payment.amount`/`Deal.agreedPrice` are
+  GST-inclusive, matching `QuotationCostBreakdown.finalPrice`; `splitGst`
+  (087) derives taxable value + GST backward from the inclusive total —
+  never entered independently, and reused by 090's own credit notes via a
+  new shared `createCreditNote` helper rather than a second calculation.
+- **Deterministic simulation, never randomness.** 084's card-decline-then-
+  retry, 085's income-bracket approval amount, 086's stuck-application
+  threshold, and 087/088's auto-generation timing are all computed from real
+  input state — the same discipline the rest of the build holds to.
+- **Idempotent "ensure on read," not events.** This demo has no event system,
+  so several screens guarantee an outcome by the next time anyone looks
+  rather than firing the instant something happens: 086's stuck-application
+  alert, 087's `ensureStageInvoices` (auto-backfills a `'stage'` invoice for
+  any paid-but-uninvoiced `Payment`, now also for a stage disputed
+  immediately after paying, for 090's own credit notes), and 089's
+  escalation eligibility (computed live from `daysOverdue` against the
+  cadence config's own furthest step, never a persisted "exhausted" flag).
+- **A reminder pause is a genuine "already handled" signal, reused twice.**
+  083's `PaymentReminderPause` was built to stop automated nudges on a deal
+  someone's already sorting out by hand — 089 reuses the exact same record
+  to exclude that deal from its escalation queue entirely, rather than
+  re-deriving "is someone already on this" a second way.
+- **A bug found and fixed at the source, not worked around.** `receivedAmountOf`
+  (and so remaining-balance math everywhere) keyed off a payment's *current*
+  status; disputing a `'paid'` stage that never had `amountReceived` set
+  explicitly (several seeded ones hadn't) made it read as "nothing collected"
+  the moment it was disputed. Fixed in `disputePayment` itself — it now
+  backfills `amountReceived` from `amount` when disputing an already-paid
+  stage — so every screen's math stays correct, not just 090's.
+
+Screens:
+
+- **081 Payment Stage/Schedule Setup** (`/admin/deals/:dealId/schedule`):
+  turns `DealTerms.paymentStagePlan` into real, dated `Payment` records —
+  milestone-triggered stages resolve their due date live against the deal's
+  actual `Job`/timeline state, never a stored date that could drift.
+- **082 Payment Collection Dashboard** (`/admin/analytics/collections`):
+  every payment stage across every deal, aging-bucketed, filterable by
+  stage/severity/owner — record a manual payment, send a reminder, escalate,
+  or dispute a stage (now including an already-`'paid'` one, extended for
+  090's own refund scenario) from one detail sheet.
+- **083 Automated Payment Reminder Configuration**
+  (`/admin/analytics/collections/reminders`): the cadence (gentle → firm →
+  call task) Admin tunes once and 082/089 both read live, plus per-deal
+  pause/resume with a required reason and a nudge on a long-standing pause.
+- **084 Payment Gateway Checkout Screen** (`/customer/payments/:paymentId/checkout`,
+  Customer): UPI/card/netbanking against the live remaining balance only,
+  never a client-supplied amount; a deterministic first-attempt card decline
+  makes the safe-retry path actually exercisable, and netbanking's
+  `'processing'` → resolved state stands in for a webhook this demo has no
+  server to receive.
+- **085 Loan/EMI Application Screen** (`/customer/deals/:dealId/loan-application`,
+  Customer): a non-binding eligibility precheck (never hard-blocks a full
+  application) followed by the financing partner's real rate table (its own
+  deterministic first-call outage, for the same reason as 084's card
+  decline), reusing the domain-agnostic `useWizard` hook rather than a
+  parallel draft system.
+- **086 Loan Partner Integration & Status Screen**
+  (`/admin/analytics/financing`, Admin): every application across every
+  customer, auto-escalating (idempotently) any stuck in `'under_review'` too
+  long, and settling real `Payment` rows the moment a loan disburses.
+- **087 Invoice Generator (Auto)** (`/deals/:dealId/invoices`, Admin +
+  Customer): GST-compliant, immutable documents — a `'stage'` invoice
+  auto-backfills as each payment clears, a `'final'` invoice only once every
+  stage has, and correction is always a `'reissue'` or `'credit_note'`
+  referencing the original, never an edit to it.
+- **088 Payment Receipt & History Screen** (`/payments/history`, Admin +
+  Customer): a customer's full payment history aggregated across every deal
+  they own (never assumed to be exactly one), with a working `window.print()`
+  receipt/statement and a real, self-contained CSV export.
+- **089 Overdue Payment Escalation Screen**
+  (`/admin/analytics/collections/escalation`, Admin): the deliberately narrow
+  queue of stages that exhausted the automated cadence without paying — a
+  tier badge (Gentle Call Needed / Formal Notice / Consider Installation
+  Hold) that weighs relationship history but never gates which of the three
+  one-tap actions Admin may take, and a Flag-to-Pause-Installation action
+  that requires explicit acknowledgment, elevated when a technician is
+  genuinely mid-safety-critical-step on site.
+- **090 Refund & Dispute Management Screen**
+  (`/admin/analytics/collections/disputes`, Admin): every dispute, open and
+  resolved, from the exact same `Payment.status === 'disputed'` 082 shows —
+  Approve Full/Partial Refund generates a real credit note, Reject restores
+  the stage's pre-dispute status with full reasoning preserved; a financing-
+  partner routing warning and a downstream-allocation warning (supplier PO
+  and/or commission already paid out, read from `DealClosure`) surface
+  prominently before Admin finalizes either refund action.
+
+**Module 9 checkpoint (passed):** clicked through all 10 screens — schedule
+setup → collections dashboard → reminder config → gateway checkout (card
+decline/retry, netbanking pending/resolved) → loan application (precheck,
+partner-outage retry, disbursement) → loan partner status (stuck-application
+auto-escalation) → invoice generator (stage/final/reissue/credit-note) →
+receipt history (print, CSV export) → overdue escalation (tier badges,
+good-standing/safety warnings, all three actions, installation hold with
+elevated acknowledgment) → refund & dispute management (full refund on a
+financing-method payment with its routing warning, partial refund with a
+real credit note, rejection with full reasoning) — no console errors, and
+082/028 agree on the same Collected total and Disputed count exactly as the
+spec requires. Spot-checked 028 (Finance cash-flow), 042 (Lead Detail
+timeline), 051 (Comm Templates) and 077 (Deal Closure Confirmation) from
+earlier modules — nothing regressed. Two small, necessary fixes surfaced
+along the way and are covered above: the `receivedAmountOf`/`amountReceived`
+gap disputing a paid stage could hit, and extending 082's own dispute button
+to reach an already-paid stage (090's core refund scenario was otherwise
+unreachable from the app's own UI, only from seed data).

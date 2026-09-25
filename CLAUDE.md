@@ -67,7 +67,7 @@ The login screen (002) has a Demo Mode tab. Admin screens live under `/admin/...
    list/dashboard, which already reflows via the shared `.ds-screen` max-width and the app
    shell's sidebar-on-desktop nav) rather than leaving every screen at one implicit width. Reuse
    `.grid-auto`/`.grid-2` for any content that should genuinely gain columns on a wider screen.
-   Confirmed clean (no horizontal overflow, sensible use of extra width) across 077-081 as of
+   Confirmed clean (no horizontal overflow, sensible use of extra width) across 077-090 as of
    this note; keep checking it per screen rather than assuming the pattern holds forever.
 7. Commit one screen per commit, `Add screen NNN — Title`, then push.
 
@@ -75,35 +75,44 @@ After the **10th screen of a module**, run that module's checkpoint: click throu
 end to end, spot-check 2–3 screens from earlier modules for regressions, fix anything found, and add
 the module's section to `BUILD_README.md`.
 
-## Current status (as of 2026-09-21)
+## Current status (as of 2026-09-25)
 
-- Modules 1–8 (`001`–`080`) are built. Modules 5, 6, 7 and 8 are checkpoint-verified.
-- **Module 8 Negotiation & Deal Closing is done**, including the forward link from 077 to 080 and its
-  checkpoint (all 10 screens clicked through, 3 earlier-module screens spot-checked, nothing
-  regressed — see `BUILD_README.md`'s Module 8 section for the full writeup, including how the
-  074→077 state-machine spine, the shared objection-category taxonomy between 078 and 071's bot, and
-  080's admin-only feedback-note redaction actually work). Also fixed a seed inconsistency found
-  along the way: lead `l-15` (dl-6) was left at stage `negotiation` despite its deal already being
-  Closed Won — corrected to `won`.
-- **Next: Module 9 — Payments & Financing (`081`–`090`)**, starting with `081` Payment Stage/Schedule
-  Setup (`081_payments_financing__payment_stage_schedule_setup_screen.md`). Real `Payment` records
-  and a real `PaymentStage` enum already exist (Module 2's Finance screen, and 074's
-  `DealTerms.paymentStagePlan`) — expect to extend that model rather than starting from nothing, same
-  as Module 8 did with `Deal`.
+- Modules 1–9 (`001`–`090`) are built. Modules 5, 6, 7, 8 and 9 are checkpoint-verified.
+- **Module 9 Payments & Financing is done**, including its checkpoint (all 10 screens clicked
+  through as both Admin and Customer, 4 earlier-module screens spot-checked, nothing regressed —
+  see `BUILD_README.md`'s Module 9 section for the full writeup, including the shared aging
+  vocabulary every screen in the module reads, the GST-split/credit-note path 087 and 090 share,
+  and the 083→089 reminder-pause reuse). Two small, necessary fixes surfaced along the way: a
+  `receivedAmountOf`/`amountReceived` gap that made disputing an already-paid stage misread as
+  "nothing collected" (fixed at the source, in `disputePayment`), and extending 082's own dispute
+  button to reach an already-paid stage, since 090's core refund scenario was otherwise unreachable
+  from the app's own UI. Also fixed a seed inconsistency found while building 089: payment `p-3`
+  (dl-1) was seeded one day short of the reminder cadence's own exhaustion threshold, so no real
+  payment could ever reach 089's escalation queue while also belonging to a deal with an active
+  Job — moved from 6 to 10 days overdue (and the stale `al-2` alert text updated to match).
+- **Next: Module 10 (`091`–`100`)**, starting with `091`. Check the repo root for the exact module
+  name and first spec filename — it wasn't in scope to read ahead while finishing Module 9.
 
-### Module 8 facts worth knowing
+### Module 9 facts worth knowing
 
-- `triggerDealClosure` (077) is the one idempotent kickoff: CRM stage to `'won'`, `Payment` schedule
-  from `DealTerms.paymentStagePlan`, supplier PO attempt, commission entry. A repeat call returns the
-  existing `DealClosure` rather than re-running any of it.
-- `DealCelebration` (080) mirrors that exact read/trigger split (`getDealCelebration` is a pure read;
-  `triggerDealCelebration` is the idempotent create), and its commission summary is a live read of
-  the same `CommissionEntry` rows 038's tracker reads — never a second calculation.
-- Three of 078's `ObjectionCategory` values (`competitor_comparison`, `price_too_high`,
-  `wants_to_delay`) are the literal same strings as `NegotiationObjectionKey` (071's bot config), on
-  purpose — one taxonomy, not two that could drift.
-- `Competitor` (079) is internal-only by construction, not just a UI label: nothing in the
-  communication engine (`CommTemplate`, `NegotiationBotConfig`, etc.) ever reads that type.
+- `@/features/payments/aging` (`bucketFor`, `isOutstanding`, `remainingBalance`, `computeCashIn`,
+  `computeTotalReceivable`, `receivedAmountOf`, `daysOverdue`) is the one shared definition of
+  "overdue" and "collected" — 028, 082, 088, 089 and 090 all read it, never a second calculation.
+- `createCreditNote` (memoryRepository.ts) is shared by `issueCreditNote` (087) and 090's own refund
+  resolution — one accounting-document path. `ensureStageInvoices` (087) now also backfills a stage
+  invoice for a payment that's `'disputed'` but was `'paid'` right before (`preDisputeStatus`), so
+  090 always has a real invoice to credit against even if nobody opened the Invoice screen first.
+- `Payment.preDisputeStatus` (new) is snapshotted by `disputePayment` (082) the moment a stage is
+  disputed — 090's own `resolvePaymentDispute` restores it exactly on a `'rejected'` outcome, and
+  `amountCollectedForDispute` uses it (not `receivedAmountOf` alone) to know what was genuinely
+  collected regardless of the stage's current status.
+- `activeDealPause` (083's `PaymentReminderPause`) is reused as-is by 089 to exclude a deal someone's
+  already handling by hand from the escalation queue entirely — never a second "already handled"
+  signal.
+- 089's escalation tier (`call` / `formal_notice` / `installation_hold`) is a recommendation badge
+  only — it never gates which of the row's three one-tap actions Admin may take; Flag-to-Pause-
+  Installation's elevated warning is driven separately, by whether an active Job has a step that's
+  both `requiresEvidence` and `'current'`.
 
 ## Git
 
