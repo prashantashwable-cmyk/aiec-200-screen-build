@@ -88,8 +88,13 @@ import type {
   PaymentReminderPauseView,
   PaymentScheduleStageResolved,
   PaymentScheduleView,
+  FollowUpEngineRun,
+  MyWork,
+  ReliabilityScore,
   ReminderRunResult,
   ReminderTimelineEntry,
+  WorkItem,
+  WorkNotificationView,
   QuotationAnalytics,
   QuotationSpecInput,
   QuotationWinLossStat,
@@ -110,6 +115,9 @@ import type {
 import type {
   Alert,
   AutomatedActionLogEntry,
+  Commitment,
+  EscalationLevel,
+  WorkNotification,
   AutomationRule,
   BotConfig,
   CallLogEntry,
@@ -191,6 +199,8 @@ import { businessMinutesSince, days, hours, isBreached } from '@/features/sla/cl
 import { buildAutomatedActionEntry } from '@/features/audit/logAutomatedAction';
 import type { AutomatedActionInput } from '@/features/audit/logAutomatedAction';
 import { computeSupplierPerformanceScore } from '@/features/suppliers/performanceScore';
+import { RULE_BY_KIND, collectObligations, targetEscalationLevel } from '@/features/work/commitmentRules';
+import type { CommitmentSources } from '@/features/work/commitmentRules';
 
 /**
  * The in-memory implementation backing Demo Mode.
@@ -505,11 +515,12 @@ function triggerSupplierPo(deal: Deal): { id: string; failed: boolean } {
   }
   logAutomatedAction({
     ruleId: automations.find((a) => a.actionKey === 'automation.action.raisePurchaseOrder' && a.triggerKey === 'automation.trigger.dealWon')?.id,
-    sourceKey: 'deal_closure.supplier_po',
+    sourceKey: failed ? 'deal_closure.supplier_po_failed' : 'deal_closure.supplier_po',
     triggeringCondition: `Deal ${deal.code} closed`,
     actionTaken: failed ? `Supplier PO attempt failed — ${failureReason}` : `Supplier PO ${created.code} triggered`,
     affectedRecordId: created.id,
     affectedRecordType: 'purchase_order',
+    subjectLabel: deal.code,
   });
 
   return { id: created.id, failed };
@@ -593,6 +604,7 @@ function draftPurchaseOrdersForDeal(deal: Deal): SupplierPurchaseOrder[] {
       actionTaken: `Drafted ${po.code} with ${lineItems.length} line item(s)`,
       affectedRecordId: po.id,
       affectedRecordType: 'purchase_order',
+      subjectLabel: po.code,
     });
   }
   return created;
@@ -750,6 +762,97 @@ function sendReminderMessage(payment: Payment, lead: Lead, byName: string, chann
 
 const activeDealPause = (dealId: string) => paymentReminderPauses.find((p) => p.dealId === dealId && p.paused);
 
+/** How far back a missed reminder step is still worth sending. Past this,
+ *  089's escalation queue owns the payment — a week-old "friendly nudge"
+ *  arriving now would read as a glitch, not a reminder. */
+const REMINDER_CATCH_UP_DAYS = 7;
+
+/**
+ * The reminder cadence (083), run by 083's own "Run now" and by the
+ * follow-up engine's heartbeat alike.
+ *
+ * Catch-up, not exact-day: the latest step whose day has arrived fires once
+ * even if nobody had the app open on that exact day — otherwise one quiet
+ * day loses a reminder for good. Earlier steps it overtook are marked as
+ * superseded, never sent late on top of it. One firing per payment, step
+ * and due date, so a heartbeat every minute can't message a customer twice,
+ * and moving a due date (081) re-arms the cadence against the new date.
+ */
+function runPaymentReminders(byName: string): ReminderRunResult {
+  const result: ReminderRunResult = { sent: 0, callTasksCreated: 0, skippedOptedOut: 0, skippedPaused: 0, skippedOutsideWindow: 0 };
+  const now = new Date();
+  const withinWindow = now.getHours() >= paymentReminderConfig.sendWindowStartHour && now.getHours() < paymentReminderConfig.sendWindowEndHour;
+  const todayKey = now.toISOString().slice(0, 10);
+  const oldestKey = new Date(now.getTime() - days(REMINDER_CATCH_UP_DAYS)).toISOString().slice(0, 10);
+  const ruleId = automations.find((a) => a.triggerKey === 'automation.trigger.paymentDueSoon')?.id;
+  for (const payment of payments.filter(isOutstanding)) {
+    const deal = byId(deals, payment.dealId);
+    if (!deal) continue;
+    const lead = resolveLead(deal.leadId);
+    if (!lead) continue;
+    const dueTime = new Date(payment.dueDate).getTime();
+    const arrived = paymentReminderConfig.steps
+      .map((step) => ({ step, dayKey: new Date(dueTime + step.daysOffset * 86_400_000).toISOString().slice(0, 10) }))
+      .filter((entry) => entry.dayKey <= todayKey)
+      .sort((a, b) => (a.dayKey < b.dayKey ? 1 : a.dayKey > b.dayKey ? -1 : b.step.daysOffset - a.step.daysOffset));
+    const latest = arrived[0];
+    if (!latest || latest.dayKey < oldestKey) continue;
+    const keyFor = (stepId: string) => `${payment.id}|${stepId}|${payment.dueDate}`;
+    const firedKey = keyFor(latest.step.id);
+    if (firedReminderKeys.has(firedKey)) continue;
+    if (activeDealPause(deal.id)) {
+      result.skippedPaused += 1;
+      continue;
+    }
+    if (!withinWindow) {
+      result.skippedOutsideWindow += 1;
+      continue;
+    }
+    const step = latest.step;
+    if (step.escalationTier === 'call_task') {
+      followUpTaskCounter += 1;
+      followUpTasks.push({
+        id: `ft-new-${followUpTaskCounter}`,
+        leadId: lead.id,
+        title: `Call ${lead.contactName} about the overdue payment for ${lead.siteName}`,
+        dueDate: now.toISOString(),
+        assignedTo: lead.surveyorId || 'u-admin-1',
+        status: 'open',
+        source: 'auto',
+        purpose: 'collection',
+        createdAt: now.toISOString(),
+        isDemo: true,
+      });
+      result.callTasksCreated += 1;
+      logAutomatedAction({
+        ruleId,
+        sourceKey: 'payment_reminder.call_task',
+        triggeringCondition: `${payment.code} reached its ${step.daysOffset}-day call step`,
+        actionTaken: `Created call task for ${lead.surveyorId ? nameOf(lead.surveyorId) : 'Admin'}`,
+        affectedRecordId: payment.id,
+        affectedRecordType: 'payment',
+        subjectLabel: payment.code,
+      });
+    } else if (isOptedOutSync(lead.contactPhone, step.channel)) {
+      result.skippedOptedOut += 1;
+    } else {
+      sendReminderMessage(payment, lead, byName, step.channel, step.templateGroupId ?? 'tpl-payment-reminder');
+      result.sent += 1;
+      logAutomatedAction({
+        ruleId,
+        sourceKey: 'payment_reminder.message',
+        triggeringCondition: `${payment.code} reached its ${step.daysOffset}-day reminder step`,
+        actionTaken: `Sent ${step.escalationTier} ${step.channel} reminder to ${lead.contactName}`,
+        affectedRecordId: payment.id,
+        affectedRecordType: 'payment',
+        subjectLabel: payment.code,
+      });
+    }
+    for (const entry of arrived) firedReminderKeys.add(keyFor(entry.step.id));
+  }
+  return result;
+}
+
 /** Screen 089's tier badge — days-overdue and remaining amount set the base
  *  level, then a good-standing customer's one late stage is tempered down
  *  exactly one level (never suppressed outright: the money is still owed),
@@ -861,6 +964,7 @@ function ensureStageInvoices(dealId: string, deal: Deal, lead: Lead | null): voi
       actionTaken: `Issued stage invoice AIEC-INV-${4000 + invoiceCounter}`,
       affectedRecordId: `inv-${invoiceCounter}`,
       affectedRecordType: 'invoice',
+      subjectLabel: payment.code,
     });
   }
 }
@@ -993,7 +1097,7 @@ const rankOf = (stage: Lead['stage']) => {
 function reconcileFollowUpTasks() {
   for (let i = 0; i < followUpTasks.length; i += 1) {
     const task = followUpTasks[i];
-    if (task.status !== 'open') continue;
+    if (task.status !== 'open' || task.purpose === 'collection') continue;
     const lead = resolveLead(task.leadId);
     if (lead && (lead.stage === 'won' || lead.stage === 'lost')) {
       followUpTasks[i] = {
@@ -1470,6 +1574,294 @@ function applyApprovedDiscount(request: DiscountRequest, approverId: string, rea
  *  unavailable right when the customer is on the phone. */
 const URGENT_AUTO_APPROVE_BUFFER_PCT = 3;
 
+
+/* ============================================ Manager layer: follow-up engine
+ *
+ * The app's own manager. Every minute (the AppShell heartbeat) it:
+ *   1. runs the automations that used to wait for somebody's click,
+ *   2. re-derives every dated promise from `commitmentRules` and records it
+ *      as a Commitment — opening, closing, re-owning or re-dating as the
+ *      source records say,
+ *   3. walks each open one up its ladder: nudge the owner before due, tell
+ *      them at due, tell whoever they report to after `escalateAfter`, and
+ *      raise an Alert for Admin after twice that.
+ * Levels only ever move forward, so running it every minute never repeats
+ * a message. Written as a function of (data, now) so the same logic can move
+ * onto a server scheduler when there is a backend — until then it runs only
+ * while somebody has the app open, which BUILD_README calls out plainly.
+ */
+
+const commitments: Commitment[] = [];
+const commitmentByKey = new Map<string, Commitment>();
+let commitmentCounter = 0;
+const workNotifications: WorkNotification[] = [];
+let workNotificationCounter = 0;
+
+/** The name automated sends carry as their sender. */
+const ASSISTANT_ACTOR = 'AIEC Assistant';
+
+function commitmentSources(now: number): CommitmentSources {
+  return {
+    now,
+    users,
+    leads,
+    deals,
+    payments,
+    jobs,
+    purchaseOrders: supplierPurchaseOrders,
+    suppliers,
+    quotations,
+    dealTerms: dealTermsRecords,
+    discountRequests,
+    counterOffers,
+    alerts,
+    followUpTasks,
+    pausedDealIds: new Set(paymentReminderPauses.filter((p) => p.paused).map((p) => p.dealId)),
+  };
+}
+
+function putCommitment(next: Commitment): Commitment {
+  const index = commitments.findIndex((c) => c.id === next.id);
+  if (index === -1) commitments.push(next);
+  else commitments[index] = next;
+  commitmentByKey.set(next.key, next);
+  return next;
+}
+
+function notifyWork(userId: string, commitment: Commitment, kind: WorkNotification['kind'], at: string): void {
+  workNotificationCounter += 1;
+  workNotifications.push({ id: `wn-${workNotificationCounter}`, userId, commitmentId: commitment.id, kind, at, isDemo: true });
+}
+
+/** Everything the engine can see right now, recorded as Commitments. */
+function syncCommitments(now: number): void {
+  const at = new Date(now).toISOString();
+  const seen = new Set<string>();
+  for (const ob of collectObligations(commitmentSources(now))) {
+    seen.add(ob.key);
+    const existing = commitmentByKey.get(ob.key);
+    const derived = {
+      kind: ob.kind,
+      ownerUserId: ob.ownerUserId,
+      subject: ob.subject,
+      titleKey: ob.titleKey,
+      titleParams: ob.titleParams,
+      amount: ob.amount,
+      dueAt: ob.dueAt,
+      paused: ob.paused,
+      actionRoute: ob.actionRoute,
+      oversightRoute: ob.oversightRoute,
+    };
+    if (!existing) {
+      // History is recorded only when the source says when it was done —
+      // reliability is never computed from a guessed completion time.
+      if (ob.state === 'cancelled' || (ob.state === 'done' && !ob.completedAt)) continue;
+      commitmentCounter += 1;
+      putCommitment({
+        id: `cm-${commitmentCounter}`,
+        key: ob.key,
+        ...derived,
+        status: ob.state,
+        escalationLevel: 0,
+        createdAt: at,
+        completedAt: ob.state === 'done' ? ob.completedAt : undefined,
+        isDemo: true,
+      });
+      continue;
+    }
+    if (ob.state !== 'open') {
+      if (existing.status === 'open') {
+        putCommitment({ ...existing, ...derived, status: ob.state, completedAt: ob.state === 'done' ? (ob.completedAt ?? at) : undefined });
+      }
+      continue;
+    }
+    // Open. A new owner or a new due date is a new promise: the ladder
+    // restarts so the person now holding it hears about it themselves.
+    const repromised = existing.status !== 'open' || existing.ownerUserId !== ob.ownerUserId || existing.dueAt !== ob.dueAt;
+    putCommitment({
+      ...existing,
+      ...derived,
+      status: 'open',
+      completedAt: undefined,
+      escalationLevel: repromised ? 0 : existing.escalationLevel,
+      escalatedToUserId: repromised ? undefined : existing.escalatedToUserId,
+    });
+  }
+  // A subject that disappeared entirely (merged lead, deleted draft) can't
+  // be owed any more.
+  for (const commitment of commitments) {
+    if (commitment.status === 'open' && !seen.has(commitment.key)) putCommitment({ ...commitment, status: 'cancelled' });
+  }
+}
+
+/** Who hears when this owner's promise runs late: their manager, or — for
+ *  Admin — their named backup, if the business has chosen one. */
+function escalationRecipientFor(ownerUserId: string): string | undefined {
+  const owner = byId(users, ownerUserId);
+  if (!owner) return users.find((u) => u.role === 'admin')?.id;
+  if (owner.role === 'admin') return owner.backupUserId;
+  return owner.reportsTo ?? users.find((u) => u.role === 'admin' && u.status === 'active')?.id;
+}
+
+function commitmentLabel(c: Commitment): string {
+  return c.titleParams.code ?? c.titleParams.site ?? c.subject.id;
+}
+
+/** Moves every open, un-paused commitment up to the rung `now` has earned. */
+function advanceEscalations(now: number): { notifications: number; alerts: number } {
+  const at = new Date(now).toISOString();
+  let notifications = 0;
+  let alertsRaised = 0;
+  for (const commitment of [...commitments]) {
+    if (commitment.status !== 'open' || commitment.paused) continue;
+    const rule = RULE_BY_KIND[commitment.kind];
+    const owner = byId(users, commitment.ownerUserId);
+    const target = targetEscalationLevel(rule, commitment.dueAt, now, owner?.role === 'admin');
+    if (target <= commitment.escalationLevel) continue;
+    let escalatedToUserId = commitment.escalatedToUserId;
+    for (let level = commitment.escalationLevel + 1; level <= target; level += 1) {
+      // Catching up on something already late: a "coming up" heads-up for
+      // it would be noise, so the owner hears "overdue" and nothing else.
+      if (level === 1 && target >= 2) continue;
+      if (level === 1 || level === 2) {
+        notifyWork(commitment.ownerUserId, commitment, level === 1 ? 'nudge' : 'overdue', at);
+        notifications += 1;
+        logAutomatedAction({
+          sourceKey: level === 1 ? 'followup.nudge' : 'followup.overdue',
+          triggeringCondition: `${commitment.kind} ${commitmentLabel(commitment)} ${level === 1 ? 'is coming due' : 'passed its due time'}`,
+          actionTaken: `Told ${nameOf(commitment.ownerUserId)}`,
+          affectedRecordId: commitment.id,
+          affectedRecordType: 'commitment',
+          subjectLabel: commitmentLabel(commitment),
+        });
+      } else if (level === 3) {
+        const recipient = escalationRecipientFor(commitment.ownerUserId);
+        if (recipient && recipient !== commitment.ownerUserId) {
+          escalatedToUserId = recipient;
+          notifyWork(recipient, commitment, 'escalated', at);
+          notifications += 1;
+          logAutomatedAction({
+            sourceKey: 'followup.escalate',
+            triggeringCondition: `${commitment.kind} ${commitmentLabel(commitment)} still open ${Math.round(rule.escalateAfter / 3_600_000)}h past due`,
+            actionTaken: `Escalated from ${nameOf(commitment.ownerUserId)} to ${nameOf(recipient)}`,
+            affectedRecordId: commitment.id,
+            affectedRecordType: 'commitment',
+            subjectLabel: commitmentLabel(commitment),
+          });
+        }
+      } else if (level === 4) {
+        const daysLate = Math.max(1, Math.floor((now - new Date(commitment.dueAt).getTime()) / 86_400_000));
+        const alert = raiseAlert({
+          titleKey: 'work.alert.stuck',
+          context: `${commitmentLabel(commitment)} — ${nameOf(commitment.ownerUserId)}, ${daysLate}d past due`,
+          severity: 'medium',
+          category: rule.alertCategory,
+          relatedId: commitment.id,
+          sourceRoute: commitment.oversightRoute,
+        });
+        alertsRaised += 1;
+        logAutomatedAction({
+          sourceKey: 'followup.alert',
+          triggeringCondition: `${commitment.kind} ${commitmentLabel(commitment)} still open ${Math.round((2 * rule.escalateAfter) / 3_600_000)}h past due`,
+          actionTaken: `Raised ${alert.code} for Admin`,
+          affectedRecordId: commitment.id,
+          affectedRecordType: 'commitment',
+          subjectLabel: commitmentLabel(commitment),
+        });
+      }
+    }
+    putCommitment({ ...commitment, escalationLevel: target as EscalationLevel, escalatedToUserId, lastActionAt: at });
+  }
+  return { notifications, alerts: alertsRaised };
+}
+
+/** Quotes someone scheduled for later (068) actually go out when their time
+ *  comes — previously the schedule was stored and nothing ever sent it. */
+function sendDueScheduledQuotations(now: number): void {
+  for (const quotation of [...quotations]) {
+    if (!quotation.scheduledSendAt || quotation.sentAt || quotation.status === 'superseded') continue;
+    if (new Date(quotation.scheduledSendAt).getTime() > now) continue;
+    const sent = executeQuotationSend(quotation, quotation.deliveryChannels, quotation.coverMessage ?? '');
+    logAutomatedAction({
+      sourceKey: 'quotation.scheduled_send',
+      triggeringCondition: `${quotation.code} v${quotation.version} reached its scheduled send time`,
+      actionTaken: `Sent on ${sent.deliveryChannels.join(' + ') || 'no reachable channel'}`,
+      affectedRecordId: quotation.id,
+      affectedRecordType: 'quotation',
+      subjectLabel: quotation.code,
+    });
+  }
+}
+
+function runFollowUpEngineSync(now: number): FollowUpEngineRun {
+  const actionsBefore = automatedActionLog.length;
+  reconcileFollowUpTasks();
+  runPaymentReminders(ASSISTANT_ACTOR);
+  sendDueScheduledQuotations(now);
+  for (const deal of deals) {
+    if (payments.some((p) => p.dealId === deal.id && p.status === 'paid' && !invoices.some((inv) => inv.paymentId === p.id))) {
+      ensureStageInvoices(deal.id, deal, resolveLead(deal.leadId));
+    }
+  }
+  syncCommitments(now);
+  const { notifications, alerts: alertsRaised } = advanceEscalations(now);
+  // Alerts the ladder just raised are themselves owed an acknowledgement.
+  if (alertsRaised > 0) syncCommitments(now);
+  return {
+    at: new Date(now).toISOString(),
+    openCommitments: commitments.filter((c) => c.status === 'open').length,
+    notificationsSent: notifications,
+    alertsRaised,
+    automatedActions: automatedActionLog.length - actionsBefore,
+  };
+}
+
+/** End of the reader's local day — "due today" means today on their clock. */
+function endOfToday(now: number): number {
+  const end = new Date(now);
+  end.setHours(23, 59, 59, 999);
+  return end.getTime();
+}
+
+const MY_WORK_HORIZON_DAYS = 7;
+
+function toWorkItem(commitment: Commitment, now: number): WorkItem {
+  const due = new Date(commitment.dueAt).getTime();
+  return {
+    commitment,
+    dueState: due < now ? 'overdue' : due <= endOfToday(now) ? 'due_today' : 'upcoming',
+    ownerName: nameOf(commitment.ownerUserId),
+    escalatedToName: commitment.escalatedToUserId ? nameOf(commitment.escalatedToUserId) : undefined,
+    quickAction: RULE_BY_KIND[commitment.kind].quickAction,
+  };
+}
+
+const byDueThenAmount = (a: Commitment, b: Commitment) =>
+  a.dueAt === b.dueAt ? (b.amount ?? 0) - (a.amount ?? 0) : a.dueAt < b.dueAt ? -1 : 1;
+
+function completeFollowUpTaskSync(id: string, actorName: string) {
+  const now = new Date().toISOString();
+  const task = patchInPlace(followUpTasks, id, { status: 'done', completedAt: now });
+  pushTimelineEvent({ leadId: task.leadId, kind: 'task_completed', actorName, at: now, detail: task.title });
+  return task;
+}
+
+function acknowledgePurchaseOrderSync(poId: string, byUserId: string) {
+  const po = byId(supplierPurchaseOrders, poId);
+  if (!po) throw new RepositoryError('not_found');
+  if (po.status !== 'sent') throw new RepositoryError('not_sent');
+  if (po.acknowledgedAt) return po;
+  return patchInPlace(supplierPurchaseOrders, poId, { acknowledgedAt: new Date().toISOString(), acknowledgedBy: nameOf(byUserId) });
+}
+
+function confirmPurchaseOrderReceivedSync(poId: string, byUserId: string) {
+  const po = byId(supplierPurchaseOrders, poId);
+  if (!po) throw new RepositoryError('not_found');
+  if (po.status !== 'sent') throw new RepositoryError('not_sent');
+  if (po.receivedAt) return po;
+  return patchInPlace(supplierPurchaseOrders, poId, { receivedAt: new Date().toISOString(), receivedBy: nameOf(byUserId) });
+}
+
 export const memoryRepository: Repository = {
   /* ------------------------------------------------------------- Users */
   listUsers: (filter) =>
@@ -1764,12 +2156,7 @@ export const memoryRepository: Repository = {
     }),
 
   completeFollowUpTask: (id) =>
-    simulateWrite(() => {
-      const now = new Date().toISOString();
-      const task = patchInPlace(followUpTasks, id, { status: 'done', completedAt: now });
-      pushTimelineEvent({ leadId: task.leadId, kind: 'task_completed', actorName: nameOf(byId(leads, task.leadId)?.surveyorId ?? ''), at: now, detail: task.title });
-      return task;
-    }),
+    simulateWrite(() => completeFollowUpTaskSync(id, nameOf(byId(leads, byId(followUpTasks, id)?.leadId ?? '')?.surveyorId ?? ''))),
 
   rescheduleFollowUpTask: (id, newDate, reasonKey) =>
     simulateWrite(() => patchInPlace(followUpTasks, id, { dueDate: newDate, rescheduleReasonKey: reasonKey })),
@@ -2485,78 +2872,7 @@ export const memoryRepository: Repository = {
       return created;
     }),
 
-  runDueRemindersNow: (byName) =>
-    simulateWrite(() => {
-      const result: ReminderRunResult = { sent: 0, callTasksCreated: 0, skippedOptedOut: 0, skippedPaused: 0, skippedOutsideWindow: 0 };
-      const now = new Date();
-      const withinWindow = now.getHours() >= paymentReminderConfig.sendWindowStartHour && now.getHours() < paymentReminderConfig.sendWindowEndHour;
-      const todayKey = now.toISOString().slice(0, 10);
-      for (const payment of payments.filter(isOutstanding)) {
-        const deal = byId(deals, payment.dealId);
-        if (!deal) continue;
-        const lead = resolveLead(deal.leadId);
-        if (!lead) continue;
-        const paused = Boolean(activeDealPause(deal.id));
-        const dueTime = new Date(payment.dueDate).getTime();
-        for (const step of paymentReminderConfig.steps) {
-          const fireDate = new Date(dueTime + step.daysOffset * 86_400_000);
-          if (fireDate.toISOString().slice(0, 10) !== todayKey) continue;
-          // One firing per payment, step and day — the heartbeat runs this
-          // every minute, and a customer must never get the same reminder
-          // twice because nobody remembered it had already gone out.
-          const firedKey = `${payment.id}|${step.id}|${todayKey}`;
-          if (firedReminderKeys.has(firedKey)) continue;
-          if (paused) {
-            result.skippedPaused += 1;
-            continue;
-          }
-          if (!withinWindow) {
-            result.skippedOutsideWindow += 1;
-            continue;
-          }
-          if (step.escalationTier === 'call_task') {
-            followUpTaskCounter += 1;
-            followUpTasks.push({
-              id: `ft-new-${followUpTaskCounter}`,
-              leadId: lead.id,
-              title: `Call ${lead.contactName} about the overdue payment for ${lead.siteName}`,
-              dueDate: new Date().toISOString(),
-              assignedTo: lead.surveyorId || 'u-admin-1',
-              status: 'open',
-              source: 'auto',
-              createdAt: new Date().toISOString(),
-              isDemo: true,
-            });
-            result.callTasksCreated += 1;
-            firedReminderKeys.add(firedKey);
-            logAutomatedAction({
-              ruleId: automations.find((a) => a.triggerKey === 'automation.trigger.paymentDueSoon')?.id,
-              sourceKey: 'payment_reminder.call_task',
-              triggeringCondition: `${payment.code} reached its ${step.daysOffset}-day call step`,
-              actionTaken: `Created call task for ${lead.surveyorId ? nameOf(lead.surveyorId) : 'Admin'}`,
-              affectedRecordId: payment.id,
-              affectedRecordType: 'payment',
-            });
-          } else if (isOptedOutSync(lead.contactPhone, step.channel)) {
-            result.skippedOptedOut += 1;
-            firedReminderKeys.add(firedKey);
-          } else {
-            sendReminderMessage(payment, lead, byName, step.channel, step.templateGroupId ?? 'tpl-payment-reminder');
-            result.sent += 1;
-            firedReminderKeys.add(firedKey);
-            logAutomatedAction({
-              ruleId: automations.find((a) => a.triggerKey === 'automation.trigger.paymentDueSoon')?.id,
-              sourceKey: 'payment_reminder.message',
-              triggeringCondition: `${payment.code} reached its ${step.daysOffset}-day reminder step`,
-              actionTaken: `Sent ${step.escalationTier} ${step.channel} reminder to ${lead.contactName}`,
-              affectedRecordId: payment.id,
-              affectedRecordType: 'payment',
-            });
-          }
-        }
-      }
-      return result;
-    }),
+  runDueRemindersNow: (byName) => simulateWrite(() => runPaymentReminders(byName)),
 
   /* --------------------------- Overdue payment escalation (089, Admin) */
   getOverdueEscalationQueue: () =>
@@ -4179,6 +4495,87 @@ export const memoryRepository: Repository = {
         resolvedAt: new Date().toISOString(),
         resolutionNote: note.trim(),
       });
+    }),
+
+  /* ------------------------------------------ Manager layer (all roles) */
+  // Each run is one synchronous pass, so two overlapping ticks (a slow tab,
+  // a double mount) can't interleave — the second simply finds nothing left
+  // to do.
+  runFollowUpEngine: () => simulateWrite(() => runFollowUpEngineSync(Date.now())),
+
+  listMyWork: (userId) =>
+    simulateRead((): MyWork => {
+      const now = Date.now();
+      const horizon = now + days(MY_WORK_HORIZON_DAYS);
+      const open = commitments.filter((c) => c.status === 'open' && !c.paused);
+      const mineAll = open.filter((c) => c.ownerUserId === userId).sort(byDueThenAmount);
+      const mine = mineAll.filter((c) => new Date(c.dueAt).getTime() <= horizon);
+      const escalatedToMe = open
+        .filter((c) => c.escalatedToUserId === userId && c.ownerUserId !== userId && c.escalationLevel >= 3)
+        .sort(byDueThenAmount);
+      return {
+        mine: mine.map((c) => toWorkItem(c, now)),
+        laterCount: mineAll.length - mine.length,
+        escalatedToMe: escalatedToMe.map((c) => toWorkItem(c, now)),
+      };
+    }),
+
+  listWorkNotifications: (userId) =>
+    simulateRead(() =>
+      workNotifications
+        .filter((n) => n.userId === userId)
+        .map((notification): WorkNotificationView | null => {
+          const commitment = commitments.find((c) => c.id === notification.commitmentId);
+          return commitment ? { notification, commitment, ownerName: nameOf(commitment.ownerUserId) } : null;
+        })
+        .filter((v): v is WorkNotificationView => v !== null)
+        .sort((a, b) => (a.notification.at < b.notification.at ? 1 : a.notification.at > b.notification.at ? -1 : b.notification.id.localeCompare(a.notification.id)))
+        .slice(0, 50),
+    ),
+
+  markWorkNotificationsRead: (userId) =>
+    simulateWrite(() => {
+      const at = new Date().toISOString();
+      for (let i = 0; i < workNotifications.length; i += 1) {
+        if (workNotifications[i].userId === userId && !workNotifications[i].readAt) workNotifications[i] = { ...workNotifications[i], readAt: at };
+      }
+    }),
+
+  getReliability: (userId) =>
+    simulateRead((): ReliabilityScore => {
+      const now = Date.now();
+      const mine = commitments.filter((c) => c.ownerUserId === userId);
+      const done = mine.filter((c) => c.status === 'done' && c.completedAt);
+      const onTime = done.filter((c) => c.completedAt! <= c.dueAt).length;
+      return {
+        completed: done.length,
+        onTime,
+        onTimePct: done.length >= 3 ? Math.round((onTime / done.length) * 100) : null,
+        openOverdue: mine.filter((c) => c.status === 'open' && !c.paused && new Date(c.dueAt).getTime() < now).length,
+      };
+    }),
+
+  listAutomatedActions: (limit = 20) => simulateRead(() => [...automatedActionLog].reverse().slice(0, limit)),
+
+  acknowledgePurchaseOrder: (poId, byUserId) => simulateWrite(() => acknowledgePurchaseOrderSync(poId, byUserId)),
+
+  confirmPurchaseOrderReceived: (poId, byUserId) => simulateWrite(() => confirmPurchaseOrderReceivedSync(poId, byUserId)),
+
+  completeCommitmentQuickAction: (commitmentId, byUserId) =>
+    simulateWrite(() => {
+      const commitment = commitments.find((c) => c.id === commitmentId);
+      if (!commitment) throw new RepositoryError('not_found');
+      if (commitment.status !== 'open') return commitment;
+      const action = RULE_BY_KIND[commitment.kind].quickAction;
+      if (!action) throw new RepositoryError('no_quick_action');
+      // Only the owner may say "done" on their own promise.
+      if (commitment.ownerUserId !== byUserId) throw new RepositoryError('not_owner');
+      if (action === 'complete_task') completeFollowUpTaskSync(commitment.subject.id, nameOf(byUserId));
+      else if (action === 'acknowledge_po') acknowledgePurchaseOrderSync(commitment.subject.id, byUserId);
+      else confirmPurchaseOrderReceivedSync(commitment.subject.id, byUserId);
+      // Reflect it at once rather than on the next tick.
+      syncCommitments(Date.now());
+      return commitmentByKey.get(commitment.key) ?? commitment;
     }),
 
   listZones: () => simulateRead(() => [...zones]),

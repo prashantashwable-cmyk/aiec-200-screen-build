@@ -1,7 +1,9 @@
 import type {
   ActivityEvent,
   Alert,
+  AutomatedActionLogEntry,
   AutomationRule,
+  Commitment,
   BotConfig,
   CallLogEntry,
   CallOutcome,
@@ -72,6 +74,7 @@ import type {
   TemplateStat,
   TriggerRule,
   User,
+  WorkNotification,
 } from './types';
 
 /**
@@ -315,6 +318,54 @@ export interface PaymentReminderPauseView {
   dealCode: string;
   siteName: string;
   isLongStanding: boolean;
+}
+
+/* ---------------------------------------------------- Manager layer: work */
+
+export type WorkDueState = 'overdue' | 'due_today' | 'upcoming';
+
+/** One commitment as its reader sees it — already ranked and labelled. */
+export interface WorkItem {
+  commitment: Commitment;
+  dueState: WorkDueState;
+  ownerName: string;
+  /** Name of whoever it escalated to, when it has. */
+  escalatedToName?: string;
+  /** Present only where the owner's say-so is the proof of done. */
+  quickAction?: 'complete_task' | 'acknowledge_po' | 'confirm_po_received';
+}
+
+export interface MyWork {
+  /** What this person promised, due within the next week, most urgent first. */
+  mine: WorkItem[];
+  /** Open and owned by this person but due later than that. */
+  laterCount: number;
+  /** Other people's commitments that ran late and reached this person. */
+  escalatedToMe: WorkItem[];
+}
+
+export interface WorkNotificationView {
+  notification: WorkNotification;
+  commitment: Commitment;
+  ownerName: string;
+}
+
+/** Share of this person's finished commitments that were done by their due
+ *  time — the same signal leaderboards and scorecards can read later. */
+export interface ReliabilityScore {
+  completed: number;
+  onTime: number;
+  /** Null until there's enough history to mean anything. */
+  onTimePct: number | null;
+  openOverdue: number;
+}
+
+export interface FollowUpEngineRun {
+  at: string;
+  openCommitments: number;
+  notificationsSent: number;
+  alertsRaised: number;
+  automatedActions: number;
 }
 
 export interface ReminderRunResult {
@@ -1388,6 +1439,28 @@ export interface Repository {
 
   /* Communication: analytics */
   getCommunicationAnalytics(): Promise<CommunicationAnalytics>;
+
+  /* Manager layer — the follow-up engine and every role's assistant */
+  /** The app's one clock. Runs every automation that used to wait for a
+   *  click (payment reminders, scheduled quote sends, invoice backfill),
+   *  re-derives every Commitment from `commitmentRules`, and moves each
+   *  one up its nudge → overdue → escalate → alert ladder. Idempotent:
+   *  running it every minute never repeats a message, notification or
+   *  alert. */
+  runFollowUpEngine(): Promise<FollowUpEngineRun>;
+  listMyWork(userId: string): Promise<MyWork>;
+  listWorkNotifications(userId: string): Promise<WorkNotificationView[]>;
+  markWorkNotificationsRead(userId: string): Promise<void>;
+  getReliability(userId: string): Promise<ReliabilityScore>;
+  /** Newest first — what the system did without anyone clicking. */
+  listAutomatedActions(limit?: number): Promise<AutomatedActionLogEntry[]>;
+  /** The supplier's "we have this order". */
+  acknowledgePurchaseOrder(poId: string, byUserId: string): Promise<SupplierPurchaseOrder>;
+  /** Admin's "the goods arrived" — a stand-in until Module 11 owns receipt. */
+  confirmPurchaseOrderReceived(poId: string, byUserId: string): Promise<SupplierPurchaseOrder>;
+  /** Completes a commitment whose proof of done is the owner's say-so
+   *  (`WorkItem.quickAction`), through the same write its own screen uses. */
+  completeCommitmentQuickAction(commitmentId: string, byUserId: string): Promise<Commitment>;
 }
 
 export const SERIES_KEYS = {

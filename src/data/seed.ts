@@ -112,6 +112,7 @@ export const seedUsers: User[] = [
   {
     id: 'u-srv-1',
     role: 'surveyor',
+    reportsTo: 'u-admin-1',
     name: 'Ganesh Pawar',
     phone: '9822022001',
     status: 'active',
@@ -134,6 +135,7 @@ export const seedUsers: User[] = [
   {
     id: 'u-srv-2',
     role: 'surveyor',
+    reportsTo: 'u-admin-1',
     name: 'Sunita Deshmukh',
     phone: '9822022002',
     status: 'active',
@@ -151,6 +153,7 @@ export const seedUsers: User[] = [
   {
     id: 'u-srv-3',
     role: 'surveyor',
+    reportsTo: 'u-admin-1',
     name: 'Imran Shaikh',
     phone: '9822022003',
     status: 'active',
@@ -168,6 +171,7 @@ export const seedUsers: User[] = [
   {
     id: 'u-srv-4',
     role: 'surveyor',
+    reportsTo: 'u-admin-1',
     name: 'Rohit Jadhav',
     phone: '9822022004',
     status: 'active',
@@ -185,6 +189,7 @@ export const seedUsers: User[] = [
   {
     id: 'u-srv-5',
     role: 'surveyor',
+    reportsTo: 'u-admin-1',
     name: 'Kavita Bhosale',
     phone: '9822022005',
     status: 'pending_approval',
@@ -202,6 +207,7 @@ export const seedUsers: User[] = [
   {
     id: 'u-tech-1',
     role: 'technician',
+    reportsTo: 'u-admin-1',
     name: 'Santosh Kale',
     phone: '9822033001',
     status: 'active',
@@ -236,6 +242,7 @@ export const seedUsers: User[] = [
   {
     id: 'u-tech-2',
     role: 'technician',
+    reportsTo: 'u-admin-1',
     name: 'Vishal More',
     phone: '9822033002',
     status: 'active',
@@ -253,6 +260,7 @@ export const seedUsers: User[] = [
   {
     id: 'u-tech-3',
     role: 'technician',
+    reportsTo: 'u-admin-1',
     name: 'Ajay Nikam',
     phone: '9822033003',
     status: 'active',
@@ -270,6 +278,7 @@ export const seedUsers: User[] = [
   {
     id: 'u-tech-4',
     role: 'technician',
+    reportsTo: 'u-admin-1',
     name: 'Prakash Salunke',
     phone: '9822033004',
     status: 'pending_approval',
