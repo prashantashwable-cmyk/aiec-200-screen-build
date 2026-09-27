@@ -38,6 +38,18 @@ The login screen (002) has a Demo Mode tab. Admin screens live under `/admin/...
   `t(\`quotationStatus.${status}\`)`. Shared namespaces are owned by the first screen that needs them
   (e.g. 051 owns `commChannel.*`, 061 owns `driveType.*` / `finishTier.*` / `quotationStatus.*`,
   066 owns `quotation.reason.*`).
+- **Anything that needs Admin's attention calls `raiseAlert` (memoryRepository.ts)**, not a
+  bespoke queue only its own screen reads. Keep the rich domain record on the screen that owns it;
+  the Alert is the beacon pointing back to it (`relatedId`, `sourceRoute`). Reuse `Alert`'s existing
+  `category`/`severity` vocabulary.
+- **Every SLA-governed wait reads `src/features/sla/clock.ts`** — targets via `hours()`/`days()`,
+  breach via `isBreached`, severity via `severityForRatio` (onto `AlertSeverity`). Never a fresh
+  local constant in its own unit.
+- **Every action an automation takes on its own initiative (no human `byName` at the call site)
+  calls `logAutomatedAction` (memoryRepository.ts)**, in addition to whatever else it does. A
+  human-triggered action keeps its own `pushTimelineEvent` entry instead. Any automation that can
+  run repeatedly (the heartbeat calls several) must be idempotent — never message a customer twice
+  for the same thing.
 - **Data only through `useData()`**, coded against the `Repository` interface. When the repository
   has to produce user-visible text, it returns a translation **key**, never English.
 - **Three real languages.** Every key needs en, hi and mr, and the checker enforces it. Hindi and

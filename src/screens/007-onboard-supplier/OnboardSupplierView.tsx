@@ -4,7 +4,7 @@ import { Info, Warning } from '@phosphor-icons/react';
 import { Badge, Button, Card, Checkbox, Field, Input, TextArea } from '@/design-system';
 import { DocumentSlot } from '@/features/onboarding/DocumentSlot';
 import { WizardShell } from '@/features/onboarding/WizardShell';
-import { isValidGstin, isValidIfsc, isValidPincode } from '@/features/onboarding/validators';
+import { isValidGstin, isValidIfsc, isValidIndianMobile, isValidPincode } from '@/features/onboarding/validators';
 import {
   ACCEPTED_CATALOG_ATTR,
   ACCEPTED_CATALOG_EXTENSIONS,
@@ -42,6 +42,14 @@ export function OnboardSupplierView() {
       back={s.wizard.back}
       onSubmit={() => void s.submit()}
     >
+      {s.submitErrorKey && (
+        <Card>
+          <p className="t-sm t-error row gap-2">
+            <Warning size={16} className="shrink-0" />
+            {t(s.submitErrorKey)}
+          </p>
+        </Card>
+      )}
       {s.payoutsBlocked && (
         <Card>
           <p className="t-sm t-warning row gap-2">
@@ -194,6 +202,22 @@ export function OnboardSupplierView() {
                 id={id}
                 value={draft.signatoryDesignation}
                 onChange={(e) => update({ signatoryDesignation: e.target.value })}
+              />
+            )}
+          </Field>
+          <Field
+            label={t(K.field.signatoryPhone)}
+            hint={t(K.field.signatoryPhoneHint)}
+            required
+            error={draft.signatoryPhone.length >= 10 && !isValidIndianMobile(draft.signatoryPhone) ? t(K.invalid.signatoryPhone) : undefined}
+          >
+            {({ id }) => (
+              <Input
+                id={id}
+                type="tel"
+                inputMode="numeric"
+                value={draft.signatoryPhone}
+                onChange={(e) => update({ signatoryPhone: e.target.value.replace(/\D/g, '').slice(0, 10) })}
               />
             )}
           </Field>

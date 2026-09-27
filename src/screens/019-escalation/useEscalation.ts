@@ -40,7 +40,6 @@ export function useEscalation(): EscalationState {
   const [status, setStatus] = useState<EscalationStatus>('loading');
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [notes, setNotes] = useState<Record<string, string>>({});
 
   const reload = useCallback(async () => {
     try {
@@ -107,22 +106,16 @@ export function useEscalation(): EscalationState {
       // A resolution without a note is not a resolution — it is a dismissal
       // wearing a different name, and this screen does not allow those.
       if (note.trim().length < 4) return;
+      // Persisted through the repository so the 15s poll can't revert it.
       setBusyId(alert.id);
       try {
-        setNotes((current) => ({ ...current, [alert.id]: note }));
-        // The repository has no resolve method; acknowledging then marking the
-        // local record resolved keeps the flow honest until one exists.
-        await repository.acknowledgeAlert(alert.id, user?.id ?? 'unknown');
-        setAlerts((current) =>
-          current.map((a) =>
-            a.id === alert.id ? { ...a, status: 'resolved', context: `${a.context} — ${note}` } : a,
-          ),
-        );
+        await repository.resolveAlert(alert.id, user?.id ?? 'unknown', note);
+        await reload();
       } finally {
         setBusyId(null);
       }
     },
-    [repository, user?.id],
+    [repository, user?.id, reload],
   );
 
   const open = entries.filter((e) => e.stage !== 'resolved');

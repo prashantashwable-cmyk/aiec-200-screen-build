@@ -1376,7 +1376,13 @@ export interface Alert {
   status: 'open' | 'acknowledged' | 'resolved';
   raisedAt: string;
   acknowledgedBy?: string;
+  resolvedAt?: string;
+  resolvedBy?: string;
+  resolutionNote?: string;
   relatedId?: string;
+  /** Where to act on this — lets any dashboard route straight to the source
+   *  without a per-category switch. */
+  sourceRoute?: string;
   location?: GeoPoint;
   isDemo: boolean;
 }
@@ -1455,6 +1461,22 @@ export interface AutomationRule {
   lastRunAt: string;
   avgLatencyMs: number;
   status: 'healthy' | 'degraded' | 'failing' | 'paused';
+  isDemo: boolean;
+}
+
+/** One thing an automation did on its own initiative — no human at the call
+ *  site. Not lead-scoped (unlike `LeadTimelineEvent`), since automated
+ *  actions touch payments, invoices and POs too. `ruleId` is optional: some
+ *  automated actions (e.g. invoice backfill) have no `AutomationRule` row. */
+export interface AutomatedActionLogEntry {
+  id: string;
+  ruleId?: string;
+  sourceKey: string;
+  triggeringCondition: string;
+  actionTaken: string;
+  affectedRecordId: string;
+  affectedRecordType: 'payment' | 'invoice' | 'purchase_order' | 'lead' | 'deal' | 'quotation' | 'commitment' | 'alert' | 'other';
+  at: string;
   isDemo: boolean;
 }
 

@@ -1,8 +1,8 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useData } from '@/data/DataProvider';
 import { useWizard } from '@/features/onboarding/useWizard';
 import type { WizardStepDef } from '@/features/onboarding/useWizard';
-import { isValidGstin, isValidIfsc, isValidPincode } from '@/features/onboarding/validators';
+import { isValidGstin, isValidIfsc, isValidIndianMobile, isValidPincode } from '@/features/onboarding/validators';
 import {
   EMPTY_SUPPLIER_DRAFT,
   SUPPLIER_DRAFT_KEY,
@@ -22,7 +22,8 @@ export const SUPPLIER_STEPS: WizardStepDef<SupplierDraft>[] = [
       (d.gstinCheck === 'matched' || d.gstinCheck === 'lookupFailed') &&
       d.registeredAddress.trim().length >= 6 &&
       isValidPincode(d.pincode) &&
-      d.signatoryName.trim().length >= 3,
+      d.signatoryName.trim().length >= 3 &&
+      isValidIndianMobile(d.signatoryPhone),
     isBlocked: (d) => d.gstinCheck === 'duplicate' || d.gstinCheck === 'mismatch',
   },
   {
@@ -54,6 +55,8 @@ interface OnboardSupplierState {
   runPennyDrop: () => Promise<void>;
   payoutsBlocked: boolean;
   submit: () => Promise<void>;
+  /** Translation key for why the last submission was refused, if it was. */
+  submitErrorKey: string | null;
 }
 
 export function useOnboardSupplier(): OnboardSupplierState {
@@ -96,18 +99,31 @@ export function useOnboardSupplier(): OnboardSupplierState {
     update({ pennyDrop: draft.accountNumber.endsWith('0') ? 'failed' : 'verified' });
   }, [draft.accountNumber, update]);
 
+  const [submitErrorKey, setSubmitErrorKey] = useState<string | null>(null);
+
   const submit = useCallback(async () => {
     wizard.setStatus('submitting');
+    setSubmitErrorKey(null);
     try {
-      // The account lands pending. No purchase order can be issued against it
-      // until an admin approves KYC, and any seeded catalogue stays in review.
-      await new Promise((resolve) => setTimeout(resolve, 700));
+      // The account lands pending — a real Supplier plus the signatory's own
+      // login, usable straight away to follow the review. No purchase order
+      // can be issued against it until an admin approves KYC in the Supplier
+      // Directory.
+      await repository.submitSupplierOnboarding({
+        companyName: draft.companyName,
+        gstin: draft.gstin,
+        city: draft.city,
+        signatoryName: draft.signatoryName,
+        signatoryPhone: draft.signatoryPhone,
+      });
       wizard.setStatus('submitted');
       localStorage.removeItem(SUPPLIER_DRAFT_KEY);
-    } catch {
+    } catch (err) {
+      const code = err instanceof Error ? err.message : '';
+      setSubmitErrorKey(code === 'duplicate_gstin' || code === 'phone_taken' ? K.submitError[code] : K.submitError.generic);
       wizard.setStatus('error');
     }
-  }, [wizard]);
+  }, [wizard, repository, draft]);
 
   return {
     wizard,
@@ -115,5 +131,6 @@ export function useOnboardSupplier(): OnboardSupplierState {
     runPennyDrop,
     payoutsBlocked: draft.pennyDrop === 'failed',
     submit,
+    submitErrorKey,
   };
 }

@@ -686,6 +686,16 @@ export interface SupplierDirectoryRow {
   eligibleForPO: boolean;
 }
 
+/** What a supplier submits about themselves through screen 007's KYC
+ *  wizard — creates both the business record and the login account. */
+export interface SupplierOnboardingInput {
+  companyName: string;
+  gstin: string;
+  city: string;
+  signatoryName: string;
+  signatoryPhone: string;
+}
+
 export interface SupplierInviteInput {
   name: string;
   contactName?: string;
@@ -1012,6 +1022,12 @@ export interface Repository {
    *  invites, structurally ineligible for any Purchase Order until KYC is
    *  reviewed and approved. */
   inviteSupplier(input: SupplierInviteInput, byName: string): Promise<Supplier>;
+  /** A supplier's own KYC submission (007): creates a pending Supplier and
+   *  its linked supplier User (linked by GSTIN, the existing convention).
+   *  The User can sign in by phone straight away (to follow the review);
+   *  PO eligibility stays gated on 091's KYC approval. Throws
+   *  `duplicate_gstin` / `phone_taken` rather than creating a second record. */
+  submitSupplierOnboarding(input: SupplierOnboardingInput): Promise<Supplier>;
   /** Approves or rejects a pending supplier's KYC. Approving also moves
    *  `status` to `'active'` — the two are set together here since nothing
    *  else in this build ever brings a supplier live without it. Rejecting
@@ -1290,6 +1306,9 @@ export interface Repository {
   listActivity(limit?: number): Promise<ActivityEvent[]>;
   listAlerts(filter?: { status?: Alert['status'][]; severity?: Alert['severity'][] }): Promise<Alert[]>;
   acknowledgeAlert(id: string, byUserId: string): Promise<Alert>;
+  /** Closes an alert with the resolver's own note — a real, persisted
+   *  resolution rather than local screen state. */
+  resolveAlert(id: string, byUserId: string, note: string): Promise<Alert>;
   listZones(): Promise<GeoZone[]>;
   saveZone(zone: GeoZone): Promise<GeoZone>;
   getRoutePlan(userId: string): Promise<RoutePlan | null>;

@@ -109,6 +109,7 @@ import type {
 } from './repository';
 import type {
   Alert,
+  AutomatedActionLogEntry,
   AutomationRule,
   BotConfig,
   CallLogEntry,
@@ -184,6 +185,11 @@ import { MAX_SAFE_BOT_DISCOUNT_PCT } from '@/features/communication/botRules';
 import { extractMergeFields, renderTemplateBody } from '@/features/communication/templateRender';
 import { computeTotalReceivable, daysOverdue, isOutstanding, receivedAmountOf, remainingBalance } from '@/features/payments/aging';
 import { isSupplierEligibleForPO } from '@/features/suppliers/eligibility';
+import { buildAlert, findOpenAlertFor } from '@/features/attention/raiseAlert';
+import type { AttentionAlertInput } from '@/features/attention/raiseAlert';
+import { businessMinutesSince, days, hours, isBreached } from '@/features/sla/clock';
+import { buildAutomatedActionEntry } from '@/features/audit/logAutomatedAction';
+import type { AutomatedActionInput } from '@/features/audit/logAutomatedAction';
 import { computeSupplierPerformanceScore } from '@/features/suppliers/performanceScore';
 
 /**
@@ -196,6 +202,15 @@ import { computeSupplierPerformanceScore } from '@/features/suppliers/performanc
  */
 
 const users = [...seedUsers];
+let userCounter = 100;
+
+/** A supplier's login account — linked to the business record by GSTIN,
+ *  the convention the seed data already uses (u-sup-1 ↔ sp-1). */
+function supplierUserFor(supplier: Supplier): User | undefined {
+  if (!supplier.gstin) return undefined;
+  const gstin = supplier.gstin.toUpperCase();
+  return users.find((u) => u.role === 'supplier' && u.gstin?.toUpperCase() === gstin);
+}
 const leads = [...seedLeads];
 const deals = [...seedDeals];
 const jobs = [...seedJobs];
@@ -250,6 +265,30 @@ let dealClosureCounter = 100;
 let closurePaymentCounter = 900;
 let closureCommissionCounter = 900;
 let alertCounter = 900;
+const automatedActionLog: AutomatedActionLogEntry[] = [];
+/** `${paymentId}|${stepId}|${yyyy-mm-dd}` — reminder steps already fired. */
+const firedReminderKeys = new Set<string>();
+let automatedActionLogCounter = 0;
+
+/** The one write path for "a human needs to look at this" — dedupes against
+ *  any unresolved alert for the same (relatedId, titleKey). */
+function raiseAlert(input: AttentionAlertInput): Alert {
+  const existing = findOpenAlertFor(alerts, input);
+  if (existing) return existing;
+  alertCounter += 1;
+  const created = buildAlert(input, `al-new-${alertCounter}`, `ALT-${9000 + alertCounter}`, new Date().toISOString());
+  alerts.push(created);
+  return created;
+}
+
+/** The one write path for "the automation did something on its own". */
+function logAutomatedAction(input: AutomatedActionInput): AutomatedActionLogEntry {
+  automatedActionLogCounter += 1;
+  const entry = buildAutomatedActionEntry(input, `aal-${automatedActionLogCounter}`, new Date().toISOString());
+  automatedActionLog.push(entry);
+  return entry;
+}
+
 const objectionScripts = [...seedObjectionScripts];
 let objectionScriptCounter = 100;
 const objectionScriptUsages = [...seedObjectionScriptUsages];
@@ -454,21 +493,24 @@ function triggerSupplierPo(deal: Deal): { id: string; failed: boolean } {
         lastRunAt: now,
         status: 'degraded' as const,
       });
-      alertCounter += 1;
-      alerts.push({
-        id: `al-new-${alertCounter}`,
-        code: `ALT-${9000 + alertCounter}`,
+      raiseAlert({
         titleKey: 'alerts.type.automationFailing',
         context: `${deal.code} · supplier PO failed — ${failureReason}`,
         severity: 'medium',
         category: 'automation',
-        status: 'open',
-        raisedAt: now,
         relatedId: rule.id,
-        isDemo: true,
+        sourceRoute: `/admin/deals/${deal.id}/purchase-orders`,
       });
     }
   }
+  logAutomatedAction({
+    ruleId: automations.find((a) => a.actionKey === 'automation.action.raisePurchaseOrder' && a.triggerKey === 'automation.trigger.dealWon')?.id,
+    sourceKey: 'deal_closure.supplier_po',
+    triggeringCondition: `Deal ${deal.code} closed`,
+    actionTaken: failed ? `Supplier PO attempt failed — ${failureReason}` : `Supplier PO ${created.code} triggered`,
+    affectedRecordId: created.id,
+    affectedRecordType: 'purchase_order',
+  });
 
   return { id: created.id, failed };
 }
@@ -545,6 +587,13 @@ function draftPurchaseOrdersForDeal(deal: Deal): SupplierPurchaseOrder[] {
     };
     supplierPurchaseOrders.push(po);
     created.push(po);
+    logAutomatedAction({
+      sourceKey: 'purchase_order.auto_draft',
+      triggeringCondition: `Deal ${deal.code} is won with no purchase order yet`,
+      actionTaken: `Drafted ${po.code} with ${lineItems.length} line item(s)`,
+      affectedRecordId: po.id,
+      affectedRecordType: 'purchase_order',
+    });
   }
   return created;
 }
@@ -756,7 +805,7 @@ const AIEC_GSTIN = '27AABCA1234B1Z5';
 /** Screen 090's own SLA target for resolving a payment dispute — 5 days,
  *  a reasonable ceiling for a financial-trust issue per the spec's own
  *  framing of unresolved disputes as a reputational risk. */
-const DISPUTE_SLA_HOURS = 120;
+const DISPUTE_SLA = hours(120);
 
 /** Splits a GST-inclusive total into its taxable value and GST amount —
  *  every `Payment.amount`/`Deal.agreedPrice` in this build is already
@@ -805,6 +854,13 @@ function ensureStageInvoices(dealId: string, deal: Deal, lead: Lead | null): voi
       issuedAt: payment.paidAt ?? new Date().toISOString(),
       issuedBy: 'AIEC',
       isDemo: true,
+    });
+    logAutomatedAction({
+      sourceKey: 'invoice.stage_backfill',
+      triggeringCondition: `Payment ${payment.code} is paid with no invoice`,
+      actionTaken: `Issued stage invoice AIEC-INV-${4000 + invoiceCounter}`,
+      affectedRecordId: `inv-${invoiceCounter}`,
+      affectedRecordType: 'invoice',
     });
   }
 }
@@ -870,7 +926,7 @@ function buildReceiptLine(payment: Payment, deal: Deal, lead: Lead | null): Paym
 /** How long an `'approved'` application may sit before 086 treats it as
  *  stuck and surfaces an Alert rather than leaving it to be discovered by
  *  chance — the spec's own "not sit silently" edge case. */
-const LOAN_STUCK_WINDOW_DAYS = 5;
+const LOAN_STUCK_WINDOW = days(5);
 
 /** The financing partner's own underwriting call, standing in for a real
  *  decision this build has no lender to make — deterministic on the
@@ -1221,31 +1277,9 @@ function runBotSimulation(sampleMessage: string, config: BotConfig): BotSimulati
   };
 }
 
-const BUSINESS_HOURS_START = 9;
-const BUSINESS_HOURS_END = 19;
-/** One business hour to respond before a reply counts as SLA-breached. */
+/** One business hour to respond before a reply counts as SLA-breached —
+ *  measured with the shared, pause-fair `businessMinutesSince` clock. */
 const SLA_MINUTES = 60;
-
-function isBusinessHours(iso: string): boolean {
-  const hour = new Date(iso).getHours();
-  return hour >= BUSINESS_HOURS_START && hour < BUSINESS_HOURS_END;
-}
-
-/** Minutes of business-hours time elapsed since `at` — overnight gaps don't
- *  count against the SLA clock, per the Reply Inbox's fairness rule.
- *  Hour-granularity is plenty for a same-day SLA indicator. */
-function businessMinutesSince(at: string): number {
-  const start = new Date(at);
-  const now = new Date();
-  let hours = 0;
-  const cursor = new Date(start);
-  cursor.setMinutes(0, 0, 0);
-  while (cursor < now) {
-    if (isBusinessHours(cursor.toISOString())) hours += 1;
-    cursor.setHours(cursor.getHours() + 1);
-  }
-  return hours * 60;
-}
 
 const startOfMonth = () => {
   const d = new Date();
@@ -2024,25 +2058,16 @@ export const memoryRepository: Repository = {
     simulateWrite(() => {
       const payment = byId(payments, paymentId);
       if (!payment) throw new RepositoryError('not_found');
-      const existing = alerts.find((a) => a.relatedId === paymentId && a.titleKey === 'alerts.type.paymentOverdue' && a.status === 'open');
-      if (existing) return existing;
       const deal = byId(deals, payment.dealId);
       const daysLate = Math.floor((Date.now() - new Date(payment.dueDate).getTime()) / 86_400_000);
-      alertCounter += 1;
-      const created: Alert = {
-        id: `al-new-${alertCounter}`,
-        code: `ALT-${9000 + alertCounter}`,
+      return raiseAlert({
         titleKey: 'alerts.type.paymentOverdue',
         context: `${deal?.code ?? payment.code} · ${formatINR(remainingBalance(payment))} · ${daysLate} days past due`,
         severity: daysLate > 60 ? 'critical' : daysLate > 30 ? 'high' : 'medium',
         category: 'payment',
-        status: 'open',
-        raisedAt: new Date().toISOString(),
         relatedId: paymentId,
-        isDemo: true,
-      };
-      alerts.push(created);
-      return created;
+        sourceRoute: '/admin/analytics/collections',
+      });
     }),
 
   getPaymentCheckoutView: (paymentId, customerId) =>
@@ -2190,7 +2215,7 @@ export const memoryRepository: Repository = {
         .map((application): LoanApplicationAdminRow => {
           const deal = byId(deals, application.dealId);
           const lead = deal ? resolveLead(deal.leadId) : null;
-          const isStuck = application.status === 'approved' && !!application.approvedAt && now - new Date(application.approvedAt).getTime() > LOAN_STUCK_WINDOW_DAYS * 86_400_000;
+          const isStuck = application.status === 'approved' && !!application.approvedAt && isBreached(application.approvedAt, LOAN_STUCK_WINDOW, now);
           const disbursementShortfall = application.status === 'disbursed' && application.approvedAmount !== undefined && application.disbursedAmountReceived !== undefined ? Math.max(0, application.approvedAmount - application.disbursedAmountReceived) : 0;
           return {
             application,
@@ -2233,25 +2258,16 @@ export const memoryRepository: Repository = {
     simulateWrite(() => {
       const app = byId(loanApplications, applicationId);
       if (!app) throw new RepositoryError('not_found');
-      const existing = alerts.find((a) => a.relatedId === applicationId && a.titleKey === 'alerts.type.loanDisbursementDelayed' && a.status === 'open');
-      if (existing) return existing;
       const deal = byId(deals, app.dealId);
       const daysStuck = app.approvedAt ? Math.floor((Date.now() - new Date(app.approvedAt).getTime()) / 86_400_000) : 0;
-      alertCounter += 1;
-      const created: Alert = {
-        id: `al-new-${alertCounter}`,
-        code: `ALT-${9000 + alertCounter}`,
+      return raiseAlert({
         titleKey: 'alerts.type.loanDisbursementDelayed',
         context: `${deal?.code ?? app.dealId} · ${app.partnerName} · approved ${daysStuck} days ago, not yet disbursed`,
         severity: daysStuck > 14 ? 'critical' : daysStuck > 7 ? 'high' : 'medium',
         category: 'payment',
-        status: 'open',
-        raisedAt: new Date().toISOString(),
         relatedId: applicationId,
-        isDemo: true,
-      };
-      alerts.push(created);
-      return created;
+        sourceRoute: '/admin/analytics/financing',
+      });
     }),
 
   getInvoicesForDeal: (dealId, viewer) =>
@@ -2485,6 +2501,11 @@ export const memoryRepository: Repository = {
         for (const step of paymentReminderConfig.steps) {
           const fireDate = new Date(dueTime + step.daysOffset * 86_400_000);
           if (fireDate.toISOString().slice(0, 10) !== todayKey) continue;
+          // One firing per payment, step and day — the heartbeat runs this
+          // every minute, and a customer must never get the same reminder
+          // twice because nobody remembered it had already gone out.
+          const firedKey = `${payment.id}|${step.id}|${todayKey}`;
+          if (firedReminderKeys.has(firedKey)) continue;
           if (paused) {
             result.skippedPaused += 1;
             continue;
@@ -2507,11 +2528,30 @@ export const memoryRepository: Repository = {
               isDemo: true,
             });
             result.callTasksCreated += 1;
+            firedReminderKeys.add(firedKey);
+            logAutomatedAction({
+              ruleId: automations.find((a) => a.triggerKey === 'automation.trigger.paymentDueSoon')?.id,
+              sourceKey: 'payment_reminder.call_task',
+              triggeringCondition: `${payment.code} reached its ${step.daysOffset}-day call step`,
+              actionTaken: `Created call task for ${lead.surveyorId ? nameOf(lead.surveyorId) : 'Admin'}`,
+              affectedRecordId: payment.id,
+              affectedRecordType: 'payment',
+            });
           } else if (isOptedOutSync(lead.contactPhone, step.channel)) {
             result.skippedOptedOut += 1;
+            firedReminderKeys.add(firedKey);
           } else {
             sendReminderMessage(payment, lead, byName, step.channel, step.templateGroupId ?? 'tpl-payment-reminder');
             result.sent += 1;
+            firedReminderKeys.add(firedKey);
+            logAutomatedAction({
+              ruleId: automations.find((a) => a.triggerKey === 'automation.trigger.paymentDueSoon')?.id,
+              sourceKey: 'payment_reminder.message',
+              triggeringCondition: `${payment.code} reached its ${step.daysOffset}-day reminder step`,
+              actionTaken: `Sent ${step.escalationTier} ${step.channel} reminder to ${lead.contactName}`,
+              affectedRecordId: payment.id,
+              affectedRecordType: 'payment',
+            });
           }
         }
       }
@@ -2620,7 +2660,7 @@ export const memoryRepository: Repository = {
             customerName: deal.customerId ? nameOf(deal.customerId) : lead.contactName,
             amountPaid: amountCollectedForDispute(payment),
             slaHours,
-            slaBreached: !payment.resolvedAt && slaHours >= DISPUTE_SLA_HOURS,
+            slaBreached: !payment.resolvedAt && isBreached(payment.disputedAt!, DISPUTE_SLA, now),
             isResolved: Boolean(payment.resolvedAt),
             isFinancingPayment: payment.method === 'financing',
             hasDownstreamAllocation: supplierAllocated || commissionPaidOut,
@@ -2738,7 +2778,7 @@ export const memoryRepository: Repository = {
     simulateWrite(() => {
       const supplier = byId(suppliers, supplierId);
       if (!supplier) throw new RepositoryError('not_found');
-      return patchInPlace(suppliers, supplierId, {
+      const updated = patchInPlace(suppliers, supplierId, {
         kycStatus,
         // Approving brings the account live in the same step — nothing
         // else in this build ever activates a supplier without it.
@@ -2746,6 +2786,61 @@ export const memoryRepository: Repository = {
         kycReviewedBy: byName,
         kycReviewedAt: new Date().toISOString(),
       });
+      // The supplier's own login account (linked by GSTIN) goes live with the
+      // KYC approval — otherwise an approved supplier still couldn't sign in.
+      const account = supplierUserFor(updated);
+      if (account && kycStatus === 'approved' && account.status !== 'active') patchInPlace(users, account.id, { status: 'active' });
+      return updated;
+    }),
+
+  submitSupplierOnboarding: (input) =>
+    simulateWrite(() => {
+      const gstin = input.gstin.trim().toUpperCase();
+      const phone = input.signatoryPhone.trim();
+      if (!input.companyName.trim() || !gstin || !phone) throw new RepositoryError('invalid_input');
+      if (suppliers.some((s) => s.gstin?.toUpperCase() === gstin)) throw new RepositoryError('duplicate_gstin');
+      if (users.some((u) => u.phone === phone)) throw new RepositoryError('phone_taken');
+      const now = new Date().toISOString();
+      supplierCounter += 1;
+      const supplier: Supplier = {
+        id: `sp-new-${supplierCounter}`,
+        name: input.companyName.trim(),
+        status: 'pending_approval',
+        kycStatus: 'pending',
+        city: input.city.trim(),
+        gstin,
+        contactName: input.signatoryName.trim(),
+        contactPhone: phone,
+        categories: [],
+        driveTypeSpecialties: [],
+        regionsServed: [],
+        onTimeRate: 0,
+        qualityScore: 0,
+        avgLeadTimeDays: 0,
+        openOrders: 0,
+        totalOrderValue: 0,
+        rating: 0,
+        invitedBy: input.signatoryName.trim(),
+        invitedAt: now,
+        isDemo: true,
+      };
+      suppliers.push(supplier);
+      userCounter += 1;
+      users.push({
+        id: `u-sup-new-${userCounter}`,
+        role: 'supplier',
+        name: input.signatoryName.trim(),
+        phone,
+        status: 'pending_approval',
+        preferredLanguage: 'en',
+        themePreference: 'light',
+        isDemo: true,
+        city: input.city.trim(),
+        companyName: supplier.name,
+        gstin,
+        joinedAt: now,
+      });
+      return supplier;
     }),
 
   suspendSupplier: (supplierId, reason, byName) =>
@@ -4071,6 +4166,20 @@ export const memoryRepository: Repository = {
     simulateWrite(() =>
       patchInPlace(alerts, id, { status: 'acknowledged', acknowledgedBy: byUserId }),
     ),
+
+  resolveAlert: (id, byUserId, note) =>
+    simulateWrite(() => {
+      const alert = byId(alerts, id);
+      if (!alert) throw new RepositoryError('not_found');
+      if (!note.trim()) throw new RepositoryError('reason_required');
+      return patchInPlace(alerts, id, {
+        status: 'resolved',
+        acknowledgedBy: alert.acknowledgedBy ?? byUserId,
+        resolvedBy: byUserId,
+        resolvedAt: new Date().toISOString(),
+        resolutionNote: note.trim(),
+      });
+    }),
 
   listZones: () => simulateRead(() => [...zones]),
 

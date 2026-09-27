@@ -85,6 +85,7 @@ export function EscalationView() {
                   <span className="stack gap-1 grow" style={{ minWidth: 0 }}>
                     <span className="t-sm t-medium">{t(entry.alert.titleKey)}</span>
                     <span className="t-xs t-muted clamp-2">{entry.alert.context}</span>
+                    {entry.alert.resolutionNote && <span className="t-xs clamp-2">{entry.alert.resolutionNote}</span>}
                   </span>
                   <Badge tone="success">{t('status.resolved')}</Badge>
                 </div>
