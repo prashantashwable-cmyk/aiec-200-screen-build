@@ -778,9 +778,12 @@ const REMINDER_CATCH_UP_DAYS = 7;
  * and due date, so a heartbeat every minute can't message a customer twice,
  * and moving a due date (081) re-arms the cadence against the new date.
  */
-function runPaymentReminders(byName: string): ReminderRunResult {
+/** How long the owner gets to make an auto-created collection call. */
+const COLLECTION_CALL_WINDOW = hours(4);
+
+function runPaymentReminders(byName: string, nowMs = Date.now()): ReminderRunResult {
   const result: ReminderRunResult = { sent: 0, callTasksCreated: 0, skippedOptedOut: 0, skippedPaused: 0, skippedOutsideWindow: 0 };
-  const now = new Date();
+  const now = new Date(nowMs);
   const withinWindow = now.getHours() >= paymentReminderConfig.sendWindowStartHour && now.getHours() < paymentReminderConfig.sendWindowEndHour;
   const todayKey = now.toISOString().slice(0, 10);
   const oldestKey = new Date(now.getTime() - days(REMINDER_CATCH_UP_DAYS)).toISOString().slice(0, 10);
@@ -815,7 +818,8 @@ function runPaymentReminders(byName: string): ReminderRunResult {
         id: `ft-new-${followUpTaskCounter}`,
         leadId: lead.id,
         title: `Call ${lead.contactName} about the overdue payment for ${lead.siteName}`,
-        dueDate: now.toISOString(),
+        // "Call today", not "already late" the instant it's created.
+        dueDate: new Date(nowMs + COLLECTION_CALL_WINDOW).toISOString(),
         assignedTo: lead.surveyorId || 'u-admin-1',
         status: 'open',
         source: 'auto',
@@ -1796,7 +1800,7 @@ function sendDueScheduledQuotations(now: number): void {
 function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   const actionsBefore = automatedActionLog.length;
   reconcileFollowUpTasks();
-  runPaymentReminders(ASSISTANT_ACTOR);
+  runPaymentReminders(ASSISTANT_ACTOR, now);
   sendDueScheduledQuotations(now);
   for (const deal of deals) {
     if (payments.some((p) => p.dealId === deal.id && p.status === 'paid' && !invoices.some((inv) => inv.paymentId === p.id))) {

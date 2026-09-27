@@ -7,6 +7,14 @@
   min-height: 100dvh;
 }
 
+/* Demo banner + (on a phone) the top bar with the assistant's bell, stuck
+   together so neither scrolls away from the other. */
+.shell__top {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-shell);
+}
+
 .shell__demo-banner {
   display: flex;
   align-items: center;
@@ -19,9 +27,60 @@
   font-weight: 600;
   text-align: center;
   border-bottom: var(--border-width) solid var(--color-border);
-  position: sticky;
-  top: 0;
-  z-index: var(--z-shell);
+}
+
+.shell__topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 0 var(--space-2) 0 var(--space-4);
+  min-height: 48px;
+  background: var(--color-surface);
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.shell__topbar .shell__brand-mark {
+  font-family: var(--font-display);
+  font-size: var(--text-md);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--color-accent-secondary);
+}
+
+/* ---- The assistant's bell ---- */
+.shell__bell {
+  position: relative;
+  color: var(--color-accent-secondary);
+}
+
+.shell__bell--side {
+  width: 100%;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+
+.shell__bell-count {
+  position: absolute;
+  top: 4px;
+  right: 2px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--color-error);
+  color: var(--color-on-accent);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
+
+.shell__bell--side .shell__bell-count {
+  position: static;
 }
 
 .shell__body {
@@ -88,7 +147,8 @@
 }
 
 @media (min-width: 1024px) {
-  .shell__tabbar {
+  .shell__tabbar,
+  .shell__topbar {
     display: none;
   }
   .shell__main {

@@ -336,6 +336,32 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
     },
   },
   {
+    // A sent PO with no promised delivery date is a promise with no date —
+    // exactly what lets parts go missing without anyone noticing.
+    kind: 'po_delivery_date',
+    nudgeBefore: hours(12),
+    escalateAfter: days(1),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'supplier',
+    collect(src) {
+      const admin = adminId(src);
+      return src.purchaseOrders
+        .filter((po) => po.status === 'sent' && po.sentAt)
+        .map((po) => ({
+          ...base('po_delivery_date', 'purchase_order', po.id),
+          ownerUserId: admin,
+          titleKey: 'work.title.po_delivery_date',
+          titleParams: { code: po.code, supplier: src.suppliers.find((s) => s.id === po.supplierId)?.name ?? '' },
+          dueAt: plus(po.sentAt!, days(2)),
+          state: po.expectedDeliveryDate ? ('done' as const) : ('open' as const),
+          paused: false,
+          actionRoute: `/admin/deals/${po.dealId}/purchase-orders`,
+          oversightRoute: `/admin/deals/${po.dealId}/purchase-orders`,
+        }));
+    },
+  },
+  {
     kind: 'po_delivery',
     nudgeBefore: days(2),
     escalateAfter: days(2),

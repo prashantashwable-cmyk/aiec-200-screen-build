@@ -193,6 +193,16 @@ contract and compliance copy. The design system's own guidance applies here —
 keep the English contract the single binding text and treat any Hindi/Marathi
 version as a reference translation.
 
+**The follow-up engine only runs while someone has the app open.** The
+manager layer (below) is driven by a one-minute heartbeat in the app shell,
+because there is no server to run a scheduler. `runFollowUpEngine` is written
+as a pure pass over (data, now) — the same function a Firebase scheduled Cloud
+Function would call every few minutes — and every step is idempotent, so
+moving it server-side is wiring, not a rewrite. Until then, a reminder due at
+3 a.m. goes out when the first person opens the app that morning (catch-up is
+built in: nothing is lost, only late). Real push (FCM), WhatsApp Business API
+and DLT-registered SMS templates are the channels it will need.
+
 **The data is demo data.** Realistic for the Pune / Pimpri-Chinchwad market —
 genuine localities and coordinates, lift prices in the range Indian
 passenger-lift quotes actually land in — but invented. Every record carries
@@ -679,3 +689,100 @@ along the way and are covered above: the `receivedAmountOf`/`amountReceived`
 gap disputing a paid stage could hit, and extending 082's own dispute button
 to reach an already-paid stage (090's core refund scenario was otherwise
 unreachable from the app's own UI, only from seed data).
+
+---
+
+## Manager layer — commitments, the follow-up engine and every role's assistant
+
+Not a numbered screen: a shell-level layer built after Module 9, when the
+owner asked for the app to "act as manager and assistant for follow-up
+completion of work". An audit of the 92 screens found the gap wasn't a
+missing screen. It was three structural ones:
+
+1. **Promises with no owner or deadline.** Terms awaiting the customer,
+   pending discount/counter-offer decisions and unacknowledged alerts had no
+   due date. The PO chain dead-ended at "sent", and nobody owned "did the
+   supplier accept?" or "did the parts arrive?".
+2. **Owners with no inbox.** The reminder engine assigned call tasks to
+   surveyors, but no surveyor-facing screen showed them. Technician,
+   customer and supplier homes are placeholders. Toasts vanish after 4s.
+3. **Automation with no clock.** Payment reminders ran only when Admin
+   clicked 083's "Run now". Scheduled quote sends (068) were stored and never
+   sent. Nothing ran unless someone opened a screen.
+
+What was built, bottom up:
+
+- **Foundation (phase A).**
+  - `raiseAlert` is the one deduplicated path to Admin's attention; its
+    `sourceRoute` links back to the owning screen.
+  - `@/features/sla/clock` is the one definition of hours/days, breach and
+    severity.
+  - `logAutomatedAction` gives an audit row for anything done without a
+    human.
+  - 007 supplier onboarding now persists a real pending supplier plus their
+    own phone login; approving KYC in 091 activates it.
+- **Commitments (phase B).** `src/features/work/commitmentRules.ts` is the
+  rulebook as data: 15 kinds, each deriving `{owner, due, done?}` from records
+  that already exist. They cover payment due (customer) and collect
+  (surveyor); job assign and start; PO send, acknowledge, delivery date and
+  delivery; expiring quote; terms awaiting the customer; discount and
+  counter-offer decisions; unacknowledged alerts; follow-up tasks; and
+  lost-lead revisits.
+  - **Chains fall out of the data.** Sending a PO closes `po_send` and opens
+    `po_acknowledge` and `po_delivery_date` from the same row, so a chain
+    can't drift from the records.
+  - **New dated obligations add a rule here** rather than a queue of their
+    own; `CLAUDE.md` makes that a house rule.
+- **The engine (phase C).** `runFollowUpEngine` does three things each pass:
+  - It runs the automations that used to wait for a click: payment
+    reminders, scheduled quote sends and invoice backfill.
+  - It re-derives every commitment. A new owner or new due date restarts the
+    ladder, because it's a new promise.
+  - It walks each open commitment up the ladder, one rung per condition:
+    1. Nudge the owner before due.
+    2. Tell the owner at due.
+    3. After the rule's `escalateAfter`, escalate to `User.reportsTo`, or to
+       Admin's `backupUserId` if Admin is the owner.
+    4. After twice that, raise an Alert, only where the rule says so and the
+       owner isn't Admin.
+
+  Levels only move forward. A second pass right after the first sends 0
+  notifications and takes 0 actions, which was verified live across two
+  heartbeats. Paused items (a disputed payment, a deal with reminders paused
+  in 083, a job waiting on materials) are held, not chased.
+- **The assistant (phase D).** A bell in the shell (top bar on a phone,
+  sidebar on desktop) with an unread count, for **every** role. It opens
+  `AssistantDrawer`:
+  - **Needs you:** the owner's own open commitments due within 7 days, most
+    overdue first, each one tap from the screen where it gets done. Where the
+    proof of done is just the owner's say-so, it offers a one-tap action:
+    mark a follow-up done, acknowledge a PO, confirm delivery.
+  - **Escalated to you:** other people's late work that reached this person.
+  - **Updates** from the engine.
+  - **Done for you** (Admin only): reminders sent, invoices issued and quotes
+    sent without anyone clicking.
+  - **On-time record:** the share of finished commitments done by their due
+    time, the reusable signal 024, 097 and payouts can read later.
+
+Bugs found and fixed along the way:
+- **Call tasks were being cancelled.** 083's auto-created "call about the
+  overdue payment" task was cancelled by `reconcileFollowUpTasks` the next
+  time 047 loaded, because a payment's lead is always already won.
+  `FollowUpTask.purpose: 'collection'` now survives the lead closing.
+- **Reminders could be lost for good.** They fired only on the exact
+  calendar day of a step, so one day with nobody in the app lost that
+  reminder permanently. They now catch up: the latest arrived step fires
+  once, and older steps it overtook are marked as superseded. Catch-up is
+  capped at 7 days, past which 089 owns the payment.
+- **019's resolutions didn't stick.** A resolved alert was reverted to
+  "acknowledged" by the screen's own 15s poll. `resolveAlert` now persists
+  the resolution.
+
+**Business decisions this layer surfaces but can't make:**
+- **Who backs up the owner.** `backupUserId` is deliberately unset, so the
+  Admin drawer says plainly that late items escalate no further than them.
+- **Who owns delivery receipt.** Admin confirms it until Module 11's delivery
+  screens (101–104) take it over.
+- **Where scheduling runs.** Server-side scheduling is the one piece the demo
+  can't do (see Honest limits).
+

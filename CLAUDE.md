@@ -50,6 +50,11 @@ The login screen (002) has a Demo Mode tab. Admin screens live under `/admin/...
   human-triggered action keeps its own `pushTimelineEvent` entry instead. Any automation that can
   run repeatedly (the heartbeat calls several) must be idempotent — never message a customer twice
   for the same thing.
+- **Every new dated obligation adds a rule to `src/features/work/commitmentRules.ts`** (owner, due,
+  done/cancelled, nudge/escalate windows, action route) instead of a queue only its own screen
+  reads. The follow-up engine and every role's assistant drawer pick it up with no other change.
+  Ask "who owns this, by when, and who hears if it's late?" for anything with a status of
+  `pending`/`awaiting`/`sent`.
 - **Data only through `useData()`**, coded against the `Repository` interface. When the repository
   has to produce user-visible text, it returns a translation **key**, never English.
 - **Three real languages.** Every key needs en, hi and mr, and the checker enforces it. Hindi and
@@ -87,7 +92,7 @@ After the **10th screen of a module**, run that module's checkpoint: click throu
 end to end, spot-check 2–3 screens from earlier modules for regressions, fix anything found, and add
 the module's section to `BUILD_README.md`.
 
-## Current status (as of 2026-09-25)
+## Current status (as of 2026-09-27)
 
 - Modules 1–9 (`001`–`090`) are built. Modules 5, 6, 7, 8 and 9 are checkpoint-verified.
 - **Module 9 Payments & Financing is done**, including its checkpoint (all 10 screens clicked
@@ -102,8 +107,17 @@ the module's section to `BUILD_README.md`.
   (dl-1) was seeded one day short of the reminder cadence's own exhaustion threshold, so no real
   payment could ever reach 089's escalation queue while also belonging to a deal with an active
   Job — moved from 6 to 10 days overdue (and the stale `al-2` alert text updated to match).
-- **Next: Module 10 (`091`–`100`)**, starting with `091`. Check the repo root for the exact module
-  name and first spec filename — it wasn't in scope to read ahead while finishing Module 9.
+- **Module 10 in progress:** `091` and `092` built. **Next: `093`** (supplier catalog, parts and
+  pricing).
+- **Manager layer built (not a numbered screen).** It has four parts: commitments
+  (`commitmentRules.ts`), the follow-up engine (`runFollowUpEngine`), the one-minute heartbeat in
+  `AppShell`, and every role's bell and `AssistantDrawer`. See BUILD_README's "Manager layer"
+  section. Screens that touch a dated obligation must keep its rule accurate (the rule above).
+  When a later screen owns something the layer stands in for, it takes over from the stand-in
+  rather than duplicating it:
+  - 095's supplier order tracking should read `SupplierPurchaseOrder.acknowledgedAt`.
+  - 101–104 should replace Admin's interim `receivedAt` confirmation.
+  - 180 and 193 should read `Commitment`/`WorkNotification`.
 
 ### Module 9 facts worth knowing
 

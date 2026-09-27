@@ -1,6 +1,9 @@
+import { useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useSession } from '@/session/SessionProvider';
+import { AssistantBell, AssistantDrawer } from '@/features/work/AssistantDrawer';
+import { useFollowUpHeartbeat } from '@/features/work/useFollowUpHeartbeat';
 import { NAV_BY_ROLE } from './navConfig';
 import { screenRoutes } from './registry';
 
@@ -10,8 +13,11 @@ import { screenRoutes } from './registry';
  */
 export function AppShell() {
   const { t } = useTranslation();
-  const { role, isDemo, signOut } = useSession();
+  const { user, role, isDemo, signOut } = useSession();
   const location = useLocation();
+  // The app's one clock, and every role's assistant — see features/work.
+  const heartbeat = useFollowUpHeartbeat(user?.id);
+  const [assistantOpen, setAssistantOpen] = useState(false);
 
   const items = role ? NAV_BY_ROLE[role] : [];
 
@@ -29,19 +35,32 @@ export function AppShell() {
 
   return (
     <div className="shell">
-      {isDemo && (
-        <div className="shell__demo-banner" role="status">
-          <span>{t('demo.banner')}</span>
-          <button
-            type="button"
-            onClick={signOut}
-            className="ds-btn ds-btn--quiet ds-btn--sm"
-            style={{ minHeight: 28, color: 'inherit', textDecoration: 'underline' }}
-          >
-            {t('demo.exit')}
-          </button>
+      <div className="shell__top">
+        {isDemo && (
+          <div className="shell__demo-banner" role="status">
+            <span>{t('demo.banner')}</span>
+            <button
+              type="button"
+              onClick={signOut}
+              className="ds-btn ds-btn--quiet ds-btn--sm"
+              style={{ minHeight: 28, color: 'inherit', textDecoration: 'underline' }}
+            >
+              {t('demo.exit')}
+            </button>
+          </div>
+        )}
+        <div className="shell__topbar">
+          <span className="row gap-2">
+            <span className="brand-shaft" aria-hidden="true">
+              <span className="brand-shaft__floor brand-shaft__floor--lit" />
+              <span className="brand-shaft__floor brand-shaft__floor--lit" />
+              <span className="brand-shaft__floor" />
+            </span>
+            <span className="shell__brand-mark">{t('app.name')}</span>
+          </span>
+          <AssistantBell variant="topbar" unread={heartbeat.unread} onClick={() => setAssistantOpen(true)} />
         </div>
-      )}
+      </div>
 
       <div className="shell__body">
         <nav className="shell__sidebar" aria-label={t('nav.menu')}>
@@ -53,6 +72,7 @@ export function AppShell() {
             </span>
             <span className="shell__brand-mark">{t('app.name')}</span>
           </div>
+          <AssistantBell variant="sidebar" unread={heartbeat.unread} onClick={() => setAssistantOpen(true)} />
           {items.map((item) => (
             <NavLink
               key={item.id}
@@ -74,6 +94,14 @@ export function AppShell() {
         <main className="shell__main">
           <Outlet />
         </main>
+        <AssistantDrawer
+          open={assistantOpen}
+          onClose={() => setAssistantOpen(false)}
+          user={user}
+          role={role}
+          tick={heartbeat.tick}
+          onRead={heartbeat.refreshUnread}
+        />
       </div>
 
       <nav className="shell__tabbar" aria-label={t('nav.menu')}>

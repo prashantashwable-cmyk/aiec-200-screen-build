@@ -1522,6 +1522,7 @@ export type CommitmentKind =
   | 'job_start'
   | 'po_send'
   | 'po_acknowledge'
+  | 'po_delivery_date'
   | 'po_delivery'
   | 'quote_expiring'
   | 'terms_customer_confirm'
