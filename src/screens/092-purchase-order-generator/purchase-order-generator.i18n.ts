@@ -27,6 +27,8 @@ const translations: ScreenTranslations = {
       po: {
         supplierLabel: 'Supplier',
         notEligible: 'This supplier isn\'t currently KYC-approved and active — this PO can\'t be sent until that\'s resolved in the Supplier Directory.',
+        agreementBlocked: 'No supplier agreement is in force (none on file, or it has lapsed). This PO can’t be sent until one is recorded or renewed.',
+        viewAgreement: 'Open agreement',
         reassign: 'Reassign supplier',
         deliveryLabel: 'Expected delivery date',
         totalLabel: 'Total',
@@ -93,6 +95,8 @@ const translations: ScreenTranslations = {
       po: {
         supplierLabel: 'सप्लायर',
         notEligible: 'यह सप्लायर अभी KYC-स्वीकृत और सक्रिय नहीं है — जब तक सप्लायर निर्देशिका में यह हल नहीं होता, यह खरीद आदेश भेजा नहीं जा सकता।',
+        agreementBlocked: 'कोई सप्लायर अनुबंध लागू नहीं है (रिकॉर्ड में नहीं, या समाप्त हो गया)। अनुबंध दर्ज या नवीनीकृत होने तक यह PO नहीं भेजा जा सकता।',
+        viewAgreement: 'अनुबंध खोलें',
         reassign: 'सप्लायर बदलें',
         deliveryLabel: 'अपेक्षित डिलीवरी तिथि',
         totalLabel: 'कुल',
@@ -159,6 +163,8 @@ const translations: ScreenTranslations = {
       po: {
         supplierLabel: 'सप्लायर',
         notEligible: 'हा सप्लायर सध्या KYC-मंजूर आणि सक्रिय नाही — सप्लायर निर्देशिकेत हे सोडवले जाईपर्यंत हा खरेदी ऑर्डर पाठवता येणार नाही.',
+        agreementBlocked: 'कोणताही पुरवठादार करार लागू नाही (नोंदीत नाही, किंवा संपला आहे). करार नोंदवला किंवा नूतनीकृत होईपर्यंत हा PO पाठवता येणार नाही.',
+        viewAgreement: 'करार उघडा',
         reassign: 'सप्लायर बदला',
         deliveryLabel: 'अपेक्षित डिलिव्हरी तारीख',
         totalLabel: 'एकूण',

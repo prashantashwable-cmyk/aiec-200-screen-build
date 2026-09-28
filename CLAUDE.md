@@ -107,7 +107,32 @@ the module's section to `BUILD_README.md`.
   (dl-1) was seeded one day short of the reminder cadence's own exhaustion threshold, so no real
   payment could ever reach 089's escalation queue while also belonging to a deal with an active
   Job — moved from 6 to 10 days overdue (and the stale `al-2` alert text updated to match).
-- **Module 10 in progress:** `091`–`097` built. **Next: `098`**.
+- **Module 10 in progress:** `091`–`098` built. **Next: `099`** (supplier communication thread).
+  098 facts:
+  - `SupplierAgreementVersion` is append-only, one row per version (`initial` / `amendment` /
+    `renewal`). Each has its own terms, dates and signed-document name, and `warrantyPassThrough`
+    (the no-liability clause) is always true. The version in force is the latest one whose
+    `effectiveFrom` has arrived.
+  - `@/features/suppliers/agreement` computes `agreementState` (`none` / `active` / `expiring` /
+    `lapsed`, with `RENEWAL_NOTICE` of 45 days) and `canIssueNewPo`.
+  - The agreement is the threshold itself, not a copy of it:
+    - `sendPurchaseOrder` refuses `agreement_not_in_force` and stamps the PO with
+      `agreementTerms` (a snapshot).
+    - When nobody dated the PO, `expectedDeliveryDate` defaults to sent + `deliverySlaDays`.
+    - `promisedDeliveryOf(po)` is what 095's `assessDelay`, 097's on-time rating and the
+      `po_delivery` commitments all read.
+    - `supplierPaymentDueDate(po)` is receivedAt + the snapshot's `paymentTermsDays`. Supplier
+      payment screens should read it, and 100 should layer its term types on top rather than keep
+      a second net-days value.
+  - 094's matching (`offersFor`) skips suppliers without an agreement in force. A PO already sent
+    finishes under its own snapshot.
+  - Commitments:
+    - `supplier_agreement_renewal` goes to Admin, nudging 45 days before expiry.
+    - `supplier_agreement_acknowledge` goes to the supplier user, or to Admin by proxy.
+  - 097's hero shows the agreed standard and flags quality below it.
+  - `/agreement` serves Admin (a board sorted by urgency, `?supplierId=`, linked from 091 and 092)
+    and Supplier (the nav's "Agreement" tab).
+  - `.ds-ascension--multiline` lets an Ascension step's meta span lines.
   097 facts:
   - `SupplierOrderRating` is created once per PO by `movePoLinesSync`, the first time the whole PO
     reaches `delivered` (`createOrderRating`). Until 104 owns receipt, Admin logs defects on it by hand.

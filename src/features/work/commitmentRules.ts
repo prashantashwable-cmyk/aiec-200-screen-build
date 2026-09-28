@@ -3,6 +3,7 @@ import type {
   AlertSeverity,
   CatalogPriceChange,
   SupplierOrderRating,
+  SupplierAgreementVersion,
   CommitmentKind,
   CommitmentSubjectType,
   CounterOffer,
@@ -21,6 +22,7 @@ import type {
 import { remainingBalance } from '@/features/payments/aging';
 import { days, hours, minutes } from '@/features/sla/clock';
 import { AT_RISK_RATIO, poStageEnteredAt, poStageOf, typicalStageDays } from '@/features/suppliers/fulfilment';
+import { RENEWAL_NOTICE, agreementState, promisedDeliveryOf, versionsOf } from '@/features/suppliers/agreement';
 
 /**
  * The manager's rulebook: every dated promise the business runs on, as data.
@@ -57,6 +59,7 @@ export interface CommitmentSources {
   followUpTasks: FollowUpTask[];
   catalogPriceChanges: CatalogPriceChange[];
   orderRatings: SupplierOrderRating[];
+  agreementVersions: SupplierAgreementVersion[];
   /** Deals where someone paused payment reminders by hand (083). */
   pausedDealIds: Set<string>;
 }
@@ -399,7 +402,7 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
           titleKey: 'work.title.po_delivery_date',
           titleParams: { code: po.code, supplier: src.suppliers.find((s) => s.id === po.supplierId)?.name ?? '' },
           dueAt: plus(po.sentAt!, days(2)),
-          state: po.expectedDeliveryDate ? ('done' as const) : ('open' as const),
+          state: promisedDeliveryOf(po) ? ('done' as const) : ('open' as const),
           paused: false,
           actionRoute: `/admin/deals/${po.dealId}/purchase-orders`,
           oversightRoute: `/admin/deals/${po.dealId}/purchase-orders`,
@@ -417,13 +420,13 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
     collect(src) {
       const admin = adminId(src);
       return src.purchaseOrders
-        .filter((po) => po.status === 'sent' && po.expectedDeliveryDate)
+        .filter((po) => po.status === 'sent' && promisedDeliveryOf(po))
         .map((po) => ({
           ...base('po_delivery', 'purchase_order', po.id),
           ownerUserId: admin,
           titleKey: 'work.title.po_delivery',
           titleParams: { code: po.code, supplier: src.suppliers.find((s) => s.id === po.supplierId)?.name ?? '' },
-          dueAt: po.expectedDeliveryDate!,
+          dueAt: promisedDeliveryOf(po)!,
           state: po.receivedAt ? ('done' as const) : ('open' as const),
           paused: false,
           completedAt: po.receivedAt,
@@ -617,6 +620,68 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
           actionRoute: `/scorecard?supplierId=${r.supplierId}&rating=${r.id}`,
           oversightRoute: `/scorecard?supplierId=${r.supplierId}&rating=${r.id}`,
         }));
+    },
+  },
+  {
+    // A lapsed agreement blocks every new PO to that supplier (098), so
+    // renewal is chased well before expiry, not discovered at send time.
+    kind: 'supplier_agreement_renewal',
+    nudgeBefore: RENEWAL_NOTICE,
+    escalateAfter: days(3),
+    escalates: true,
+    raisesAlert: true,
+    alertCategory: 'supplier',
+    collect(src) {
+      const admin = adminId(src);
+      const out: Obligation[] = [];
+      for (const supplier of src.suppliers) {
+        if (supplier.status !== 'active') continue;
+        const state = agreementState(versionsOf(src.agreementVersions, supplier.id), src.now);
+        if (!state.current) continue;
+        out.push({
+          // One per version in force, so a renewal closes this one and the
+          // next expiry starts a fresh commitment.
+          ...base('supplier_agreement_renewal', 'supplier_agreement', state.current.id),
+          ownerUserId: admin,
+          titleKey: state.status === 'lapsed' ? 'work.title.supplier_agreement_lapsed' : 'work.title.supplier_agreement_renewal',
+          titleParams: { supplier: supplier.name },
+          dueAt: state.current.expiresOn,
+          state: state.renewalOnFile ? 'done' : 'open',
+          paused: false,
+          completedAt: state.renewalOnFile ? state.upcoming?.recordedAt : undefined,
+          actionRoute: `/agreement?supplierId=${supplier.id}`,
+          oversightRoute: `/agreement?supplierId=${supplier.id}`,
+        });
+      }
+      return out;
+    },
+  },
+  {
+    kind: 'supplier_agreement_acknowledge',
+    nudgeBefore: days(1),
+    escalateAfter: days(2),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'supplier',
+    collect(src) {
+      const admin = adminId(src);
+      return src.agreementVersions.map((v) => {
+        const supplier = src.suppliers.find((s) => s.id === v.supplierId);
+        const portalUser = supplierUser(src, v.supplierId);
+        return {
+          ...base('supplier_agreement_acknowledge', 'supplier_agreement', v.id),
+          // No portal login means Admin gets the confirmation in writing instead.
+          ownerUserId: portalUser?.id ?? admin,
+          titleKey: portalUser ? 'work.title.supplier_agreement_acknowledge' : 'work.title.supplier_agreement_acknowledge_proxy',
+          titleParams: { supplier: supplier?.name ?? '', version: String(v.version) },
+          dueAt: plus(v.recordedAt, days(3)),
+          state: v.acknowledgedAt ? ('done' as const) : ('open' as const),
+          paused: false,
+          completedAt: v.acknowledgedAt,
+          actionRoute: portalUser ? '/agreement' : `/agreement?supplierId=${v.supplierId}`,
+          oversightRoute: `/agreement?supplierId=${v.supplierId}`,
+        };
+      });
     },
   },
   {

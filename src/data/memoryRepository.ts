@@ -50,6 +50,7 @@ import {
   seedProductionRecords,
   seedSupplierOrderRatings,
   seedScoreContextNotes,
+  seedSupplierAgreementVersions,
   seedSupplierPurchaseOrders,
   seedTriggerRules,
   seedUsers,
@@ -119,6 +120,9 @@ import type {
   ProductionRecordResult,
   ScoredOrderRating,
   SupplierScorecard,
+  AgreementOrderView,
+  SupplierAgreementSummary,
+  SupplierAgreementView,
   PurchaseOrderLineView,
   SupplierDirectoryRow,
   SupplierInviteInput,
@@ -137,6 +141,8 @@ import type {
   ProductionEvidence,
   SupplierOrderRating,
   SupplierScoreContextNote,
+  SupplierAgreementStatus,
+  SupplierAgreementVersion,
   ProductionRecord,
   ProductionStage,
   EscalationLevel,
@@ -226,6 +232,18 @@ import type { AutomatedActionInput } from '@/features/audit/logAutomatedAction';
 import { computeSupplierPerformanceScore, supplierScoreBreakdown } from '@/features/suppliers/performanceScore';
 import { RATING_WINDOW, SCORE_DELTA_ORDERS, aggregateRatings, byDelivered, isOnTime, orderQuality, orderScore } from '@/features/suppliers/orderRating';
 import { RULE_BY_KIND, collectObligations, targetEscalationLevel } from '@/features/work/commitmentRules';
+import {
+  agreementState,
+  canIssueNewPo,
+  changedTerms,
+  checkTerms,
+  promisedDeliveryOf,
+  slaDeliveryDate,
+  snapshotOf,
+  supplierPaymentDueDate,
+  versionInForce,
+  versionsOf,
+} from '@/features/suppliers/agreement';
 import {
   DEFAULT_PRICE_REVIEW_THRESHOLD_PCT,
   catalogMatchKey,
@@ -325,6 +343,21 @@ let productionCounter = 100;
 const supplierOrderRatings = [...seedSupplierOrderRatings];
 const scoreContextNotes = [...seedScoreContextNotes];
 let ratingCounter = 100;
+const supplierAgreementVersions = [...seedSupplierAgreementVersions];
+let agreementCounter = 100;
+
+/** 098: where a supplier's agreement stands right now. */
+function agreementStateFor(supplierId: string, now = Date.now()) {
+  return agreementState(versionsOf(supplierAgreementVersions, supplierId), now);
+}
+
+// Seeded orders were sent before the agreement record existed here — stamp
+// each with the terms that were in force the day it went out.
+for (const po of supplierPurchaseOrders) {
+  if (po.status !== 'sent' || !po.sentAt || !po.supplierId || po.agreementTerms) continue;
+  const inForce = versionInForce(versionsOf(supplierAgreementVersions, po.supplierId), new Date(po.sentAt).getTime());
+  if (inForce) po.agreementTerms = snapshotOf(inForce);
+}
 
 /** 097: a supplier's on-time rate and quality are derived from their order
  *  ratings — the one engine 026, 091 and 094 all read. A supplier with no
@@ -636,6 +669,9 @@ function offersFor(category: string, driveType: DriveType | null): MatchOffer[] 
   const offers: MatchOffer[] = [];
   for (const supplier of suppliers) {
     if (!isSupplierEligibleForPO(supplier)) continue;
+    // A supplier with no agreement in force can't be sent a PO (098), so
+    // drafting one for them would only strand it.
+    if (!canIssueNewPo(agreementStateFor(supplier.id).status)) continue;
     const live = supplierCatalogItems
       .filter((c) => c.supplierId === supplier.id && c.category === category && c.status === 'active')
       .sort((x, y) => x.unitPrice - y.unitPrice);
@@ -765,6 +801,7 @@ function buildPurchaseOrderView(po: SupplierPurchaseOrder): PurchaseOrderView {
     lines: lines.map((line): PurchaseOrderLineView => ({ ...line, currentCatalogUnitPrice: po.supplierId ? catalogPriceFor(po.supplierId, line.category) : null })),
     totalAmount: poTotalOf(lines),
     requiresApproval,
+    agreementStatus: po.supplierId ? agreementStateFor(po.supplierId).status : 'none',
   };
 }
 
@@ -1762,6 +1799,7 @@ function commitmentSources(now: number): CommitmentSources {
     followUpTasks,
     catalogPriceChanges,
     orderRatings: supplierOrderRatings,
+    agreementVersions: supplierAgreementVersions,
     pausedDealIds: new Set(paymentReminderPauses.filter((p) => p.paused).map((p) => p.dealId)),
   };
 }
@@ -2455,7 +2493,8 @@ function detectProductionStalls(now: number): void {
 function createOrderRating(po: SupplierPurchaseOrder, deliveredAt: string): void {
   if (!po.supplierId || supplierOrderRatings.some((r) => r.poId === po.id)) return;
   const deal = byId(deals, po.dealId);
-  const expected = po.expectedDeliveryDate ?? deliveredAt;
+  // Held to the promised date — Admin's own, or the agreed SLA (098).
+  const expected = promisedDeliveryOf(po) ?? deliveredAt;
   ratingCounter += 1;
   supplierOrderRatings.push({
     id: `rt-new-${ratingCounter}`,
@@ -3921,7 +3960,20 @@ export const memoryRepository: Repository = {
       const supplier = po.supplierId ? byId(suppliers, po.supplierId) : null;
       if (!supplier || !isSupplierEligibleForPO(supplier)) throw new RepositoryError('supplier_not_eligible');
       if (purchaseOrderNeedsApproval(po.lineItems ?? []) && !po.approvedAt) throw new RepositoryError('approval_required');
-      return patchInPlace(supplierPurchaseOrders, poId, { status: 'sent', sentBy: byName, sentAt: new Date().toISOString() });
+      // A new order goes out only under terms in force (098), and carries
+      // them with it — so a later amendment or lapse never changes it.
+      const agreement = agreementStateFor(supplier.id);
+      if (!agreement.current || !canIssueNewPo(agreement.status)) throw new RepositoryError('agreement_not_in_force');
+      const sentAt = new Date().toISOString();
+      const agreementTerms = snapshotOf(agreement.current);
+      return patchInPlace(supplierPurchaseOrders, poId, {
+        status: 'sent',
+        sentBy: byName,
+        sentAt,
+        agreementTerms,
+        // Admin's own date stands; otherwise the promise is the agreed SLA.
+        expectedDeliveryDate: po.expectedDeliveryDate ?? slaDeliveryDate(sentAt, agreementTerms),
+      });
     }),
 
   /* ------------------------------------------------------- Quotations */
@@ -5155,6 +5207,7 @@ export const memoryRepository: Repository = {
           (rating): ScoredOrderRating => ({ rating, onTime: isOnTime(rating), quality: orderQuality(rating), orderScore: orderScore(rating, supplier), inWindow: windowIds.has(rating.id) }),
         ),
         contextNotes: scoreContextNotes.filter((n) => n.supplierId === supplierId).sort((a, b) => (a.addedAt < b.addedAt ? 1 : -1)),
+        agreedTerms: agreementStateFor(supplierId).current?.terms ?? null,
       };
     }),
 
@@ -5239,6 +5292,121 @@ export const memoryRepository: Repository = {
       const created: SupplierScoreContextNote = { id: `scn-new-${ratingCounter}`, supplierId, note: note.trim(), addedBy: actor.name, addedAt: new Date().toISOString(), isDemo: true };
       scoreContextNotes.push(created);
       return created;
+    }),
+
+  /* ------------------------------------------ Supplier agreement & SLA (098) */
+  listSupplierAgreements: (byUserId) =>
+    simulateRead((): SupplierAgreementSummary[] => {
+      adminOnly(byUserId);
+      const now = Date.now();
+      const urgency: Record<SupplierAgreementStatus, number> = { lapsed: 0, none: 1, expiring: 2, active: 3 };
+      return suppliers
+        .map((supplier): SupplierAgreementSummary => {
+          const versions = versionsOf(supplierAgreementVersions, supplier.id);
+          const state = agreementState(versions, now);
+          return {
+            supplier,
+            status: state.status,
+            daysToExpiry: state.daysToExpiry,
+            terms: state.current?.terms ?? null,
+            awaitingAcknowledgement: versions.some((v) => !v.acknowledgedAt),
+            ordersInFlight: supplierPurchaseOrders.filter((po) => po.supplierId === supplier.id && po.status === 'sent' && poStageOf(po) !== 'delivered').length,
+          };
+        })
+        .sort((a, b) => urgency[a.status] - urgency[b.status] || (a.daysToExpiry ?? 0) - (b.daysToExpiry ?? 0) || a.supplier.name.localeCompare(b.supplier.name));
+    }),
+
+  getSupplierAgreement: (supplierId, byUserId) =>
+    simulateRead((): SupplierAgreementView | null => {
+      const actor = catalogActor(byUserId);
+      const supplier = byId(suppliers, supplierId);
+      if (!supplier) return null;
+      if (actor.role === 'supplier' && supplierUserFor(supplier)?.id !== actor.id) return null;
+      if (actor.role !== 'admin' && actor.role !== 'supplier') return null;
+      const versions = versionsOf(supplierAgreementVersions, supplierId);
+      const state = agreementState(versions, Date.now());
+      const orders = supplierPurchaseOrders
+        .filter((po) => po.supplierId === supplierId && po.status === 'sent' && po.sentAt)
+        .map((po): AgreementOrderView => ({
+          poId: po.id,
+          code: po.code,
+          stage: poStageOf(po),
+          sentAt: po.sentAt!,
+          version: po.agreementTerms?.version ?? null,
+          deliverySlaDays: po.agreementTerms?.deliverySlaDays ?? null,
+          paymentTermsDays: po.agreementTerms?.paymentTermsDays ?? null,
+          promisedDelivery: promisedDeliveryOf(po),
+          receivedAt: po.receivedAt ?? null,
+          paymentDueDate: supplierPaymentDueDate(po),
+          underPriorTerms: !!po.agreementTerms && po.agreementTerms.agreementVersionId !== state.current?.id,
+        }));
+      const inFlight = orders.filter((o) => o.stage !== 'delivered').sort((a, b) => (a.sentAt < b.sentAt ? 1 : -1));
+      const delivered = orders.filter((o) => o.stage === 'delivered').sort((a, b) => ((a.receivedAt ?? '') < (b.receivedAt ?? '') ? 1 : -1)).slice(0, 5);
+      return {
+        supplier,
+        status: state.status,
+        current: state.current,
+        upcoming: state.upcoming,
+        daysToExpiry: state.daysToExpiry,
+        renewalOnFile: state.renewalOnFile,
+        canIssueNewPo: canIssueNewPo(state.status),
+        versions: [...versions].reverse().map((v, i, newestFirst) => ({
+          version: v,
+          changed: changedTerms(newestFirst[i + 1]?.terms ?? null, v.terms),
+          isCurrent: v.id === state.current?.id,
+          isUpcoming: new Date(v.effectiveFrom).getTime() > Date.now(),
+        })),
+        orders: [...inFlight, ...delivered],
+      };
+    }),
+
+  recordAgreementVersion: (supplierId, input, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const supplier = byId(suppliers, supplierId);
+      if (!supplier) throw new RepositoryError('not_found');
+      const versions = versionsOf(supplierAgreementVersions, supplierId);
+      const last = versions[versions.length - 1];
+      // The first version is the initial agreement; everything after it is an
+      // amendment or a renewal, and says what changed.
+      if ((input.kind === 'initial') !== !last) throw new RepositoryError('invalid_state');
+      if (last && (input.reason ?? '').trim().length < 10) throw new RepositoryError('reason_required');
+      // AIEC is never the manufacturer of record — no agreement without it.
+      if (!input.warrantyPassThrough) throw new RepositoryError('invalid_input');
+      if (!input.documentName.trim()) throw new RepositoryError('document_required');
+      if (checkTerms(input.terms, input.effectiveFrom, input.expiresOn).length > 0) throw new RepositoryError('invalid_input');
+      // A later version can't start before the one it follows.
+      if (last && new Date(input.effectiveFrom).getTime() < new Date(last.effectiveFrom).getTime()) throw new RepositoryError('invalid_input');
+      agreementCounter += 1;
+      const created: SupplierAgreementVersion = {
+        id: `sag-new-${agreementCounter}`,
+        supplierId,
+        version: (last?.version ?? 0) + 1,
+        kind: input.kind,
+        terms: { ...input.terms, qualityStandards: input.terms.qualityStandards.trim() },
+        effectiveFrom: input.effectiveFrom,
+        expiresOn: input.expiresOn,
+        documentName: input.documentName.trim(),
+        reason: input.reason?.trim() || undefined,
+        warrantyPassThrough: true,
+        recordedBy: actor.name,
+        recordedAt: new Date().toISOString(),
+        isDemo: true,
+      };
+      supplierAgreementVersions.push(created);
+      return created;
+    }),
+
+  acknowledgeAgreementVersion: (versionId, byUserId) =>
+    simulateWrite(() => {
+      const actor = catalogActor(byUserId);
+      const version = byId(supplierAgreementVersions, versionId);
+      if (!version) throw new RepositoryError('not_found');
+      const supplier = byId(suppliers, version.supplierId);
+      // Only the supplier themselves can say "this is what we signed".
+      if (!supplier || actor.role !== 'supplier' || supplierUserFor(supplier)?.id !== actor.id) throw new RepositoryError('forbidden');
+      if (version.acknowledgedAt) return version;
+      return patchInPlace(supplierAgreementVersions, versionId, { acknowledgedBy: actor.name, acknowledgedAt: new Date().toISOString() });
     }),
 
   /* ------------------------------------- Manufacturer production (096) */

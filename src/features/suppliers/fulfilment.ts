@@ -1,4 +1,5 @@
 import type { PoFulfilmentStage, PurchaseOrderLineItem, Supplier, SupplierPurchaseOrder } from '@/data/types';
+import { promisedDeliveryOf } from './agreement';
 
 /**
  * A sent PO's fulfilment status (095), pure — the board, the delay flag and
@@ -142,7 +143,9 @@ export function assessDelay(
     remaining += typicalStageDays(supplier, later, allPurchaseOrders).days;
   }
   const projected = now + remaining * DAY;
-  const expected = po.expectedDeliveryDate ? new Date(po.expectedDeliveryDate).getTime() : null;
+  // Held to the promised date: Admin's own, or the supplier's agreed SLA (098).
+  const promised = promisedDeliveryOf(po);
+  const expected = promised ? new Date(promised).getTime() : null;
   let risk: DelayRisk = 'on_track';
   if (expected !== null && now > expected) risk = 'overdue';
   else if ((expected !== null && projected > expected) || daysInStage > typical.days * AT_RISK_RATIO) risk = 'at_risk';

@@ -229,6 +229,10 @@
   font-size: var(--text-xs);
   color: var(--color-text-secondary);
 }
+/* A step whose meta is several lines of record (e.g. an agreement version). */
+.ds-ascension--multiline .ds-ascension__meta {
+  white-space: pre-line;
+}
 
 /* ============================== Badge =================================== */
 .ds-badge {

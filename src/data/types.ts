@@ -629,6 +629,8 @@ export interface SupplierPurchaseOrder {
   matchedByRulesVersion?: number;
   selection?: CategoryMatchResult[];
   statusEvents?: PoStatusEvent[];
+  /** The agreement terms in force when it was sent (098). */
+  agreementTerms?: PurchaseOrderAgreementSnapshot;
   isDemo: boolean;
 }
 
@@ -755,6 +757,69 @@ export interface SupplierScoreContextNote {
   addedBy: string;
   addedAt: string;
   isDemo: boolean;
+}
+
+/* ------------------------------------------ Supplier agreement (098) */
+
+/** The commercial terms of one version of a supplier's agreement. These are
+ *  the operational thresholds themselves, not a description of them:
+ *  `deliverySlaDays` sets a sent PO's promised date (so 095's delay flag and
+ *  097's on-time rating), and `paymentTermsDays` sets when AIEC owes payment. */
+export interface SupplierAgreementTerms {
+  /** Days from a PO being sent to the parts being delivered. */
+  deliverySlaDays: number;
+  /** Net days after delivery that AIEC pays within. */
+  paymentTermsDays: number;
+  /** The quality score (1–5, 097's scale) the supplier commits to holding. */
+  minQualityScore: number;
+  /** Standards and certifications the parts must meet, as agreed. */
+  qualityStandards: string;
+  /** The supplier's own warranty on its parts, passed through to the end customer. */
+  warrantyMonths: number;
+}
+
+export type SupplierAgreementVersionKind = 'initial' | 'amendment' | 'renewal';
+
+/** Where a supplier's agreement stands today. Only `active` and `expiring`
+ *  allow a new PO to be sent. */
+export type SupplierAgreementStatus = 'none' | 'active' | 'expiring' | 'lapsed';
+
+/** One version of the agreement. Versions are append-only — an amendment
+ *  never rewrites an earlier version, so a PO always knows the terms it was
+ *  sent under. The version in force at any moment is the latest one whose
+ *  `effectiveFrom` has arrived. */
+export interface SupplierAgreementVersion {
+  id: string;
+  supplierId: string;
+  version: number;
+  kind: SupplierAgreementVersionKind;
+  terms: SupplierAgreementTerms;
+  effectiveFrom: string;
+  expiresOn: string;
+  /** The signed document (agreement_terms_document). An amendment agreed by
+   *  phone isn't in force on paper until this exists. Name only — this build
+   *  has no file storage (see BUILD_README). */
+  documentName: string;
+  /** What changed and why — required for anything after the first version. */
+  reason?: string;
+  /** The supplier is the manufacturer of record and warrants its own parts;
+   *  AIEC orchestrates. A version can't be recorded without it. */
+  warrantyPassThrough: true;
+  recordedBy: string;
+  recordedAt: string;
+  /** The supplier's own confirmation that this is what they signed. */
+  acknowledgedBy?: string;
+  acknowledgedAt?: string;
+  isDemo: boolean;
+}
+
+/** The terms a PO was sent under, frozen at send — a later amendment or a
+ *  lapse never changes an order already in flight. */
+export interface PurchaseOrderAgreementSnapshot {
+  agreementVersionId: string;
+  version: number;
+  deliverySlaDays: number;
+  paymentTermsDays: number;
 }
 
 /* ------------------------------------------ Auto-PO trigger rules (094) */
@@ -1811,6 +1876,8 @@ export type CommitmentKind =
   | 'counter_offer_decision'
   | 'catalog_price_review'
   | 'rating_dispute_review'
+  | 'supplier_agreement_renewal'
+  | 'supplier_agreement_acknowledge'
   | 'alert_acknowledge'
   | 'follow_up_task'
   | 'lead_revisit';
@@ -1827,7 +1894,8 @@ export type CommitmentSubjectType =
   | 'follow_up_task'
   | 'lead'
   | 'catalog_price_change'
-  | 'supplier_order_rating';
+  | 'supplier_order_rating'
+  | 'supplier_agreement';
 
 /**
  * 0 nothing sent yet · 1 owner nudged before due · 2 owner told it's overdue

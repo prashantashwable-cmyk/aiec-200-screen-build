@@ -30,6 +30,8 @@ export const PURCHASE_ORDER_GENERATOR_KEYS = {
   po: {
     supplierLabel: 'purchaseOrderGenerator.po.supplierLabel',
     notEligible: 'purchaseOrderGenerator.po.notEligible',
+    agreementBlocked: 'purchaseOrderGenerator.po.agreementBlocked',
+    viewAgreement: 'purchaseOrderGenerator.po.viewAgreement',
     reassign: 'purchaseOrderGenerator.po.reassign',
     deliveryLabel: 'purchaseOrderGenerator.po.deliveryLabel',
     totalLabel: 'purchaseOrderGenerator.po.totalLabel',

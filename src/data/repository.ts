@@ -75,6 +75,9 @@ import type {
   DefectAttribution,
   SupplierOrderRating,
   SupplierScoreContextNote,
+  SupplierAgreementStatus,
+  SupplierAgreementTerms,
+  SupplierAgreementVersion,
   ProductionRecord,
   ProductionStage,
   AutoPoRules,
@@ -848,6 +851,68 @@ export interface SupplierScorecard {
   /** Newest first. */
   ratings: ScoredOrderRating[];
   contextNotes: SupplierScoreContextNote[];
+  /** The standard the supplier agreed to (098), to read the score against. */
+  agreedTerms: SupplierAgreementTerms | null;
+}
+
+/* ---------------------------------------- Supplier agreement & SLA (098) */
+
+export interface AgreementVersionView {
+  version: SupplierAgreementVersion;
+  /** Terms this version changed against the one before it. */
+  changed: (keyof SupplierAgreementTerms)[];
+  isCurrent: boolean;
+  isUpcoming: boolean;
+}
+
+/** An order and the terms it was sent under — which may be an earlier
+ *  version than today's, or one that has since lapsed. */
+export interface AgreementOrderView {
+  poId: string;
+  code: string;
+  stage: PoFulfilmentStage;
+  sentAt: string;
+  version: number | null;
+  deliverySlaDays: number | null;
+  paymentTermsDays: number | null;
+  promisedDelivery: string | null;
+  receivedAt: string | null;
+  paymentDueDate: string | null;
+  /** Sent under a version that is no longer the one in force. */
+  underPriorTerms: boolean;
+}
+
+export interface SupplierAgreementView {
+  supplier: Supplier;
+  status: SupplierAgreementStatus;
+  current: SupplierAgreementVersion | null;
+  upcoming: SupplierAgreementVersion | null;
+  daysToExpiry: number | null;
+  renewalOnFile: boolean;
+  canIssueNewPo: boolean;
+  /** Newest first. */
+  versions: AgreementVersionView[];
+  /** Orders still in flight, then recently delivered ones. */
+  orders: AgreementOrderView[];
+}
+
+export interface SupplierAgreementSummary {
+  supplier: Supplier;
+  status: SupplierAgreementStatus;
+  daysToExpiry: number | null;
+  terms: SupplierAgreementTerms | null;
+  awaitingAcknowledgement: boolean;
+  ordersInFlight: number;
+}
+
+export interface RecordAgreementVersionInput {
+  kind: SupplierAgreementVersion['kind'];
+  terms: SupplierAgreementTerms;
+  effectiveFrom: string;
+  expiresOn: string;
+  documentName: string;
+  reason?: string;
+  warrantyPassThrough: boolean;
 }
 
 /* ------------------------------------- Manufacturer production (096) */
@@ -967,6 +1032,8 @@ export interface PurchaseOrderView {
   /** Every reason this PO needs Admin before it can go (094 adds the value
    *  line to 092's price-deviation rule). Empty once sent. */
   approvalReasons: ('price_deviation' | 'over_value_threshold')[];
+  /** 098: a new PO can only be sent while the supplier's agreement is in force. */
+  agreementStatus: SupplierAgreementStatus;
 }
 
 /** Screen 092's own per-deal read — every real PO already drafted for
@@ -1653,6 +1720,17 @@ export interface Repository {
   ): Promise<SupplierOrderRating>;
   /** Context beside the score — never changes it. */
   addScoreContextNote(supplierId: string, note: string, byUserId: string): Promise<SupplierScoreContextNote>;
+
+  /* Supplier agreement & SLA (098) — the terms the operational chain runs on */
+  /** Admin: every supplier with where their agreement stands, most urgent first. */
+  listSupplierAgreements(byUserId: string): Promise<SupplierAgreementSummary[]>;
+  /** Admin any supplier; a supplier only their own. */
+  getSupplierAgreement(supplierId: string, byUserId: string): Promise<SupplierAgreementView | null>;
+  /** Admin records the first version, an amendment or a renewal — always
+   *  with its signed document, never by editing an earlier version. */
+  recordAgreementVersion(supplierId: string, input: RecordAgreementVersionInput, byUserId: string): Promise<SupplierAgreementVersion>;
+  /** The supplier confirms a recorded version is what they signed. */
+  acknowledgeAgreementVersion(versionId: string, byUserId: string): Promise<SupplierAgreementVersion>;
 
   /* Manufacturer production (096) — inside a manufacturer's "in production" */
   getProductionRecord(recordId: string, byUserId: string): Promise<ProductionRecordResult>;

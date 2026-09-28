@@ -27,6 +27,10 @@ export const SUPPLIER_SCORECARD_KEYS = {
     basis: 'supplierScorecard.hero.basis',
     noOrders: 'supplierScorecard.hero.noOrders',
     unrated: 'supplierScorecard.hero.unrated',
+    agreed: 'supplierScorecard.hero.agreed',
+    belowAgreed: 'supplierScorecard.hero.belowAgreed',
+    noAgreement: 'supplierScorecard.hero.noAgreement',
+    viewAgreement: 'supplierScorecard.hero.viewAgreement',
   },
   context: {
     heading: 'supplierScorecard.context.heading',

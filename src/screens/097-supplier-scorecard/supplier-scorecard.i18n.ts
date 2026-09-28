@@ -21,6 +21,10 @@ const translations: ScreenTranslations = {
         basis: 'Based on the last {{count}} delivered orders',
         noOrders: 'No delivered orders yet, so there is nothing to score. Until the first delivery, automatic ordering treats this supplier as neutral ({{neutral}}).',
         unrated: 'Not rated yet',
+        agreed: 'Agreed standard: delivery within {{sla}} days, quality at least {{quality}} / 5',
+        belowAgreed: 'Below the agreed quality',
+        noAgreement: 'No agreement in force, so there is no agreed standard to measure against.',
+        viewAgreement: 'Agreement',
       },
       context: {
         heading: 'Context from AIEC',
@@ -152,6 +156,10 @@ const translations: ScreenTranslations = {
         basis: 'पिछले {{count}} डिलीवर हुए ऑर्डर के आधार पर',
         noOrders: 'अभी तक कोई ऑर्डर डिलीवर नहीं हुआ, इसलिए स्कोर करने को कुछ नहीं है। पहली डिलीवरी तक स्वचालित ऑर्डरिंग इस सप्लायर को तटस्थ ({{neutral}}) मानती है।',
         unrated: 'अभी रेटिंग नहीं',
+        agreed: 'तय मानक: {{sla}} दिन में डिलीवरी, गुणवत्ता कम से कम {{quality}} / 5',
+        belowAgreed: 'तय गुणवत्ता से नीचे',
+        noAgreement: 'कोई अनुबंध लागू नहीं है, इसलिए मापने के लिए कोई तय मानक नहीं है।',
+        viewAgreement: 'अनुबंध',
       },
       context: {
         heading: 'AIEC की ओर से संदर्भ',
@@ -283,6 +291,10 @@ const translations: ScreenTranslations = {
         basis: 'शेवटच्या {{count}} डिलिव्हर झालेल्या ऑर्डरवर आधारित',
         noOrders: 'अजून एकही ऑर्डर डिलिव्हर झालेली नाही, त्यामुळे मोजण्यासारखं काही नाही. पहिल्या डिलिव्हरीपर्यंत स्वयंचलित ऑर्डरिंग या पुरवठादाराला तटस्थ ({{neutral}}) मानते.',
         unrated: 'अजून रेटिंग नाही',
+        agreed: 'ठरलेलं मानक: {{sla}} दिवसांत डिलिव्हरी, गुणवत्ता किमान {{quality}} / 5',
+        belowAgreed: 'ठरलेल्या गुणवत्तेपेक्षा कमी',
+        noAgreement: 'कोणताही करार लागू नाही, त्यामुळे मोजण्यासाठी ठरलेलं मानक नाही.',
+        viewAgreement: 'करार',
       },
       context: {
         heading: 'AIEC कडून संदर्भ',

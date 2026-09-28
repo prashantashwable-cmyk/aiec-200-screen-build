@@ -53,6 +53,8 @@ import type {
   DefectAttribution,
   SupplierOrderRating,
   SupplierScoreContextNote,
+  SupplierAgreementTerms,
+  SupplierAgreementVersion,
   ProductionEvent,
   ProductionRecord,
   ProductionStage,
@@ -1374,6 +1376,72 @@ export const seedScoreContextNotes: SupplierScoreContextNote[] = [
     addedAt: daysAgo(6),
     isDemo: true,
   },
+];
+
+/* ------------------------------------------ Supplier agreements (098) */
+
+const STANDARD_QUALITY = 'IS 14665 and EN 81-20 compliant components. A type-test certificate and a batch test report ship with every consignment.';
+
+function agreementVersion(
+  id: string,
+  supplierId: string,
+  version: number,
+  kind: SupplierAgreementVersion['kind'],
+  terms: SupplierAgreementTerms,
+  effectiveDaysAgo: number,
+  expiresDaysAhead: number,
+  extra: Partial<SupplierAgreementVersion> = {},
+): SupplierAgreementVersion {
+  const recorded = daysAgo(Math.max(effectiveDaysAgo, 0) + 2);
+  return {
+    id,
+    supplierId,
+    version,
+    kind,
+    terms,
+    effectiveFrom: effectiveDaysAgo >= 0 ? daysAgo(effectiveDaysAgo) : daysAhead(-effectiveDaysAgo),
+    expiresOn: expiresDaysAhead >= 0 ? daysAhead(expiresDaysAhead) : daysAgo(-expiresDaysAhead),
+    documentName: `${id}-signed.pdf`,
+    warrantyPassThrough: true,
+    recordedBy: 'Prashant Vasant Wable',
+    recordedAt: recorded,
+    acknowledgedBy: 'Supplier',
+    acknowledgedAt: recorded,
+    isDemo: true,
+    ...extra,
+  };
+}
+
+const VERTEX_V1: SupplierAgreementTerms = { deliverySlaDays: 30, paymentTermsDays: 45, minQualityScore: 4, qualityStandards: STANDARD_QUALITY, warrantyMonths: 18 };
+const VERTEX_V2: SupplierAgreementTerms = { ...VERTEX_V1, deliverySlaDays: 28, paymentTermsDays: 30 };
+
+/** One supplier per real situation: Vertex has renegotiated twice (the
+ *  latest still awaiting their confirmation), Sanghvi's lapsed with an order
+ *  still in flight, Konark's comes up for renewal inside the notice window,
+ *  and Deccan — a smaller regional mill — works to a longer SLA and shorter
+ *  payment terms than the large suppliers. Rathi, still pending approval,
+ *  has none yet. */
+export const seedSupplierAgreementVersions: SupplierAgreementVersion[] = [
+  agreementVersion('sag-vx-1', 'sp-1', 1, 'initial', VERTEX_V1, 400, 330, { acknowledgedBy: 'Anil Mehta' }),
+  agreementVersion('sag-vx-2', 'sp-1', 2, 'amendment', VERTEX_V2, 120, 330, {
+    acknowledgedBy: 'Anil Mehta',
+    reason: 'Agreed by phone with Anil Mehta: AIEC pays in 30 days instead of 45, and Vertex commits to delivery in 28 days instead of 30.',
+  }),
+  agreementVersion('sag-vx-3', 'sp-1', 3, 'amendment', { ...VERTEX_V2, warrantyMonths: 24 }, -3, 330, {
+    recordedAt: daysAgo(2),
+    acknowledgedBy: undefined,
+    acknowledgedAt: undefined,
+    reason: 'Vertex extended its parts warranty to 24 months for all orders from next week, to match the gearless machines it now supplies.',
+  }),
+  agreementVersion('sag-sg-1', 'sp-2', 1, 'initial', { deliverySlaDays: 15, paymentTermsDays: 30, minQualityScore: 4, qualityStandards: STANDARD_QUALITY, warrantyMonths: 12 }, 368, -3, { acknowledgedBy: 'Sanghvi Lift Works' }),
+  agreementVersion('sag-kd-1', 'sp-3', 1, 'initial', { deliverySlaDays: 21, paymentTermsDays: 30, minQualityScore: 4, qualityStandards: STANDARD_QUALITY, warrantyMonths: 24 }, 345, 20, { acknowledgedBy: 'Konark Drives & Controls' }),
+  agreementVersion('sag-dc-1', 'sp-4', 1, 'initial', {
+    deliverySlaDays: 35,
+    paymentTermsDays: 15,
+    minQualityScore: 3.5,
+    qualityStandards: 'IS 2062 structural steel with mill test certificates. Rails straight to within 0.5 mm per metre.',
+    warrantyMonths: 12,
+  }, 200, 165, { acknowledgedBy: 'Deccan Structural Steel' }),
 ];
 
 /* ------------------------------------------ Manufacturer production (096) */

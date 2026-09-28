@@ -1,6 +1,8 @@
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { PaperPlaneTilt, UserSwitch, Warning } from '@phosphor-icons/react';
+import { canIssueNewPo } from '@/features/suppliers/agreement';
+import type { SupplierAgreementStatus } from '@/data/types';
 import { Badge, Button, Card, EmptyState, ErrorState, Input, LoadingState, Screen, ScreenHeader, Select, Sheet, formatINR, useToast } from '@/design-system';
 import type { BadgeTone } from '@/design-system';
 import { usePurchaseOrderGenerator } from './usePurchaseOrderGenerator';
@@ -14,6 +16,8 @@ const STATUS_TONE: Record<string, BadgeTone> = {
   approved: 'success',
   sent: 'success',
 };
+
+const agreementBlocks = (status: SupplierAgreementStatus) => !canIssueNewPo(status);
 
 export function PurchaseOrderGeneratorView() {
   const { t } = useTranslation();
@@ -76,6 +80,17 @@ export function PurchaseOrderGeneratorView() {
                 <p className="t-xs t-error row gap-1 items-center mb-2">
                   <Warning size={12} /> {t(K.po.notEligible)}
                 </p>
+              )}
+              {/* 098: new POs go out only under an agreement in force. */}
+              {poView.supplierEligible && agreementBlocks(poView.agreementStatus) && poView.po.status !== 'sent' && (
+                <div className="row between gap-2 wrap mb-2">
+                  <p className="t-xs t-warning row-top gap-1 grow" style={{ minWidth: 200 }}>
+                    <Warning size={12} className="shrink-0" /> {t(K.po.agreementBlocked)}
+                  </p>
+                  <Button size="sm" variant="ghost" onClick={() => navigate(`/agreement?supplierId=${poView.po.supplierId}`)}>
+                    {t(K.po.viewAgreement)}
+                  </Button>
+                </div>
               )}
 
               <div className="stack gap-3 hairline-top pt-3">
@@ -181,7 +196,7 @@ export function PurchaseOrderGeneratorView() {
                   block
                   className="mt-2"
                   icon={<PaperPlaneTilt size={16} />}
-                  disabled={!poView.supplierEligible || poView.requiresApproval}
+                  disabled={!poView.supplierEligible || poView.requiresApproval || agreementBlocks(poView.agreementStatus)}
                   loading={s.sendingPoId === poView.po.id}
                   onClick={() => void s.sendPO(poView.po.id).then((ok) => toast.push(t(ok ? K.toast.sent : K.toast.error), ok ? 'success' : 'error'))}
                 >

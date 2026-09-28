@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { CaretDown, CaretUp, Info, NotePencil, Scales } from '@phosphor-icons/react';
+import { CaretDown, CaretUp, FileText, Info, NotePencil, Scales } from '@phosphor-icons/react';
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import {
   AscensionLine,
@@ -151,6 +151,18 @@ export function SupplierScorecardView() {
             <span className="t-xs t-muted">{t(K.hero.quality)}</span>
             <span className="num t-semibold">{unrated ? '—' : `${supplier.qualityScore.toFixed(1)} / 5`}</span>
           </div>
+        </div>
+        {/* The standard this score is read against — the supplier's own agreement (098). */}
+        <div className="row between gap-2 wrap hairline-top pt-2 mt-3">
+          <span className="t-xs t-muted grow" style={{ minWidth: 200 }}>
+            {card.agreedTerms
+              ? t(K.hero.agreed, { sla: card.agreedTerms.deliverySlaDays, quality: card.agreedTerms.minQualityScore.toFixed(1) })
+              : t(K.hero.noAgreement)}
+          </span>
+          {card.agreedTerms && !unrated && supplier.qualityScore < card.agreedTerms.minQualityScore && <Badge tone="warning">{t(K.hero.belowAgreed)}</Badge>}
+          <Button size="sm" variant="ghost" icon={<FileText size={16} />} onClick={() => navigate(s.isAdmin ? `/agreement?supplierId=${supplier.id}` : '/agreement')}>
+            {t(K.hero.viewAgreement)}
+          </Button>
         </div>
       </Card>
 
