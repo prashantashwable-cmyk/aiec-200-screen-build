@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { ArrowsLeftRight, CheckCircle, MagnifyingGlass, Package, Prohibit, ShieldCheck, ShieldWarning, Tag, UserPlus, XCircle } from '@phosphor-icons/react';
+import { ArrowsLeftRight, ChartLineUp, CheckCircle, MagnifyingGlass, Package, Prohibit, ShieldCheck, ShieldWarning, Tag, UserPlus, XCircle } from '@phosphor-icons/react';
 import {
   Badge,
   Button,
@@ -137,6 +137,9 @@ export function SupplierDirectoryView() {
             <div className="stack gap-2">
               <Button block variant="ghost" icon={<Package size={16} />} onClick={() => navigate(`/catalog?supplierId=${s.openRow!.supplier.id}`)}>
                 {t(K.detail.viewCatalog)}
+              </Button>
+              <Button block variant="ghost" icon={<ChartLineUp size={16} />} onClick={() => navigate(`/scorecard?supplierId=${s.openRow!.supplier.id}`)}>
+                {t(K.detail.viewScorecard)}
               </Button>
               {s.openRow.supplier.kycStatus === 'pending' && (
                 <div className="row gap-2">

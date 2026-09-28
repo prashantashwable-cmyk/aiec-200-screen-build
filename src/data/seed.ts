@@ -50,6 +50,9 @@ import type {
   Supplier,
   SupplierCatalogItem,
   PoFulfilmentStage,
+  DefectAttribution,
+  SupplierOrderRating,
+  SupplierScoreContextNote,
   ProductionEvent,
   ProductionRecord,
   ProductionStage,
@@ -1264,6 +1267,113 @@ export const seedHistoricalPurchaseOrders: SupplierPurchaseOrder[] = [
   dl2Vertex,
   // Another AIEC order's controller, built in the same Vertex run as dl-2's.
   fulfilledPo('spo-203', 'AIEC-PO-8203', 'dl-h4', 'sp-1', 'Anil Mehta', 7, [0.5, 0.5], [['controller', 'Microprocessor lift controller', 95_000]], 30),
+];
+
+/* ------------------------------- Supplier rating & quality scorecard (097) */
+
+const RATING_SITES = ['Shree Ram Heights', 'Skyline Corporate Park', 'Pinnacle Aurum', 'Kulkarni Signature', 'Bloom Apartments', 'Magnolia Residency', 'Civic Health Centre', 'Tech Park Block C'];
+
+type SeedDefect = [note: string, attribution: DefectAttribution, daysAfterDelivery?: number];
+
+function rating(
+  id: string,
+  supplierId: string,
+  orderCode: string,
+  deliveredDaysAgo: number,
+  timelinessDays: number,
+  defects: SeedDefect[] = [],
+  extra: Partial<SupplierOrderRating> = {},
+): SupplierOrderRating {
+  return {
+    id,
+    supplierId,
+    orderCode,
+    siteName: RATING_SITES[Number(id.replace(/\D/g, '')) % RATING_SITES.length],
+    expectedDeliveryDate: daysAgo(deliveredDaysAgo + timelinessDays),
+    deliveredAt: daysAgo(deliveredDaysAgo),
+    timelinessDays,
+    defects: defects.map(([note, attribution, after = 1], i) => ({
+      id: `${id}-d${i + 1}`,
+      note,
+      loggedBy: 'Prashant Vasant Wable',
+      loggedAt: daysAgo(deliveredDaysAgo - after),
+      attribution,
+    })),
+    isDemo: true,
+    ...extra,
+  };
+}
+
+/** Builds `count` older orders for a supplier, one every `everyDays`, with
+ *  the given late orders and defects placed by index — each supplier's
+ *  record, from which their on-time rate and quality are derived. */
+function ratingHistory(
+  prefix: string,
+  supplierId: string,
+  codeBase: number,
+  count: number,
+  newestDaysAgo: number,
+  everyDays: number,
+  late: Record<number, number>,
+  defects: Record<number, SeedDefect[]>,
+): SupplierOrderRating[] {
+  return Array.from({ length: count }, (_, i) =>
+    rating(`${prefix}-${i + 1}`, supplierId, `AIEC-PO-${codeBase + i}`, newestDaysAgo + (count - 1 - i) * everyDays, late[i] ?? -(i % 3), defects[i] ?? []),
+  );
+}
+
+export const seedSupplierOrderRatings: SupplierOrderRating[] = [
+  // Vertex — reliable, with one late order and two genuine defects.
+  ...ratingHistory('rt-vx', 'sp-1', 7101, 13, 30, 14, { 4: 3 }, {
+    2: [['Controller display flickered on first power-up', 'supplier']],
+    9: [['Cabin fan noisy out of the box', 'supplier']],
+  }),
+  rating('rt-vx-h1', 'sp-1', 'AIEC-PO-8101', 99, -1, [], { poId: 'spo-h1' }),
+  rating('rt-vx-h2', 'sp-1', 'AIEC-PO-8102', 58, 0, [], { poId: 'spo-h2', adminQuality: 5, adminQualityNote: 'Finish better than spec.', adminQualityBy: 'Prashant Vasant Wable', adminQualityAt: daysAgo(56) }),
+  // The dispute: a board "burnt on commissioning" that the site's own
+  // wiring log shows was a reversed phase — an installation fault.
+  rating('rt-vx-d1', 'sp-1', 'AIEC-PO-8107', 21, 0, [['Controller board burnt out on commissioning', 'supplier', 2]], {
+    siteName: 'Magnolia Residency',
+    dispute: {
+      raisedBy: 'Anil Mehta',
+      raisedAt: daysAgo(12),
+      reason: 'The site’s wiring log shows the mains phase was reversed during installation. The board failed because of that, not a manufacturing fault. Please reattribute.',
+      status: 'open',
+    },
+  }),
+  // Sanghvi — a September run of late deliveries (the expressway closures).
+  ...ratingHistory('rt-sg', 'sp-2', 7201, 14, 12, 7, { 11: 4, 12: 5, 13: 3 }, {
+    1: [['Rope tension tags missing', 'supplier']],
+    5: [['Cabin panel scratched in transit', 'transport']],
+    7: [['Guide rail set one bracket short', 'supplier']],
+    10: [['Cabin door gap out of tolerance', 'supplier'], ['Car panel dent', 'supplier']],
+  }),
+  rating('rt-sg-h3', 'sp-2', 'AIEC-PO-8103', 81, 0, [], { poId: 'spo-h3' }),
+  rating('rt-sg-h4', 'sp-2', 'AIEC-PO-8104', 44, -1, [], { poId: 'spo-h4' }),
+  // Konark — consistent.
+  ...ratingHistory('rt-kn', 'sp-3', 7301, 6, 20, 18, { 3: 2 }, { 1: [['VFD parameter set shipped wrong', 'supplier']] }),
+  rating('rt-kn-h5', 'sp-3', 'AIEC-PO-8105', 63, 1, [], { poId: 'spo-h5' }),
+  rating('rt-kn-h6', 'sp-3', 'AIEC-PO-8106', 28, -2, [], { poId: 'spo-h6' }),
+  // Deccan — often late, rougher finish.
+  ...ratingHistory('rt-dc', 'sp-4', 7401, 11, 10, 14, { 1: 4, 5: 6, 8: 3 }, {
+    0: [['Brackets arrived bent', 'supplier']],
+    2: [['Bracket welds uneven', 'supplier']],
+    4: [['Counterweight fillers short by 2', 'supplier']],
+    6: [['Rail joints not deburred', 'supplier'], ['Fishplates missing', 'supplier']],
+    7: [['Rails installed misaligned', 'installation']],
+    9: [['Bracket holes mis-drilled', 'supplier'], ['Rust on delivery', 'supplier']],
+  }),
+];
+
+export const seedScoreContextNotes: SupplierScoreContextNote[] = [
+  {
+    id: 'scn-1',
+    supplierId: 'sp-2',
+    note: 'September 2026: the Pune–Mumbai expressway closures held up deliveries from most suppliers for about two weeks. Sanghvi’s three late orders that month were part of that, not a change in how they work.',
+    addedBy: 'Prashant Vasant Wable',
+    addedAt: daysAgo(6),
+    isDemo: true,
+  },
 ];
 
 /* ------------------------------------------ Manufacturer production (096) */

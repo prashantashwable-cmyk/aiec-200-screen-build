@@ -107,7 +107,24 @@ the module's section to `BUILD_README.md`.
   (dl-1) was seeded one day short of the reminder cadence's own exhaustion threshold, so no real
   payment could ever reach 089's escalation queue while also belonging to a deal with an active
   Job — moved from 6 to 10 days overdue (and the stale `al-2` alert text updated to match).
-- **Module 10 in progress:** `091`–`096` built. **Next: `097`** (supplier rating / quality scorecard).
+- **Module 10 in progress:** `091`–`097` built. **Next: `098`**.
+  097 facts:
+  - `SupplierOrderRating` is created once per PO by `movePoLinesSync`, the first time the whole PO
+    reaches `delivered` (`createOrderRating`). Until 104 owns receipt, Admin logs defects on it by hand.
+  - `@/features/suppliers/orderRating` is the only per-order maths:
+    - on time means `timelinessDays <= 0`;
+    - quality is 5 − 1.5 per supplier-attributed defect (min 1), averaged with Admin's own 1–5;
+    - `orderScore` is `computeSupplierPerformanceScore` applied to one order.
+  - `recomputeSupplierMetrics` writes `Supplier.onTimeRate`/`qualityScore` from the last
+    `RATING_WINDOW` (20) ratings after every change. 026, 091 and 094 read those, so there is no
+    second scoring system. A supplier with no delivery shows "Not rated yet", never 0%.
+  - Defects carry an attribution (`supplier` | `installation` | `transport`). Only `supplier` counts.
+  - A supplier's dispute changes nothing by itself. Admin's upheld resolution may reattribute
+    defects (`attributedBefore` keeps the original). The `rating_dispute_review` commitment chases
+    Admin (3 days).
+  - Score context notes explain a number and never change it.
+  - `/scorecard` serves Admin (`?supplierId=`, from 091's detail sheet) and Supplier (the nav's
+    "Scorecard" tab).
   096 facts:
   - `Supplier.isManufacturer` is a toggle in 091's detail sheet. Only a manufacturer's lines get a
     `ProductionRecord` (id `prod-<lineItemId>`), created when the line enters `in_production`.

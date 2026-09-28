@@ -2,6 +2,7 @@ import type {
   Alert,
   AlertSeverity,
   CatalogPriceChange,
+  SupplierOrderRating,
   CommitmentKind,
   CommitmentSubjectType,
   CounterOffer,
@@ -55,6 +56,7 @@ export interface CommitmentSources {
   alerts: Alert[];
   followUpTasks: FollowUpTask[];
   catalogPriceChanges: CatalogPriceChange[];
+  orderRatings: SupplierOrderRating[];
   /** Deals where someone paused payment reminders by hand (083). */
   pausedDealIds: Set<string>;
 }
@@ -587,6 +589,33 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
           completedAt: change.reviewedAt,
           actionRoute: '/catalog?view=review',
           oversightRoute: '/catalog?view=review',
+        }));
+    },
+  },
+  {
+    // 097: a supplier's challenge to a rating is a fairness question — it
+    // shouldn't sit unanswered while the rating keeps counting against them.
+    kind: 'rating_dispute_review',
+    nudgeBefore: days(1),
+    escalateAfter: days(3),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'supplier',
+    collect(src) {
+      const admin = adminId(src);
+      return src.orderRatings
+        .filter((r) => r.dispute)
+        .map((r) => ({
+          ...base('rating_dispute_review', 'supplier_order_rating', r.id),
+          ownerUserId: admin,
+          titleKey: 'work.title.rating_dispute_review',
+          titleParams: { code: r.orderCode, supplier: src.suppliers.find((s) => s.id === r.supplierId)?.name ?? '' },
+          dueAt: plus(r.dispute!.raisedAt, days(3)),
+          state: r.dispute!.status === 'open' ? ('open' as const) : ('done' as const),
+          paused: false,
+          completedAt: r.dispute!.resolvedAt,
+          actionRoute: `/scorecard?supplierId=${r.supplierId}&rating=${r.id}`,
+          oversightRoute: `/scorecard?supplierId=${r.supplierId}&rating=${r.id}`,
         }));
     },
   },

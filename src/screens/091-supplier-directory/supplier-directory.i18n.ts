@@ -36,6 +36,7 @@ const translations: ScreenTranslations = {
       detail: {
         performanceScoreLabel: 'Performance score',
         viewCatalog: 'View parts catalog',
+        viewScorecard: 'View scorecard',
         manufacturer: 'Builds to order (manufacturer)',
         manufacturerHint: 'Their order lines get production-stage tracking. Off for a distributor shipping from stock.',
         contactLabel: 'Contact',
@@ -133,6 +134,7 @@ const translations: ScreenTranslations = {
       detail: {
         performanceScoreLabel: 'प्रदर्शन स्कोर',
         viewCatalog: 'पार्ट्स कैटलॉग देखें',
+        viewScorecard: 'स्कोरकार्ड देखें',
         manufacturer: 'ऑर्डर पर बनाता है (निर्माता)',
         manufacturerHint: 'इनके ऑर्डर पार्ट्स की उत्पादन-चरण ट्रैकिंग होती है। स्टॉक से भेजने वाले वितरक के लिए बंद।',
         contactLabel: 'संपर्क',
@@ -230,6 +232,7 @@ const translations: ScreenTranslations = {
       detail: {
         performanceScoreLabel: 'कामगिरी गुण',
         viewCatalog: 'पार्ट्स कॅटलॉग पहा',
+        viewScorecard: 'स्कोअरकार्ड पहा',
         manufacturer: 'ऑर्डरनुसार तयार करतो (उत्पादक)',
         manufacturerHint: 'यांच्या ऑर्डर पार्ट्सचे उत्पादन-टप्पा ट्रॅकिंग होते. स्टॉकमधून पाठवणाऱ्या वितरकासाठी बंद.',
         contactLabel: 'संपर्क',

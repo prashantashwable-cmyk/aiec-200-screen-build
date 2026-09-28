@@ -72,6 +72,9 @@ import type {
   SupplierCatalogItem,
   CatalogPriceChange,
   PoFulfilmentStage,
+  DefectAttribution,
+  SupplierOrderRating,
+  SupplierScoreContextNote,
   ProductionRecord,
   ProductionStage,
   AutoPoRules,
@@ -810,6 +813,41 @@ export interface SupplierOrderCard {
   delay: SupplierOrderDelay;
   /** The supplier has their own login and can update this themselves. */
   supplierHasLogin: boolean;
+}
+
+/* ------------------------------- Supplier rating & quality scorecard (097) */
+
+export interface ScoredOrderRating {
+  rating: SupplierOrderRating;
+  onTime: boolean;
+  /** 1–5, objective defects blended with Admin's judgement. */
+  quality: number;
+  /** The supplier formula applied to this one order, 0..1. */
+  orderScore: number;
+  /** Counted in the current score (the most recent window). */
+  inWindow: boolean;
+}
+
+export interface ScoreComponentView {
+  key: 'onTime' | 'quality' | 'price' | 'responsiveness';
+  value: number;
+  weight: number;
+  contribution: number;
+  isPlaceholder: boolean;
+}
+
+export interface SupplierScorecard {
+  supplier: Supplier;
+  /** Same number 026 and 091 show — one engine. */
+  score: number;
+  /** The score as it stood SCORE_DELTA_ORDERS orders ago, for direction. */
+  previousScore: number | null;
+  breakdown: ScoreComponentView[];
+  ratedOrders: number;
+  windowSize: number;
+  /** Newest first. */
+  ratings: ScoredOrderRating[];
+  contextNotes: SupplierScoreContextNote[];
 }
 
 /* ------------------------------------- Manufacturer production (096) */
@@ -1596,6 +1634,25 @@ export interface Repository {
 
   /* Communication: analytics */
   getCommunicationAnalytics(): Promise<CommunicationAnalytics>;
+
+  /* Supplier rating & quality scorecard (097) — the drillable version of 026's score */
+  /** A supplier login gets its own; Admin any. Null when not permitted. */
+  getSupplierScorecard(supplierId: string, byUserId: string): Promise<SupplierScorecard | null>;
+  /** Admin logs a defect found on receipt (until 104 owns receipt). */
+  logOrderDefect(ratingId: string, note: string, attribution: DefectAttribution, byUserId: string): Promise<SupplierOrderRating>;
+  /** Admin's own 1–5 for an order, or null to clear it. Needs a note. */
+  setOrderAdminQuality(ratingId: string, quality: number | null, note: string, byUserId: string): Promise<SupplierOrderRating>;
+  /** The supplier's challenge — opens a case, changes nothing by itself. */
+  raiseRatingDispute(ratingId: string, reason: string, byUserId: string): Promise<SupplierOrderRating>;
+  /** Admin decides. Upheld can reattribute defects and/or adjust Admin's
+   *  quality; rejected leaves the rating as it was. Either way it's noted. */
+  resolveRatingDispute(
+    ratingId: string,
+    input: { outcome: 'upheld' | 'rejected'; note: string; reattribute?: { defectId: string; to: DefectAttribution }[]; adminQuality?: number | null },
+    byUserId: string,
+  ): Promise<SupplierOrderRating>;
+  /** Context beside the score — never changes it. */
+  addScoreContextNote(supplierId: string, note: string, byUserId: string): Promise<SupplierScoreContextNote>;
 
   /* Manufacturer production (096) — inside a manufacturer's "in production" */
   getProductionRecord(recordId: string, byUserId: string): Promise<ProductionRecordResult>;

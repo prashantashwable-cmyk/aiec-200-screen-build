@@ -48,6 +48,8 @@ import {
   seedSupplierCatalogItems,
   seedCatalogPriceChanges,
   seedProductionRecords,
+  seedSupplierOrderRatings,
+  seedScoreContextNotes,
   seedSupplierPurchaseOrders,
   seedTriggerRules,
   seedUsers,
@@ -115,6 +117,8 @@ import type {
   CatalogSettings,
   SupplierOrderCard,
   ProductionRecordResult,
+  ScoredOrderRating,
+  SupplierScorecard,
   PurchaseOrderLineView,
   SupplierDirectoryRow,
   SupplierInviteInput,
@@ -131,6 +135,8 @@ import type {
   Commitment,
   PoFulfilmentStage,
   ProductionEvidence,
+  SupplierOrderRating,
+  SupplierScoreContextNote,
   ProductionRecord,
   ProductionStage,
   EscalationLevel,
@@ -217,7 +223,8 @@ import type { AttentionAlertInput } from '@/features/attention/raiseAlert';
 import { businessMinutesSince, days, hours, isBreached } from '@/features/sla/clock';
 import { buildAutomatedActionEntry } from '@/features/audit/logAutomatedAction';
 import type { AutomatedActionInput } from '@/features/audit/logAutomatedAction';
-import { computeSupplierPerformanceScore } from '@/features/suppliers/performanceScore';
+import { computeSupplierPerformanceScore, supplierScoreBreakdown } from '@/features/suppliers/performanceScore';
+import { RATING_WINDOW, SCORE_DELTA_ORDERS, aggregateRatings, byDelivered, isOnTime, orderQuality, orderScore } from '@/features/suppliers/orderRating';
 import { RULE_BY_KIND, collectObligations, targetEscalationLevel } from '@/features/work/commitmentRules';
 import {
   DEFAULT_PRICE_REVIEW_THRESHOLD_PCT,
@@ -315,6 +322,19 @@ const supplierCatalogItems = [...seedSupplierCatalogItems];
 const catalogPriceChanges = [...seedCatalogPriceChanges];
 const productionRecords = [...seedProductionRecords];
 let productionCounter = 100;
+const supplierOrderRatings = [...seedSupplierOrderRatings];
+const scoreContextNotes = [...seedScoreContextNotes];
+let ratingCounter = 100;
+
+/** 097: a supplier's on-time rate and quality are derived from their order
+ *  ratings — the one engine 026, 091 and 094 all read. A supplier with no
+ *  rated orders keeps whatever it was onboarded with. */
+function recomputeSupplierMetrics(supplierId: string): void {
+  const aggregate = aggregateRatings(supplierOrderRatings.filter((r) => r.supplierId === supplierId));
+  if (!aggregate) return;
+  patchInPlace(suppliers, supplierId, { onTimeRate: aggregate.onTimeRate, qualityScore: aggregate.qualityScore });
+}
+for (const supplier of [...suppliers]) recomputeSupplierMetrics(supplier.id);
 let catalogItemCounter = 100;
 let catalogPriceChangeCounter = 100;
 let catalogSettings: CatalogSettings = { priceReviewThresholdPct: DEFAULT_PRICE_REVIEW_THRESHOLD_PCT };
@@ -1741,6 +1761,7 @@ function commitmentSources(now: number): CommitmentSources {
     alerts,
     followUpTasks,
     catalogPriceChanges,
+    orderRatings: supplierOrderRatings,
     pausedDealIds: new Set(paymentReminderPauses.filter((p) => p.paused).map((p) => p.dealId)),
   };
 }
@@ -2034,6 +2055,9 @@ function movePoLinesSync(
   );
   const allDelivered = nextLines.every((l) => l.fulfilmentStage === 'delivered');
   const anyPastSent = nextLines.some((l) => l.fulfilmentStage !== 'sent');
+  // Fully delivered for the first time: the order gets its rating (097) —
+  // timeliness is objective; defects and Admin's judgement follow.
+  if (allDelivered && !po.receivedAt) createOrderRating(po, now);
   // Entering production opens (or, after rework, reopens) the line's
   // manufacturer production record (096) — the same status, seen closer up.
   if (toStage === 'in_production' && supplier?.isManufacturer) {
@@ -2423,6 +2447,41 @@ function detectProductionStalls(now: number): void {
       });
     }
   }
+}
+
+
+/* =============================== Supplier rating & quality scorecard (097) */
+
+function createOrderRating(po: SupplierPurchaseOrder, deliveredAt: string): void {
+  if (!po.supplierId || supplierOrderRatings.some((r) => r.poId === po.id)) return;
+  const deal = byId(deals, po.dealId);
+  const expected = po.expectedDeliveryDate ?? deliveredAt;
+  ratingCounter += 1;
+  supplierOrderRatings.push({
+    id: `rt-new-${ratingCounter}`,
+    supplierId: po.supplierId,
+    poId: po.id,
+    orderCode: po.code,
+    siteName: deal ? (resolveLead(deal.leadId)?.siteName ?? '') : '',
+    expectedDeliveryDate: expected,
+    deliveredAt,
+    timelinessDays: Math.round((new Date(deliveredAt).getTime() - new Date(expected).getTime()) / 86_400_000),
+    defects: [],
+    isDemo: true,
+  });
+  recomputeSupplierMetrics(po.supplierId);
+}
+
+function adminOnly(byUserId: string): User {
+  const actor = catalogActor(byUserId);
+  if (actor.role !== 'admin') throw new RepositoryError('forbidden');
+  return actor;
+}
+
+function ratingOrThrow(ratingId: string): SupplierOrderRating {
+  const rating = byId(supplierOrderRatings, ratingId);
+  if (!rating) throw new RepositoryError('not_found');
+  return rating;
 }
 
 export const memoryRepository: Repository = {
@@ -5072,6 +5131,114 @@ export const memoryRepository: Repository = {
         resolvedAt: new Date().toISOString(),
         resolutionNote: note.trim(),
       });
+    }),
+
+  /* ------------------------------- Supplier rating & quality scorecard (097) */
+  getSupplierScorecard: (supplierId, byUserId) =>
+    simulateRead((): SupplierScorecard | null => {
+      const actor = catalogActor(byUserId);
+      const supplier = byId(suppliers, supplierId);
+      if (!supplier) return null;
+      if (actor.role === 'supplier' && supplierUserFor(supplier)?.id !== actor.id) return null;
+      if (actor.role !== 'admin' && actor.role !== 'supplier') return null;
+      const ratings = supplierOrderRatings.filter((r) => r.supplierId === supplierId).sort(byDelivered);
+      const windowIds = new Set(ratings.slice(-RATING_WINDOW).map((r) => r.id));
+      const earlier = aggregateRatings(ratings.slice(0, -SCORE_DELTA_ORDERS));
+      return {
+        supplier,
+        score: computeSupplierPerformanceScore(supplier),
+        previousScore: ratings.length > SCORE_DELTA_ORDERS && earlier ? computeSupplierPerformanceScore({ ...supplier, ...earlier }) : null,
+        breakdown: supplierScoreBreakdown(supplier),
+        ratedOrders: ratings.length,
+        windowSize: RATING_WINDOW,
+        ratings: [...ratings].reverse().map(
+          (rating): ScoredOrderRating => ({ rating, onTime: isOnTime(rating), quality: orderQuality(rating), orderScore: orderScore(rating, supplier), inWindow: windowIds.has(rating.id) }),
+        ),
+        contextNotes: scoreContextNotes.filter((n) => n.supplierId === supplierId).sort((a, b) => (a.addedAt < b.addedAt ? 1 : -1)),
+      };
+    }),
+
+  logOrderDefect: (ratingId, note, attribution, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const rating = ratingOrThrow(ratingId);
+      if (!note.trim()) throw new RepositoryError('invalid_input');
+      ratingCounter += 1;
+      const updated = patchInPlace(supplierOrderRatings, ratingId, {
+        defects: [...rating.defects, { id: `${ratingId}-d-new-${ratingCounter}`, note: note.trim(), loggedBy: actor.name, loggedAt: new Date().toISOString(), attribution }],
+      });
+      recomputeSupplierMetrics(rating.supplierId);
+      return updated;
+    }),
+
+  setOrderAdminQuality: (ratingId, quality, note, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const rating = ratingOrThrow(ratingId);
+      if (quality !== null && (!Number.isInteger(quality) || quality < 1 || quality > 5)) throw new RepositoryError('invalid_input');
+      // Judgement about a supplier's business is never unexplained.
+      if (!note.trim()) throw new RepositoryError('reason_required');
+      const updated = patchInPlace(supplierOrderRatings, ratingId, {
+        adminQuality: quality ?? undefined,
+        adminQualityNote: note.trim(),
+        adminQualityBy: actor.name,
+        adminQualityAt: new Date().toISOString(),
+      });
+      recomputeSupplierMetrics(rating.supplierId);
+      return updated;
+    }),
+
+  raiseRatingDispute: (ratingId, reason, byUserId) =>
+    simulateWrite(() => {
+      const actor = catalogActor(byUserId);
+      const rating = ratingOrThrow(ratingId);
+      const supplier = byId(suppliers, rating.supplierId);
+      if (actor.role !== 'supplier' || !supplier || supplierUserFor(supplier)?.id !== actor.id) throw new RepositoryError('forbidden');
+      if (rating.dispute) throw new RepositoryError('already_disputed');
+      if (reason.trim().length < 10) throw new RepositoryError('reason_required');
+      // Opening a case changes nothing about the score — only a decision does.
+      return patchInPlace(supplierOrderRatings, ratingId, {
+        dispute: { raisedBy: actor.name, raisedAt: new Date().toISOString(), reason: reason.trim(), status: 'open' },
+      });
+    }),
+
+  resolveRatingDispute: (ratingId, input, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const rating = ratingOrThrow(ratingId);
+      if (rating.dispute?.status !== 'open') throw new RepositoryError('not_open');
+      if (!input.note.trim()) throw new RepositoryError('reason_required');
+      const now = new Date().toISOString();
+      let defects = rating.defects;
+      let adminQuality = rating.adminQuality;
+      if (input.outcome === 'upheld') {
+        for (const move of input.reattribute ?? []) {
+          defects = defects.map((d) =>
+            d.id === move.defectId && d.attribution !== move.to
+              ? { ...d, attribution: move.to, attributedBefore: d.attributedBefore ?? d.attribution, reattributedBy: actor.name, reattributedAt: now, reattributionNote: input.note.trim() }
+              : d,
+          );
+        }
+        if (input.adminQuality !== undefined) adminQuality = input.adminQuality ?? undefined;
+      }
+      const updated = patchInPlace(supplierOrderRatings, ratingId, {
+        defects,
+        adminQuality,
+        dispute: { ...rating.dispute, status: input.outcome, resolvedBy: actor.name, resolvedAt: now, resolutionNote: input.note.trim() },
+      });
+      recomputeSupplierMetrics(rating.supplierId);
+      return updated;
+    }),
+
+  addScoreContextNote: (supplierId, note, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      if (!byId(suppliers, supplierId)) throw new RepositoryError('not_found');
+      if (note.trim().length < 10) throw new RepositoryError('invalid_input');
+      ratingCounter += 1;
+      const created: SupplierScoreContextNote = { id: `scn-new-${ratingCounter}`, supplierId, note: note.trim(), addedBy: actor.name, addedAt: new Date().toISOString(), isDemo: true };
+      scoreContextNotes.push(created);
+      return created;
     }),
 
   /* ------------------------------------- Manufacturer production (096) */

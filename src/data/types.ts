@@ -686,6 +686,77 @@ export interface ProductionRecord {
   isDemo: boolean;
 }
 
+/* ------------------------------- Supplier rating & quality scorecard (097) */
+
+/** Who a defect is really down to. Only `supplier` counts against the
+ *  supplier's quality — a technician's installation error or transit damage
+ *  is recorded, but never scored against the part's maker. */
+export type DefectAttribution = 'supplier' | 'installation' | 'transport';
+
+export interface OrderDefect {
+  id: string;
+  note: string;
+  loggedBy: string;
+  loggedAt: string;
+  attribution: DefectAttribution;
+  /** Set when a dispute (or Admin's own investigation) moved the blame. */
+  reattributedBy?: string;
+  reattributedAt?: string;
+  reattributionNote?: string;
+  /** Who carried the blame when it was first logged, so the history stays honest. */
+  attributedBefore?: DefectAttribution;
+}
+
+/** A supplier's challenge to one order's rating. Raising it changes
+ *  nothing — only Admin's resolution does, and only as far as it says. */
+export interface RatingDispute {
+  raisedBy: string;
+  raisedAt: string;
+  reason: string;
+  status: 'open' | 'upheld' | 'rejected';
+  resolvedBy?: string;
+  resolvedAt?: string;
+  resolutionNote?: string;
+}
+
+/**
+ * One delivered order's rating (097). Objective facts — delivery timing,
+ * defects logged on receipt — plus Admin's optional own judgement; never a
+ * black box. Supplier-level on-time rate and quality are derived from these,
+ * so 026, 091 and 094 all read the same numbers through one engine.
+ */
+export interface SupplierOrderRating {
+  id: string;
+  supplierId: string;
+  /** Absent for orders from before PO records existed in the app. */
+  poId?: string;
+  orderCode: string;
+  siteName: string;
+  expectedDeliveryDate: string;
+  deliveredAt: string;
+  /** Delivered minus promised, in whole days (negative = early). */
+  timelinessDays: number;
+  defects: OrderDefect[];
+  /** Admin's qualitative 1–5, blended with the objective defect score. */
+  adminQuality?: number;
+  adminQualityNote?: string;
+  adminQualityBy?: string;
+  adminQualityAt?: string;
+  dispute?: RatingDispute;
+  isDemo: boolean;
+}
+
+/** Context shown beside a supplier's score (a regional disruption, say) —
+ *  explains a number without ever changing it. */
+export interface SupplierScoreContextNote {
+  id: string;
+  supplierId: string;
+  note: string;
+  addedBy: string;
+  addedAt: string;
+  isDemo: boolean;
+}
+
 /* ------------------------------------------ Auto-PO trigger rules (094) */
 
 /** When a won deal's POs draft by themselves. `on_first_payment` waits for
@@ -1739,6 +1810,7 @@ export type CommitmentKind =
   | 'discount_decision'
   | 'counter_offer_decision'
   | 'catalog_price_review'
+  | 'rating_dispute_review'
   | 'alert_acknowledge'
   | 'follow_up_task'
   | 'lead_revisit';
@@ -1754,7 +1826,8 @@ export type CommitmentSubjectType =
   | 'alert'
   | 'follow_up_task'
   | 'lead'
-  | 'catalog_price_change';
+  | 'catalog_price_change'
+  | 'supplier_order_rating';
 
 /**
  * 0 nothing sent yet · 1 owner nudged before due · 2 owner told it's overdue
