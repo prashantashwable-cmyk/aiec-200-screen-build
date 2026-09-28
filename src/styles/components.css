@@ -809,3 +809,14 @@ select.ds-input {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
+
+/* Tabs that keep every label on one line and scroll sideways instead of
+   squeezing — for strips with more stages than a phone can fit (095). */
+.ds-tabs--scroll {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.ds-tabs--scroll .ds-tabs__tab {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}

@@ -49,6 +49,9 @@ import type {
   SmsBroadcast,
   Supplier,
   SupplierCatalogItem,
+  PoFulfilmentStage,
+  PoStatusEvent,
+  PurchaseOrderLineItem,
   CatalogPriceChange,
   SupplierPurchaseOrder,
   TriggerRule,
@@ -1160,6 +1163,104 @@ export const seedCatalogPriceChanges: CatalogPriceChange[] = [
   { id: 'cpc-5', itemId: 'sci-5', supplierId: 'sp-2', fromPrice: 162_000, toPrice: 158_000, source: 'admin', requestedBy: 'Prashant Vasant Wable', requestedAt: daysAgo(55), status: 'applied', isDemo: true },
 ];
 
+/* ------------------------------------------ Supplier order fulfilment (095) */
+
+type SeedLine = [category: string, description: string, price: number];
+
+/** Builds a sent PO whose lines moved through fulfilment on a timetable —
+ *  `stageDays` is how long each stage took (sent → acknowledged, acknowledged
+ *  → in production, in production → ready, ready → shipped, shipped →
+ *  delivered). Stops at however many stages are given, so an in-flight PO is
+ *  just a shorter list. What 095 learns each supplier's typical timing from. */
+function fulfilledPo(
+  id: string,
+  code: string,
+  dealId: string,
+  supplierId: string,
+  byName: string,
+  sentDaysAgo: number,
+  stageDays: number[],
+  lines: SeedLine[],
+  expectedInDays: number,
+): SupplierPurchaseOrder {
+  const stages: PoFulfilmentStage[] = ['sent', 'acknowledged', 'in_production', 'ready_to_ship', 'shipped', 'delivered'];
+  const lineItems: PurchaseOrderLineItem[] = lines.map(([category, description, price], i) => ({
+    id: `${id}-l${i + 1}`,
+    category,
+    description,
+    quantity: 1,
+    catalogUnitPriceAtDraft: price,
+    agreedUnitPrice: price,
+  }));
+  const events: PoStatusEvent[] = [];
+  let cursor = sentDaysAgo;
+  stageDays.forEach((days, i) => {
+    cursor -= days;
+    events.push({
+      id: `${id}-e${i + 1}`,
+      lineItemIds: lineItems.map((l) => l.id),
+      fromStage: stages[i],
+      toStage: stages[i + 1],
+      at: daysAgo(cursor),
+      byName: i === 4 ? 'Prashant Vasant Wable' : byName,
+      byRole: i === 4 ? 'admin' : 'supplier',
+      onBehalf: false,
+    });
+  });
+  const reached = stages[stageDays.length];
+  const reachedAt = events.length ? events[events.length - 1].at : daysAgo(sentDaysAgo);
+  return {
+    id,
+    code,
+    dealId,
+    supplierId,
+    status: 'sent',
+    triggeredAt: daysAgo(sentDaysAgo + 1),
+    sentBy: 'Prashant Vasant Wable',
+    sentAt: daysAgo(sentDaysAgo),
+    acknowledgedAt: stageDays.length >= 1 ? events[0].at : undefined,
+    acknowledgedBy: stageDays.length >= 1 ? byName : undefined,
+    receivedAt: reached === 'delivered' ? reachedAt : undefined,
+    receivedBy: reached === 'delivered' ? 'Prashant Vasant Wable' : undefined,
+    expectedDeliveryDate: daysAhead(expectedInDays - sentDaysAgo),
+    lineItems: lineItems.map((l) => ({ ...l, fulfilmentStage: reached, stageEnteredAt: reachedAt })),
+    statusEvents: events,
+    isDemo: true,
+  };
+}
+
+/** dl-2's live orders: Sanghvi's has sat in production for 10 days against
+ *  its usual ~6.5 — trending late for Sanghvi, though it would be quick for
+ *  Vertex. Vertex's is on track, with the door operator already ready while
+ *  the rest is still being built (a partial). */
+const dl2Vertex = fulfilledPo('spo-202', 'AIEC-PO-8202', 'dl-2', 'sp-1', 'Anil Mehta', 6, [1, 1], [
+  ['traction_machine', 'Geared/gearless traction machine unit', 210_000],
+  ['controller', 'Microprocessor lift controller', 95_000],
+  ['door_operator', 'Automatic door operator', 52_000],
+], 31);
+dl2Vertex.lineItems = dl2Vertex.lineItems!.map((l) => (l.category === 'door_operator' ? { ...l, fulfilmentStage: 'ready_to_ship', stageEnteredAt: daysAgo(1) } : l));
+dl2Vertex.statusEvents = [
+  ...dl2Vertex.statusEvents!,
+  { id: 'spo-202-e3', lineItemIds: ['spo-202-l3'], fromStage: 'in_production', toStage: 'ready_to_ship', at: daysAgo(1), byName: 'Anil Mehta', byRole: 'supplier', onBehalf: false },
+];
+
+export const seedHistoricalPurchaseOrders: SupplierPurchaseOrder[] = [
+  // Finished orders — the history each supplier's typical timing comes from.
+  fulfilledPo('spo-h1', 'AIEC-PO-8101', 'dl-h1', 'sp-1', 'Anil Mehta', 120, [1, 2, 18, 2, 3], [['traction_machine', 'Geared/gearless traction machine unit', 198_000], ['controller', 'Microprocessor lift controller', 90_000]], 28),
+  fulfilledPo('spo-h2', 'AIEC-PO-8102', 'dl-h2', 'sp-1', 'Anil Mehta', 80, [1, 3, 20, 1, 2], [['cabin', 'Passenger cabin, standard finish', 160_000]], 30),
+  fulfilledPo('spo-h3', 'AIEC-PO-8103', 'dl-h1', 'sp-2', 'Meenal Sanghvi', 90, [0.5, 1, 6, 1, 2], [['guide_rails', 'T-section guide rail set', 37_000], ['ropes', 'Steel suspension ropes, per set', 18_500]], 14),
+  fulfilledPo('spo-h4', 'AIEC-PO-8104', 'dl-h2', 'sp-2', 'Meenal Sanghvi', 60, [1, 2, 7, 2, 2], [['cabin', 'Passenger cabin, standard finish', 160_000]], 16),
+  fulfilledPo('spo-h5', 'AIEC-PO-8105', 'dl-h3', 'sp-3', 'Suresh Konark', 70, [2, 2, 12, 2, 3], [['vfd', 'Variable frequency drive', 40_000]], 22),
+  fulfilledPo('spo-h6', 'AIEC-PO-8106', 'dl-h3', 'sp-3', 'Suresh Konark', 45, [1, 2, 11, 1, 2], [['controller', 'Microprocessor lift controller', 88_000]], 20),
+  // Live, on the board.
+  fulfilledPo('spo-201', 'AIEC-PO-8201', 'dl-2', 'sp-2', 'Meenal Sanghvi', 12, [1, 1], [
+    ['cabin', 'Passenger cabin, standard finish', 158_000],
+    ['guide_rails', 'T-section guide rail set', 38_000],
+    ['ropes', 'Steel suspension ropes, per set', 19_000],
+  ], 15),
+  dl2Vertex,
+];
+
 export const seedSupplierPurchaseOrders: SupplierPurchaseOrder[] = [
   // dl-6's closure kickoff tried to raise this automatically; sp-5 isn't
   // approved yet, so it failed without blocking the deal's own closure.
@@ -1173,6 +1274,7 @@ export const seedSupplierPurchaseOrders: SupplierPurchaseOrder[] = [
     triggeredAt: hoursAgo(2),
     isDemo: true,
   },
+  ...seedHistoricalPurchaseOrders,
 ];
 
 /* ------------------------------------------- Objection/concern scripts (M8) */

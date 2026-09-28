@@ -38,6 +38,7 @@ export const PURCHASE_ORDER_GENERATOR_KEYS = {
     approvePricing: 'purchaseOrderGenerator.po.approvePricing',
     send: 'purchaseOrderGenerator.po.send',
     sentNote: 'purchaseOrderGenerator.po.sentNote',
+    track: 'purchaseOrderGenerator.po.track',
   },
 
   line: {

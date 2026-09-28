@@ -188,7 +188,12 @@ export function PurchaseOrderGeneratorView() {
                   {t(K.po.send)}
                 </Button>
               ) : (
-                <p className="t-xs t-success mt-2">{t(K.po.sentNote, { by: poView.po.sentBy ?? '' })}</p>
+                <div className="row between gap-2 mt-2">
+                  <p className="t-xs t-success">{t(K.po.sentNote, { by: poView.po.sentBy ?? '' })}</p>
+                  <Button size="sm" variant="ghost" onClick={() => navigate(`/orders?poId=${poView.po.id}`)}>
+                    {t(K.po.track)}
+                  </Button>
+                </div>
               )}
             </Card>
           ))}

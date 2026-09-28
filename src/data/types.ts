@@ -565,6 +565,30 @@ export interface PurchaseOrderLineItem {
   quantity: number;
   catalogUnitPriceAtDraft: number;
   agreedUnitPrice: number;
+  /** Fulfilment stage once the PO is sent (095), per line — one part can
+   *  ship while another is still in production. Unset reads as derived
+   *  from the PO (`acknowledgedAt` / `receivedAt`). */
+  fulfilmentStage?: PoFulfilmentStage;
+  stageEnteredAt?: string;
+}
+
+/** A sent PO's one true fulfilment status (095) — the same status Material
+ *  Logistics (101+) will read. Order matters: index is progress. */
+export type PoFulfilmentStage = 'sent' | 'acknowledged' | 'in_production' | 'ready_to_ship' | 'shipped' | 'delivered';
+
+/** Append-only. Every stage change, forward or back, by whom and why —
+ *  also the history each supplier's "typical timing" is learned from. */
+export interface PoStatusEvent {
+  id: string;
+  lineItemIds: string[];
+  fromStage: PoFulfilmentStage;
+  toStage: PoFulfilmentStage;
+  at: string;
+  byName: string;
+  byRole: 'supplier' | 'admin';
+  /** Admin recorded it for a supplier who hadn't updated it themselves. */
+  onBehalf: boolean;
+  note?: string;
 }
 
 /** A minimal record that a supplier PO was kicked off by a deal closure —
@@ -604,6 +628,7 @@ export interface SupplierPurchaseOrder {
    *  rule change never rewrites the explanation of an existing PO. */
   matchedByRulesVersion?: number;
   selection?: CategoryMatchResult[];
+  statusEvents?: PoStatusEvent[];
   isDemo: boolean;
 }
 
@@ -1649,6 +1674,7 @@ export type CommitmentKind =
   | 'job_start'
   | 'po_send'
   | 'po_acknowledge'
+  | 'po_status_update'
   | 'po_delivery_date'
   | 'po_delivery'
   | 'quote_expiring'

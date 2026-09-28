@@ -112,6 +112,7 @@ import type {
   CatalogPendingReview,
   CatalogSaveResult,
   CatalogSettings,
+  SupplierOrderCard,
   PurchaseOrderLineView,
   SupplierDirectoryRow,
   SupplierInviteInput,
@@ -126,6 +127,7 @@ import type {
   AutoPoSimulationResult,
   CategoryMatchResult,
   Commitment,
+  PoFulfilmentStage,
   EscalationLevel,
   WorkNotification,
   AutomationRule,
@@ -223,6 +225,14 @@ import {
 import type { CatalogEntryInput } from '@/features/suppliers/catalogRules';
 import { DEFAULT_AUTO_PO_RULES, matchCategory, valueShareOf } from '@/features/suppliers/supplierMatching';
 import type { MatchOffer } from '@/features/suppliers/supplierMatching';
+import {
+  SUPPLIER_SETTABLE_STAGES,
+  assessDelay,
+  lineStageEnteredAt,
+  lineStageOf,
+  poStageOf,
+  stageIndex,
+} from '@/features/suppliers/fulfilment';
 import type { CommitmentSources } from '@/features/work/commitmentRules';
 
 /**
@@ -1948,22 +1958,94 @@ function completeFollowUpTaskSync(id: string, actorName: string) {
   return task;
 }
 
-function acknowledgePurchaseOrderSync(poId: string, byUserId: string) {
+/**
+ * The one write path for a sent PO's fulfilment status (095) — the board,
+ * the supplier's own updates, Admin's on-behalf updates and the assistant's
+ * one-tap "acknowledge" / "confirm received" all come through here, so a PO
+ * has one true status. Forward and backward (rework) both allowed; every
+ * change is an append-only event.
+ */
+function movePoLinesSync(
+  poId: string,
+  lineIds: string[] | 'all',
+  toStage: PoFulfilmentStage,
+  actor: User,
+  note?: string,
+): SupplierPurchaseOrder {
   const po = byId(supplierPurchaseOrders, poId);
   if (!po) throw new RepositoryError('not_found');
   if (po.status !== 'sent') throw new RepositoryError('not_sent');
+  const supplier = po.supplierId ? byId(suppliers, po.supplierId) : null;
+  const isAdmin = actor.role === 'admin';
+  if (!isAdmin) {
+    if (actor.role !== 'supplier' || !supplier || supplierUserFor(supplier)?.id !== actor.id) throw new RepositoryError('forbidden');
+    if (!SUPPLIER_SETTABLE_STAGES.includes(toStage)) throw new RepositoryError('forbidden_stage');
+  }
+  const lines = po.lineItems ?? [];
+  const targets = lines.filter((l) => (lineIds === 'all' || lineIds.includes(l.id)) && lineStageOf(po, l) !== toStage);
+  if (targets.length === 0) return po;
+  // A supplier can't reopen a part AIEC has already received.
+  if (!isAdmin && targets.some((l) => lineStageOf(po, l) === 'delivered')) throw new RepositoryError('forbidden_stage');
+  const backward = targets.some((l) => stageIndex(lineStageOf(po, l)) > stageIndex(toStage));
+  // Admin recording a supplier-side stage is standing in for the supplier.
+  const onBehalf = isAdmin && toStage !== 'delivered';
+  if ((backward || onBehalf) && !note?.trim()) throw new RepositoryError('note_required');
+
+  const now = new Date().toISOString();
+  const byFromStage = new Map<PoFulfilmentStage, string[]>();
+  for (const line of targets) {
+    const from = lineStageOf(po, line);
+    byFromStage.set(from, [...(byFromStage.get(from) ?? []), line.id]);
+  }
+  const events = [...(po.statusEvents ?? [])];
+  for (const [fromStage, ids] of byFromStage) {
+    events.push({
+      id: `${po.id}-e${events.length + 1}`,
+      lineItemIds: ids,
+      fromStage,
+      toStage,
+      at: now,
+      byName: actor.name,
+      byRole: isAdmin ? 'admin' : 'supplier',
+      onBehalf,
+      note: note?.trim() || undefined,
+    });
+  }
+  const targetIds = new Set(targets.map((l) => l.id));
+  const nextLines = lines.map((l) =>
+    targetIds.has(l.id)
+      ? { ...l, fulfilmentStage: toStage, stageEnteredAt: now }
+      : { ...l, fulfilmentStage: lineStageOf(po, l), stageEnteredAt: lineStageEnteredAt(po, l) },
+  );
+  const allDelivered = nextLines.every((l) => l.fulfilmentStage === 'delivered');
+  const anyPastSent = nextLines.some((l) => l.fulfilmentStage !== 'sent');
+  return patchInPlace(supplierPurchaseOrders, poId, {
+    lineItems: nextLines,
+    statusEvents: events,
+    // The fields the manager layer and 092 already read stay in step.
+    acknowledgedAt: po.acknowledgedAt ?? (anyPastSent ? now : undefined),
+    acknowledgedBy: po.acknowledgedBy ?? (anyPastSent ? actor.name : undefined),
+    receivedAt: allDelivered ? (po.receivedAt ?? now) : undefined,
+    receivedBy: allDelivered ? (po.receivedBy ?? actor.name) : undefined,
+  });
+}
+
+function acknowledgePurchaseOrderSync(poId: string, byUserId: string) {
+  const po = byId(supplierPurchaseOrders, poId);
+  if (!po) throw new RepositoryError('not_found');
   if (po.acknowledgedAt) return po;
-  return patchInPlace(supplierPurchaseOrders, poId, { acknowledgedAt: new Date().toISOString(), acknowledgedBy: nameOf(byUserId) });
+  const actor = catalogActor(byUserId);
+  const sentLines = (po.lineItems ?? []).filter((l) => lineStageOf(po, l) === 'sent').map((l) => l.id);
+  // Admin acknowledging for a supplier without a login is on their behalf.
+  return movePoLinesSync(poId, sentLines, 'acknowledged', actor, actor.role === 'admin' ? 'Acknowledged by phone on the supplier’s behalf' : undefined);
 }
 
 function confirmPurchaseOrderReceivedSync(poId: string, byUserId: string) {
   const po = byId(supplierPurchaseOrders, poId);
   if (!po) throw new RepositoryError('not_found');
-  if (po.status !== 'sent') throw new RepositoryError('not_sent');
   if (po.receivedAt) return po;
-  return patchInPlace(supplierPurchaseOrders, poId, { receivedAt: new Date().toISOString(), receivedBy: nameOf(byUserId) });
+  return movePoLinesSync(poId, 'all', 'delivered', catalogActor(byUserId));
 }
-
 
 /* ============================================= Supplier catalog (093) */
 
@@ -4847,6 +4929,54 @@ export const memoryRepository: Repository = {
         resolutionNote: note.trim(),
       });
     }),
+
+  /* --------------------------------------- Supplier order tracking (095) */
+  listSupplierOrderBoard: (byUserId) =>
+    simulateRead(() => {
+      const actor = catalogActor(byUserId);
+      let supplierScope: string | null = null;
+      if (actor.role === 'supplier') {
+        const own = suppliers.find((sp) => supplierUserFor(sp)?.id === actor.id);
+        if (!own) return [];
+        supplierScope = own.id;
+      } else if (actor.role !== 'admin') {
+        throw new RepositoryError('forbidden');
+      }
+      const now = Date.now();
+      const recentCutoff = now - days(30);
+      return supplierPurchaseOrders
+        .filter((po) => po.status === 'sent' && po.lineItems && (!supplierScope || po.supplierId === supplierScope))
+        .filter((po) => !po.receivedAt || new Date(po.receivedAt).getTime() >= recentCutoff)
+        .map((po): SupplierOrderCard => {
+          const supplier = po.supplierId ? byId(suppliers, po.supplierId) ?? undefined : undefined;
+          const deal = byId(deals, po.dealId);
+          const lines = (po.lineItems ?? []).map((line) => ({ line, stage: lineStageOf(po, line), stageEnteredAt: lineStageEnteredAt(po, line) }));
+          const delay = assessDelay(po, supplier, supplierPurchaseOrders, now);
+          return {
+            po,
+            supplierName: supplier?.name ?? '',
+            dealCode: deal?.code ?? '',
+            siteName: deal ? (resolveLead(deal.leadId)?.siteName ?? '') : '',
+            totalValue: poTotalOf(po.lineItems ?? []),
+            stage: poStageOf(po),
+            stageEnteredAt: delay.stageEnteredAt,
+            lines,
+            partial: new Set(lines.map((l) => l.stage)).size > 1,
+            delay: {
+              daysInStage: delay.daysInStage,
+              typicalDays: delay.typicalDays,
+              typicalIsDefault: delay.typicalIsDefault,
+              projectedDelivery: delay.projectedDelivery,
+              risk: delay.risk,
+            },
+            supplierHasLogin: Boolean(supplier && supplierUserFor(supplier)),
+          };
+        })
+        .sort((a, b) => ({ overdue: 0, at_risk: 1, on_track: 2 })[a.delay.risk] - ({ overdue: 0, at_risk: 1, on_track: 2 })[b.delay.risk] || a.stageEnteredAt.localeCompare(b.stageEnteredAt));
+    }),
+
+  updatePurchaseOrderFulfilment: (poId, input, byUserId) =>
+    simulateWrite(() => movePoLinesSync(poId, input.lineIds, input.toStage, catalogActor(byUserId), input.note)),
 
   /* ------------------------------------------ Auto-PO trigger rules (094) */
   getAutoPoRules: () => simulateRead(() => ({ ...autoPoRules })),

@@ -107,7 +107,26 @@ the module's section to `BUILD_README.md`.
   (dl-1) was seeded one day short of the reminder cadence's own exhaustion threshold, so no real
   payment could ever reach 089's escalation queue while also belonging to a deal with an active
   Job — moved from 6 to 10 days overdue (and the stale `al-2` alert text updated to match).
-- **Module 10 in progress:** `091`–`094` built. **Next: `095`** (supplier order status tracking).
+- **Module 10 in progress:** `091`–`095` built. **Next: `096`** (manufacturer production status).
+  095 facts:
+  - A sent PO's fulfilment (`PoFulfilmentStage`: `sent` → `delivered`) lives per line
+    (`PurchaseOrderLineItem.fulfilmentStage`), with append-only `SupplierPurchaseOrder.statusEvents`.
+    Every change goes through `movePoLinesSync`:
+    - Suppliers may set acknowledged → shipped on their own POs; delivered is Admin's.
+    - A backward move, or Admin updating on a supplier's behalf, needs a note.
+    - The assistant's acknowledge and confirm-received actions call the same function, so
+      `acknowledgedAt` and `receivedAt` stay in step (one true status).
+  - `@/features/suppliers/fulfilment` computes:
+    - line and PO stage (the PO's is its least-advanced line),
+    - each supplier's own typical time per stage (median of their finished stages; bursts under 6h
+      are ignored; defaults until there are 2 samples),
+    - `assessDelay` (the delay flag, computed on read).
+  - A `po_status_update` commitment chases a supplier (or Admin, if they have no login) once an
+    order passes their own ×1.5 typical time.
+  - 095 owns the shared `fulfilmentStage.*` namespace. Material Logistics (101+) should read these
+    stages, not invent its own.
+  - `/orders` serves Admin and Supplier; the supplier nav gains "Orders". `.ds-tabs--scroll` is a
+    new shared no-wrap scrolling tab strip.
   094 facts:
   - `AutoPoRules` (memoryRepository `autoPoRules`) is the only thing governing automated ordering:
     - `autoDraftEnabled`, `triggerCondition` (`on_countersignature` | `on_first_payment`, where the

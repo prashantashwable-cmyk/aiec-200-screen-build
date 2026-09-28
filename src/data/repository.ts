@@ -71,6 +71,7 @@ import type {
   Supplier,
   SupplierCatalogItem,
   CatalogPriceChange,
+  PoFulfilmentStage,
   AutoPoRules,
   AutoPoSimulationResult,
   SupplierPurchaseOrder,
@@ -771,6 +772,42 @@ export interface PurchaseOrderLineView extends PurchaseOrderLineItem {
 /** One real (092-drafted) purchase order, joined with what the screen
  *  needs to render it — `requiresApproval` is always computed live from
  *  `lines`, per `SupplierPurchaseOrder`'s own doc comment. */
+/* --------------------------------------- Supplier order tracking (095) */
+
+export interface SupplierOrderLineStatus {
+  line: PurchaseOrderLineItem;
+  stage: PoFulfilmentStage;
+  stageEnteredAt: string;
+}
+
+/** The delay_risk_flag and what it's based on — computed on every read. */
+export interface SupplierOrderDelay {
+  daysInStage: number;
+  /** This supplier's own typical time in this stage (or a default until
+   *  they have two finished examples). */
+  typicalDays: number;
+  typicalIsDefault: boolean;
+  projectedDelivery: string | null;
+  risk: 'on_track' | 'at_risk' | 'overdue';
+}
+
+export interface SupplierOrderCard {
+  po: SupplierPurchaseOrder;
+  supplierName: string;
+  dealCode: string;
+  siteName: string;
+  totalValue: number;
+  /** The least-advanced line's stage — "shipped" only once all have. */
+  stage: PoFulfilmentStage;
+  stageEnteredAt: string;
+  lines: SupplierOrderLineStatus[];
+  /** Lines at different stages (e.g. one part already shipped). */
+  partial: boolean;
+  delay: SupplierOrderDelay;
+  /** The supplier has their own login and can update this themselves. */
+  supplierHasLogin: boolean;
+}
+
 /* ------------------------------------------------ Supplier catalog (093) */
 
 /** One catalog row with the context 093 shows beside it. */
@@ -1522,6 +1559,19 @@ export interface Repository {
 
   /* Communication: analytics */
   getCommunicationAnalytics(): Promise<CommunicationAnalytics>;
+
+  /* Supplier order tracking (095) — a sent PO's one true fulfilment status */
+  /** Every sent PO still in flight plus anything delivered in the last 30
+   *  days; a supplier login sees only their own. */
+  listSupplierOrderBoard(byUserId: string): Promise<SupplierOrderCard[]>;
+  /** Moves lines (or `'all'`) to a stage, forward or back. Suppliers may set
+   *  acknowledged → shipped on their own POs; delivery is AIEC's to confirm.
+   *  A backward move, or Admin updating on a supplier's behalf, needs a note. */
+  updatePurchaseOrderFulfilment(
+    poId: string,
+    input: { lineIds: string[] | 'all'; toStage: PoFulfilmentStage; note?: string },
+    byUserId: string,
+  ): Promise<SupplierPurchaseOrder>;
 
   /* Auto-PO trigger rules (094) — the one configuration automated ordering reads */
   getAutoPoRules(): Promise<AutoPoRules>;

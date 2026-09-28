@@ -19,6 +19,7 @@ import type {
 } from '@/data/types';
 import { remainingBalance } from '@/features/payments/aging';
 import { days, hours, minutes } from '@/features/sla/clock';
+import { AT_RISK_RATIO, poStageEnteredAt, poStageOf, typicalStageDays } from '@/features/suppliers/fulfilment';
 
 /**
  * The manager's rulebook: every dated promise the business runs on, as data.
@@ -335,6 +336,46 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
             oversightRoute: `/admin/deals/${po.dealId}/purchase-orders`,
           };
         });
+    },
+  },
+  {
+    // 095: a supplier who goes quiet mid-order. Due the moment the order has
+    // sat in its stage longer than *this supplier* usually takes (×1.5) —
+    // their own pace, not one number for everyone. Moving the stage is a new
+    // promise, so the ladder restarts. Once shipped, the supplier's part is
+    // done; receipt is Admin's (po_delivery).
+    kind: 'po_status_update',
+    nudgeBefore: 0,
+    escalateAfter: days(2),
+    escalates: true,
+    raisesAlert: true,
+    alertCategory: 'supplier',
+    collect(src) {
+      const admin = adminId(src);
+      const out: Obligation[] = [];
+      for (const po of src.purchaseOrders) {
+        if (po.status !== 'sent' || !po.sentAt || !po.lineItems?.length) continue;
+        const stage = poStageOf(po);
+        if (stage === 'sent') continue; // po_acknowledge covers this stage
+        const supplier = src.suppliers.find((s) => s.id === po.supplierId);
+        const portalUser = supplierUser(src, po.supplierId);
+        const enteredAt = poStageEnteredAt(po);
+        const done = stage === 'shipped' || stage === 'delivered';
+        const typical = done ? 0 : typicalStageDays(supplier, stage, src.purchaseOrders).days;
+        out.push({
+          ...base('po_status_update', 'purchase_order', po.id),
+          ownerUserId: portalUser?.id ?? admin,
+          titleKey: portalUser ? 'work.title.po_status_update' : 'work.title.po_status_update_proxy',
+          titleParams: { code: po.code, supplier: supplier?.name ?? '' },
+          dueAt: plus(enteredAt, days(typical * AT_RISK_RATIO)),
+          state: done ? 'done' : 'open',
+          paused: false,
+          completedAt: done ? enteredAt : undefined,
+          actionRoute: '/orders',
+          oversightRoute: '/orders',
+        });
+      }
+      return out;
     },
   },
   {

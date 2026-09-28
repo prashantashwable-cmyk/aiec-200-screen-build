@@ -35,6 +35,7 @@ const translations: ScreenTranslations = {
         approvePricing: 'Approve pricing',
         send: 'Send to supplier',
         sentNote: 'Sent by {{by}}',
+        track: 'Track this order',
       },
 
       line: {
@@ -100,6 +101,7 @@ const translations: ScreenTranslations = {
         approvePricing: 'मूल्य निर्धारण स्वीकृत करें',
         send: 'सप्लायर को भेजें',
         sentNote: '{{by}} द्वारा भेजा गया',
+        track: 'यह ऑर्डर ट्रैक करें',
       },
 
       line: {
@@ -165,6 +167,7 @@ const translations: ScreenTranslations = {
         approvePricing: 'किंमत मंजूर करा',
         send: 'सप्लायरला पाठवा',
         sentNote: '{{by}} यांनी पाठवले',
+        track: 'हा ऑर्डर ट्रॅक करा',
       },
 
       line: {
