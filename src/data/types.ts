@@ -599,7 +599,87 @@ export interface SupplierPurchaseOrder {
    *  without it, nobody owns "did the parts come?" at all. */
   receivedAt?: string;
   receivedBy?: string;
+  /** Why each line's supplier was chosen (094) — the rules version and the
+   *  full candidate ranking per category, frozen at draft time so a later
+   *  rule change never rewrites the explanation of an existing PO. */
+  matchedByRulesVersion?: number;
+  selection?: CategoryMatchResult[];
   isDemo: boolean;
+}
+
+/* ------------------------------------------ Auto-PO trigger rules (094) */
+
+/** When a won deal's POs draft by themselves. `on_first_payment` waits for
+ *  the advance stage to clear — less exposure before the customer has paid. */
+export type PoTriggerCondition = 'on_countersignature' | 'on_first_payment';
+
+export type SupplierMatchStrategy = 'price' | 'speed' | 'performance' | 'blend';
+
+/** Percentages; the strategy presets use one factor at 100. */
+export interface SupplierMatchWeights {
+  price: number;
+  speed: number;
+  performance: number;
+}
+
+/** One supplier's standing for one category, with every factor shown. */
+export interface SupplierMatchCandidate {
+  supplierId: string;
+  supplierName: string;
+  itemId: string;
+  unitPrice: number;
+  leadTimeDays: number;
+  /** 0..1 — 1 is the cheapest / fastest candidate for this category. */
+  priceScore: number;
+  speedScore: number;
+  performanceScore: number;
+  /** A supplier with no order history gets a neutral score, not zero. */
+  performanceIsDefault: boolean;
+  /** Weighted total, 0..1. */
+  total: number;
+}
+
+export interface CategoryMatchResult {
+  category: string;
+  chosenSupplierId: string | null;
+  reason: 'assigned_supplier' | 'best_score' | 'no_candidate';
+  /** No listing fit the deal's drive type, so any live one was used. */
+  driveTypeFallback: boolean;
+  candidates: SupplierMatchCandidate[];
+}
+
+export interface AutoPoSimulationResult {
+  at: string;
+  byName: string;
+  rulesVersion: number;
+  /** Run against rules still being edited, not the saved ones. */
+  usedUnsavedRules: boolean;
+  driveType: DriveType | null;
+  assignedSupplierId: string | null;
+  results: CategoryMatchResult[];
+  totalValue: number;
+  /** Would any resulting PO need Admin sign-off before sending? */
+  wouldNeedApproval: boolean;
+  /** Share of total PO value per supplier, largest first. */
+  valueShare: { supplierId: string; supplierName: string; sharePct: number }[];
+}
+
+/** The single configuration governing automated supplier ordering (094) —
+ *  092's drafting, matching and approval gate read these and nothing else. */
+export interface AutoPoRules {
+  autoDraftEnabled: boolean;
+  triggerCondition: PoTriggerCondition;
+  strategy: SupplierMatchStrategy;
+  /** Used as-is for `blend`; the other strategies use their preset. */
+  weights: SupplierMatchWeights;
+  /** The deal's own assigned supplier wins any category it can supply. */
+  preferAssignedSupplier: boolean;
+  /** A PO worth more than this (₹, GST-inclusive) is held for Admin. */
+  approvalThreshold: number;
+  version: number;
+  updatedBy?: string;
+  updatedAt?: string;
+  lastSimulation?: AutoPoSimulationResult;
 }
 
 /** `pending_review` — a new item whose own details looked implausible on

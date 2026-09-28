@@ -46,7 +46,18 @@ export function PurchaseOrderGeneratorView() {
       <ScreenHeader title={view.siteName} subtitle={view.dealCode} back={() => navigate(-1)} />
 
       {view.purchaseOrders.length === 0 ? (
-        <EmptyState title={t(K.notReady.title)} body={t(K.notReady.body)} />
+        view.draftHold ? (
+          // 094's rules are holding drafting — say which rule, and offer the
+          // explicit override rather than drafting silently anyway.
+          <EmptyState
+            title={t(K.hold[view.draftHold].title)}
+            body={t(K.hold[view.draftHold].body)}
+            actionLabel={t(K.hold.draftNow)}
+            onAction={() => void s.draftNow().then((ok) => toast.push(t(ok ? K.toast.drafted : K.toast.error), ok ? 'success' : 'error'))}
+          />
+        ) : (
+          <EmptyState title={t(K.notReady.title)} body={t(K.notReady.body)} />
+        )
       ) : (
         <div className="stack gap-4">
           {view.purchaseOrders.map((poView) => (
@@ -71,6 +82,10 @@ export function PurchaseOrderGeneratorView() {
                 {poView.lines.map((line) => {
                   const draft = s.lineDrafts[line.id] ?? { quantity: String(line.quantity), agreedUnitPrice: String(line.agreedUnitPrice) };
                   const priceChanged = line.currentCatalogUnitPrice !== null && line.currentCatalogUnitPrice !== line.catalogUnitPriceAtDraft;
+                  // Why this supplier won this line — frozen at draft time (094).
+                  const match = poView.po.selection?.find((r) => r.category === line.category);
+                  const chosen = match?.candidates.find((c) => c.supplierId === match.chosenSupplierId);
+                  const runnerUp = match?.candidates.find((c) => c.supplierId !== match.chosenSupplierId);
                   return (
                     <div key={line.id} className="stack gap-2 hairline-top pt-3">
                       <span className="t-sm t-medium">{line.description}</span>
@@ -101,6 +116,20 @@ export function PurchaseOrderGeneratorView() {
                       <span className="t-xs t-muted">
                         {t(K.line.catalogPriceLabel)}: {formatINR(line.catalogUnitPriceAtDraft)}
                       </span>
+                      {match && chosen && (
+                        <span className="t-xs t-muted">
+                          {match.reason === 'assigned_supplier'
+                            ? t(K.line.whyAssigned)
+                            : runnerUp
+                              ? t(K.line.whyBest, { score: chosen.total.toFixed(2), next: runnerUp.supplierName, nextScore: runnerUp.total.toFixed(2) })
+                              : t(K.line.whyOnly)}
+                        </span>
+                      )}
+                      {match?.driveTypeFallback && (
+                        <p className="t-xs t-warning row gap-1 items-center">
+                          <Warning size={11} /> {t(K.line.driveTypeFallback)}
+                        </p>
+                      )}
                       {priceChanged && (
                         <p className="t-xs t-warning row gap-1 items-center">
                           <Warning size={11} /> {t(K.line.priceChanged, { price: formatINR(line.currentCatalogUnitPrice ?? 0) })}
@@ -127,11 +156,12 @@ export function PurchaseOrderGeneratorView() {
                 />
               </div>
 
-              {poView.requiresApproval && (
-                <p className="t-xs t-warning row gap-1 items-center mt-3">
-                  <Warning size={12} /> {t(K.po.approvalNeeded)}
-                </p>
-              )}
+              {poView.requiresApproval &&
+                poView.approvalReasons.map((reason) => (
+                  <p key={reason} className="t-xs t-warning row gap-1 items-center mt-3">
+                    <Warning size={12} /> {t(reason === 'over_value_threshold' ? K.po.approvalOverValue : K.po.approvalNeeded)}
+                  </p>
+                ))}
 
               {poView.po.status !== 'sent' && (
                 <div className="row gap-2 mt-3">
@@ -162,6 +192,11 @@ export function PurchaseOrderGeneratorView() {
               )}
             </Card>
           ))}
+          <div>
+            <Button size="sm" variant="ghost" onClick={() => navigate('/admin/suppliers/po-rules')}>
+              {t(K.rulesLink)}
+            </Button>
+          </div>
         </div>
       )}
 

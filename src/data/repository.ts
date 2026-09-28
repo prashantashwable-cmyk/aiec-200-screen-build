@@ -71,6 +71,8 @@ import type {
   Supplier,
   SupplierCatalogItem,
   CatalogPriceChange,
+  AutoPoRules,
+  AutoPoSimulationResult,
   SupplierPurchaseOrder,
   TemplateStat,
   TriggerRule,
@@ -850,6 +852,9 @@ export interface PurchaseOrderView {
   lines: PurchaseOrderLineView[];
   totalAmount: number;
   requiresApproval: boolean;
+  /** Every reason this PO needs Admin before it can go (094 adds the value
+   *  line to 092's price-deviation rule). Empty once sent. */
+  approvalReasons: ('price_deviation' | 'over_value_threshold')[];
 }
 
 /** Screen 092's own per-deal read — every real PO already drafted for
@@ -857,6 +862,9 @@ export interface PurchaseOrderView {
  *  exist yet), plus every currently-eligible supplier for the manual
  *  reassignment edge case. */
 export interface PurchaseOrderDealView {
+  /** Why a won deal has no POs yet — 094's rules are holding drafting.
+   *  Null when POs exist or the deal isn't won. */
+  draftHold: 'automation_off' | 'awaiting_first_payment' | null;
   dealId: string;
   dealCode: string;
   siteName: string;
@@ -1514,6 +1522,28 @@ export interface Repository {
 
   /* Communication: analytics */
   getCommunicationAnalytics(): Promise<CommunicationAnalytics>;
+
+  /* Auto-PO trigger rules (094) — the one configuration automated ordering reads */
+  getAutoPoRules(): Promise<AutoPoRules>;
+  /** Admin only. Applies to POs drafted from now on; already-drafted and
+   *  sent POs keep the rules (and explanation) they were drafted under. */
+  updateAutoPoRules(
+    patch: Partial<Pick<AutoPoRules, 'autoDraftEnabled' | 'triggerCondition' | 'strategy' | 'weights' | 'preferAssignedSupplier' | 'approvalThreshold'>>,
+    byUserId: string,
+  ): Promise<AutoPoRules>;
+  /** Which supplier the rules would pick per required category for a sample
+   *  configuration — with `rulesOverride`, for rules still being edited.
+   *  Stored as the rules' `lastSimulation`. */
+  simulateAutoPoMatching(
+    input: {
+      driveType: DriveType | null;
+      assignedSupplierId: string | null;
+      rulesOverride?: Partial<Pick<AutoPoRules, 'strategy' | 'weights' | 'preferAssignedSupplier' | 'approvalThreshold'>>;
+    },
+    byUserId: string,
+  ): Promise<AutoPoSimulationResult>;
+  /** Admin's explicit override when 094's trigger is holding a won deal. */
+  draftPurchaseOrdersNow(dealId: string, byUserId: string): Promise<SupplierPurchaseOrder[]>;
 
   /* Supplier catalog (093) — the one source 092's PO drafting prices from */
   listCatalogItems(filter?: { supplierId?: string }): Promise<CatalogItemView[]>;

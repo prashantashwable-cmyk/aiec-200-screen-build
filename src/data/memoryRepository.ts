@@ -122,6 +122,9 @@ import type {
 import type {
   Alert,
   AutomatedActionLogEntry,
+  AutoPoRules,
+  AutoPoSimulationResult,
+  CategoryMatchResult,
   Commitment,
   EscalationLevel,
   WorkNotification,
@@ -218,6 +221,8 @@ import {
   parseCatalogCsv,
 } from '@/features/suppliers/catalogRules';
 import type { CatalogEntryInput } from '@/features/suppliers/catalogRules';
+import { DEFAULT_AUTO_PO_RULES, matchCategory, valueShareOf } from '@/features/suppliers/supplierMatching';
+import type { MatchOffer } from '@/features/suppliers/supplierMatching';
 import type { CommitmentSources } from '@/features/work/commitmentRules';
 
 /**
@@ -289,6 +294,8 @@ const catalogPriceChanges = [...seedCatalogPriceChanges];
 let catalogItemCounter = 100;
 let catalogPriceChangeCounter = 100;
 let catalogSettings: CatalogSettings = { priceReviewThresholdPct: DEFAULT_PRICE_REVIEW_THRESHOLD_PCT };
+/** 094's single configuration for automated supplier ordering. */
+let autoPoRules: AutoPoRules = { ...DEFAULT_AUTO_PO_RULES };
 let supplierPurchaseOrderCounter = 100;
 let supplierCounter = 100;
 let poLineItemCounter = 100;
@@ -577,48 +584,68 @@ function categoryDescription(category: string): string {
   return supplierCatalogItems.find((c) => c.category === category && c.status === 'active')?.description ?? category;
 }
 
-/** The deal's own assigned supplier wins a category it's eligible for and
- *  carries; otherwise the highest-scoring eligible supplier that carries
- *  it — never an ineligible one, structurally enforcing 092's own
- *  compliance rule at the point of matching, not just at send time. */
-function bestEligibleSupplierFor(category: string, preferredSupplierId?: string): Supplier | null {
-  // Matched on what the supplier actually publishes live (093), not on the
-  // categories they once said they serve — a category with no live price
-  // would otherwise draft at ₹0.
-  const candidates = suppliers.filter((s) => isSupplierEligibleForPO(s) && liveCatalogItemFor(s.id, category));
-  if (candidates.length === 0) return null;
-  const preferred = preferredSupplierId ? candidates.find((s) => s.id === preferredSupplierId) : undefined;
-  if (preferred) return preferred;
-  return [...candidates].sort((a, b) => computeSupplierPerformanceScore(b) - computeSupplierPerformanceScore(a))[0];
+/** Each eligible supplier's live listing for a category — one fitting the
+ *  deal's drive type if they have one, else their cheapest. What 094's
+ *  matching ranks; never an ineligible supplier, so 092's compliance rule
+ *  holds at the point of matching, not just at send time. */
+function offersFor(category: string, driveType: DriveType | null): MatchOffer[] {
+  const offers: MatchOffer[] = [];
+  for (const supplier of suppliers) {
+    if (!isSupplierEligibleForPO(supplier)) continue;
+    const live = supplierCatalogItems
+      .filter((c) => c.supplierId === supplier.id && c.category === category && c.status === 'active')
+      .sort((x, y) => x.unitPrice - y.unitPrice);
+    const item = live.find((c) => !driveType || c.driveTypes.length === 0 || c.driveTypes.includes(driveType)) ?? live[0];
+    if (item) offers.push({ supplier, item });
+  }
+  return offers;
 }
 
-/** Idempotent auto-draft: groups every required category by its best-fit
- *  eligible supplier and creates one PO per supplier needed — naturally
- *  splitting into more than one linked PO when no single eligible
- *  supplier covers everything, the spec's own edge case, never forced
- *  into an artificial single-supplier PO. */
-function draftPurchaseOrdersForDeal(deal: Deal): SupplierPurchaseOrder[] {
-  const bySupplier = new Map<string, string[]>();
-  for (const category of REQUIRED_PO_CATEGORIES) {
-    const supplier = bestEligibleSupplierFor(category, deal.supplierId);
-    if (!supplier) continue;
-    const list = bySupplier.get(supplier.id) ?? [];
-    list.push(category);
-    bySupplier.set(supplier.id, list);
+/** The drive type the customer actually bought, from the lead's current quote. */
+function driveTypeForDeal(deal: Deal): DriveType | null {
+  return currentQuotationForLead(deal.leadId)?.driveType ?? null;
+}
+
+function matchRequiredCategories(driveType: DriveType | null, assignedSupplierId: string | null, rules: AutoPoRules): CategoryMatchResult[] {
+  return REQUIRED_PO_CATEGORIES.map((category) => matchCategory(category, offersFor(category, driveType), rules, driveType, assignedSupplierId));
+}
+
+/** Whether a won deal has reached 094's configured drafting trigger. */
+function poTriggerMet(deal: Deal): boolean {
+  if (deal.status !== 'won') return false;
+  if (autoPoRules.triggerCondition === 'on_countersignature') return true;
+  return payments.some((p) => p.dealId === deal.id && p.stage === 'advance' && p.status === 'paid');
+}
+
+/**
+ * Drafts a won deal's POs under 094's current rules: every required category
+ * matched by the configured weights (the deal's assigned supplier first, if
+ * the rules say so), grouped into one PO per chosen supplier — naturally
+ * several linked POs when no single supplier covers everything. Each PO
+ * keeps the full ranking behind every line, so "why this supplier?" always
+ * has an answer, and a later rule change never rewrites it.
+ */
+function draftPurchaseOrdersForDeal(deal: Deal, manualBy?: string): SupplierPurchaseOrder[] {
+  const results = matchRequiredCategories(driveTypeForDeal(deal), deal.supplierId ?? null, autoPoRules);
+  const bySupplier = new Map<string, CategoryMatchResult[]>();
+  for (const result of results) {
+    if (!result.chosenSupplierId) continue;
+    bySupplier.set(result.chosenSupplierId, [...(bySupplier.get(result.chosenSupplierId) ?? []), result]);
   }
   const now = new Date().toISOString();
   const created: SupplierPurchaseOrder[] = [];
-  for (const [supplierId, categories] of bySupplier) {
-    const lineItems: PurchaseOrderLineItem[] = categories.map((category) => {
-      const price = catalogPriceFor(supplierId, category) ?? 0;
+  for (const [supplierId, supplierResults] of bySupplier) {
+    const lineItems: PurchaseOrderLineItem[] = supplierResults.map((result) => {
+      const chosen = result.candidates.find((c) => c.supplierId === supplierId)!;
+      const item = byId(supplierCatalogItems, chosen.itemId);
       poLineItemCounter += 1;
       return {
         id: `poli-${poLineItemCounter}`,
-        category,
-        description: categoryDescription(category),
+        category: result.category,
+        description: item?.description ?? categoryDescription(result.category),
         quantity: 1,
-        catalogUnitPriceAtDraft: price,
-        agreedUnitPrice: price,
+        catalogUnitPriceAtDraft: chosen.unitPrice,
+        agreedUnitPrice: chosen.unitPrice,
       };
     });
     supplierPurchaseOrderCounter += 1;
@@ -630,36 +657,69 @@ function draftPurchaseOrdersForDeal(deal: Deal): SupplierPurchaseOrder[] {
       status: 'draft',
       triggeredAt: now,
       lineItems,
+      matchedByRulesVersion: autoPoRules.version,
+      selection: supplierResults,
       isDemo: true,
     };
     supplierPurchaseOrders.push(po);
     created.push(po);
-    logAutomatedAction({
-      sourceKey: 'purchase_order.auto_draft',
-      triggeringCondition: `Deal ${deal.code} is won with no purchase order yet`,
-      actionTaken: `Drafted ${po.code} with ${lineItems.length} line item(s)`,
-      affectedRecordId: po.id,
-      affectedRecordType: 'purchase_order',
-      subjectLabel: po.code,
-    });
+    if (!manualBy) {
+      logAutomatedAction({
+        sourceKey: 'purchase_order.auto_draft',
+        triggeringCondition: `Deal ${deal.code} reached the ${autoPoRules.triggerCondition} trigger with no purchase order yet`,
+        actionTaken: `Drafted ${po.code} with ${lineItems.length} line item(s) under rules v${autoPoRules.version}`,
+        affectedRecordId: po.id,
+        affectedRecordType: 'purchase_order',
+        subjectLabel: po.code,
+      });
+    }
   }
   return created;
 }
 
+/** Won deals whose trigger has fired get their POs without anyone opening
+ *  092 — the heartbeat calls this. Idempotent: a deal with any real PO is
+ *  never drafted again, whatever the rules say now. */
+function autoDraftDuePurchaseOrders(): void {
+  if (!autoPoRules.autoDraftEnabled) return;
+  for (const deal of deals) {
+    if (!poTriggerMet(deal)) continue;
+    if (supplierPurchaseOrders.some((po) => po.dealId === deal.id && po.lineItems)) continue;
+    draftPurchaseOrdersForDeal(deal);
+  }
+}
+
+const poTotalOf = (lines: PurchaseOrderLineItem[]) => lines.reduce((sum, l) => sum + l.quantity * l.agreedUnitPrice, 0);
+
+/** Why a PO must wait for Admin before it can be sent: a price drifted from
+ *  the catalog (092), or its value is over 094's approval line — oversight
+ *  proportional to the size of the commitment, however good the match was.
+ *  Read live, so lowering the line reaches every PO not yet sent. */
+function purchaseOrderApprovalReasons(lines: PurchaseOrderLineItem[]): ('price_deviation' | 'over_value_threshold')[] {
+  const reasons: ('price_deviation' | 'over_value_threshold')[] = [];
+  if (lines.some((l) => l.catalogUnitPriceAtDraft > 0 && Math.abs(l.agreedUnitPrice - l.catalogUnitPriceAtDraft) / l.catalogUnitPriceAtDraft > PO_PRICE_TOLERANCE_PCT)) {
+    reasons.push('price_deviation');
+  }
+  if (poTotalOf(lines) > autoPoRules.approvalThreshold) reasons.push('over_value_threshold');
+  return reasons;
+}
+
 function purchaseOrderNeedsApproval(lines: PurchaseOrderLineItem[]): boolean {
-  return lines.some((l) => l.catalogUnitPriceAtDraft > 0 && Math.abs(l.agreedUnitPrice - l.catalogUnitPriceAtDraft) / l.catalogUnitPriceAtDraft > PO_PRICE_TOLERANCE_PCT);
+  return purchaseOrderApprovalReasons(lines).length > 0;
 }
 
 function buildPurchaseOrderView(po: SupplierPurchaseOrder): PurchaseOrderView {
   const supplier = po.supplierId ? byId(suppliers, po.supplierId) : null;
   const lines = po.lineItems ?? [];
-  const requiresApproval = purchaseOrderNeedsApproval(lines) && !po.approvedAt;
+  const approvalReasons = po.status === 'sent' ? [] : purchaseOrderApprovalReasons(lines);
+  const requiresApproval = approvalReasons.length > 0 && !po.approvedAt;
   return {
+    approvalReasons,
     po,
     supplierName: supplier?.name ?? '',
     supplierEligible: supplier ? isSupplierEligibleForPO(supplier) : false,
     lines: lines.map((line): PurchaseOrderLineView => ({ ...line, currentCatalogUnitPrice: po.supplierId ? catalogPriceFor(po.supplierId, line.category) : null })),
-    totalAmount: lines.reduce((sum, l) => sum + l.quantity * l.agreedUnitPrice, 0),
+    totalAmount: poTotalOf(lines),
     requiresApproval,
   };
 }
@@ -1839,6 +1899,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   reconcileFollowUpTasks();
   runPaymentReminders(ASSISTANT_ACTOR, now);
   sendDueScheduledQuotations(now);
+  autoDraftDuePurchaseOrders();
   for (const deal of deals) {
     if (payments.some((p) => p.dealId === deal.id && p.status === 'paid' && !invoices.some((inv) => inv.paymentId === p.id))) {
       ensureStageInvoices(deal.id, deal, resolveLead(deal.leadId));
@@ -3491,11 +3552,22 @@ export const memoryRepository: Repository = {
       if (!deal) return null;
       const lead = resolveLead(deal.leadId);
       const existing = supplierPurchaseOrders.filter((po) => po.dealId === dealId && po.lineItems);
-      if (existing.length === 0 && deal.status === 'won') {
+      // Drafting follows 094's rules exactly — the same condition the
+      // heartbeat uses, never a second hardcoded one here.
+      if (existing.length === 0 && autoPoRules.autoDraftEnabled && poTriggerMet(deal)) {
         draftPurchaseOrdersForDeal(deal);
       }
       const purchaseOrders = supplierPurchaseOrders.filter((po) => po.dealId === dealId && po.lineItems).map(buildPurchaseOrderView);
+      const draftHold: PurchaseOrderDealView['draftHold'] =
+        purchaseOrders.length > 0 || deal.status !== 'won'
+          ? null
+          : !autoPoRules.autoDraftEnabled
+            ? 'automation_off'
+            : !poTriggerMet(deal)
+              ? 'awaiting_first_payment'
+              : null;
       return {
+        draftHold,
         dealId: deal.id,
         dealCode: deal.code,
         siteName: lead?.siteName ?? '',
@@ -3519,6 +3591,9 @@ export const memoryRepository: Repository = {
         lineItems: repriced,
         approvedBy: undefined,
         approvedAt: undefined,
+        // Chosen by hand now, not by 094's ranking — the old "why" no longer applies.
+        selection: undefined,
+        matchedByRulesVersion: undefined,
       });
     }),
 
@@ -4771,6 +4846,63 @@ export const memoryRepository: Repository = {
         resolvedAt: new Date().toISOString(),
         resolutionNote: note.trim(),
       });
+    }),
+
+  /* ------------------------------------------ Auto-PO trigger rules (094) */
+  getAutoPoRules: () => simulateRead(() => ({ ...autoPoRules })),
+
+  updateAutoPoRules: (patch, byUserId) =>
+    simulateWrite(() => {
+      if (catalogActor(byUserId).role !== 'admin') throw new RepositoryError('forbidden');
+      const next = { ...autoPoRules, ...patch };
+      const w = next.weights;
+      const weightsValid =
+        [w.price, w.speed, w.performance].every((v) => Number.isInteger(v) && v >= 0 && v <= 100) && w.price + w.speed + w.performance === 100;
+      if (!weightsValid) throw new RepositoryError('invalid_weights');
+      if (!Number.isFinite(next.approvalThreshold) || next.approvalThreshold < 0) throw new RepositoryError('invalid_input');
+      autoPoRules = { ...next, version: autoPoRules.version + 1, updatedBy: nameOf(byUserId), updatedAt: new Date().toISOString() };
+      return { ...autoPoRules };
+    }),
+
+  simulateAutoPoMatching: (input, byUserId) =>
+    simulateWrite(() => {
+      if (catalogActor(byUserId).role !== 'admin') throw new RepositoryError('forbidden');
+      const rules: AutoPoRules = { ...autoPoRules, ...input.rulesOverride };
+      const results = matchRequiredCategories(input.driveType, input.assignedSupplierId, rules);
+      const share = valueShareOf(results);
+      const simulation: AutoPoSimulationResult = {
+        at: new Date().toISOString(),
+        byName: nameOf(byUserId),
+        rulesVersion: autoPoRules.version,
+        usedUnsavedRules: Boolean(input.rulesOverride && Object.keys(input.rulesOverride).length > 0),
+        driveType: input.driveType,
+        assignedSupplierId: input.assignedSupplierId,
+        results,
+        totalValue: share.reduce((sum, v) => sum + v.value, 0),
+        // One PO per chosen supplier, exactly as drafting would group them.
+        wouldNeedApproval: share.some((v) => v.value > rules.approvalThreshold),
+        valueShare: share.map(({ supplierId, supplierName, sharePct }) => ({ supplierId, supplierName, sharePct })),
+      };
+      autoPoRules = { ...autoPoRules, lastSimulation: simulation };
+      return simulation;
+    }),
+
+  draftPurchaseOrdersNow: (dealId, byUserId) =>
+    simulateWrite(() => {
+      if (catalogActor(byUserId).role !== 'admin') throw new RepositoryError('forbidden');
+      const deal = byId(deals, dealId);
+      if (!deal) throw new RepositoryError('not_found');
+      if (deal.status !== 'won') throw new RepositoryError('invalid_state');
+      if (supplierPurchaseOrders.some((po) => po.dealId === dealId && po.lineItems)) throw new RepositoryError('already_drafted');
+      const created = draftPurchaseOrdersForDeal(deal, nameOf(byUserId));
+      pushTimelineEvent({
+        leadId: deal.leadId,
+        kind: 'note_added',
+        actorName: nameOf(byUserId),
+        at: new Date().toISOString(),
+        detail: `Drafted ${created.map((po) => po.code).join(', ') || 'no'} purchase order(s) ahead of the automatic trigger`,
+      });
+      return created;
     }),
 
   /* ------------------------------------------ Supplier catalog (093) */

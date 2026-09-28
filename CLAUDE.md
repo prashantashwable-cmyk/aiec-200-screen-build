@@ -107,7 +107,23 @@ the module's section to `BUILD_README.md`.
   (dl-1) was seeded one day short of the reminder cadence's own exhaustion threshold, so no real
   payment could ever reach 089's escalation queue while also belonging to a deal with an active
   Job — moved from 6 to 10 days overdue (and the stale `al-2` alert text updated to match).
-- **Module 10 in progress:** `091`–`093` built. **Next: `094`** (auto-PO trigger rules).
+- **Module 10 in progress:** `091`–`094` built. **Next: `095`** (supplier order status tracking).
+  094 facts:
+  - `AutoPoRules` (memoryRepository `autoPoRules`) is the only thing governing automated ordering:
+    - `autoDraftEnabled`, `triggerCondition` (`on_countersignature` | `on_first_payment`, where the
+      advance stage is `'paid'`), `poTriggerMet` decides when.
+    - Matching strategy/weights, `preferAssignedSupplier` and `approvalThreshold` decide who and
+      how much.
+  - The heartbeat (`autoDraftDuePurchaseOrders`) and 092's read use the same trigger check.
+  - When held, 092 shows `draftHold` with a "Draft now" override (`draftPurchaseOrdersNow`).
+  - `@/features/suppliers/supplierMatching` (`matchCategory`, `rankOffers`, neutral 0.5 performance
+    for a supplier with no orders) is used by drafting and by 094's simulation alike.
+  - Drafting prefers a listing that fits the deal's quoted drive type. It falls back to any live
+    listing, flagged `driveTypeFallback`.
+  - Each drafted PO freezes `selection` and `matchedByRulesVersion`, which 092 shows as "why this
+    supplier". Reassigning a PO by hand clears them.
+  - `purchaseOrderApprovalReasons` combines 092's price deviation with 094's value line. It's read
+    live, so it applies to unsent POs only.
   093 facts:
   - `SupplierCatalogItem` is now the one cost source. 092's drafting matches suppliers on a live
     (`status: 'active'`) catalog item via `liveCatalogItemFor`, not on `Supplier.categories`.

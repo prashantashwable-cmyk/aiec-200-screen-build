@@ -36,6 +36,10 @@ interface PurchaseOrderGeneratorState {
   sendingPoId: string | null;
   sendPO: (poId: string) => Promise<boolean>;
 
+  /** Admin's override when 094's trigger is still holding this deal. */
+  draftingNow: boolean;
+  draftNow: () => Promise<boolean>;
+
   reload: () => Promise<void>;
 }
 
@@ -55,6 +59,7 @@ export function usePurchaseOrderGenerator(): PurchaseOrderGeneratorState {
 
   const [approvingPoId, setApprovingPoId] = useState<string | null>(null);
   const [sendingPoId, setSendingPoId] = useState<string | null>(null);
+  const [draftingNow, setDraftingNow] = useState(false);
 
   const load = useCallback(async () => {
     if (!dealId) {
@@ -179,8 +184,24 @@ export function usePurchaseOrderGenerator(): PurchaseOrderGeneratorState {
     [repository, user, load],
   );
 
+  const draftNow = useCallback(async () => {
+    if (!user || !dealId) return false;
+    setDraftingNow(true);
+    try {
+      await repository.draftPurchaseOrdersNow(dealId, user.id);
+      await load();
+      return true;
+    } catch {
+      return false;
+    } finally {
+      setDraftingNow(false);
+    }
+  }, [repository, user, dealId, load]);
+
   return useMemo(
     () => ({
+      draftingNow,
+      draftNow,
       status,
       view,
       lineDrafts,
@@ -221,6 +242,8 @@ export function usePurchaseOrderGenerator(): PurchaseOrderGeneratorState {
       approvePricing,
       sendingPoId,
       sendPO,
+      draftingNow,
+      draftNow,
       load,
     ],
   );
