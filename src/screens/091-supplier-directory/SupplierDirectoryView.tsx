@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
-import { ArrowsLeftRight, CheckCircle, MagnifyingGlass, Prohibit, ShieldCheck, ShieldWarning, Tag, UserPlus, XCircle } from '@phosphor-icons/react';
+import { useNavigate } from 'react-router-dom';
+import { ArrowsLeftRight, CheckCircle, MagnifyingGlass, Package, Prohibit, ShieldCheck, ShieldWarning, Tag, UserPlus, XCircle } from '@phosphor-icons/react';
 import {
   Badge,
   Button,
@@ -27,6 +28,7 @@ const KYC_TONE: Record<string, BadgeTone> = { pending: 'warning', approved: 'suc
 export function SupplierDirectoryView() {
   const { t, i18n } = useTranslation();
   const toast = useToast();
+  const navigate = useNavigate();
   const s = useSupplierDirectory();
 
   const specialtyLabel = (specialty: string) => ((KNOWN_DRIVE_TYPES as readonly string[]).includes(specialty) ? t(`driveType.${specialty}`) : specialty);
@@ -132,6 +134,9 @@ export function SupplierDirectoryView() {
         footer={
           s.openRow && (
             <div className="stack gap-2">
+              <Button block variant="ghost" icon={<Package size={16} />} onClick={() => navigate(`/catalog?supplierId=${s.openRow!.supplier.id}`)}>
+                {t(K.detail.viewCatalog)}
+              </Button>
               {s.openRow.supplier.kycStatus === 'pending' && (
                 <div className="row gap-2">
                   <Button block icon={<CheckCircle size={16} />} loading={s.approvingKyc} onClick={() => void s.approveKyc().then((ok) => toast.push(t(ok ? K.toast.kycUpdated : K.toast.error), ok ? 'success' : 'error'))}>

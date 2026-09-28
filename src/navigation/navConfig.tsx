@@ -13,6 +13,7 @@ import {
   Path,
   PlusCircle,
   Receipt,
+  Package,
   Storefront,
   Wrench,
 } from '@phosphor-icons/react';
@@ -86,6 +87,7 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   ],
   supplier: [
     { id: 'home', labelKey: 'nav.home', path: '/supplier', icon: <Storefront size={ICON_SIZE} /> },
+    { id: 'catalog', labelKey: 'nav.catalog', path: '/catalog', icon: <Package size={ICON_SIZE} /> },
     { id: 'settings', labelKey: 'nav.settings', path: '/settings', icon: <Gear size={ICON_SIZE} /> },
   ],
 };

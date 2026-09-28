@@ -46,6 +46,7 @@ import {
   seedSiteVisits,
   seedSuppliers,
   seedSupplierCatalogItems,
+  seedCatalogPriceChanges,
   seedSupplierPurchaseOrders,
   seedTriggerRules,
   seedUsers,
@@ -105,6 +106,12 @@ import type {
   SequenceTestStep,
   PurchaseOrderDealView,
   PurchaseOrderView,
+  CatalogBulkPreviewRow,
+  CatalogBulkResult,
+  CatalogItemView,
+  CatalogPendingReview,
+  CatalogSaveResult,
+  CatalogSettings,
   PurchaseOrderLineView,
   SupplierDirectoryRow,
   SupplierInviteInput,
@@ -145,6 +152,8 @@ import type {
   FollowUpTask,
   PurchaseOrderLineItem,
   SupplierCatalogItem,
+  CatalogPriceChange,
+  CatalogPriceChangeSource,
   ReminderRuleStep,
   GeoZone,
   Invoice,
@@ -200,6 +209,15 @@ import { buildAutomatedActionEntry } from '@/features/audit/logAutomatedAction';
 import type { AutomatedActionInput } from '@/features/audit/logAutomatedAction';
 import { computeSupplierPerformanceScore } from '@/features/suppliers/performanceScore';
 import { RULE_BY_KIND, collectObligations, targetEscalationLevel } from '@/features/work/commitmentRules';
+import {
+  DEFAULT_PRICE_REVIEW_THRESHOLD_PCT,
+  catalogMatchKey,
+  categoryReferencePrices,
+  checkCatalogEntry,
+  isMaterialPriceChange,
+  parseCatalogCsv,
+} from '@/features/suppliers/catalogRules';
+import type { CatalogEntryInput } from '@/features/suppliers/catalogRules';
 import type { CommitmentSources } from '@/features/work/commitmentRules';
 
 /**
@@ -267,6 +285,10 @@ const contractSignatures = [...seedContractSignatures];
 let contractSignatureCounter = 100;
 const supplierPurchaseOrders = [...seedSupplierPurchaseOrders];
 const supplierCatalogItems = [...seedSupplierCatalogItems];
+const catalogPriceChanges = [...seedCatalogPriceChanges];
+let catalogItemCounter = 100;
+let catalogPriceChangeCounter = 100;
+let catalogSettings: CatalogSettings = { priceReviewThresholdPct: DEFAULT_PRICE_REVIEW_THRESHOLD_PCT };
 let supplierPurchaseOrderCounter = 100;
 let supplierCounter = 100;
 let poLineItemCounter = 100;
@@ -536,12 +558,23 @@ const REQUIRED_PO_CATEGORIES = ['traction_machine', 'controller', 'cabin', 'door
  *  already-locked-in margin per the spec's own business rule. */
 const PO_PRICE_TOLERANCE_PCT = 0.05;
 
+/** A supplier's live listing for a category (the cheaper one if they list
+ *  two). Discontinued, flagged and rejected items are never drafted onto a
+ *  new PO — 093's catalog is the only cost source, there is no other. */
+function liveCatalogItemFor(supplierId: string, category: string): SupplierCatalogItem | null {
+  return (
+    supplierCatalogItems
+      .filter((c) => c.supplierId === supplierId && c.category === category && c.status === 'active')
+      .sort((a, b) => a.unitPrice - b.unitPrice)[0] ?? null
+  );
+}
+
 function catalogPriceFor(supplierId: string, category: string): number | null {
-  return supplierCatalogItems.find((c) => c.supplierId === supplierId && c.category === category)?.unitPrice ?? null;
+  return liveCatalogItemFor(supplierId, category)?.unitPrice ?? null;
 }
 
 function categoryDescription(category: string): string {
-  return supplierCatalogItems.find((c) => c.category === category)?.description ?? category;
+  return supplierCatalogItems.find((c) => c.category === category && c.status === 'active')?.description ?? category;
 }
 
 /** The deal's own assigned supplier wins a category it's eligible for and
@@ -549,7 +582,10 @@ function categoryDescription(category: string): string {
  *  it — never an ineligible one, structurally enforcing 092's own
  *  compliance rule at the point of matching, not just at send time. */
 function bestEligibleSupplierFor(category: string, preferredSupplierId?: string): Supplier | null {
-  const candidates = suppliers.filter((s) => isSupplierEligibleForPO(s) && s.categories.includes(category));
+  // Matched on what the supplier actually publishes live (093), not on the
+  // categories they once said they serve — a category with no live price
+  // would otherwise draft at ₹0.
+  const candidates = suppliers.filter((s) => isSupplierEligibleForPO(s) && liveCatalogItemFor(s.id, category));
   if (candidates.length === 0) return null;
   const preferred = preferredSupplierId ? candidates.find((s) => s.id === preferredSupplierId) : undefined;
   if (preferred) return preferred;
@@ -1620,6 +1656,7 @@ function commitmentSources(now: number): CommitmentSources {
     counterOffers,
     alerts,
     followUpTasks,
+    catalogPriceChanges,
     pausedDealIds: new Set(paymentReminderPauses.filter((p) => p.paused).map((p) => p.dealId)),
   };
 }
@@ -1865,6 +1902,241 @@ function confirmPurchaseOrderReceivedSync(poId: string, byUserId: string) {
   if (po.receivedAt) return po;
   return patchInPlace(supplierPurchaseOrders, poId, { receivedAt: new Date().toISOString(), receivedBy: nameOf(byUserId) });
 }
+
+
+/* ============================================= Supplier catalog (093) */
+
+function catalogActor(userId: string): User {
+  const actor = byId(users, userId);
+  if (!actor) throw new RepositoryError('not_found');
+  return actor;
+}
+
+/** A supplier edits only their own catalog; Admin edits any. */
+function assertCatalogAccess(actor: User, supplierId: string): Supplier {
+  const supplier = byId(suppliers, supplierId);
+  if (!supplier) throw new RepositoryError('not_found');
+  if (actor.role === 'admin') return supplier;
+  if (actor.role === 'supplier' && supplierUserFor(supplier)?.id === actor.id) return supplier;
+  throw new RepositoryError('forbidden');
+}
+
+function pushCatalogPriceChange(input: Omit<CatalogPriceChange, 'id' | 'isDemo'>): CatalogPriceChange {
+  catalogPriceChangeCounter += 1;
+  const change: CatalogPriceChange = { ...input, id: `cpc-new-${catalogPriceChangeCounter}`, isDemo: true };
+  catalogPriceChanges.push(change);
+  return change;
+}
+
+/** A newer ask replaces an older one still waiting — never two in the queue. */
+function supersedePendingChange(item: SupplierCatalogItem): void {
+  if (!item.pendingPriceChangeId) return;
+  const pending = byId(catalogPriceChanges, item.pendingPriceChangeId);
+  if (pending?.status === 'pending') patchInPlace(catalogPriceChanges, pending.id, { status: 'superseded' });
+}
+
+/** 091's category chips follow what a supplier actually lists live. */
+function ensureSupplierCategory(supplierId: string, category: string): void {
+  const supplier = byId(suppliers, supplierId);
+  if (supplier && !supplier.categories.includes(category)) {
+    patchInPlace(suppliers, supplierId, { categories: [...supplier.categories, category] });
+  }
+}
+
+/** Refuses what can't be right, flags what looks wrong. */
+function checkAgainstCatalog(entry: CatalogEntryInput, excludeItemId?: string) {
+  return checkCatalogEntry(entry, categoryReferencePrices(supplierCatalogItems.filter((i) => i.id !== excludeItemId)));
+}
+
+/**
+ * The one write path for a catalog listing, single or bulk.
+ *
+ * - Admin's own edits go live — Admin is the reviewer.
+ * - A supplier's price change beyond the configured threshold, or anything
+ *   the sanity check flagged, waits: the item's other details go live, the
+ *   live price stays put until Admin approves. A flagged *new* listing
+ *   waits as a whole (`pending_review`) and can't be drafted onto a PO.
+ * - A bulk upload's flagged rows always wait, whoever uploads them.
+ */
+function saveCatalogEntrySync(
+  supplier: Supplier,
+  entry: CatalogEntryInput,
+  existing: SupplierCatalogItem | null,
+  actor: User,
+  source: CatalogPriceChangeSource,
+): CatalogSaveResult {
+  const check = checkAgainstCatalog(entry, existing?.id);
+  if (check.errors.length > 0) throw new RepositoryError('invalid_entry');
+  const now = new Date().toISOString();
+  const isAdmin = actor.role === 'admin';
+  const flagged = check.warnings;
+  const flaggedNeedsReview = flagged.length > 0 && (!isAdmin || source === 'bulk_upload');
+  const details = {
+    description: entry.description.trim(),
+    specification: entry.specification.trim(),
+    driveTypes: entry.driveTypes as DriveType[],
+    leadTimeDays: entry.leadTimeDays,
+    updatedAt: now,
+  };
+
+  // A brand-new listing, or a flagged one not yet cleared (re-checked fresh).
+  if (!existing || existing.status === 'pending_review') {
+    if (existing) supersedePendingChange(existing);
+    const itemId = existing?.id ?? `sci-new-${(catalogItemCounter += 1)}`;
+    const change = pushCatalogPriceChange({
+      itemId,
+      supplierId: supplier.id,
+      fromPrice: null,
+      toPrice: entry.unitPrice,
+      source,
+      requestedBy: actor.name,
+      requestedAt: now,
+      status: flaggedNeedsReview ? 'pending' : 'applied',
+      reviewReasonKeys: flaggedNeedsReview ? flagged : undefined,
+    });
+    const fields = {
+      ...details,
+      unitPrice: entry.unitPrice,
+      status: flaggedNeedsReview ? ('pending_review' as const) : ('active' as const),
+      pendingPrice: undefined,
+      pendingPriceChangeId: flaggedNeedsReview ? change.id : undefined,
+    };
+    const item = existing
+      ? patchInPlace(supplierCatalogItems, existing.id, fields)
+      : (() => {
+          const created: SupplierCatalogItem = { id: itemId, supplierId: supplier.id, category: entry.category.trim(), ...fields, isDemo: true };
+          supplierCatalogItems.push(created);
+          return created;
+        })();
+    if (!flaggedNeedsReview) ensureSupplierCategory(supplier.id, item.category);
+    return { item, outcome: flaggedNeedsReview ? 'item_pending_review' : 'saved' };
+  }
+
+  if (entry.unitPrice === existing.unitPrice) {
+    // A supplier re-stating the live price withdraws their own waiting ask;
+    // Admin editing other details leaves the supplier's ask for review.
+    if (isAdmin) {
+      return { item: patchInPlace(supplierCatalogItems, existing.id, details), outcome: 'saved' };
+    }
+    supersedePendingChange(existing);
+    const item = patchInPlace(supplierCatalogItems, existing.id, { ...details, pendingPrice: undefined, pendingPriceChangeId: undefined });
+    return { item, outcome: 'saved' };
+  }
+
+  // Same ask as the one already waiting — only the other details changed.
+  if (!isAdmin && existing.pendingPrice === entry.unitPrice && existing.pendingPriceChangeId) {
+    return { item: patchInPlace(supplierCatalogItems, existing.id, details), outcome: 'price_pending_review' };
+  }
+
+  const reasons = [...(flaggedNeedsReview ? flagged : [])];
+  if (!isAdmin && isMaterialPriceChange(existing.unitPrice, entry.unitPrice, catalogSettings.priceReviewThresholdPct)) {
+    reasons.push('over_threshold');
+  }
+  supersedePendingChange(existing);
+  const waits = reasons.length > 0;
+  const change = pushCatalogPriceChange({
+    itemId: existing.id,
+    supplierId: supplier.id,
+    fromPrice: existing.unitPrice,
+    toPrice: entry.unitPrice,
+    source,
+    requestedBy: actor.name,
+    requestedAt: now,
+    status: waits ? 'pending' : 'applied',
+    reviewReasonKeys: waits ? reasons : undefined,
+  });
+  const item = patchInPlace(
+    supplierCatalogItems,
+    existing.id,
+    waits
+      ? { ...details, pendingPrice: entry.unitPrice, pendingPriceChangeId: change.id }
+      : { ...details, unitPrice: entry.unitPrice, pendingPrice: undefined, pendingPriceChangeId: undefined },
+  );
+  return { item, outcome: waits ? 'price_pending_review' : 'saved' };
+}
+
+interface BulkPlanRow {
+  row: CatalogBulkPreviewRow;
+  entry: CatalogEntryInput;
+  existing: SupplierCatalogItem | null;
+}
+
+/** The same verdicts `applyCatalogBulkUpload` then acts on — preview never lies. */
+function planCatalogBulkUpload(supplier: Supplier, csvText: string, actor: User): BulkPlanRow[] {
+  const own = supplierCatalogItems.filter((i) => i.supplierId === supplier.id && i.status !== 'rejected');
+  const seen = new Set<string>();
+  return parseCatalogCsv(csvText).map(({ rowNumber, entry }) => {
+    const key = catalogMatchKey(entry.category, entry.description);
+    const existing = own.find((i) => catalogMatchKey(i.category, i.description) === key) ?? null;
+    const check = checkAgainstCatalog(entry, existing?.id);
+    const issues: string[] = [...check.errors];
+    if (seen.has(key)) issues.push('duplicate_in_upload');
+    // Bringing a discontinued part back is a deliberate reactivation, not
+    // something a spreadsheet row should do silently.
+    if (existing?.status === 'discontinued') issues.push('item_discontinued');
+    seen.add(key);
+    const unchanged =
+      existing !== null &&
+      existing.status === 'active' &&
+      existing.unitPrice === entry.unitPrice &&
+      existing.leadTimeDays === entry.leadTimeDays &&
+      existing.specification === entry.specification.trim() &&
+      existing.driveTypes.join('|') === entry.driveTypes.join('|');
+    let verdict: CatalogBulkPreviewRow['verdict'] = 'ok';
+    if (issues.length > 0) verdict = 'invalid';
+    else if (check.warnings.length > 0) {
+      verdict = 'review';
+      issues.push(...check.warnings);
+    } else if (
+      existing &&
+      actor.role !== 'admin' &&
+      existing.unitPrice !== entry.unitPrice &&
+      isMaterialPriceChange(existing.unitPrice, entry.unitPrice, catalogSettings.priceReviewThresholdPct)
+    ) {
+      verdict = 'review';
+      issues.push('over_threshold');
+    }
+    return {
+      entry,
+      existing,
+      row: {
+        rowNumber,
+        category: entry.category,
+        description: entry.description,
+        unitPrice: entry.unitPrice,
+        leadTimeDays: entry.leadTimeDays,
+        action: existing ? (unchanged ? 'unchanged' : 'update') : 'create',
+        verdict,
+        issues,
+        currentPrice: existing?.unitPrice,
+      },
+    };
+  });
+}
+
+function lowestLivePriceByCategory(): Map<string, number> {
+  const lowest = new Map<string, number>();
+  for (const item of supplierCatalogItems) {
+    if (item.status !== 'active') continue;
+    const current = lowest.get(item.category);
+    if (current === undefined || item.unitPrice < current) lowest.set(item.category, item.unitPrice);
+  }
+  return lowest;
+}
+
+function inFlightPoCountFor(item: SupplierCatalogItem): number {
+  return supplierPurchaseOrders.filter(
+    (po) =>
+      po.supplierId === item.supplierId &&
+      po.status !== 'triggered' &&
+      po.status !== 'failed' &&
+      !po.receivedAt &&
+      (po.lineItems ?? []).some((line) => line.category === item.category),
+  ).length;
+}
+
+const pctOver = (price: number, base: number | null | undefined) =>
+  base ? Math.round(((price - base) / base) * 1000) / 10 : null;
 
 export const memoryRepository: Repository = {
   /* ------------------------------------------------------------- Users */
@@ -4499,6 +4771,173 @@ export const memoryRepository: Repository = {
         resolvedAt: new Date().toISOString(),
         resolutionNote: note.trim(),
       });
+    }),
+
+  /* ------------------------------------------ Supplier catalog (093) */
+  listCatalogItems: (filter) =>
+    simulateRead(() => {
+      const lowest = lowestLivePriceByCategory();
+      return supplierCatalogItems
+        .filter((item) => !filter?.supplierId || item.supplierId === filter.supplierId)
+        .map((item): CatalogItemView => {
+          const categoryLowestPrice = lowest.get(item.category) ?? null;
+          const pending = item.pendingPriceChangeId ? byId(catalogPriceChanges, item.pendingPriceChangeId) : null;
+          return {
+            item,
+            supplierName: byId(suppliers, item.supplierId)?.name ?? '',
+            categoryLowestPrice,
+            pctAboveLowest: item.status === 'active' ? pctOver(item.unitPrice, categoryLowestPrice) : null,
+            pendingChange: pending?.status === 'pending' ? pending : null,
+            inFlightPoCount: inFlightPoCountFor(item),
+          };
+        })
+        .sort((a, b) => a.item.category.localeCompare(b.item.category) || a.item.unitPrice - b.item.unitPrice);
+    }),
+
+  listCatalogPriceHistory: (itemId) =>
+    simulateRead(() =>
+      catalogPriceChanges
+        .filter((c) => c.itemId === itemId)
+        .sort((a, b) => (a.requestedAt < b.requestedAt ? 1 : a.requestedAt > b.requestedAt ? -1 : 0)),
+    ),
+
+  listPendingCatalogReviews: () =>
+    simulateRead(() => {
+      const lowest = lowestLivePriceByCategory();
+      return catalogPriceChanges
+        .filter((c) => c.status === 'pending')
+        .map((change): CatalogPendingReview | null => {
+          const item = byId(supplierCatalogItems, change.itemId);
+          if (!item) return null;
+          return {
+            change,
+            item,
+            supplierName: byId(suppliers, change.supplierId)?.name ?? '',
+            pctChange: change.fromPrice !== null ? pctOver(change.toPrice, change.fromPrice) : null,
+            categoryLowestPrice: lowest.get(item.category) ?? null,
+          };
+        })
+        .filter((r): r is CatalogPendingReview => r !== null)
+        .sort((a, b) => (a.change.requestedAt < b.change.requestedAt ? -1 : 1));
+    }),
+
+  getCatalogSettings: () => simulateRead(() => ({ ...catalogSettings })),
+
+  updateCatalogSettings: (priceReviewThresholdPct, byUserId) =>
+    simulateWrite(() => {
+      if (catalogActor(byUserId).role !== 'admin') throw new RepositoryError('forbidden');
+      if (!Number.isFinite(priceReviewThresholdPct) || priceReviewThresholdPct < 1 || priceReviewThresholdPct > 50) {
+        throw new RepositoryError('invalid_input');
+      }
+      catalogSettings = { priceReviewThresholdPct, updatedBy: nameOf(byUserId), updatedAt: new Date().toISOString() };
+      return { ...catalogSettings };
+    }),
+
+  getSupplierForUser: (userId) =>
+    simulateRead(() => {
+      const user = byId(users, userId);
+      if (!user || user.role !== 'supplier' || !user.gstin) return null;
+      const gstin = user.gstin.toUpperCase();
+      return suppliers.find((s) => s.gstin?.toUpperCase() === gstin) ?? null;
+    }),
+
+  saveCatalogItem: (input, byUserId) =>
+    simulateWrite(() => {
+      const actor = catalogActor(byUserId);
+      const supplier = assertCatalogAccess(actor, input.supplierId);
+      const existing = input.id ? byId(supplierCatalogItems, input.id) : null;
+      if (input.id && (!existing || existing.supplierId !== supplier.id)) throw new RepositoryError('not_found');
+      if (existing?.status === 'rejected' || existing?.status === 'discontinued') throw new RepositoryError('not_editable');
+      return saveCatalogEntrySync(
+        supplier,
+        {
+          category: existing?.category ?? input.category,
+          description: input.description,
+          specification: input.specification,
+          driveTypes: input.driveTypes,
+          unitPrice: input.unitPrice,
+          leadTimeDays: input.leadTimeDays,
+        },
+        existing,
+        actor,
+        actor.role === 'admin' ? 'admin' : 'supplier',
+      );
+    }),
+
+  setCatalogItemStatus: (itemId, status, byUserId) =>
+    simulateWrite(() => {
+      const item = byId(supplierCatalogItems, itemId);
+      if (!item) throw new RepositoryError('not_found');
+      assertCatalogAccess(catalogActor(byUserId), item.supplierId);
+      if (status === 'discontinued') {
+        if (item.status !== 'active' && item.status !== 'pending_review') throw new RepositoryError('not_editable');
+        // POs already drafted keep their own snapshotted lines untouched;
+        // only new drafting stops seeing this item.
+        supersedePendingChange(item);
+        return patchInPlace(supplierCatalogItems, itemId, {
+          status: 'discontinued',
+          pendingPrice: undefined,
+          pendingPriceChangeId: undefined,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+      if (item.status !== 'discontinued') throw new RepositoryError('not_editable');
+      ensureSupplierCategory(item.supplierId, item.category);
+      return patchInPlace(supplierCatalogItems, itemId, { status: 'active', updatedAt: new Date().toISOString() });
+    }),
+
+  reviewCatalogPriceChange: (changeId, decision, byUserId, reason) =>
+    simulateWrite(() => {
+      if (catalogActor(byUserId).role !== 'admin') throw new RepositoryError('forbidden');
+      const change = byId(catalogPriceChanges, changeId);
+      if (!change) throw new RepositoryError('not_found');
+      if (change.status !== 'pending') throw new RepositoryError('not_pending');
+      const item = byId(supplierCatalogItems, change.itemId);
+      if (!item) throw new RepositoryError('not_found');
+      const now = new Date().toISOString();
+      const reviewer = nameOf(byUserId);
+      if (decision === 'reject') {
+        if (!reason?.trim()) throw new RepositoryError('reason_required');
+        patchInPlace(supplierCatalogItems, item.id, {
+          status: item.status === 'pending_review' ? 'rejected' : item.status,
+          pendingPrice: undefined,
+          pendingPriceChangeId: undefined,
+        });
+        return patchInPlace(catalogPriceChanges, changeId, { status: 'rejected', reviewedBy: reviewer, reviewedAt: now, rejectionReason: reason.trim() });
+      }
+      patchInPlace(supplierCatalogItems, item.id, {
+        unitPrice: change.toPrice,
+        status: item.status === 'pending_review' ? 'active' : item.status,
+        pendingPrice: undefined,
+        pendingPriceChangeId: undefined,
+        updatedAt: now,
+      });
+      ensureSupplierCategory(item.supplierId, item.category);
+      return patchInPlace(catalogPriceChanges, changeId, { status: 'applied', reviewedBy: reviewer, reviewedAt: now });
+    }),
+
+  previewCatalogBulkUpload: (supplierId, csvText, byUserId) =>
+    simulateRead(() => {
+      const actor = catalogActor(byUserId);
+      return planCatalogBulkUpload(assertCatalogAccess(actor, supplierId), csvText, actor).map((p) => p.row);
+    }),
+
+  applyCatalogBulkUpload: (supplierId, csvText, byUserId) =>
+    simulateWrite(() => {
+      const actor = catalogActor(byUserId);
+      const supplier = assertCatalogAccess(actor, supplierId);
+      const result: CatalogBulkResult = { created: 0, updated: 0, sentForReview: 0, skipped: 0 };
+      for (const { row, entry, existing } of planCatalogBulkUpload(supplier, csvText, actor)) {
+        if (row.verdict === 'invalid' || row.action === 'unchanged') {
+          result.skipped += 1;
+          continue;
+        }
+        const saved = saveCatalogEntrySync(supplier, entry, existing, actor, 'bulk_upload');
+        if (saved.outcome !== 'saved') result.sentForReview += 1;
+        else if (row.action === 'create') result.created += 1;
+        else result.updated += 1;
+      }
+      return result;
     }),
 
   /* ------------------------------------------ Manager layer (all roles) */

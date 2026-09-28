@@ -35,6 +35,7 @@ const translations: ScreenTranslations = {
 
       detail: {
         performanceScoreLabel: 'Performance score',
+        viewCatalog: 'View parts catalog',
         contactLabel: 'Contact',
         categoriesLabel: 'Component categories',
         specialtiesLabel: 'Drive-type specialties',
@@ -129,6 +130,7 @@ const translations: ScreenTranslations = {
 
       detail: {
         performanceScoreLabel: 'प्रदर्शन स्कोर',
+        viewCatalog: 'पार्ट्स कैटलॉग देखें',
         contactLabel: 'संपर्क',
         categoriesLabel: 'कंपोनेंट श्रेणियां',
         specialtiesLabel: 'ड्राइव-टाइप विशेषताएं',
@@ -223,6 +225,7 @@ const translations: ScreenTranslations = {
 
       detail: {
         performanceScoreLabel: 'कामगिरी गुण',
+        viewCatalog: 'पार्ट्स कॅटलॉग पहा',
         contactLabel: 'संपर्क',
         categoriesLabel: 'घटक श्रेणी',
         specialtiesLabel: 'ड्राइव्ह-टाइप वैशिष्ट्ये',

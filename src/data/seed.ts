@@ -49,6 +49,7 @@ import type {
   SmsBroadcast,
   Supplier,
   SupplierCatalogItem,
+  CatalogPriceChange,
   SupplierPurchaseOrder,
   TriggerRule,
   User,
@@ -1126,22 +1127,37 @@ export const seedSuppliers: Supplier[] = [
 /** Screen 092's own minimal catalog seed — one entry per category each
  *  supplier already lists in `categories`, real enough to price a real PO
  *  line and to demonstrate a since-changed price after a reassignment. */
+/** Each supplier's own published parts (093). sp-1 and sp-5 both list a
+ *  geared traction machine and sp-2/sp-4 both a guide-rail set at
+ *  different prices — kept as-is on purpose: the spread is sourcing
+ *  information. sci-1 has a supplier-submitted hike waiting on Admin. */
 export const seedSupplierCatalogItems: SupplierCatalogItem[] = [
-  { id: 'sci-1', supplierId: 'sp-1', category: 'traction_machine', description: 'Geared/gearless traction machine unit', unitPrice: 210_000, isDemo: true },
-  { id: 'sci-2', supplierId: 'sp-1', category: 'controller', description: 'Microprocessor lift controller', unitPrice: 95_000, isDemo: true },
-  { id: 'sci-3', supplierId: 'sp-1', category: 'cabin', description: 'Passenger cabin, standard finish', unitPrice: 165_000, isDemo: true },
-  { id: 'sci-4', supplierId: 'sp-1', category: 'door_operator', description: 'Automatic door operator', unitPrice: 52_000, isDemo: true },
-  { id: 'sci-5', supplierId: 'sp-2', category: 'cabin', description: 'Passenger cabin, standard finish', unitPrice: 158_000, isDemo: true },
-  { id: 'sci-6', supplierId: 'sp-2', category: 'guide_rails', description: 'T-section guide rail set', unitPrice: 38_000, isDemo: true },
-  { id: 'sci-7', supplierId: 'sp-2', category: 'ropes', description: 'Steel suspension ropes, per set', unitPrice: 19_000, isDemo: true },
-  { id: 'sci-8', supplierId: 'sp-3', category: 'controller', description: 'Microprocessor lift controller', unitPrice: 92_000, isDemo: true },
-  { id: 'sci-9', supplierId: 'sp-3', category: 'vfd', description: 'Variable frequency drive', unitPrice: 41_000, isDemo: true },
-  { id: 'sci-10', supplierId: 'sp-3', category: 'wiring', description: 'Traveling cable and shaft wiring', unitPrice: 16_000, isDemo: true },
-  { id: 'sci-11', supplierId: 'sp-4', category: 'guide_rails', description: 'T-section guide rail set', unitPrice: 36_000, isDemo: true },
-  { id: 'sci-12', supplierId: 'sp-4', category: 'brackets', description: 'Guide rail mounting brackets', unitPrice: 12_500, isDemo: true },
-  { id: 'sci-13', supplierId: 'sp-4', category: 'counterweight', description: 'Counterweight assembly', unitPrice: 26_000, isDemo: true },
-  { id: 'sci-14', supplierId: 'sp-5', category: 'traction_machine', description: 'Geared traction machine unit', unitPrice: 205_000, isDemo: true },
-  { id: 'sci-15', supplierId: 'sp-5', category: 'controller', description: 'Microprocessor lift controller', unitPrice: 89_000, isDemo: true },
+  { id: 'sci-1', supplierId: 'sp-1', category: 'traction_machine', description: 'Geared/gearless traction machine unit', specification: '1000 kg, 1.5 m/s, 7.5 kW', driveTypes: ['geared_traction', 'gearless_traction'], unitPrice: 210_000, leadTimeDays: 28, status: 'active', pendingPrice: 248_000, pendingPriceChangeId: 'cpc-3', updatedAt: daysAgo(40), isDemo: true },
+  { id: 'sci-2', supplierId: 'sp-1', category: 'controller', description: 'Microprocessor lift controller', specification: 'Up to 20 stops, ARD-ready', driveTypes: [], unitPrice: 95_000, leadTimeDays: 21, status: 'active', updatedAt: daysAgo(64), isDemo: true },
+  { id: 'sci-3', supplierId: 'sp-1', category: 'cabin', description: 'Passenger cabin, standard finish', specification: '8 persons, SS hairline', driveTypes: [], unitPrice: 165_000, leadTimeDays: 35, status: 'active', updatedAt: daysAgo(90), isDemo: true },
+  { id: 'sci-4', supplierId: 'sp-1', category: 'door_operator', description: 'Automatic door operator', specification: 'Centre-opening, 800 mm', driveTypes: [], unitPrice: 52_000, leadTimeDays: 14, status: 'active', updatedAt: daysAgo(90), isDemo: true },
+  { id: 'sci-5', supplierId: 'sp-2', category: 'cabin', description: 'Passenger cabin, standard finish', specification: '8 persons, painted MS', driveTypes: [], unitPrice: 158_000, leadTimeDays: 30, status: 'active', updatedAt: daysAgo(55), isDemo: true },
+  { id: 'sci-6', supplierId: 'sp-2', category: 'guide_rails', description: 'T-section guide rail set', specification: 'T89/B, per 10-stop shaft', driveTypes: [], unitPrice: 38_000, leadTimeDays: 10, status: 'active', updatedAt: daysAgo(55), isDemo: true },
+  { id: 'sci-7', supplierId: 'sp-2', category: 'ropes', description: 'Steel suspension ropes, per set', specification: '8 mm, 5 ropes', driveTypes: ['geared_traction', 'gearless_traction', 'mrl'], unitPrice: 19_000, leadTimeDays: 7, status: 'active', updatedAt: daysAgo(120), isDemo: true },
+  { id: 'sci-8', supplierId: 'sp-3', category: 'controller', description: 'Microprocessor lift controller', specification: 'Up to 16 stops', driveTypes: [], unitPrice: 92_000, leadTimeDays: 18, status: 'active', updatedAt: daysAgo(30), isDemo: true },
+  { id: 'sci-9', supplierId: 'sp-3', category: 'vfd', description: 'Variable frequency drive', specification: '7.5 kW, closed loop', driveTypes: ['geared_traction', 'gearless_traction', 'mrl'], unitPrice: 41_000, leadTimeDays: 12, status: 'active', updatedAt: daysAgo(30), isDemo: true },
+  { id: 'sci-10', supplierId: 'sp-3', category: 'wiring', description: 'Traveling cable and shaft wiring', specification: 'Per 10-stop shaft', driveTypes: [], unitPrice: 16_000, leadTimeDays: 7, status: 'active', updatedAt: daysAgo(75), isDemo: true },
+  { id: 'sci-11', supplierId: 'sp-4', category: 'guide_rails', description: 'T-section guide rail set', specification: 'T89/B, per 10-stop shaft', driveTypes: [], unitPrice: 36_000, leadTimeDays: 12, status: 'active', updatedAt: daysAgo(80), isDemo: true },
+  { id: 'sci-12', supplierId: 'sp-4', category: 'brackets', description: 'Guide rail mounting brackets', specification: 'Galvanised, set of 40', driveTypes: [], unitPrice: 12_500, leadTimeDays: 9, status: 'active', updatedAt: daysAgo(80), isDemo: true },
+  { id: 'sci-13', supplierId: 'sp-4', category: 'counterweight', description: 'Counterweight assembly', specification: 'Cast iron fillers, 1000 kg car', driveTypes: ['geared_traction', 'gearless_traction', 'mrl'], unitPrice: 26_000, leadTimeDays: 15, status: 'active', updatedAt: daysAgo(80), isDemo: true },
+  { id: 'sci-14', supplierId: 'sp-5', category: 'traction_machine', description: 'Geared traction machine unit', specification: '1000 kg, 1.0 m/s, 7.5 kW', driveTypes: ['geared_traction'], unitPrice: 205_000, leadTimeDays: 32, status: 'active', updatedAt: daysAgo(20), isDemo: true },
+  { id: 'sci-15', supplierId: 'sp-5', category: 'controller', description: 'Microprocessor lift controller', specification: 'Up to 12 stops', driveTypes: [], unitPrice: 89_000, leadTimeDays: 20, status: 'active', updatedAt: daysAgo(20), isDemo: true },
+];
+
+/** Price history (093). cpc-3 is Vertex's own 18% hike on its traction
+ *  machine — past the 10% review line, so it waits for Admin while the
+ *  live price stays ₹2,10,000. */
+export const seedCatalogPriceChanges: CatalogPriceChange[] = [
+  { id: 'cpc-1', itemId: 'sci-1', supplierId: 'sp-1', fromPrice: 198_000, toPrice: 204_000, source: 'supplier', requestedBy: 'Vikram Anand', requestedAt: daysAgo(150), status: 'applied', isDemo: true },
+  { id: 'cpc-2', itemId: 'sci-1', supplierId: 'sp-1', fromPrice: 204_000, toPrice: 210_000, source: 'supplier', requestedBy: 'Vikram Anand', requestedAt: daysAgo(40), status: 'applied', isDemo: true },
+  { id: 'cpc-3', itemId: 'sci-1', supplierId: 'sp-1', fromPrice: 210_000, toPrice: 248_000, source: 'supplier', requestedBy: 'Vikram Anand', requestedAt: hoursAgo(5), status: 'pending', reviewReasonKeys: ['over_threshold'], isDemo: true },
+  { id: 'cpc-4', itemId: 'sci-8', supplierId: 'sp-3', fromPrice: 88_000, toPrice: 92_000, source: 'supplier', requestedBy: 'Suresh Konark', requestedAt: daysAgo(30), status: 'applied', isDemo: true },
+  { id: 'cpc-5', itemId: 'sci-5', supplierId: 'sp-2', fromPrice: 162_000, toPrice: 158_000, source: 'admin', requestedBy: 'Prashant Vasant Wable', requestedAt: daysAgo(55), status: 'applied', isDemo: true },
 ];
 
 export const seedSupplierPurchaseOrders: SupplierPurchaseOrder[] = [

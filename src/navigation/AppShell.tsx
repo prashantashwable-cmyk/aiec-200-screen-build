@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useSession } from '@/session/SessionProvider';
@@ -19,6 +19,19 @@ export function AppShell() {
   const heartbeat = useFollowUpHeartbeat(user?.id);
   const [assistantOpen, setAssistantOpen] = useState(false);
 
+  // Publishes the sticky top area's live height (the demo banner wraps on a
+  // phone) so a screen's own sticky filter bar can pin just below it.
+  const topRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = topRef.current;
+    if (!el) return undefined;
+    const publish = () => document.documentElement.style.setProperty('--shell-top-height', `${el.offsetHeight}px`);
+    publish();
+    const observer = new ResizeObserver(publish);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   const items = role ? NAV_BY_ROLE[role] : [];
 
   // Highlight by the route's declared tab, so a deep screen like
@@ -35,7 +48,7 @@ export function AppShell() {
 
   return (
     <div className="shell">
-      <div className="shell__top">
+      <div className="shell__top" ref={topRef}>
         {isDemo && (
           <div className="shell__demo-banner" role="status">
             <span>{t('demo.banner')}</span>

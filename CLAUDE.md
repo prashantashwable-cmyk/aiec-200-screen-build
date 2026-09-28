@@ -107,8 +107,21 @@ the module's section to `BUILD_README.md`.
   (dl-1) was seeded one day short of the reminder cadence's own exhaustion threshold, so no real
   payment could ever reach 089's escalation queue while also belonging to a deal with an active
   Job — moved from 6 to 10 days overdue (and the stale `al-2` alert text updated to match).
-- **Module 10 in progress:** `091` and `092` built. **Next: `093`** (supplier catalog, parts and
-  pricing).
+- **Module 10 in progress:** `091`–`093` built. **Next: `094`** (auto-PO trigger rules).
+  093 facts:
+  - `SupplierCatalogItem` is now the one cost source. 092's drafting matches suppliers on a live
+    (`status: 'active'`) catalog item via `liveCatalogItemFor`, not on `Supplier.categories`.
+    Discontinued, flagged and rejected items never draft; existing PO lines keep their snapshot.
+  - A supplier's price change beyond `catalogSettings.priceReviewThresholdPct` (default 10%, either
+    direction), or any row `checkCatalogEntry` flags, waits as a pending `CatalogPriceChange`. The
+    live `unitPrice` doesn't move until Admin approves.
+  - All writes go through `saveCatalogEntrySync`, single edit or bulk upload.
+  - The `catalog_price_review` commitment chases Admin.
+  - 093 owns the shared `partCategory.*` and `catalog.issue.*` namespaces.
+  - `/catalog` serves both Admin and Supplier. It's the supplier nav's "Catalog" tab, and 091's
+    detail sheet links to it.
+  - AppShell now publishes `--shell-top-height`. Use `.sticky-under-shell` for any screen's
+    sticky search/filter bar.
 - **Manager layer built (not a numbered screen).** It has four parts: commitments
   (`commitmentRules.ts`), the follow-up engine (`runFollowUpEngine`), the one-minute heartbeat in
   `AppShell`, and every role's bell and `AssistantDrawer`. See BUILD_README's "Manager layer"

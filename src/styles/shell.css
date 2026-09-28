@@ -48,6 +48,16 @@
   color: var(--color-accent-secondary);
 }
 
+/* A screen's own sticky filter/search bar, pinned just under the shell's
+   sticky top area (whose height AppShell publishes as --shell-top-height). */
+.sticky-under-shell {
+  position: sticky;
+  top: var(--shell-top-height, 0px);
+  z-index: calc(var(--z-shell) - 1);
+  background: var(--color-bg);
+  padding-block: var(--space-2);
+}
+
 /* ---- The assistant's bell ---- */
 .shell__bell {
   position: relative;

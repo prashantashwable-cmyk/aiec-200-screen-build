@@ -602,15 +602,62 @@ export interface SupplierPurchaseOrder {
   isDemo: boolean;
 }
 
-/** Screen 092's own minimal read of what a supplier can supply and at what
- *  price — enough to auto-draft and price a PO's line items. Not the full
- *  catalog-management surface, which belongs to screen 093. */
+/** `pending_review` — a new item whose own details looked implausible on
+ *  submission (093's sanity check); it can't be drafted onto a PO until
+ *  Admin clears it. `discontinued` leaves every PO already drafted with it
+ *  untouched (their lines snapshot the price) and only drops it from new
+ *  drafting. `rejected` — Admin declined a flagged new item. */
+export type CatalogItemStatus = 'active' | 'pending_review' | 'discontinued' | 'rejected';
+
+/** One supplier's own published part — the single source 092's PO drafting
+ *  prices from (093 owns the full surface). There is no second, internal
+ *  parts-cost table: what a supplier publishes here *is* AIEC's cost
+ *  assumption. Two suppliers' equivalent items at very different prices
+ *  are both kept as-is — that spread is sourcing information, not an
+ *  error to correct. */
 export interface SupplierCatalogItem {
   id: string;
   supplierId: string;
+  /** Component category key (`partCategory.*`), the same keys 092 drafts by. */
   category: string;
   description: string;
+  /** Free-text spec as the supplier states it — capacity, speed, rating. */
+  specification: string;
+  /** The Quotation Engine's own `DriveType` taxonomy; empty means the part
+   *  fits any drive type. */
+  driveTypes: DriveType[];
+  /** The live price — what new POs draft at. A price change awaiting
+   *  Admin's review never touches this until approved. */
   unitPrice: number;
+  leadTimeDays: number;
+  status: CatalogItemStatus;
+  /** Set while a supplier's price change waits for review. */
+  pendingPrice?: number;
+  pendingPriceChangeId?: string;
+  updatedAt: string;
+  isDemo: boolean;
+}
+
+export type CatalogPriceChangeSource = 'supplier' | 'admin' | 'bulk_upload';
+
+/** Append-only price history per catalog item — 092's "this PO's cost
+ *  differs from the draft" context, and the review trail for 093's
+ *  threshold rule. `fromPrice` is null for an item's first listing. */
+export interface CatalogPriceChange {
+  id: string;
+  itemId: string;
+  supplierId: string;
+  fromPrice: number | null;
+  toPrice: number;
+  source: CatalogPriceChangeSource;
+  requestedBy: string;
+  requestedAt: string;
+  status: 'applied' | 'pending' | 'rejected' | 'superseded';
+  /** Why this one needed review (sanity-check issue keys, or the threshold). */
+  reviewReasonKeys?: string[];
+  reviewedBy?: string;
+  reviewedAt?: string;
+  rejectionReason?: string;
   isDemo: boolean;
 }
 
@@ -1528,6 +1575,7 @@ export type CommitmentKind =
   | 'terms_customer_confirm'
   | 'discount_decision'
   | 'counter_offer_decision'
+  | 'catalog_price_review'
   | 'alert_acknowledge'
   | 'follow_up_task'
   | 'lead_revisit';
@@ -1542,7 +1590,8 @@ export type CommitmentSubjectType =
   | 'counter_offer'
   | 'alert'
   | 'follow_up_task'
-  | 'lead';
+  | 'lead'
+  | 'catalog_price_change';
 
 /**
  * 0 nothing sent yet · 1 owner nudged before due · 2 owner told it's overdue

@@ -1,6 +1,7 @@
 import type {
   Alert,
   AlertSeverity,
+  CatalogPriceChange,
   CommitmentKind,
   CommitmentSubjectType,
   CounterOffer,
@@ -52,6 +53,7 @@ export interface CommitmentSources {
   counterOffers: CounterOffer[];
   alerts: Alert[];
   followUpTasks: FollowUpTask[];
+  catalogPriceChanges: CatalogPriceChange[];
   /** Deals where someone paused payment reminders by hand (083). */
   pausedDealIds: Set<string>;
 }
@@ -512,6 +514,39 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
           oversightRoute: '/admin/deals/counter-offers',
         };
       });
+    },
+  },
+  {
+    // A supplier's price change held for review (093). While it waits, new
+    // POs keep drafting at the old price — fine for a day, stale after that.
+    kind: 'catalog_price_review',
+    nudgeBefore: hours(4),
+    escalateAfter: days(1),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'supplier',
+    collect(src) {
+      const admin = adminId(src);
+      return src.catalogPriceChanges
+        .filter((change) => change.source !== 'admin')
+        .map((change) => ({
+          ...base('catalog_price_review', 'catalog_price_change', change.id),
+          ownerUserId: admin,
+          titleKey: 'work.title.catalog_price_review',
+          titleParams: { supplier: src.suppliers.find((s) => s.id === change.supplierId)?.name ?? '' },
+          amount: change.toPrice,
+          dueAt: plus(change.requestedAt, days(1)),
+          state:
+            change.status === 'pending'
+              ? ('open' as const)
+              : change.status === 'superseded'
+                ? ('cancelled' as const)
+                : ('done' as const),
+          paused: false,
+          completedAt: change.reviewedAt,
+          actionRoute: '/catalog?view=review',
+          oversightRoute: '/catalog?view=review',
+        }));
     },
   },
   {

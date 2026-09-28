@@ -70,6 +70,7 @@ import type {
   PurchaseOrderLineItem,
   Supplier,
   SupplierCatalogItem,
+  CatalogPriceChange,
   SupplierPurchaseOrder,
   TemplateStat,
   TriggerRule,
@@ -768,6 +769,80 @@ export interface PurchaseOrderLineView extends PurchaseOrderLineItem {
 /** One real (092-drafted) purchase order, joined with what the screen
  *  needs to render it — `requiresApproval` is always computed live from
  *  `lines`, per `SupplierPurchaseOrder`'s own doc comment. */
+/* ------------------------------------------------ Supplier catalog (093) */
+
+/** One catalog row with the context 093 shows beside it. */
+export interface CatalogItemView {
+  item: SupplierCatalogItem;
+  supplierName: string;
+  /** Lowest live price for this category across every supplier. */
+  categoryLowestPrice: number | null;
+  /** Percent above that lowest price; 0 when this is the lowest. Never
+   *  "corrected" — two suppliers' very different prices are information. */
+  pctAboveLowest: number | null;
+  pendingChange: CatalogPriceChange | null;
+  /** Unfinished POs from this supplier with a line in this category — they
+   *  keep their own snapshotted prices whatever happens to this item. */
+  inFlightPoCount: number;
+}
+
+export interface CatalogSettings {
+  /** A supplier's own price change beyond this percent waits for Admin. */
+  priceReviewThresholdPct: number;
+  updatedBy?: string;
+  updatedAt?: string;
+}
+
+export interface CatalogItemInput {
+  /** Absent for a new listing. */
+  id?: string;
+  supplierId: string;
+  category: string;
+  description: string;
+  specification: string;
+  driveTypes: DriveType[];
+  unitPrice: number;
+  leadTimeDays: number;
+}
+
+export interface CatalogSaveResult {
+  item: SupplierCatalogItem;
+  /** `price_pending_review`: the other edits are live, the new price waits.
+   *  `item_pending_review`: a new listing that looked implausible waits. */
+  outcome: 'saved' | 'price_pending_review' | 'item_pending_review';
+}
+
+export interface CatalogBulkPreviewRow {
+  rowNumber: number;
+  category: string;
+  description: string;
+  unitPrice: number;
+  leadTimeDays: number;
+  action: 'create' | 'update' | 'unchanged';
+  /** `review` rows are accepted only into Admin's queue, never live. */
+  verdict: 'ok' | 'review' | 'invalid';
+  /** `catalog.issue.*` keys. */
+  issues: string[];
+  currentPrice?: number;
+}
+
+export interface CatalogBulkResult {
+  created: number;
+  updated: number;
+  sentForReview: number;
+  skipped: number;
+}
+
+export interface CatalogPendingReview {
+  change: CatalogPriceChange;
+  item: SupplierCatalogItem;
+  supplierName: string;
+  /** Null for a new listing (nothing to compare against). */
+  pctChange: number | null;
+  /** The category's going rate, for judging the ask. */
+  categoryLowestPrice: number | null;
+}
+
 export interface PurchaseOrderView {
   po: SupplierPurchaseOrder;
   supplierName: string;
@@ -1439,6 +1514,23 @@ export interface Repository {
 
   /* Communication: analytics */
   getCommunicationAnalytics(): Promise<CommunicationAnalytics>;
+
+  /* Supplier catalog (093) — the one source 092's PO drafting prices from */
+  listCatalogItems(filter?: { supplierId?: string }): Promise<CatalogItemView[]>;
+  listCatalogPriceHistory(itemId: string): Promise<CatalogPriceChange[]>;
+  listPendingCatalogReviews(): Promise<CatalogPendingReview[]>;
+  getCatalogSettings(): Promise<CatalogSettings>;
+  updateCatalogSettings(priceReviewThresholdPct: number, byUserId: string): Promise<CatalogSettings>;
+  /** The supplier record a supplier login manages (matched by GSTIN). */
+  getSupplierForUser(userId: string): Promise<Supplier | null>;
+  /** Suppliers may only touch their own catalog; Admin any. A supplier's
+   *  material price change, or an implausible new listing, waits for Admin. */
+  saveCatalogItem(input: CatalogItemInput, byUserId: string): Promise<CatalogSaveResult>;
+  setCatalogItemStatus(itemId: string, status: 'active' | 'discontinued', byUserId: string): Promise<SupplierCatalogItem>;
+  reviewCatalogPriceChange(changeId: string, decision: 'approve' | 'reject', byUserId: string, reason?: string): Promise<CatalogPriceChange>;
+  /** Validates without saving anything — exactly what apply will do. */
+  previewCatalogBulkUpload(supplierId: string, csvText: string, byUserId: string): Promise<CatalogBulkPreviewRow[]>;
+  applyCatalogBulkUpload(supplierId: string, csvText: string, byUserId: string): Promise<CatalogBulkResult>;
 
   /* Manager layer — the follow-up engine and every role's assistant */
   /** The app's one clock. Runs every automation that used to wait for a

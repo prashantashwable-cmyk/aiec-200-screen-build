@@ -133,6 +133,7 @@ const common: ScreenTranslations = {
       jobs: 'Jobs',
       project: 'My project',
       orders: 'Orders',
+      catalog: 'Catalog',
       menu: 'Menu',
     },
     time: {
@@ -243,6 +244,7 @@ const common: ScreenTranslations = {
         terms_customer_confirm: 'Get {{name}} to confirm the deal terms for {{site}}',
         discount_decision: 'Decide the {{pct}}% discount request on {{code}}',
         counter_offer_decision: 'Decide the {{amount}} counter-offer for {{site}}',
+        catalog_price_review: 'Review {{supplier}}’s price change to {{amount}}',
         alert_acknowledge: 'Acknowledge alert {{code}}: {{context}}',
         follow_up_task: 'Follow-up: {{title}}',
         lead_revisit: 'Revisit {{site}} with {{name}} — the lost lead is due another look',
@@ -406,6 +408,7 @@ const common: ScreenTranslations = {
       jobs: 'काम',
       project: 'मेरा प्रोजेक्ट',
       orders: 'ऑर्डर',
+      catalog: 'कैटलॉग',
       menu: 'मेन्यू',
     },
     time: {
@@ -516,6 +519,7 @@ const common: ScreenTranslations = {
         terms_customer_confirm: '{{site}} की डील शर्तें {{name}} से पक्की करवाएँ',
         discount_decision: '{{code}} पर {{pct}}% छूट के अनुरोध पर फ़ैसला करें',
         counter_offer_decision: '{{site}} के {{amount}} के काउंटर-ऑफ़र पर फ़ैसला करें',
+        catalog_price_review: '{{supplier}} के {{amount}} के नए मूल्य की समीक्षा करें',
         alert_acknowledge: 'अलर्ट {{code}} स्वीकार करें: {{context}}',
         follow_up_task: 'फ़ॉलो-अप: {{title}}',
         lead_revisit: '{{name}} के साथ {{site}} पर फिर जाएँ — खोई लीड दोबारा देखने का समय आ गया है',
@@ -679,6 +683,7 @@ const common: ScreenTranslations = {
       jobs: 'कामे',
       project: 'माझा प्रकल्प',
       orders: 'ऑर्डर',
+      catalog: 'कॅटलॉग',
       menu: 'मेनू',
     },
     time: {
@@ -789,6 +794,7 @@ const common: ScreenTranslations = {
         terms_customer_confirm: '{{site}} च्या डीलच्या अटी {{name}} यांच्याकडून पक्क्या करून घ्या',
         discount_decision: '{{code}} वरील {{pct}}% सवलतीच्या विनंतीवर निर्णय घ्या',
         counter_offer_decision: '{{site}} साठीच्या {{amount}} काउंटर-ऑफरवर निर्णय घ्या',
+        catalog_price_review: '{{supplier}} यांच्या {{amount}} नव्या किमतीचे पुनरावलोकन करा',
         alert_acknowledge: 'अलर्ट {{code}} स्वीकारा: {{context}}',
         follow_up_task: 'पाठपुरावा: {{title}}',
         lead_revisit: '{{name}} यांच्यासोबत {{site}} ला पुन्हा भेट द्या — गमावलेली लीड पुन्हा पाहण्याची वेळ आली आहे',
