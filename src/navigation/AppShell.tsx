@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useSession } from '@/session/SessionProvider';
 import { AssistantBell, AssistantDrawer } from '@/features/work/AssistantDrawer';
@@ -54,10 +54,15 @@ export function AppShell() {
     const pattern = new RegExp(`^${r.path.replace(/:[^/]+/g, '[^/]+')}$`);
     return pattern.test(location.pathname);
   });
-  const activeTab = activeRoute?.tab;
+  const declaredTab = activeRoute?.tab;
+  const activeTab = typeof declaredTab === 'string' ? declaredTab : role ? declaredTab?.[role] : undefined;
 
+  // The shell alone decides what's lit — a NavLink's own prefix matching used
+  // to light Home (/admin) on every admin page and ignore declared tabs.
   const isActive = (itemId: string, itemPath: string) =>
-    activeTab ? activeTab === itemId : location.pathname === itemPath;
+    activeTab
+      ? activeTab === itemId
+      : location.pathname === itemPath || (itemId !== 'home' && location.pathname.startsWith(`${itemPath}/`));
 
   return (
     <div className="shell">
@@ -100,7 +105,7 @@ export function AppShell() {
           </div>
           <AssistantBell variant="sidebar" unread={heartbeat.unread} onClick={() => setAssistantOpen(true)} />
           {items.map((item) => (
-            <NavLink
+            <Link
               key={item.id}
               to={item.path}
               className="shell__side-item"
@@ -108,7 +113,7 @@ export function AppShell() {
             >
               {item.icon}
               <span>{t(item.labelKey)}</span>
-            </NavLink>
+            </Link>
           ))}
           <div className="shell__side-footer">
             <button type="button" className="ds-btn ds-btn--quiet ds-btn--block" onClick={signOut}>
@@ -132,7 +137,7 @@ export function AppShell() {
 
       <nav className="shell__tabbar" aria-label={t('nav.menu')} ref={tabbarRef}>
         {items.map((item) => (
-          <NavLink
+          <Link
             key={item.id}
             to={item.path}
             className="shell__tab"
@@ -140,7 +145,7 @@ export function AppShell() {
           >
             {item.icon}
             <span className="ds-nav__label">{t(item.labelKey)}</span>
-          </NavLink>
+          </Link>
         ))}
       </nav>
     </div>

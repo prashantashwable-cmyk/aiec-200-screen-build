@@ -24,8 +24,9 @@ export interface ScreenRoute {
   /** Translation key for the screen title, used by the shell and page title. */
   titleKey: string;
   Component: ComponentType;
-  /** Which bottom-tab/sidebar item highlights while this screen is open. */
-  tab?: string;
+  /** Which bottom-tab/sidebar item highlights while this screen is open —
+   *  per role for a screen two roles reach from different tabs. */
+  tab?: string | Partial<Record<Role, string>>;
   /** Auth and splash screens render without the navigation shell. */
   chromeless?: boolean;
 }

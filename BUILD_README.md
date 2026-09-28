@@ -786,3 +786,106 @@ Bugs found and fixed along the way:
 - **Where scheduling runs.** Server-side scheduling is the one piece the demo
   can't do (see Honest limits).
 
+
+---
+
+## Module 10 — Supplier & Manufacturer Management (`091`–`100`, checkpoint-verified)
+
+Admin reaches all of it from the new **Suppliers** tab (`/admin/suppliers`). The directory's
+"Supplier tools" row links every other screen. Suppliers get their own nav: Orders, Messages,
+Catalog, Scorecard, Agreement. The spine is one chain of records, each read by the next rather
+than copied:
+
+- the catalog (093) prices a PO;
+- the rules (094) choose its supplier;
+- the agreement (098) and payment terms (100) are frozen onto it at send;
+- its fulfilment (095/096) and delivery produce a rating (097) and a retention;
+- the conversation about it (099) stays attached to it throughout.
+
+- **One true status per PO.** `movePoLinesSync` is the only way a line changes stage — supplier
+  update, Admin update, assistant quick action, or production sign-off. It keeps
+  `acknowledgedAt`/`receivedAt` in step, opens manufacturer production records, and on first full
+  delivery creates the order rating and holds the retention.
+- **One scoring engine.** `computeSupplierPerformanceScore` is the only supplier score. 097 feeds
+  it real per-order ratings (on-time against the promised date; quality from supplier-attributed
+  defects and Admin's judgement). 026, 091, 094's matching and 100's graduation all read the same
+  number.
+- **Paperwork is the threshold.** 098's agreement isn't a document beside the system:
+  - its delivery SLA sets each new PO's promised date, which 095's delay flag, 097's on-time rating
+    and the `po_delivery` commitment all read (`promisedDeliveryOf`);
+  - its net days set when AIEC owes payment (`supplierPaymentDueDate`);
+  - a lapsed agreement blocks sending and drops the supplier from matching, while orders already
+    in flight finish under their snapshot.
+- **Frozen at send.** A PO carries `agreementTerms` and `paymentTerms` snapshots. Amendments,
+  renewals, tier changes and overrides apply to new orders only, and every screen says so where
+  it matters.
+- **The manager layer extended, not bypassed.** Each new dated obligation is a rule in
+  `commitmentRules.ts`:
+  - catalog price review;
+  - PO status update (against each supplier's own typical pace);
+  - rating dispute review;
+  - agreement renewal (45 days ahead) and acknowledgement;
+  - thread reply (24h window, then escalation, then an Alert);
+  - retention decision.
+
+  The heartbeat also detects production stalls (Alert) and settles retentions (release at
+  handover, pause on a supplier defect). Both are idempotent and logged as automated actions.
+
+Screens:
+
+- **091 Supplier Directory** (`/admin/suppliers`): KYC, status, manufacturer flag, merge, and the
+  hub into every other supplier screen.
+- **092 Purchase Order Generator** (`/admin/deals/:dealId/purchase-orders`): drafts from the
+  catalog and 094's rules. Shows why each supplier was chosen, the approval reasons, and the send
+  block when no agreement is in force.
+- **093 Supplier Catalog** (`/catalog`, Admin and Supplier): the single cost source. Large price
+  changes wait for review.
+- **094 Auto-PO Rules** (`/admin/suppliers/po-rules`): trigger, matching strategy and weights,
+  approval threshold, with a simulation.
+- **095 Supplier Orders** (`/orders`, Admin and Supplier): per-line fulfilment board, delay flags
+  against each supplier's own pace, history.
+- **096 Production Status** (`/orders/production/:recordId`): a manufacturer's stages inside "in
+  production". Evidence to sign off quality testing; batches; stalls.
+- **097 Supplier Scorecard** (`/scorecard`): score breakdown, trend, orders, disputes with preview
+  and reattribution, context notes. Shows the agreed standard and flags quality below it.
+- **098 Supplier Agreement & SLA** (`/agreement`): versioned terms (initial, amendment,
+  renewal) with the signed document, mandatory warranty pass-through, supplier acknowledgement, an
+  urgency board, and the orders each version governs.
+- **099 Supplier Messages** (`/supplier-messages`):
+  - per-PO and general threads, apart from customer channels;
+  - read receipts, and a flag when a reply is overdue;
+  - logged calls and emails (the only channel for suppliers without a portal login);
+  - search, and "add to supplier record" into 097.
+- **100 Supplier Payment Terms** (`/admin/suppliers/payment-terms`):
+  - trust tiers and per-supplier overrides;
+  - graduation backed by the scorecard;
+  - risk-increasing changes need confirmation;
+  - retention released automatically at handover, or decided by Admin with a reason.
+
+**Honest limits.** Jobs aren't tied to specific POs yet, so a retention's release signal is the
+deal's first handover after delivery. Module 11's material logistics should sharpen this, and
+should replace Admin's interim receipt confirmation. Documents are held by name only (no file
+storage). In-app messages reach only suppliers with a portal login; the rest are logged.
+
+**Module 10 checkpoint (passed):**
+
+- Clicked through all 10 screens as Admin and as a supplier (Vertex, 9822055001), at 390, 820 and
+  1440px: no console errors and no horizontal overflow.
+- Exercised the edge paths each screen's spec names:
+  - a lapsed agreement blocking a send, while its in-flight order kept its terms;
+  - an SLA-derived promise date;
+  - a dispute upheld with reattribution changing the score;
+  - an unanswered supplier flagged and chased;
+  - a supplier defect pausing a retention, and a withhold with a reason;
+  - a tier graduation recorded with the score at that moment.
+- Spot-checked 029 (Alerts), 047 (Follow-ups) and 082 (Collections) from earlier modules: nothing
+  regressed.
+
+Fixes made at the checkpoint:
+
+- **Admin's Suppliers tab.** Module 10 had no nav entry for Admin. It now does, and routes can
+  declare their tab per role (`tab: { admin: 'suppliers', supplier: 'orders' }`).
+- **Nav highlighting (app-wide).** The shell used `NavLink`, whose own prefix matching lit Admin's
+  Home on every `/admin/...` page and ignored each route's declared tab, so deep screens like
+  `/admin/analytics/collections` never lit Analytics. The shell now decides alone: the declared tab
+  first, else an exact or sub-path match (never for Home).

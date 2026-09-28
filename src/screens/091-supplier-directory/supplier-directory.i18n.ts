@@ -4,6 +4,16 @@ const translations: ScreenTranslations = {
   en: {
     supplierDirectory: {
       title: 'Supplier Directory',
+      hub: {
+        label: 'Supplier tools',
+        orders: 'Orders',
+        messages: 'Messages',
+        agreements: 'Agreements',
+        scorecards: 'Scorecards',
+        paymentTerms: 'Payment terms',
+        catalog: 'Catalog',
+        poRules: 'Auto-PO rules',
+      },
       subtitle: 'Every onboarded supplier, KYC status and performance at a glance',
       loading: 'Loading suppliers',
       error: { title: 'Could not load the supplier directory', body: 'Check your connection and try again.' },
@@ -104,6 +114,16 @@ const translations: ScreenTranslations = {
   hi: {
     supplierDirectory: {
       title: 'सप्लायर निर्देशिका',
+      hub: {
+        label: 'सप्लायर टूल',
+        orders: 'ऑर्डर',
+        messages: 'संदेश',
+        agreements: 'अनुबंध',
+        scorecards: 'स्कोरकार्ड',
+        paymentTerms: 'भुगतान शर्तें',
+        catalog: 'कैटलॉग',
+        poRules: 'ऑटो-PO नियम',
+      },
       subtitle: 'हर ऑनबोर्ड किया गया सप्लायर, KYC स्थिति और प्रदर्शन एक नज़र में',
       loading: 'सप्लायर लोड हो रहे हैं',
       error: { title: 'सप्लायर निर्देशिका लोड नहीं हो सकी', body: 'अपना कनेक्शन जांचें और फिर से प्रयास करें।' },
@@ -204,6 +224,16 @@ const translations: ScreenTranslations = {
   mr: {
     supplierDirectory: {
       title: 'सप्लायर निर्देशिका',
+      hub: {
+        label: 'पुरवठादार साधनं',
+        orders: 'ऑर्डर',
+        messages: 'संदेश',
+        agreements: 'करार',
+        scorecards: 'स्कोअरकार्ड',
+        paymentTerms: 'पेमेंट अटी',
+        catalog: 'कॅटलॉग',
+        poRules: 'ऑटो-PO नियम',
+      },
       subtitle: 'प्रत्येक ऑनबोर्ड केलेला सप्लायर, KYC स्थिती आणि कामगिरी एका दृष्टीक्षेपात',
       loading: 'सप्लायर लोड होत आहेत',
       error: { title: 'सप्लायर निर्देशिका लोड होऊ शकली नाही', body: 'तुमचे कनेक्शन तपासा आणि पुन्हा प्रयत्न करा.' },

@@ -137,6 +137,7 @@ const common: ScreenTranslations = {
       scorecard: 'Scorecard',
       agreement: 'Agreement',
       messages: 'Messages',
+      suppliers: 'Suppliers',
       menu: 'Menu',
     },
     time: {
@@ -434,6 +435,7 @@ const common: ScreenTranslations = {
       scorecard: 'स्कोरकार्ड',
       agreement: 'अनुबंध',
       messages: 'संदेश',
+      suppliers: 'सप्लायर',
       menu: 'मेन्यू',
     },
     time: {
@@ -731,6 +733,7 @@ const common: ScreenTranslations = {
       scorecard: 'स्कोअरकार्ड',
       agreement: 'करार',
       messages: 'संदेश',
+      suppliers: 'पुरवठादार',
       menu: 'मेनू',
     },
     time: {

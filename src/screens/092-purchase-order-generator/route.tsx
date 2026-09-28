@@ -7,7 +7,7 @@ const route: ScreenRoute = {
   roles: ['admin'],
   titleKey: 'purchaseOrderGenerator.title',
   Component: PurchaseOrderGeneratorView,
-  tab: 'analytics',
+  tab: 'suppliers',
 };
 
 export default route;

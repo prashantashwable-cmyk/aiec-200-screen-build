@@ -9,7 +9,28 @@ export type SupplierDirectoryStatus = 'loading' | 'ready' | 'error';
  *  catalogued yet), which render as their own admin-authored text. */
 export const KNOWN_DRIVE_TYPES = ['hydraulic', 'geared_traction', 'gearless_traction', 'mrl', 'vacuum', 'screw_driven'] as const;
 
+/** Every other Module 10 screen Admin reaches from the directory. */
+export const SUPPLIER_HUB = [
+  { key: 'orders', path: '/orders' },
+  { key: 'messages', path: '/supplier-messages' },
+  { key: 'agreements', path: '/agreement' },
+  { key: 'scorecards', path: '/scorecard' },
+  { key: 'paymentTerms', path: '/admin/suppliers/payment-terms' },
+  { key: 'catalog', path: '/catalog' },
+  { key: 'poRules', path: '/admin/suppliers/po-rules' },
+] as const;
+
 export const SUPPLIER_DIRECTORY_KEYS = {
+  hub: {
+    label: 'supplierDirectory.hub.label',
+    orders: 'supplierDirectory.hub.orders',
+    messages: 'supplierDirectory.hub.messages',
+    agreements: 'supplierDirectory.hub.agreements',
+    scorecards: 'supplierDirectory.hub.scorecards',
+    paymentTerms: 'supplierDirectory.hub.paymentTerms',
+    catalog: 'supplierDirectory.hub.catalog',
+    poRules: 'supplierDirectory.hub.poRules',
+  },
   title: 'supplierDirectory.title',
   subtitle: 'supplierDirectory.subtitle',
   loading: 'supplierDirectory.loading',

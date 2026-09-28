@@ -7,7 +7,7 @@ const route: ScreenRoute = {
   roles: ['admin'],
   titleKey: 'autoPoRules.title',
   Component: AutoPoRulesView,
-  tab: 'analytics',
+  tab: 'suppliers',
 };
 
 export default route;

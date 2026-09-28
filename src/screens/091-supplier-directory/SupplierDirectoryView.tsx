@@ -21,7 +21,7 @@ import {
 } from '@/design-system';
 import type { BadgeTone } from '@/design-system';
 import { useSupplierDirectory } from './useSupplierDirectory';
-import { KNOWN_DRIVE_TYPES, SUPPLIER_DIRECTORY_KEYS as K } from './supplier-directory.types';
+import { KNOWN_DRIVE_TYPES, SUPPLIER_DIRECTORY_KEYS as K, SUPPLIER_HUB } from './supplier-directory.types';
 
 const STATUS_TONE: Record<string, BadgeTone> = { active: 'success', pending_approval: 'warning', suspended: 'error' };
 const KYC_TONE: Record<string, BadgeTone> = { pending: 'warning', approved: 'success', rejected: 'error' };
@@ -63,6 +63,15 @@ export function SupplierDirectoryView() {
           </button>
         }
       />
+
+      {/* The rest of the supplier module, one tap from its home. */}
+      <nav aria-label={t(K.hub.label)} className="row gap-2 mb-3 ds-tabs--scroll" style={{ overflowX: 'auto' }}>
+        {SUPPLIER_HUB.map((link) => (
+          <Button key={link.key} size="sm" variant="secondary" className="shrink-0" onClick={() => navigate(link.path)}>
+            {t(K.hub[link.key])}
+          </Button>
+        ))}
+      </nav>
 
       <div className="mb-3" style={{ position: 'relative' }}>
         <MagnifyingGlass size={16} className="t-muted" style={{ position: 'absolute', left: 'var(--space-3)', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
