@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { ArrowsLeftRight, ChartLineUp, CheckCircle, FileText, MagnifyingGlass, Package, Prohibit, ShieldCheck, ShieldWarning, Tag, UserPlus, XCircle } from '@phosphor-icons/react';
+import { ArrowsLeftRight, ChartLineUp, ChatCircleDots, CheckCircle, FileText, MagnifyingGlass, Package, Prohibit, ShieldCheck, ShieldWarning, Tag, UserPlus, XCircle } from '@phosphor-icons/react';
 import {
   Badge,
   Button,
@@ -143,6 +143,9 @@ export function SupplierDirectoryView() {
               </Button>
               <Button block variant="ghost" icon={<FileText size={16} />} onClick={() => navigate(`/agreement?supplierId=${s.openRow!.supplier.id}`)}>
                 {t(K.detail.viewAgreement)}
+              </Button>
+              <Button block variant="ghost" icon={<ChatCircleDots size={16} />} onClick={() => navigate(`/supplier-messages?supplierId=${s.openRow!.supplier.id}`)}>
+                {t(K.detail.messages)}
               </Button>
               {s.openRow.supplier.kycStatus === 'pending' && (
                 <div className="row gap-2">

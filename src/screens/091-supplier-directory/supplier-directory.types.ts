@@ -45,6 +45,7 @@ export const SUPPLIER_DIRECTORY_KEYS = {
     viewCatalog: 'supplierDirectory.detail.viewCatalog',
     viewScorecard: 'supplierDirectory.detail.viewScorecard',
     viewAgreement: 'supplierDirectory.detail.viewAgreement',
+    messages: 'supplierDirectory.detail.messages',
     manufacturer: 'supplierDirectory.detail.manufacturer',
     manufacturerHint: 'supplierDirectory.detail.manufacturerHint',
     contactLabel: 'supplierDirectory.detail.contactLabel',

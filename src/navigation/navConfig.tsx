@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import {
   Bell,
+  ChatCircleDots,
   ChatCircleText,
   ChartLineUp,
   Coins,
@@ -90,6 +91,7 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   supplier: [
     { id: 'home', labelKey: 'nav.home', path: '/supplier', icon: <Storefront size={ICON_SIZE} /> },
     { id: 'orders', labelKey: 'nav.orders', path: '/orders', icon: <Truck size={ICON_SIZE} /> },
+    { id: 'messages', labelKey: 'nav.messages', path: '/supplier-messages', icon: <ChatCircleDots size={ICON_SIZE} /> },
     { id: 'catalog', labelKey: 'nav.catalog', path: '/catalog', icon: <Package size={ICON_SIZE} /> },
     { id: 'scorecard', labelKey: 'nav.scorecard', path: '/scorecard', icon: <ChartLineUp size={ICON_SIZE} /> },
     { id: 'agreement', labelKey: 'nav.agreement', path: '/agreement', icon: <FileText size={ICON_SIZE} /> },

@@ -51,6 +51,8 @@ import {
   seedSupplierOrderRatings,
   seedScoreContextNotes,
   seedSupplierAgreementVersions,
+  seedSupplierThreads,
+  seedSupplierMessages,
   seedSupplierPurchaseOrders,
   seedTriggerRules,
   seedUsers,
@@ -123,6 +125,9 @@ import type {
   AgreementOrderView,
   SupplierAgreementSummary,
   SupplierAgreementView,
+  SupplierMessageSearchHit,
+  SupplierThreadSummary,
+  SupplierThreadView,
   PurchaseOrderLineView,
   SupplierDirectoryRow,
   SupplierInviteInput,
@@ -143,6 +148,9 @@ import type {
   SupplierScoreContextNote,
   SupplierAgreementStatus,
   SupplierAgreementVersion,
+  SupplierMessage,
+  SupplierMessageAuthor,
+  SupplierThread,
   ProductionRecord,
   ProductionStage,
   EscalationLevel,
@@ -244,6 +252,7 @@ import {
   versionInForce,
   versionsOf,
 } from '@/features/suppliers/agreement';
+import { awaitingReply, byAt as byMessageAt, isUnanswered, lastSupplierResponseAt } from '@/features/suppliers/threads';
 import {
   DEFAULT_PRICE_REVIEW_THRESHOLD_PCT,
   catalogMatchKey,
@@ -345,6 +354,9 @@ const scoreContextNotes = [...seedScoreContextNotes];
 let ratingCounter = 100;
 const supplierAgreementVersions = [...seedSupplierAgreementVersions];
 let agreementCounter = 100;
+const supplierThreads = [...seedSupplierThreads];
+const supplierMessages = [...seedSupplierMessages];
+let supplierMessageCounter = 100;
 
 /** 098: where a supplier's agreement stands right now. */
 function agreementStateFor(supplierId: string, now = Date.now()) {
@@ -1800,6 +1812,8 @@ function commitmentSources(now: number): CommitmentSources {
     catalogPriceChanges,
     orderRatings: supplierOrderRatings,
     agreementVersions: supplierAgreementVersions,
+    supplierThreads,
+    supplierMessages,
     pausedDealIds: new Set(paymentReminderPauses.filter((p) => p.paused).map((p) => p.dealId)),
   };
 }
@@ -2509,6 +2523,67 @@ function createOrderRating(po: SupplierPurchaseOrder, deliveredAt: string): void
     isDemo: true,
   });
   recomputeSupplierMetrics(po.supplierId);
+}
+
+/* ------------------------------------------ Supplier threads (099) helpers */
+
+/** Admin sees every supplier thread; a supplier only their own. */
+function threadViewer(byUserId: string): { actor: User; supplierId: string | null } {
+  const actor = catalogActor(byUserId);
+  if (actor.role === 'admin') return { actor, supplierId: null };
+  if (actor.role !== 'supplier') throw new RepositoryError('forbidden');
+  const own = suppliers.find((sp) => supplierUserFor(sp)?.id === actor.id);
+  if (!own) throw new RepositoryError('forbidden');
+  return { actor, supplierId: own.id };
+}
+
+/** One thread per (supplier, PO), and one general thread per supplier. */
+function ensureSupplierThread(supplierId: string, poId?: string): SupplierThread {
+  const existing = supplierThreads.find((th) => th.supplierId === supplierId && (th.relatedPoId ?? null) === (poId ?? null));
+  if (existing) return existing;
+  if (poId && byId(supplierPurchaseOrders, poId)?.supplierId !== supplierId) throw new RepositoryError('invalid_input');
+  supplierMessageCounter += 1;
+  const created: SupplierThread = { id: `sth-new-${supplierMessageCounter}`, supplierId, relatedPoId: poId, createdAt: new Date().toISOString(), isDemo: true };
+  supplierThreads.push(created);
+  return created;
+}
+
+function pushSupplierMessage(thread: SupplierThread, fields: Omit<SupplierMessage, 'id' | 'threadId' | 'isDemo'>): SupplierMessage {
+  if (fields.poRef && byId(supplierPurchaseOrders, fields.poRef)?.supplierId !== thread.supplierId) throw new RepositoryError('invalid_input');
+  supplierMessageCounter += 1;
+  const created: SupplierMessage = { id: `smsg-new-${supplierMessageCounter}`, threadId: thread.id, isDemo: true, ...fields };
+  supplierMessages.push(created);
+  return created;
+}
+
+/** A PO's stage changes, one per move (a five-line move is one event). */
+function uniquePoStageEvents(po: SupplierPurchaseOrder): { id: string; at: string; toStage: PoFulfilmentStage }[] {
+  const seen = new Set<string>();
+  const out: { id: string; at: string; toStage: PoFulfilmentStage }[] = [];
+  for (const e of [...(po.statusEvents ?? [])].sort((a, b) => (a.at < b.at ? -1 : 1))) {
+    const key = `${e.at}|${e.toStage}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ id: `${po.id}-${e.id}`, at: e.at, toStage: e.toStage });
+  }
+  return out;
+}
+
+function threadSummary(thread: SupplierThread, viewerSide: SupplierMessageAuthor, now: number): SupplierThreadSummary {
+  const messages = supplierMessages.filter((msg) => msg.threadId === thread.id).sort(byMessageAt);
+  const waiting = awaitingReply(messages);
+  const po = thread.relatedPoId ? byId(supplierPurchaseOrders, thread.relatedPoId) : null;
+  return {
+    threadId: thread.id,
+    supplierId: thread.supplierId,
+    supplierName: byId(suppliers, thread.supplierId)?.name ?? '',
+    poId: thread.relatedPoId ?? null,
+    poCode: po?.code ?? null,
+    lastMessage: messages[messages.length - 1] ?? null,
+    unreadCount: messages.filter((msg) => msg.author !== viewerSide && !msg.readAt).length,
+    awaiting: waiting ? { from: waiting.from, since: waiting.since, overdue: isUnanswered(waiting, now) } : null,
+    lastSupplierResponseAt: lastSupplierResponseAt(messages),
+  };
 }
 
 function adminOnly(byUserId: string): User {
@@ -5395,6 +5470,160 @@ export const memoryRepository: Repository = {
       };
       supplierAgreementVersions.push(created);
       return created;
+    }),
+
+  /* ------------------------------------ Supplier communication thread (099) */
+  listSupplierThreads: (byUserId) =>
+    simulateRead((): SupplierThreadSummary[] => {
+      const { actor, supplierId } = threadViewer(byUserId);
+      const now = Date.now();
+      const viewerSide = actor.role === 'admin' ? 'aiec' : 'supplier';
+      const rank = (s: SupplierThreadSummary) =>
+        s.awaiting?.from === viewerSide ? (s.awaiting.overdue ? 0 : 1) : s.awaiting?.overdue ? 2 : s.awaiting ? 3 : 4;
+      return supplierThreads
+        .filter((th) => !supplierId || th.supplierId === supplierId)
+        .map((th) => threadSummary(th, viewerSide, now))
+        .sort((a, b) => rank(a) - rank(b) || ((a.lastMessage?.at ?? '') < (b.lastMessage?.at ?? '') ? 1 : -1));
+    }),
+
+  getSupplierThread: (ref, byUserId) =>
+    simulateRead((): SupplierThreadView | null => {
+      const { supplierId: ownSupplierId } = threadViewer(byUserId);
+      const thread =
+        'threadId' in ref
+          ? byId(supplierThreads, ref.threadId)
+          : supplierThreads.find((th) => th.supplierId === ref.supplierId && (th.relatedPoId ?? null) === (ref.poId ?? null));
+      const supplierId = thread?.supplierId ?? ('supplierId' in ref ? ref.supplierId : null);
+      const supplier = supplierId ? byId(suppliers, supplierId) : null;
+      if (!supplier || (ownSupplierId && ownSupplierId !== supplier.id)) return null;
+      const poId = thread ? thread.relatedPoId : 'poId' in ref ? ref.poId : undefined;
+      const po = poId ? byId(supplierPurchaseOrders, poId) : null;
+      if (poId && (!po || po.supplierId !== supplier.id)) return null;
+      const messages = thread ? supplierMessages.filter((msg) => msg.threadId === thread.id).sort(byMessageAt) : [];
+      const waiting = awaitingReply(messages);
+      return {
+        threadId: thread?.id ?? null,
+        supplier,
+        supplierHasPortal: !!supplierUserFor(supplier),
+        po: po ? { id: po.id, code: po.code, dealId: po.dealId, stage: poStageOf(po), promisedDelivery: promisedDeliveryOf(po) } : null,
+        messages,
+        // The order's own record, shown in its conversation — derived, never copied.
+        systemEvents: po?.sentAt
+          ? [
+              { id: `${po.id}-sent`, at: po.sentAt, stage: 'sent' as PoFulfilmentStage },
+              ...uniquePoStageEvents(po).map((e) => ({ id: e.id, at: e.at, stage: e.toStage })),
+            ]
+          : [],
+        awaiting: waiting ? { from: waiting.from, since: waiting.since, overdue: isUnanswered(waiting, Date.now()) } : null,
+        lastSupplierResponseAt: lastSupplierResponseAt(messages),
+        poOptions: supplierPurchaseOrders
+          .filter((p) => p.supplierId === supplier.id && p.status === 'sent')
+          .sort((a, b) => ((a.sentAt ?? '') < (b.sentAt ?? '') ? 1 : -1))
+          .map((p) => ({ id: p.id, code: p.code })),
+      };
+    }),
+
+  markSupplierThreadRead: (threadId, byUserId) =>
+    simulateWrite(() => {
+      const { actor, supplierId } = threadViewer(byUserId);
+      const thread = byId(supplierThreads, threadId);
+      if (!thread || (supplierId && thread.supplierId !== supplierId)) throw new RepositoryError('not_found');
+      const otherSide = actor.role === 'admin' ? 'supplier' : 'aiec';
+      const at = new Date().toISOString();
+      for (let i = 0; i < supplierMessages.length; i += 1) {
+        const msg = supplierMessages[i];
+        if (msg.threadId === threadId && msg.author === otherSide && !msg.readAt) supplierMessages[i] = { ...msg, readAt: at };
+      }
+    }),
+
+  postSupplierMessage: (input, byUserId) =>
+    simulateWrite(() => {
+      const { actor, supplierId } = threadViewer(byUserId);
+      if (supplierId && input.supplierId !== supplierId) throw new RepositoryError('forbidden');
+      const supplier = byId(suppliers, input.supplierId);
+      if (!supplier) throw new RepositoryError('not_found');
+      if (!input.body.trim()) throw new RepositoryError('invalid_input');
+      // An in-app message to a supplier with no portal login would never be read.
+      if (actor.role === 'admin' && !supplierUserFor(supplier)) throw new RepositoryError('no_portal');
+      return pushSupplierMessage(ensureSupplierThread(supplier.id, input.poId), {
+        author: actor.role === 'admin' ? 'aiec' : 'supplier',
+        authorName: actor.name,
+        authorUserId: actor.id,
+        body: input.body.trim(),
+        channel: 'in_app',
+        at: new Date().toISOString(),
+        expectsReply: input.expectsReply,
+        poRef: input.poRef,
+        attachmentName: input.attachmentName,
+      });
+    }),
+
+  logSupplierContact: (input, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const supplier = byId(suppliers, input.supplierId);
+      if (!supplier) throw new RepositoryError('not_found');
+      if (input.body.trim().length < 4) throw new RepositoryError('invalid_input');
+      // Logged after the fact, never ahead of it.
+      if (Number.isNaN(new Date(input.at).getTime()) || new Date(input.at).getTime() > Date.now() + 60_000) throw new RepositoryError('invalid_input');
+      return pushSupplierMessage(ensureSupplierThread(supplier.id, input.poId), {
+        author: input.author,
+        authorName: input.author === 'aiec' ? actor.name : supplier.name,
+        authorUserId: input.author === 'aiec' ? actor.id : undefined,
+        body: input.body.trim(),
+        channel: input.channel,
+        at: new Date(input.at).toISOString(),
+        loggedBy: actor.name,
+        expectsReply: input.expectsReply,
+        poRef: input.poRef,
+        // Both sides were there — nothing is waiting to be read.
+        readAt: new Date().toISOString(),
+      });
+    }),
+
+  flagSupplierMessageToRecord: (messageId, note, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const message = byId(supplierMessages, messageId);
+      if (!message) throw new RepositoryError('not_found');
+      if (message.flaggedNoteId) throw new RepositoryError('invalid_state');
+      if (note.trim().length < 10) throw new RepositoryError('invalid_input');
+      const thread = byId(supplierThreads, message.threadId)!;
+      ratingCounter += 1;
+      const created: SupplierScoreContextNote = {
+        id: `scn-new-${ratingCounter}`,
+        supplierId: thread.supplierId,
+        // Admin's own words, with the message quoted as it was — the record
+        // says what was actually said, not a paraphrase of it.
+        note: `${note.trim()} — “${message.body}”`,
+        sourceMessageId: message.id,
+        sourceThreadId: thread.id,
+        addedBy: actor.name,
+        addedAt: new Date().toISOString(),
+        isDemo: true,
+      };
+      scoreContextNotes.push(created);
+      patchInPlace(supplierMessages, messageId, { flaggedNoteId: created.id });
+      return created;
+    }),
+
+  searchSupplierMessages: (query, byUserId) =>
+    simulateRead((): SupplierMessageSearchHit[] => {
+      const { supplierId } = threadViewer(byUserId);
+      const q = query.trim().toLowerCase();
+      if (q.length < 2) return [];
+      return supplierMessages
+        .map((message) => ({ message, thread: byId(supplierThreads, message.threadId)! }))
+        .filter(({ thread }) => !supplierId || thread.supplierId === supplierId)
+        .map(({ message, thread }) => ({
+          threadId: thread.id,
+          supplierName: byId(suppliers, thread.supplierId)?.name ?? '',
+          poCode: thread.relatedPoId ? (byId(supplierPurchaseOrders, thread.relatedPoId)?.code ?? null) : null,
+          message,
+        }))
+        .filter((hit) => [hit.message.body, hit.message.authorName, hit.supplierName, hit.poCode ?? '', hit.message.attachmentName ?? ''].some((x) => x.toLowerCase().includes(q)))
+        .sort((a, b) => (a.message.at < b.message.at ? 1 : -1))
+        .slice(0, 50);
     }),
 
   acknowledgeAgreementVersion: (versionId, byUserId) =>

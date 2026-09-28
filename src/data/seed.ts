@@ -55,6 +55,8 @@ import type {
   SupplierScoreContextNote,
   SupplierAgreementTerms,
   SupplierAgreementVersion,
+  SupplierMessage,
+  SupplierThread,
   ProductionEvent,
   ProductionRecord,
   ProductionStage,
@@ -1375,6 +1377,65 @@ export const seedScoreContextNotes: SupplierScoreContextNote[] = [
     addedBy: 'Prashant Vasant Wable',
     addedAt: daysAgo(6),
     isDemo: true,
+  },
+];
+
+/* ------------------------------------ Supplier communication threads (099) */
+
+const hoursAgoIso = (n: number) => new Date(Date.now() - n * 3_600_000).toISOString();
+
+/** One thread per real situation: Vertex hasn't answered a dispatch question
+ *  for over a day (flagged), Vertex has asked AIEC something in their general
+ *  thread, Sanghvi (no portal login) is handled by logged calls and emails —
+ *  including an admission worth putting on their record — and Deccan's
+ *  thread is a settled exchange. */
+export const seedSupplierThreads: SupplierThread[] = [
+  { id: 'sth-1', supplierId: 'sp-1', relatedPoId: 'spo-202', createdAt: hoursAgoIso(98), isDemo: true },
+  { id: 'sth-2', supplierId: 'sp-1', createdAt: hoursAgoIso(3), isDemo: true },
+  { id: 'sth-3', supplierId: 'sp-2', relatedPoId: 'spo-201', createdAt: hoursAgoIso(50), isDemo: true },
+  { id: 'sth-4', supplierId: 'sp-4', createdAt: hoursAgoIso(146), isDemo: true },
+];
+
+export const seedSupplierMessages: SupplierMessage[] = [
+  {
+    id: 'smsg-1', threadId: 'sth-1', author: 'aiec', authorName: 'Prashant Vasant Wable', authorUserId: 'u-admin-1', channel: 'in_app', expectsReply: true,
+    at: hoursAgoIso(98), readAt: hoursAgoIso(97), poRef: 'spo-202',
+    body: 'This order is now with you. Can the traction machine and the controller travel as one consignment? The site has a single unloading slot.', isDemo: true,
+  },
+  {
+    id: 'smsg-2', threadId: 'sth-1', author: 'supplier', authorName: 'Anil Mehta', authorUserId: 'u-sup-1', channel: 'in_app', expectsReply: false,
+    at: hoursAgoIso(95), readAt: hoursAgoIso(94),
+    body: 'Yes, one consignment. The controller is ahead of schedule, so it will wait for the machine.', isDemo: true,
+  },
+  {
+    id: 'smsg-3', threadId: 'sth-1', author: 'aiec', authorName: 'Prashant Vasant Wable', authorUserId: 'u-admin-1', channel: 'in_app', expectsReply: true,
+    at: hoursAgoIso(30), readAt: hoursAgoIso(21), poRef: 'spo-202',
+    body: 'The door operator shows ready to ship but the machine is still in production. What is the dispatch date for the full consignment?', isDemo: true,
+  },
+  {
+    id: 'smsg-4', threadId: 'sth-2', author: 'supplier', authorName: 'Anil Mehta', authorUserId: 'u-sup-1', channel: 'in_app', expectsReply: true,
+    at: hoursAgoIso(3),
+    body: 'For future Pune deliveries, could we have one site contact per project instead of calling your office each time?', isDemo: true,
+  },
+  {
+    id: 'smsg-5', threadId: 'sth-3', author: 'supplier', authorName: 'Sanghvi Lift Works', channel: 'phone', loggedBy: 'Prashant Vasant Wable', expectsReply: false,
+    at: hoursAgoIso(50), readAt: hoursAgoIso(50),
+    body: 'Sanghvi called: cabins are painted and the rails dispatch on Monday. They admitted skipping the second primer coat on this batch to hold the date.', isDemo: true,
+  },
+  {
+    id: 'smsg-6', threadId: 'sth-3', author: 'aiec', authorName: 'Prashant Vasant Wable', authorUserId: 'u-admin-1', channel: 'email', loggedBy: 'Prashant Vasant Wable', expectsReply: true,
+    at: hoursAgoIso(20), attachmentName: 'primer-spec-request.pdf',
+    body: 'Emailed Sanghvi asking for the primer specification and the batch test report before the cabins are dispatched.', isDemo: true,
+  },
+  {
+    id: 'smsg-7', threadId: 'sth-4', author: 'aiec', authorName: 'Prashant Vasant Wable', authorUserId: 'u-admin-1', channel: 'email', loggedBy: 'Prashant Vasant Wable', expectsReply: true,
+    at: hoursAgoIso(146), attachmentName: 'skyline-rail-drawings-rev3.pdf',
+    body: 'Sent Deccan the revised rail drawings for Skyline Corporate Park.', isDemo: true,
+  },
+  {
+    id: 'smsg-8', threadId: 'sth-4', author: 'supplier', authorName: 'Deccan Structural Steel', channel: 'phone', loggedBy: 'Prashant Vasant Wable', expectsReply: false,
+    at: hoursAgoIso(122), readAt: hoursAgoIso(122),
+    body: 'Deccan confirmed the revised drawings. No change to price or lead time.', isDemo: true,
   },
 ];
 

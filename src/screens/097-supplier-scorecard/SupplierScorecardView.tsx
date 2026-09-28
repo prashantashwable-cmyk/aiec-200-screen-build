@@ -176,7 +176,14 @@ export function SupplierScorecardView() {
             {card.contextNotes.map((n) => (
               <div key={n.id} className="stack gap-1">
                 <p className="t-sm">{n.note}</p>
-                <span className="t-xs t-muted">{t(K.context.by, { name: n.addedBy, date: formatDate(n.addedAt, lang) })}</span>
+                <span className="t-xs t-muted row wrap gap-2">
+                  {t(K.context.by, { name: n.addedBy, date: formatDate(n.addedAt, lang) })}
+                  {n.sourceThreadId && (
+                    <Button size="sm" variant="ghost" onClick={() => navigate(`/supplier-messages?thread=${n.sourceThreadId}`)}>
+                      {t(K.context.fromMessage)}
+                    </Button>
+                  )}
+                </span>
               </div>
             ))}
           </div>

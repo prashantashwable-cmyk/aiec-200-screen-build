@@ -77,6 +77,9 @@ import type {
   SupplierScoreContextNote,
   SupplierAgreementStatus,
   SupplierAgreementTerms,
+  SupplierMessage,
+  SupplierMessageAuthor,
+  SupplierMessageChannel,
   SupplierAgreementVersion,
   ProductionRecord,
   ProductionStage,
@@ -853,6 +856,76 @@ export interface SupplierScorecard {
   contextNotes: SupplierScoreContextNote[];
   /** The standard the supplier agreed to (098), to read the score against. */
   agreedTerms: SupplierAgreementTerms | null;
+}
+
+/* ---------------------------------- Supplier communication thread (099) */
+
+export interface SupplierThreadAwaiting {
+  /** The side that owes the next word. */
+  from: SupplierMessageAuthor;
+  since: string;
+  /** Past the reply window — flagged, and chased by the follow-up engine. */
+  overdue: boolean;
+}
+
+export interface SupplierThreadSummary {
+  threadId: string;
+  supplierId: string;
+  supplierName: string;
+  poId: string | null;
+  poCode: string | null;
+  lastMessage: SupplierMessage | null;
+  /** Messages from the other side the viewer hasn't opened. */
+  unreadCount: number;
+  awaiting: SupplierThreadAwaiting | null;
+  lastSupplierResponseAt: string | null;
+}
+
+export interface SupplierThreadView {
+  /** Null until the first message starts it. */
+  threadId: string | null;
+  supplier: Supplier;
+  /** The supplier can read in-app messages only with a portal login. */
+  supplierHasPortal: boolean;
+  po: { id: string; code: string; dealId: string; stage: PoFulfilmentStage; promisedDelivery: string | null } | null;
+  /** Oldest first. */
+  messages: SupplierMessage[];
+  /** The PO's own status changes, shown in the thread as automatic entries. */
+  systemEvents: { id: string; at: string; stage: PoFulfilmentStage }[];
+  awaiting: SupplierThreadAwaiting | null;
+  lastSupplierResponseAt: string | null;
+  /** This supplier's POs — to attach, or to open their own thread. */
+  poOptions: { id: string; code: string }[];
+}
+
+export interface SupplierMessageSearchHit {
+  threadId: string;
+  supplierName: string;
+  poCode: string | null;
+  message: SupplierMessage;
+}
+
+export interface PostSupplierMessageInput {
+  supplierId: string;
+  poId?: string;
+  body: string;
+  expectsReply: boolean;
+  poRef?: string;
+  attachmentName?: string;
+}
+
+/** A call, email or visit that happened outside the app. */
+export interface LogSupplierContactInput {
+  supplierId: string;
+  poId?: string;
+  /** `supplier` when they reached us, `aiec` when we reached them. */
+  author: SupplierMessageAuthor;
+  channel: Exclude<SupplierMessageChannel, 'in_app'>;
+  at: string;
+  body: string;
+  /** Whether they still owe us an answer after this contact. */
+  expectsReply: boolean;
+  poRef?: string;
 }
 
 /* ---------------------------------------- Supplier agreement & SLA (098) */
@@ -1731,6 +1804,22 @@ export interface Repository {
   recordAgreementVersion(supplierId: string, input: RecordAgreementVersionInput, byUserId: string): Promise<SupplierAgreementVersion>;
   /** The supplier confirms a recorded version is what they signed. */
   acknowledgeAgreementVersion(versionId: string, byUserId: string): Promise<SupplierAgreementVersion>;
+
+  /* Supplier communication thread (099) — apart from every customer channel */
+  /** Admin every thread; a supplier only their own. Most urgent first. */
+  listSupplierThreads(byUserId: string): Promise<SupplierThreadSummary[]>;
+  /** By thread, or by supplier (+ PO) — which may not have started yet. */
+  getSupplierThread(ref: { threadId: string } | { supplierId: string; poId?: string }, byUserId: string): Promise<SupplierThreadView | null>;
+  /** Read receipts: the viewer has now seen the other side's messages. */
+  markSupplierThreadRead(threadId: string, byUserId: string): Promise<void>;
+  /** Starts the thread on its first message. */
+  postSupplierMessage(input: PostSupplierMessageInput, byUserId: string): Promise<SupplierMessage>;
+  /** Admin records a conversation that happened by phone, email or in person. */
+  logSupplierContact(input: LogSupplierContactInput, byUserId: string): Promise<SupplierMessage>;
+  /** Admin puts a message on the supplier's formal record (a 097 context note). */
+  flagSupplierMessageToRecord(messageId: string, note: string, byUserId: string): Promise<SupplierScoreContextNote>;
+  /** Every past supplier conversation the viewer may see. */
+  searchSupplierMessages(query: string, byUserId: string): Promise<SupplierMessageSearchHit[]>;
 
   /* Manufacturer production (096) — inside a manufacturer's "in production" */
   getProductionRecord(recordId: string, byUserId: string): Promise<ProductionRecordResult>;

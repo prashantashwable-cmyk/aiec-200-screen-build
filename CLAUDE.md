@@ -107,7 +107,34 @@ the module's section to `BUILD_README.md`.
   (dl-1) was seeded one day short of the reminder cadence's own exhaustion threshold, so no real
   payment could ever reach 089's escalation queue while also belonging to a deal with an active
   Job — moved from 6 to 10 days overdue (and the stale `al-2` alert text updated to match).
-- **Module 10 in progress:** `091`–`098` built. **Next: `099`** (supplier communication thread).
+- **Module 10 in progress:** `091`–`099` built. **Next: `100`** (supplier payment terms), then the
+  Module 10 checkpoint. At the checkpoint, add an Admin "Suppliers" nav tab: 091–100 are currently
+  reachable for Admin only through deep links.
+  099 facts:
+  - `SupplierThread` holds one thread per (supplier, PO) plus one general thread per supplier,
+    created on the first message (`ensureSupplierThread`). `SupplierMessage` has an
+    `author` (`aiec` | `supplier`), a `channel` (`in_app` or a logged `phone` / `email` /
+    `whatsapp` / `in_person`), `expectsReply`, `poRef` (a live link, not a copy), `readAt` (the read
+    receipt) and `flaggedNoteId`.
+  - Supplier threads are kept apart from every customer channel.
+  - `@/features/suppliers/threads`:
+    - `awaitingReply` derives who owes the next word from the last message (never stored).
+    - `SUPPLIER_REPLY_WINDOW` is 24h.
+    - `startsNewGroup` decides where timestamp breaks go.
+  - The `supplier_thread_reply` commitment makes one obligation per message that asks for a reply:
+    - done once the other side answers; cancelled if the same side asks again;
+    - owned by the supplier's portal user, by Admin as proxy when there is no login, or by Admin
+      when the supplier is the one asking;
+    - escalates, then raises an Alert.
+  - A PO's own stage changes show in its thread as automatic entries, derived from `statusEvents`.
+  - In-app messages to a supplier with no portal login are refused (`no_portal`). Admin logs calls
+    and emails instead.
+  - "Add to supplier record" turns a message into a 097 context note (`sourceMessageId`,
+    `sourceThreadId`), and 097 links back to it.
+  - `/supplier-messages` serves Admin and Supplier (the nav's "Messages" tab), with entry points
+    from 091's sheet and 095's PO sheet. The layout is a two-pane `.split-pane` on wide screens.
+    `.ds-bubble*` / `.ds-thread*` are the shared bubble styles; later chat screens should reuse
+    them.
   098 facts:
   - `SupplierAgreementVersion` is append-only, one row per version (`initial` / `amendment` /
     `renewal`). Each has its own terms, dates and signed-document name, and `warrantyPassThrough`

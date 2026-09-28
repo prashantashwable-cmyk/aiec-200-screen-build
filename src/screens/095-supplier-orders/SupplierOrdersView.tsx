@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { CaretLeft, CaretRight, DotsSixVertical, Package, Warning } from '@phosphor-icons/react';
+import { CaretLeft, CaretRight, ChatCircleDots, DotsSixVertical, Package, Warning } from '@phosphor-icons/react';
 import {
   Badge,
   Button,
@@ -342,13 +342,19 @@ function OrderSheet({ s, t, lang, notify }: { s: SupplierOrdersState; t: T; lang
           )}
 
           {card.stage === 'shipped' && <p className="t-xs t-muted">{t(K.sheet.logisticsPending)}</p>}
-          {s.isAdmin && (
-            <div>
+          <div className="row wrap gap-2">
+            {s.isAdmin && (
               <Button size="sm" variant="ghost" onClick={() => navigate(`/admin/deals/${card.po.dealId}/purchase-orders`)}>
                 {t(K.sheet.openPo)}
               </Button>
-            </div>
-          )}
+            )}
+            {/* 099: the conversation about this order, tied to its record. */}
+            {card.po.supplierId && (
+              <Button size="sm" variant="ghost" icon={<ChatCircleDots size={16} />} onClick={() => navigate(`/supplier-messages?supplierId=${card.po.supplierId}&poId=${card.po.id}`)}>
+                {t(K.sheet.messages)}
+              </Button>
+            )}
+          </div>
 
           <section className="stack gap-2">
             <h3 className="label">{t(K.sheet.history)}</h3>

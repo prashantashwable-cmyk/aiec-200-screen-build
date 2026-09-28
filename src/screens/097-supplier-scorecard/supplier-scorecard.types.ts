@@ -39,6 +39,7 @@ export const SUPPLIER_SCORECARD_KEYS = {
     addTitle: 'supplierScorecard.context.addTitle',
     addHint: 'supplierScorecard.context.addHint',
     save: 'supplierScorecard.context.save',
+    fromMessage: 'supplierScorecard.context.fromMessage',
   },
   tab: {
     breakdown: 'supplierScorecard.tab.breakdown',

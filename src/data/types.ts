@@ -754,8 +754,54 @@ export interface SupplierScoreContextNote {
   id: string;
   supplierId: string;
   note: string;
+  /** Set when it came from a flagged supplier message (099). */
+  sourceMessageId?: string;
+  sourceThreadId?: string;
   addedBy: string;
   addedAt: string;
+  isDemo: boolean;
+}
+
+/* -------------------------------- Supplier communication thread (099) */
+
+/** How a message happened. Anything but `in_app` was a call, email or visit
+ *  logged here afterwards, so the whole conversation stays in one place. */
+export type SupplierMessageChannel = 'in_app' | 'phone' | 'email' | 'whatsapp' | 'in_person';
+export type SupplierMessageAuthor = 'aiec' | 'supplier';
+
+/** One conversation with a supplier: about one PO, or their general thread
+ *  (no `relatedPoId`). Kept apart from every customer-facing channel. */
+export interface SupplierThread {
+  id: string;
+  supplierId: string;
+  relatedPoId?: string;
+  createdAt: string;
+  isDemo: boolean;
+}
+
+export interface SupplierMessage {
+  id: string;
+  threadId: string;
+  author: SupplierMessageAuthor;
+  /** The staff member or supplier contact — several AIEC staff may write. */
+  authorName: string;
+  authorUserId?: string;
+  body: string;
+  channel: SupplierMessageChannel;
+  /** When it happened — for a logged call, when the call was. */
+  at: string;
+  /** Who logged an off-app conversation. */
+  loggedBy?: string;
+  /** Whether the other side owes an answer. Logged calls were answered live. */
+  expectsReply: boolean;
+  /** A PO this message is about — a live link to the record, not a copy. */
+  poRef?: string;
+  /** A document attached by name (this build has no file storage). */
+  attachmentName?: string;
+  /** When the other side first opened it (the read receipt). */
+  readAt?: string;
+  /** Put on the supplier's formal record as a 097 context note. */
+  flaggedNoteId?: string;
   isDemo: boolean;
 }
 
@@ -1878,6 +1924,7 @@ export type CommitmentKind =
   | 'rating_dispute_review'
   | 'supplier_agreement_renewal'
   | 'supplier_agreement_acknowledge'
+  | 'supplier_thread_reply'
   | 'alert_acknowledge'
   | 'follow_up_task'
   | 'lead_revisit';
@@ -1895,7 +1942,8 @@ export type CommitmentSubjectType =
   | 'lead'
   | 'catalog_price_change'
   | 'supplier_order_rating'
-  | 'supplier_agreement';
+  | 'supplier_agreement'
+  | 'supplier_thread';
 
 /**
  * 0 nothing sent yet · 1 owner nudged before due · 2 owner told it's overdue

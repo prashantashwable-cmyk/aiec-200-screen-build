@@ -33,6 +33,7 @@ const translations: ScreenTranslations = {
         addTitle: 'Add context to this score',
         addHint: 'Explain something the numbers can’t, such as a site delay that wasn’t the supplier’s fault. The supplier sees this note too. It does not change the score.',
         save: 'Save note',
+        fromMessage: 'From a supplier message',
       },
       tab: {
         breakdown: 'Breakdown',
@@ -168,6 +169,7 @@ const translations: ScreenTranslations = {
         addTitle: 'इस स्कोर में संदर्भ जोड़ें',
         addHint: 'वह बात समझाएँ जो आँकड़े नहीं बता सकते, जैसे साइट की देरी जो सप्लायर की गलती नहीं थी। सप्लायर भी यह नोट देखता है। इससे स्कोर नहीं बदलता।',
         save: 'नोट सहेजें',
+        fromMessage: 'सप्लायर के संदेश से',
       },
       tab: {
         breakdown: 'विवरण',
@@ -303,6 +305,7 @@ const translations: ScreenTranslations = {
         addTitle: 'या स्कोअरला संदर्भ जोडा',
         addHint: 'आकडे जे सांगू शकत नाहीत ते समजावून सांगा, जसं की साइटवरचा उशीर जो पुरवठादाराची चूक नव्हती. पुरवठादारालाही ही नोंद दिसते. यामुळे स्कोअर बदलत नाही.',
         save: 'नोंद जतन करा',
+        fromMessage: 'पुरवठादाराच्या संदेशातून',
       },
       tab: {
         breakdown: 'तपशील',

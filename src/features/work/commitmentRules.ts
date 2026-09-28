@@ -4,6 +4,8 @@ import type {
   CatalogPriceChange,
   SupplierOrderRating,
   SupplierAgreementVersion,
+  SupplierMessage,
+  SupplierThread,
   CommitmentKind,
   CommitmentSubjectType,
   CounterOffer,
@@ -23,6 +25,7 @@ import { remainingBalance } from '@/features/payments/aging';
 import { days, hours, minutes } from '@/features/sla/clock';
 import { AT_RISK_RATIO, poStageEnteredAt, poStageOf, typicalStageDays } from '@/features/suppliers/fulfilment';
 import { RENEWAL_NOTICE, agreementState, promisedDeliveryOf, versionsOf } from '@/features/suppliers/agreement';
+import { SUPPLIER_REPLY_WINDOW, byAt } from '@/features/suppliers/threads';
 
 /**
  * The manager's rulebook: every dated promise the business runs on, as data.
@@ -60,6 +63,8 @@ export interface CommitmentSources {
   catalogPriceChanges: CatalogPriceChange[];
   orderRatings: SupplierOrderRating[];
   agreementVersions: SupplierAgreementVersion[];
+  supplierThreads: SupplierThread[];
+  supplierMessages: SupplierMessage[];
   /** Deals where someone paused payment reminders by hand (083). */
   pausedDealIds: Set<string>;
 }
@@ -682,6 +687,54 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
           oversightRoute: `/agreement?supplierId=${v.supplierId}`,
         };
       });
+    },
+  },
+  {
+    // Every supplier message that asks for an answer is a promise one side
+    // owes the other. An unanswered supplier is chased, then flagged to
+    // Admin and — if it drags on — becomes an Alert, before it quietly
+    // turns into a late delivery.
+    kind: 'supplier_thread_reply',
+    nudgeBefore: hours(4),
+    escalateAfter: hours(12),
+    escalates: true,
+    raisesAlert: true,
+    alertCategory: 'supplier',
+    collect(src) {
+      const admin = adminId(src);
+      const out: Obligation[] = [];
+      for (const thread of src.supplierThreads) {
+        const messages = src.supplierMessages.filter((m) => m.threadId === thread.id).sort(byAt);
+        const supplier = src.suppliers.find((s) => s.id === thread.supplierId);
+        const portalUser = supplierUser(src, thread.supplierId);
+        const code = thread.relatedPoId ? (src.purchaseOrders.find((p) => p.id === thread.relatedPoId)?.code ?? '') : '';
+        messages.forEach((m, i) => {
+          if (!m.expectsReply) return;
+          const later = messages.slice(i + 1);
+          const answer = later.find((l) => l.author !== m.author);
+          // A follow-up from the same side supersedes this ask with a newer one.
+          const superseded = !answer && later.some((l) => l.author === m.author);
+          const toSupplier = m.author === 'aiec';
+          const route = `/supplier-messages?thread=${thread.id}`;
+          out.push({
+            ...base('supplier_thread_reply', 'supplier_thread', m.id),
+            ownerUserId: toSupplier ? (portalUser?.id ?? admin) : admin,
+            titleKey: !toSupplier
+              ? 'work.title.supplier_thread_answer'
+              : portalUser
+                ? 'work.title.supplier_thread_reply'
+                : 'work.title.supplier_thread_reply_proxy',
+            titleParams: { supplier: supplier?.name ?? '', code },
+            dueAt: plus(m.at, SUPPLIER_REPLY_WINDOW),
+            state: answer ? 'done' : superseded ? 'cancelled' : 'open',
+            paused: false,
+            completedAt: answer?.at,
+            actionRoute: route,
+            oversightRoute: route,
+          });
+        });
+      }
+      return out;
     },
   },
   {

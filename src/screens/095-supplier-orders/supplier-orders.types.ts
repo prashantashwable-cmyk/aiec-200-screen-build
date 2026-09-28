@@ -68,6 +68,7 @@ export const SUPPLIER_ORDERS_KEYS = {
     eventOnBehalf: 'supplierOrders.sheet.eventOnBehalf',
     logisticsPending: 'supplierOrders.sheet.logisticsPending',
     openPo: 'supplierOrders.sheet.openPo',
+    messages: 'supplierOrders.sheet.messages',
   },
 
   toast: {
