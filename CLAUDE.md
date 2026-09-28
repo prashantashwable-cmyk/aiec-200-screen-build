@@ -107,9 +107,33 @@ the module's section to `BUILD_README.md`.
   (dl-1) was seeded one day short of the reminder cadence's own exhaustion threshold, so no real
   payment could ever reach 089's escalation queue while also belonging to a deal with an active
   Job — moved from 6 to 10 days overdue (and the stale `al-2` alert text updated to match).
-- **Module 10 in progress:** `091`–`099` built. **Next: `100`** (supplier payment terms), then the
-  Module 10 checkpoint. At the checkpoint, add an Admin "Suppliers" nav tab: 091–100 are currently
-  reachable for Admin only through deep links.
+- **Module 10: `091`–`100` built. Next: the Module 10 checkpoint.** Add an Admin "Suppliers" nav
+  tab there: 091–100 are currently reachable for Admin only through deep links.
+  100 facts:
+  - `SupplierPaymentTermsConfig` (memoryRepository `paymentTermsConfig`) holds tier defaults
+    (`new` / `standard` / `trusted`). Each tier is a `SupplierPaymentTermSettings`: a `termType`
+    (`net` / `milestone` / `advance`), `upfrontPct` and `retentionPct`.
+  - `Supplier.paymentTier` (unset reads as `new`) and `paymentTermsOverride` (negotiated custom
+    terms layered on top) set what each supplier is on.
+  - Net days after delivery stay the agreement's (098), never a second value here.
+  - `@/features/suppliers/paymentTerms`:
+    - `effectiveSettings`, `snapshotFor`, `paymentSchedule`, `checkSettings`;
+    - `increasesRisk` — paying earlier or holding back less needs a confirmation step;
+    - `graduationFor` — score ≥ 0.8 over ≥ 5 orders suggests the next tier;
+    - `retentionAction`.
+  - `sendPurchaseOrder` snapshots `po.paymentTerms`.
+  - Retention:
+    - A `SupplierRetention` is held when a PO is first fully delivered (`holdRetention` in
+      `movePoLinesSync`).
+    - The heartbeat's `settleRetentions` releases it when a job on the PO's deal completes after
+      delivery. Module 11 should tie jobs to specific POs and sharpen this.
+    - It pauses the retention if the order's rating has a supplier-attributed defect, logging
+      either action with `logAutomatedAction`.
+    - The `supplier_retention_decision` commitment puts a paused retention (2 days), or one held
+      120 days with no handover, in front of Admin: release, or withhold with a reason.
+  - Every tier or override change is kept in `SupplierTermsChange` with the supplier's score at
+    that moment.
+  - The route is `/admin/suppliers/payment-terms`, Admin only.
   099 facts:
   - `SupplierThread` holds one thread per (supplier, PO) plus one general thread per supplier,
     created on the first message (`ensureSupplierThread`). `SupplierMessage` has an

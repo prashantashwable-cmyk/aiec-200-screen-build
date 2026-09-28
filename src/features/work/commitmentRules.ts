@@ -5,6 +5,7 @@ import type {
   SupplierOrderRating,
   SupplierAgreementVersion,
   SupplierMessage,
+  SupplierRetention,
   SupplierThread,
   CommitmentKind,
   CommitmentSubjectType,
@@ -26,6 +27,7 @@ import { days, hours, minutes } from '@/features/sla/clock';
 import { AT_RISK_RATIO, poStageEnteredAt, poStageOf, typicalStageDays } from '@/features/suppliers/fulfilment';
 import { RENEWAL_NOTICE, agreementState, promisedDeliveryOf, versionsOf } from '@/features/suppliers/agreement';
 import { SUPPLIER_REPLY_WINDOW, byAt } from '@/features/suppliers/threads';
+import { RETENTION_DECISION_WINDOW, RETENTION_REVIEW_AFTER } from '@/features/suppliers/paymentTerms';
 
 /**
  * The manager's rulebook: every dated promise the business runs on, as data.
@@ -65,6 +67,7 @@ export interface CommitmentSources {
   agreementVersions: SupplierAgreementVersion[];
   supplierThreads: SupplierThread[];
   supplierMessages: SupplierMessage[];
+  supplierRetentions: SupplierRetention[];
   /** Deals where someone paused payment reminders by hand (083). */
   pausedDealIds: Set<string>;
 }
@@ -735,6 +738,38 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
         });
       }
       return out;
+    },
+  },
+  {
+    // A retention is the supplier's money: it must end released or withheld
+    // for a stated reason, never sit forgotten. The heartbeat releases most at
+    // handover; Admin owns the ones it can't — a supplier defect paused it,
+    // or no handover has come long after delivery.
+    kind: 'supplier_retention_decision',
+    nudgeBefore: days(1),
+    escalateAfter: days(2),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'supplier',
+    collect(src) {
+      const admin = adminId(src);
+      return src.supplierRetentions.map((r) => {
+        const po = src.purchaseOrders.find((p) => p.id === r.poId);
+        const paused = r.status === 'paused';
+        return {
+          ...base('supplier_retention_decision', 'supplier_retention', r.id),
+          ownerUserId: admin,
+          titleKey: paused ? 'work.title.supplier_retention_paused' : 'work.title.supplier_retention_review',
+          titleParams: { code: po?.code ?? '', supplier: src.suppliers.find((s) => s.id === r.supplierId)?.name ?? '' },
+          amount: r.amount,
+          dueAt: paused && r.pausedAt ? plus(r.pausedAt, RETENTION_DECISION_WINDOW) : plus(r.heldAt, RETENTION_REVIEW_AFTER),
+          state: r.status === 'released' || r.status === 'withheld' ? ('done' as const) : ('open' as const),
+          paused: false,
+          completedAt: r.decidedAt,
+          actionRoute: '/admin/suppliers/payment-terms',
+          oversightRoute: '/admin/suppliers/payment-terms',
+        };
+      });
     },
   },
   {

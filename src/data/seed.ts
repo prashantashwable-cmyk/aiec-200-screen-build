@@ -57,6 +57,8 @@ import type {
   SupplierAgreementVersion,
   SupplierMessage,
   SupplierThread,
+  SupplierTermsChange,
+  SupplierRetention,
   ProductionEvent,
   ProductionRecord,
   ProductionStage,
@@ -1104,25 +1106,32 @@ export const financingPartnerRates: FinancingPartnerRate[] = [
 
 export const seedSuppliers: Supplier[] = [
   {
-    id: 'sp-1', name: 'Vertex Elevator Components Pvt Ltd', status: 'active', kycStatus: 'approved', city: 'Mumbai', gstin: '27AABCV1234A1Z5',
+    id: 'sp-1', paymentTier: 'trusted', name: 'Vertex Elevator Components Pvt Ltd', status: 'active', kycStatus: 'approved', city: 'Mumbai', gstin: '27AABCV1234A1Z5',
     contactName: 'Vikram Anand', contactPhone: '9821044201',
     categories: ['traction_machine', 'controller', 'cabin', 'door_operator'], driveTypeSpecialties: ['geared_traction', 'gearless_traction'], regionsServed: ['Maharashtra', 'Gujarat'],
     onTimeRate: 0.94, qualityScore: 4.7, avgLeadTimeDays: 18, openOrders: 6, totalOrderValue: 14_800_000, rating: 4.7, isManufacturer: true, isDemo: true,
   },
   {
-    id: 'sp-2', name: 'Sanghvi Lift Works', status: 'active', kycStatus: 'approved', city: 'Pune', gstin: '27AACFS9012C1Z8',
+    id: 'sp-2', paymentTier: 'standard', name: 'Sanghvi Lift Works', status: 'active', kycStatus: 'approved', city: 'Pune', gstin: '27AACFS9012C1Z8',
     contactName: 'Meenal Sanghvi', contactPhone: '9821044202',
     categories: ['cabin', 'guide_rails', 'ropes'], driveTypeSpecialties: ['hydraulic', 'geared_traction'], regionsServed: ['Maharashtra'],
     onTimeRate: 0.81, qualityScore: 4.1, avgLeadTimeDays: 12, openOrders: 4, totalOrderValue: 6_200_000, rating: 4.1, isManufacturer: false, isDemo: true,
   },
   {
-    id: 'sp-3', name: 'Konark Drives & Controls', status: 'active', kycStatus: 'approved', city: 'Nashik', gstin: '27AAECK3456D1Z1',
+    id: 'sp-3', paymentTier: 'standard', name: 'Konark Drives & Controls', status: 'active', kycStatus: 'approved', city: 'Nashik', gstin: '27AAECK3456D1Z1',
     contactName: 'Suresh Konark', contactPhone: '9821044203',
     categories: ['controller', 'vfd', 'wiring'], driveTypeSpecialties: ['geared_traction', 'gearless_traction', 'mrl'], regionsServed: ['Maharashtra'],
     onTimeRate: 0.88, qualityScore: 4.4, avgLeadTimeDays: 21, openOrders: 3, totalOrderValue: 4_950_000, rating: 4.4, isManufacturer: true, isDemo: true,
   },
   {
-    id: 'sp-4', name: 'Deccan Structural Steel', status: 'active', kycStatus: 'approved', city: 'Pune',
+    id: 'sp-4', paymentTier: 'standard',
+    paymentTermsOverride: {
+      settings: { termType: 'advance', upfrontPct: 40, retentionPct: 5 },
+      reason: 'Deccan buys steel from the mill against each order. 40% up front covers that purchase, agreed with them in March 2026.',
+      setBy: 'Prashant Vasant Wable',
+      setAt: daysAgo(190),
+    },
+    name: 'Deccan Structural Steel', status: 'active', kycStatus: 'approved', city: 'Pune',
     contactName: 'Ajay Deshpande', contactPhone: '9821044204',
     categories: ['guide_rails', 'brackets', 'counterweight'], driveTypeSpecialties: ['hydraulic', 'geared_traction', 'gearless_traction'], regionsServed: ['Maharashtra', 'Karnataka'],
     onTimeRate: 0.72, qualityScore: 3.6, avgLeadTimeDays: 9, openOrders: 2, totalOrderValue: 2_100_000, rating: 3.6, isManufacturer: true, isDemo: true,
@@ -1130,7 +1139,7 @@ export const seedSuppliers: Supplier[] = [
   // Not yet KYC-approved — 077's own closure kickoff for dl-6 already
   // relies on this exact fact (spo-1 fails against sp-5 for this reason).
   {
-    id: 'sp-5', name: 'Rathi Lift Systems', status: 'pending_approval', kycStatus: 'pending', city: 'Ahmedabad', gstin: '24AACFR5678B1Z2',
+    id: 'sp-5', paymentTier: 'new', name: 'Rathi Lift Systems', status: 'pending_approval', kycStatus: 'pending', city: 'Ahmedabad', gstin: '24AACFR5678B1Z2',
     contactName: 'Rathi Patel', contactPhone: '9821044205',
     categories: ['traction_machine', 'controller'], driveTypeSpecialties: ['geared_traction'], regionsServed: ['Gujarat', 'Rajasthan'],
     onTimeRate: 0, qualityScore: 0, avgLeadTimeDays: 0, openOrders: 0, totalOrderValue: 0, rating: 0, isManufacturer: false, isDemo: true,
@@ -1357,7 +1366,7 @@ export const seedSupplierOrderRatings: SupplierOrderRating[] = [
   // Konark — consistent.
   ...ratingHistory('rt-kn', 'sp-3', 7301, 6, 20, 18, { 3: 2 }, { 1: [['VFD parameter set shipped wrong', 'supplier']] }),
   rating('rt-kn-h5', 'sp-3', 'AIEC-PO-8105', 63, 1, [], { poId: 'spo-h5' }),
-  rating('rt-kn-h6', 'sp-3', 'AIEC-PO-8106', 28, -2, [], { poId: 'spo-h6' }),
+  rating('rt-kn-h6', 'sp-3', 'AIEC-PO-8106', 28, -2, [['Drive threw an overcurrent fault on commissioning; Konark replaced the board', 'supplier', 27]], { poId: 'spo-h6' }),
   // Deccan — often late, rougher finish.
   ...ratingHistory('rt-dc', 'sp-4', 7401, 11, 10, 14, { 1: 4, 5: 6, 8: 3 }, {
     0: [['Brackets arrived bent', 'supplier']],
@@ -1378,6 +1387,39 @@ export const seedScoreContextNotes: SupplierScoreContextNote[] = [
     addedAt: daysAgo(6),
     isDemo: true,
   },
+];
+
+/* ------------------------------------------ Supplier payment terms (100) */
+
+/** How each supplier got to the terms they're on — with the score that justified it. */
+export const seedSupplierTermsHistory: SupplierTermsChange[] = [
+  {
+    id: 'stc-1', supplierId: 'sp-2', kind: 'tier', fromTier: 'new', toTier: 'standard', scoreAtChange: 0.78, ratedOrdersAtChange: 6,
+    reason: 'Six clean orders; advance no longer needed. Moved to milestone terms.', by: 'Prashant Vasant Wable', at: daysAgo(300), isDemo: true,
+  },
+  {
+    id: 'stc-2', supplierId: 'sp-4', kind: 'override_set', settings: { termType: 'advance', upfrontPct: 40, retentionPct: 5 }, scoreAtChange: 0.71, ratedOrdersAtChange: 4,
+    reason: 'Deccan buys steel from the mill against each order. 40% up front covers that purchase, agreed with them in March 2026.', by: 'Prashant Vasant Wable', at: daysAgo(190), isDemo: true,
+  },
+  {
+    id: 'stc-3', supplierId: 'sp-1', kind: 'tier', fromTier: 'standard', toTier: 'trusted', scoreAtChange: 0.86, ratedOrdersAtChange: 11,
+    reason: 'Eleven orders at 0.86 with no quality issues. Graduated to net terms.', by: 'Prashant Vasant Wable', at: daysAgo(150), isDemo: true,
+  },
+];
+
+const retention = (
+  id: string, poId: string, supplierId: string, dealId: string, total: number, heldDaysAgo: number, status: SupplierRetention['status'], extra: Partial<SupplierRetention> = {},
+): SupplierRetention => ({ id, poId, supplierId, dealId, pct: 5, amount: Math.round(total * 0.05), heldAt: daysAgo(heldDaysAgo), status, isDemo: true, ...extra });
+
+/** Two released at handover, two still waiting for their site's handover,
+ *  and Konark's paused: a supplier defect surfaced at commissioning. */
+export const seedSupplierRetentions: SupplierRetention[] = [
+  retention('ret-1', 'spo-h1', 'sp-1', 'dl-h1', 288_000, 99, 'released', { decidedAt: daysAgo(40), decidedBy: 'system', decisionReason: 'handover' }),
+  retention('ret-2', 'spo-h3', 'sp-2', 'dl-h1', 55_500, 81, 'released', { decidedAt: daysAgo(40), decidedBy: 'system', decisionReason: 'handover' }),
+  retention('ret-3', 'spo-h2', 'sp-1', 'dl-h2', 160_000, 58, 'held'),
+  retention('ret-4', 'spo-h4', 'sp-2', 'dl-h2', 160_000, 44, 'held'),
+  retention('ret-5', 'spo-h5', 'sp-3', 'dl-h3', 40_000, 63, 'released', { decidedAt: daysAgo(20), decidedBy: 'system', decisionReason: 'handover' }),
+  retention('ret-6', 'spo-h6', 'sp-3', 'dl-h3', 88_000, 28, 'paused', { pausedAt: daysAgo(1) }),
 ];
 
 /* ------------------------------------ Supplier communication threads (099) */

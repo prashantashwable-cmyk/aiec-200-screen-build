@@ -53,6 +53,8 @@ import {
   seedSupplierAgreementVersions,
   seedSupplierThreads,
   seedSupplierMessages,
+  seedSupplierTermsHistory,
+  seedSupplierRetentions,
   seedSupplierPurchaseOrders,
   seedTriggerRules,
   seedUsers,
@@ -126,6 +128,8 @@ import type {
   SupplierAgreementSummary,
   SupplierAgreementView,
   SupplierMessageSearchHit,
+  SupplierPaymentTermsView,
+  SupplierTermsRow,
   SupplierThreadSummary,
   SupplierThreadView,
   PurchaseOrderLineView,
@@ -151,6 +155,10 @@ import type {
   SupplierMessage,
   SupplierMessageAuthor,
   SupplierThread,
+  SupplierPaymentTermsConfig,
+  SupplierRetention,
+  SupplierTermsChange,
+  SupplierTrustTier,
   ProductionRecord,
   ProductionStage,
   EscalationLevel,
@@ -254,6 +262,17 @@ import {
 } from '@/features/suppliers/agreement';
 import { awaitingReply, byAt as byMessageAt, isUnanswered, lastSupplierResponseAt } from '@/features/suppliers/threads';
 import {
+  DEFAULT_TIER_SETTINGS,
+  RETENTION_REVIEW_AFTER,
+  TRUST_TIERS,
+  checkSettings,
+  effectiveSettings,
+  graduationFor,
+  retentionAction,
+  snapshotFor,
+  tierOf,
+} from '@/features/suppliers/paymentTerms';
+import {
   DEFAULT_PRICE_REVIEW_THRESHOLD_PCT,
   catalogMatchKey,
   categoryReferencePrices,
@@ -354,6 +373,17 @@ const scoreContextNotes = [...seedScoreContextNotes];
 let ratingCounter = 100;
 const supplierAgreementVersions = [...seedSupplierAgreementVersions];
 let agreementCounter = 100;
+/** 100: the root of how AIEC pays suppliers. */
+let paymentTermsConfig: SupplierPaymentTermsConfig = { tiers: { ...DEFAULT_TIER_SETTINGS } };
+const supplierTermsHistory = [...seedSupplierTermsHistory];
+const supplierRetentions = [...seedSupplierRetentions];
+let paymentTermsCounter = 100;
+// Seeded orders were sent before these terms existed here — stamp each with
+// the terms its supplier is on, as 098 does with the agreement.
+for (const po of supplierPurchaseOrders) {
+  const supplier = suppliers.find((sp) => sp.id === po.supplierId);
+  if (po.status === 'sent' && supplier && !po.paymentTerms) po.paymentTerms = snapshotFor(supplier, paymentTermsConfig);
+}
 const supplierThreads = [...seedSupplierThreads];
 const supplierMessages = [...seedSupplierMessages];
 let supplierMessageCounter = 100;
@@ -1814,6 +1844,7 @@ function commitmentSources(now: number): CommitmentSources {
     agreementVersions: supplierAgreementVersions,
     supplierThreads,
     supplierMessages,
+    supplierRetentions,
     pausedDealIds: new Set(paymentReminderPauses.filter((p) => p.paused).map((p) => p.dealId)),
   };
 }
@@ -1998,6 +2029,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   sendDueScheduledQuotations(now);
   autoDraftDuePurchaseOrders();
   detectProductionStalls(now);
+  settleRetentions(now);
   for (const deal of deals) {
     if (payments.some((p) => p.dealId === deal.id && p.status === 'paid' && !invoices.some((inv) => inv.paymentId === p.id))) {
       ensureStageInvoices(deal.id, deal, resolveLead(deal.leadId));
@@ -2109,7 +2141,11 @@ function movePoLinesSync(
   const anyPastSent = nextLines.some((l) => l.fulfilmentStage !== 'sent');
   // Fully delivered for the first time: the order gets its rating (097) —
   // timeliness is objective; defects and Admin's judgement follow.
-  if (allDelivered && !po.receivedAt) createOrderRating(po, now);
+  if (allDelivered && !po.receivedAt) {
+    createOrderRating(po, now);
+    // 100: hold back the retention share until the installation is handed over.
+    holdRetention(po, now);
+  }
   // Entering production opens (or, after rework, reopens) the line's
   // manufacturer production record (096) — the same status, seen closer up.
   if (toStage === 'in_production' && supplier?.isManufacturer) {
@@ -2503,6 +2539,64 @@ function detectProductionStalls(now: number): void {
 
 
 /* =============================== Supplier rating & quality scorecard (097) */
+
+/* ======================================= Supplier payment terms (100) */
+
+function holdRetention(po: SupplierPurchaseOrder, at: string): void {
+  const pct = po.paymentTerms?.retentionPct ?? 0;
+  if (!po.supplierId || pct <= 0 || supplierRetentions.some((r) => r.poId === po.id)) return;
+  paymentTermsCounter += 1;
+  supplierRetentions.push({
+    id: `ret-new-${paymentTermsCounter}`,
+    poId: po.id,
+    supplierId: po.supplierId,
+    dealId: po.dealId,
+    pct,
+    amount: Math.round((poTotalOf(po.lineItems ?? []) * pct) / 100),
+    heldAt: at,
+    status: 'held',
+    isDemo: true,
+  });
+}
+
+/** The heartbeat's retention pass: release at handover, pause on a
+ *  supplier defect. Idempotent — only a `held` retention is ever touched. */
+function settleRetentions(now: number): void {
+  for (const r of [...supplierRetentions]) {
+    const rating = supplierOrderRatings.find((x) => x.poId === r.poId);
+    const action = retentionAction(r, jobs.filter((j) => j.dealId === r.dealId), rating);
+    if (action.kind === 'none') continue;
+    const po = byId(supplierPurchaseOrders, r.poId);
+    const at = new Date(now).toISOString();
+    if (action.kind === 'release') {
+      patchInPlace(supplierRetentions, r.id, { status: 'released', decidedAt: at, decidedBy: 'system', decisionReason: 'handover' });
+    } else {
+      patchInPlace(supplierRetentions, r.id, { status: 'paused', pausedAt: at });
+    }
+    logAutomatedAction({
+      sourceKey: action.kind === 'release' ? 'retention.released' : 'retention.paused',
+      triggeringCondition:
+        action.kind === 'release'
+          ? `Installation handed over on the deal ${po?.code ?? r.poId} supplied`
+          : `A supplier-attributed defect was logged on ${po?.code ?? r.poId}`,
+      actionTaken: action.kind === 'release' ? `Released retention of ${formatINR(r.amount)}` : `Paused retention of ${formatINR(r.amount)} for Admin's decision`,
+      affectedRecordId: r.poId,
+      affectedRecordType: 'purchase_order',
+      subjectLabel: po?.code ?? r.poId,
+    });
+  }
+}
+
+function supplierScoreNow(supplierId: string): { score: number | null; rated: number } {
+  const supplier = byId(suppliers, supplierId);
+  const rated = supplierOrderRatings.filter((r) => r.supplierId === supplierId).length;
+  return { score: supplier && rated > 0 ? Math.round(computeSupplierPerformanceScore(supplier) * 100) / 100 : null, rated };
+}
+
+function recordTermsChange(change: Omit<SupplierTermsChange, 'id' | 'isDemo'>): void {
+  paymentTermsCounter += 1;
+  supplierTermsHistory.push({ id: `stc-new-${paymentTermsCounter}`, isDemo: true, ...change });
+}
 
 function createOrderRating(po: SupplierPurchaseOrder, deliveredAt: string): void {
   if (!po.supplierId || supplierOrderRatings.some((r) => r.poId === po.id)) return;
@@ -4046,6 +4140,8 @@ export const memoryRepository: Repository = {
         sentBy: byName,
         sentAt,
         agreementTerms,
+        // How AIEC will pay for it (100), frozen like the agreement terms.
+        paymentTerms: snapshotFor(supplier, paymentTermsConfig),
         // Admin's own date stands; otherwise the promise is the agreed SLA.
         expectedDeliveryDate: po.expectedDeliveryDate ?? slaDeliveryDate(sentAt, agreementTerms),
       });
@@ -5470,6 +5566,110 @@ export const memoryRepository: Repository = {
       };
       supplierAgreementVersions.push(created);
       return created;
+    }),
+
+  /* ------------------------------------------ Supplier payment terms (100) */
+  getSupplierPaymentTerms: (byUserId) =>
+    simulateRead((): SupplierPaymentTermsView => {
+      adminOnly(byUserId);
+      const now = Date.now();
+      const rows = suppliers.map((supplier): SupplierTermsRow => {
+        const { settings, custom } = effectiveSettings(supplier, paymentTermsConfig);
+        const rated = supplierOrderRatings.filter((r) => r.supplierId === supplier.id).length;
+        const score = computeSupplierPerformanceScore(supplier);
+        return {
+          supplier,
+          tier: tierOf(supplier),
+          settings,
+          custom,
+          score,
+          ratedOrders: rated,
+          graduateTo: graduationFor(tierOf(supplier), score, rated),
+          agreementNetDays: agreementStateFor(supplier.id).current?.terms.paymentTermsDays ?? null,
+        };
+      });
+      const rank: Record<SupplierRetention['status'], number> = { paused: 0, held: 1, withheld: 2, released: 3 };
+      return {
+        config: paymentTermsConfig,
+        tierUsage: Object.fromEntries(TRUST_TIERS.map((t) => [t, rows.filter((r) => r.tier === t && !r.custom).length])) as Record<SupplierTrustTier, number>,
+        suppliers: rows.sort((a, b) => TRUST_TIERS.indexOf(a.tier) - TRUST_TIERS.indexOf(b.tier) || a.supplier.name.localeCompare(b.supplier.name)),
+        retentions: supplierRetentions
+          .map((retention) => ({
+            retention,
+            poCode: byId(supplierPurchaseOrders, retention.poId)?.code ?? retention.poId,
+            supplierName: byId(suppliers, retention.supplierId)?.name ?? '',
+            overdueForReview: retention.status === 'held' && now - new Date(retention.heldAt).getTime() > RETENTION_REVIEW_AFTER,
+          }))
+          .sort((a, b) => rank[a.retention.status] - rank[b.retention.status] || (a.retention.heldAt < b.retention.heldAt ? 1 : -1)),
+        history: [...supplierTermsHistory].sort((a, b) => (a.at < b.at ? 1 : -1)),
+      };
+    }),
+
+  updateTierDefaults: (tier, settings, reason, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      if (checkSettings(settings).length > 0) throw new RepositoryError('invalid_input');
+      if (reason.trim().length < 10) throw new RepositoryError('reason_required');
+      const at = new Date().toISOString();
+      paymentTermsConfig = { tiers: { ...paymentTermsConfig.tiers, [tier]: { ...settings } }, updatedBy: actor.name, updatedAt: at };
+      recordTermsChange({ kind: 'tier_defaults', toTier: tier, settings, reason: reason.trim(), scoreAtChange: null, ratedOrdersAtChange: 0, by: actor.name, at });
+      return paymentTermsConfig;
+    }),
+
+  setSupplierPaymentTier: (supplierId, tier, reason, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const supplier = byId(suppliers, supplierId);
+      if (!supplier) throw new RepositoryError('not_found');
+      if (reason.trim().length < 10) throw new RepositoryError('reason_required');
+      const from = tierOf(supplier);
+      if (from === tier) return supplier;
+      const { score, rated } = supplierScoreNow(supplierId);
+      const at = new Date().toISOString();
+      recordTermsChange({ supplierId, kind: 'tier', fromTier: from, toTier: tier, reason: reason.trim(), scoreAtChange: score, ratedOrdersAtChange: rated, by: actor.name, at });
+      // Orders already sent keep the terms frozen on them.
+      return patchInPlace(suppliers, supplierId, { paymentTier: tier });
+    }),
+
+  setSupplierTermsOverride: (supplierId, settings, reason, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const supplier = byId(suppliers, supplierId);
+      if (!supplier) throw new RepositoryError('not_found');
+      if (reason.trim().length < 10) throw new RepositoryError('reason_required');
+      if (settings && checkSettings(settings).length > 0) throw new RepositoryError('invalid_input');
+      if (!settings && !supplier.paymentTermsOverride) return supplier;
+      const { score, rated } = supplierScoreNow(supplierId);
+      const at = new Date().toISOString();
+      recordTermsChange({
+        supplierId,
+        kind: settings ? 'override_set' : 'override_cleared',
+        settings: settings ?? undefined,
+        reason: reason.trim(),
+        scoreAtChange: score,
+        ratedOrdersAtChange: rated,
+        by: actor.name,
+        at,
+      });
+      return patchInPlace(suppliers, supplierId, {
+        paymentTermsOverride: settings ? { settings: { ...settings }, reason: reason.trim(), setBy: actor.name, setAt: at } : undefined,
+      });
+    }),
+
+  decideRetention: (retentionId, decision, reason, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const r = byId(supplierRetentions, retentionId);
+      if (!r) throw new RepositoryError('not_found');
+      if (r.status === 'released' || r.status === 'withheld') throw new RepositoryError('invalid_state');
+      // Keeping a supplier's money is never done without saying why.
+      if (reason.trim().length < (decision === 'withhold' ? 10 : 4)) throw new RepositoryError('reason_required');
+      return patchInPlace(supplierRetentions, retentionId, {
+        status: decision === 'release' ? 'released' : 'withheld',
+        decidedAt: new Date().toISOString(),
+        decidedBy: actor.name,
+        decisionReason: reason.trim(),
+      });
     }),
 
   /* ------------------------------------ Supplier communication thread (099) */

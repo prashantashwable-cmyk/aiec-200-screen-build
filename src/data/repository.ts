@@ -79,6 +79,11 @@ import type {
   SupplierAgreementTerms,
   SupplierMessage,
   SupplierMessageAuthor,
+  SupplierPaymentTermSettings,
+  SupplierPaymentTermsConfig,
+  SupplierRetention,
+  SupplierTermsChange,
+  SupplierTrustTier,
   SupplierMessageChannel,
   SupplierAgreementVersion,
   ProductionRecord,
@@ -856,6 +861,41 @@ export interface SupplierScorecard {
   contextNotes: SupplierScoreContextNote[];
   /** The standard the supplier agreed to (098), to read the score against. */
   agreedTerms: SupplierAgreementTerms | null;
+}
+
+/* -------------------------------------- Supplier payment terms (100) */
+
+export interface SupplierTermsRow {
+  supplier: Supplier;
+  tier: SupplierTrustTier;
+  settings: SupplierPaymentTermSettings;
+  custom: boolean;
+  /** The one supplier score (026/091/097) — the case for a tier change. */
+  score: number;
+  ratedOrders: number;
+  /** The tier the scorecard has earned, if higher than today's. */
+  graduateTo: SupplierTrustTier | null;
+  /** Net days from the agreement in force (098); null without one. */
+  agreementNetDays: number | null;
+}
+
+export interface SupplierRetentionView {
+  retention: SupplierRetention;
+  poCode: string;
+  supplierName: string;
+  /** Still held and past the review window — in front of Admin. */
+  overdueForReview: boolean;
+}
+
+export interface SupplierPaymentTermsView {
+  config: SupplierPaymentTermsConfig;
+  /** How many suppliers each tier's defaults apply to (no override). */
+  tierUsage: Record<SupplierTrustTier, number>;
+  suppliers: SupplierTermsRow[];
+  /** Paused first, then held, then settled. */
+  retentions: SupplierRetentionView[];
+  /** Newest first. */
+  history: SupplierTermsChange[];
 }
 
 /* ---------------------------------- Supplier communication thread (099) */
@@ -1804,6 +1844,17 @@ export interface Repository {
   recordAgreementVersion(supplierId: string, input: RecordAgreementVersionInput, byUserId: string): Promise<SupplierAgreementVersion>;
   /** The supplier confirms a recorded version is what they signed. */
   acknowledgeAgreementVersion(versionId: string, byUserId: string): Promise<SupplierAgreementVersion>;
+
+  /* Supplier payment terms (100) — the root every supplier payment runs on */
+  getSupplierPaymentTerms(byUserId: string): Promise<SupplierPaymentTermsView>;
+  /** Changes every supplier on the tier without an override. */
+  updateTierDefaults(tier: SupplierTrustTier, settings: SupplierPaymentTermSettings, reason: string, byUserId: string): Promise<SupplierPaymentTermsConfig>;
+  /** Graduate (or step back) a supplier, recorded with their score at the time. */
+  setSupplierPaymentTier(supplierId: string, tier: SupplierTrustTier, reason: string, byUserId: string): Promise<Supplier>;
+  /** A negotiated arrangement layered over the tier, or null to go back to it. */
+  setSupplierTermsOverride(supplierId: string, settings: SupplierPaymentTermSettings | null, reason: string, byUserId: string): Promise<Supplier>;
+  /** Admin's call on a retention the heartbeat couldn't release by itself. */
+  decideRetention(retentionId: string, decision: 'release' | 'withhold', reason: string, byUserId: string): Promise<SupplierRetention>;
 
   /* Supplier communication thread (099) — apart from every customer channel */
   /** Admin every thread; a supplier only their own. Most urgent first. */

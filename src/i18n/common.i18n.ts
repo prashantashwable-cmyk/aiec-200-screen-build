@@ -258,6 +258,8 @@ const common: ScreenTranslations = {
         supplier_thread_reply: 'Reply to AIEC’s message',
         supplier_thread_reply_proxy: '{{supplier}} hasn’t answered AIEC. Chase them by phone or email',
         supplier_thread_answer: 'Answer {{supplier}}’s message',
+        supplier_retention_paused: 'Decide the retention on {{code}}: a supplier defect paused it',
+        supplier_retention_review: 'Retention on {{code}} is still held with no handover. Review it',
         alert_acknowledge: 'Acknowledge alert {{code}}: {{context}}',
         follow_up_task: 'Follow-up: {{title}}',
         lead_revisit: 'Revisit {{site}} with {{name}} — the lost lead is due another look',
@@ -282,6 +284,10 @@ const common: ScreenTranslations = {
         },
         production: {
           stall_alert: 'Flagged a production stall on {{label}}',
+        },
+        retention: {
+          released: 'Released the retention on {{label}} at installation handover',
+          paused: 'Paused the retention on {{label}} for your decision: a supplier defect was logged',
         },
         followup: {
           nudge: 'Sent a heads-up on {{label}}',
@@ -549,6 +555,8 @@ const common: ScreenTranslations = {
         supplier_thread_reply: 'AIEC के संदेश का जवाब दें',
         supplier_thread_reply_proxy: '{{supplier}} ने AIEC को जवाब नहीं दिया। फ़ोन या ईमेल से संपर्क करें',
         supplier_thread_answer: '{{supplier}} के संदेश का जवाब दें',
+        supplier_retention_paused: '{{code}} के रिटेंशन पर फ़ैसला करें: सप्लायर की खराबी से यह रुका है',
+        supplier_retention_review: '{{code}} का रिटेंशन बिना हैंडओवर के अब भी रुका है। इसकी समीक्षा करें',
         alert_acknowledge: 'अलर्ट {{code}} स्वीकार करें: {{context}}',
         follow_up_task: 'फ़ॉलो-अप: {{title}}',
         lead_revisit: '{{name}} के साथ {{site}} पर फिर जाएँ — खोई लीड दोबारा देखने का समय आ गया है',
@@ -573,6 +581,10 @@ const common: ScreenTranslations = {
         },
         production: {
           stall_alert: '{{label}} पर उत्पादन रुकने की सूचना दी',
+        },
+        retention: {
+          released: 'इंस्टॉलेशन हैंडओवर पर {{label}} का रिटेंशन जारी किया',
+          paused: '{{label}} का रिटेंशन आपके फ़ैसले के लिए रोका: सप्लायर की खराबी दर्ज हुई थी',
         },
         followup: {
           nudge: '{{label}} पर पहले से सूचना भेजी',
@@ -840,6 +852,8 @@ const common: ScreenTranslations = {
         supplier_thread_reply: 'AIEC च्या संदेशाला उत्तर द्या',
         supplier_thread_reply_proxy: '{{supplier}} यांनी AIEC ला उत्तर दिलेलं नाही. फोन किंवा ईमेलने पाठपुरावा करा',
         supplier_thread_answer: '{{supplier}} यांच्या संदेशाला उत्तर द्या',
+        supplier_retention_paused: '{{code}} च्या रिटेन्शनवर निर्णय घ्या: पुरवठादाराच्या दोषामुळे ते थांबलं आहे',
+        supplier_retention_review: '{{code}} चं रिटेन्शन हँडओव्हरशिवाय अजून राखून आहे. त्याचं पुनरावलोकन करा',
         alert_acknowledge: 'अलर्ट {{code}} स्वीकारा: {{context}}',
         follow_up_task: 'पाठपुरावा: {{title}}',
         lead_revisit: '{{name}} यांच्यासोबत {{site}} ला पुन्हा भेट द्या — गमावलेली लीड पुन्हा पाहण्याची वेळ आली आहे',
@@ -864,6 +878,10 @@ const common: ScreenTranslations = {
         },
         production: {
           stall_alert: '{{label}} वर उत्पादन अडकल्याची सूचना दिली',
+        },
+        retention: {
+          released: 'इन्स्टॉलेशन हँडओव्हरवर {{label}} चं रिटेन्शन दिलं',
+          paused: '{{label}} चं रिटेन्शन तुमच्या निर्णयासाठी थांबवलं: पुरवठादाराचा दोष नोंदवला गेला',
         },
         followup: {
           nudge: '{{label}} बद्दल आगाऊ सूचना पाठवली',

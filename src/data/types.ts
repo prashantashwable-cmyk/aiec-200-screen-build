@@ -631,6 +631,8 @@ export interface SupplierPurchaseOrder {
   statusEvents?: PoStatusEvent[];
   /** The agreement terms in force when it was sent (098). */
   agreementTerms?: PurchaseOrderAgreementSnapshot;
+  /** The payment terms it was sent under (100). */
+  paymentTerms?: PurchaseOrderPaymentSnapshot;
   isDemo: boolean;
 }
 
@@ -759,6 +761,86 @@ export interface SupplierScoreContextNote {
   sourceThreadId?: string;
   addedBy: string;
   addedAt: string;
+  isDemo: boolean;
+}
+
+/* ---------------------------------- Supplier payment terms (100) */
+
+/** Trust earned through performance: a new supplier pays its way in with an
+ *  advance; a proven one is paid on net terms. */
+export type SupplierTrustTier = 'new' | 'standard' | 'trusted';
+
+/** `net`: everything after delivery. `milestone`: part on the supplier's
+ *  order confirmation, the rest after delivery. `advance`: part up front,
+ *  before the supplier starts. */
+export type SupplierPaymentTermType = 'net' | 'milestone' | 'advance';
+
+export interface SupplierPaymentTermSettings {
+  termType: SupplierPaymentTermType;
+  /** Share paid before delivery (0 for `net`). */
+  upfrontPct: number;
+  /** Share held back until the installation is handed over. */
+  retentionPct: number;
+}
+
+export interface SupplierPaymentTermsOverride {
+  settings: SupplierPaymentTermSettings;
+  reason: string;
+  setBy: string;
+  setAt: string;
+}
+
+/** The root of how AIEC pays suppliers. Net days after delivery are not
+ *  here — they belong to each supplier's agreement (098). */
+export interface SupplierPaymentTermsConfig {
+  tiers: Record<SupplierTrustTier, SupplierPaymentTermSettings>;
+  updatedBy?: string;
+  updatedAt?: string;
+}
+
+/** Every change to a supplier's terms, with the scorecard at that moment —
+ *  a graduation is justified by the record, not by memory. */
+export interface SupplierTermsChange {
+  id: string;
+  /** Unset for a change to a tier's defaults. */
+  supplierId?: string;
+  kind: 'tier' | 'override_set' | 'override_cleared' | 'tier_defaults';
+  fromTier?: SupplierTrustTier;
+  toTier?: SupplierTrustTier;
+  settings?: SupplierPaymentTermSettings;
+  reason: string;
+  scoreAtChange: number | null;
+  ratedOrdersAtChange: number;
+  by: string;
+  at: string;
+  isDemo: boolean;
+}
+
+/** The payment terms a PO was sent under, frozen with it (like 098's). */
+export interface PurchaseOrderPaymentSnapshot extends SupplierPaymentTermSettings {
+  tier: SupplierTrustTier;
+  custom: boolean;
+}
+
+export type SupplierRetentionStatus = 'held' | 'paused' | 'released' | 'withheld';
+
+/** The share held back from a delivered order until its installation is
+ *  handed over — released automatically, never left in limbo. */
+export interface SupplierRetention {
+  id: string;
+  poId: string;
+  supplierId: string;
+  dealId: string;
+  pct: number;
+  amount: number;
+  heldAt: string;
+  status: SupplierRetentionStatus;
+  /** Paused because a supplier-attributed defect was logged on the order. */
+  pausedAt?: string;
+  decidedAt?: string;
+  /** `system` when released automatically at handover. */
+  decidedBy?: string;
+  decisionReason?: string;
   isDemo: boolean;
 }
 
@@ -1733,6 +1815,10 @@ export interface Supplier {
   /** Builds components to order (096) rather than reselling stock — only a
    *  manufacturer's PO lines get production-stage tracking. Set in 091. */
   isManufacturer?: boolean;
+  /** How much trust AIEC extends on payment (100). Unset reads as `new`. */
+  paymentTier?: SupplierTrustTier;
+  /** A negotiated arrangement that doesn't fit the tier (100). */
+  paymentTermsOverride?: SupplierPaymentTermsOverride;
   isDemo: boolean;
 }
 
@@ -1925,6 +2011,7 @@ export type CommitmentKind =
   | 'supplier_agreement_renewal'
   | 'supplier_agreement_acknowledge'
   | 'supplier_thread_reply'
+  | 'supplier_retention_decision'
   | 'alert_acknowledge'
   | 'follow_up_task'
   | 'lead_revisit';
@@ -1943,7 +2030,8 @@ export type CommitmentSubjectType =
   | 'catalog_price_change'
   | 'supplier_order_rating'
   | 'supplier_agreement'
-  | 'supplier_thread';
+  | 'supplier_thread'
+  | 'supplier_retention';
 
 /**
  * 0 nothing sent yet · 1 owner nudged before due · 2 owner told it's overdue
