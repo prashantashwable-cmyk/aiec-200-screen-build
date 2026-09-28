@@ -283,7 +283,7 @@ function OrderSheet({ s, t, lang, notify }: { s: SupplierOrdersState; t: T; lang
 
           <section className="stack gap-2">
             <h3 className="label">{t(K.sheet.lines)}</h3>
-            {card.lines.map(({ line, stage, stageEnteredAt }) => (
+            {card.lines.map(({ line, stage, stageEnteredAt, production }) => (
               <div key={line.id} className="stack gap-1 hairline-top pt-2">
                 <div className="row between gap-2">
                   <span className="t-sm grow" style={{ minWidth: 0 }}>
@@ -292,6 +292,15 @@ function OrderSheet({ s, t, lang, notify }: { s: SupplierOrdersState; t: T; lang
                   <Badge tone="neutral">{t(K.stage[stage])}</Badge>
                 </div>
                 <span className="t-xs t-muted">{formatDate(stageEnteredAt, lang)}</span>
+                {production && (
+                  // A manufacturer's part: the inside of "in production" (096).
+                  <span className="row gap-2 wrap" style={{ alignItems: 'center' }}>
+                    <Button size="sm" variant="ghost" onClick={() => navigate(`/orders/production/${production.recordId}`)}>
+                      {t('production.lineSummary', { pct: production.completionPct, stage: t(`production.stage.${production.stage}`) })}
+                    </Button>
+                    {production.stalled && <Badge tone="warning">{t('productionStatus.hero.stalled')}</Badge>}
+                  </span>
+                )}
                 <Select
                   aria-label={line.description}
                   value={s.lineTargets[line.id] ?? ''}

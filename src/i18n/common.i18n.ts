@@ -269,6 +269,9 @@ const common: ScreenTranslations = {
         quotation: {
           scheduled_send: 'Sent scheduled quote {{label}}',
         },
+        production: {
+          stall_alert: 'Flagged a production stall on {{label}}',
+        },
         followup: {
           nudge: 'Sent a heads-up on {{label}}',
           overdue: 'Sent an overdue notice on {{label}}',
@@ -546,6 +549,9 @@ const common: ScreenTranslations = {
         quotation: {
           scheduled_send: 'तय समय पर कोटेशन {{label}} भेजा',
         },
+        production: {
+          stall_alert: '{{label}} पर उत्पादन रुकने की सूचना दी',
+        },
         followup: {
           nudge: '{{label}} पर पहले से सूचना भेजी',
           overdue: '{{label}} पर बकाया होने की सूचना भेजी',
@@ -822,6 +828,9 @@ const common: ScreenTranslations = {
         },
         quotation: {
           scheduled_send: 'ठरलेल्या वेळी कोटेशन {{label}} पाठवले',
+        },
+        production: {
+          stall_alert: '{{label}} वर उत्पादन अडकल्याची सूचना दिली',
         },
         followup: {
           nudge: '{{label}} बद्दल आगाऊ सूचना पाठवली',

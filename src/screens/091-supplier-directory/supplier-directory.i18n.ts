@@ -36,6 +36,8 @@ const translations: ScreenTranslations = {
       detail: {
         performanceScoreLabel: 'Performance score',
         viewCatalog: 'View parts catalog',
+        manufacturer: 'Builds to order (manufacturer)',
+        manufacturerHint: 'Their order lines get production-stage tracking. Off for a distributor shipping from stock.',
         contactLabel: 'Contact',
         categoriesLabel: 'Component categories',
         specialtiesLabel: 'Drive-type specialties',
@@ -131,6 +133,8 @@ const translations: ScreenTranslations = {
       detail: {
         performanceScoreLabel: 'प्रदर्शन स्कोर',
         viewCatalog: 'पार्ट्स कैटलॉग देखें',
+        manufacturer: 'ऑर्डर पर बनाता है (निर्माता)',
+        manufacturerHint: 'इनके ऑर्डर पार्ट्स की उत्पादन-चरण ट्रैकिंग होती है। स्टॉक से भेजने वाले वितरक के लिए बंद।',
         contactLabel: 'संपर्क',
         categoriesLabel: 'कंपोनेंट श्रेणियां',
         specialtiesLabel: 'ड्राइव-टाइप विशेषताएं',
@@ -226,6 +230,8 @@ const translations: ScreenTranslations = {
       detail: {
         performanceScoreLabel: 'कामगिरी गुण',
         viewCatalog: 'पार्ट्स कॅटलॉग पहा',
+        manufacturer: 'ऑर्डरनुसार तयार करतो (उत्पादक)',
+        manufacturerHint: 'यांच्या ऑर्डर पार्ट्सचे उत्पादन-टप्पा ट्रॅकिंग होते. स्टॉकमधून पाठवणाऱ्या वितरकासाठी बंद.',
         contactLabel: 'संपर्क',
         categoriesLabel: 'घटक श्रेणी',
         specialtiesLabel: 'ड्राइव्ह-टाइप वैशिष्ट्ये',

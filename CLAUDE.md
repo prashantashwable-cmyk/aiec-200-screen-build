@@ -107,7 +107,24 @@ the module's section to `BUILD_README.md`.
   (dl-1) was seeded one day short of the reminder cadence's own exhaustion threshold, so no real
   payment could ever reach 089's escalation queue while also belonging to a deal with an active
   Job — moved from 6 to 10 days overdue (and the stale `al-2` alert text updated to match).
-- **Module 10 in progress:** `091`–`095` built. **Next: `096`** (manufacturer production status).
+- **Module 10 in progress:** `091`–`096` built. **Next: `097`** (supplier rating / quality scorecard).
+  096 facts:
+  - `Supplier.isManufacturer` is a toggle in 091's detail sheet. Only a manufacturer's lines get a
+    `ProductionRecord` (id `prod-<lineItemId>`), created when the line enters `in_production`.
+  - Stages come from `stagesForCategory`: standard parts skip fabrication. A stage can be skipped
+    with a reason, except `quality_testing`.
+  - Signing off quality testing needs evidence. Finishing production moves the line to
+    `ready_to_ship` through `movePoLinesSync`. Reopening finished work goes the other way, with the
+    reason logged.
+  - Batches (`batchId`) can advance together; it's all-or-nothing on evidence.
+  - The heartbeat's `detectProductionStalls` raises an Alert (`production.alert.stalled`) past ×1.5
+    of the manufacturer's own usual stage time, and resolves it once production moves on.
+  - 096 owns the shared `production.*` namespace.
+  - Design-system fixes found here:
+    - `Checkbox` cancels the label's re-dispatched click; a checked box used to be un-untickable by
+      tapping its tick.
+    - AppShell publishes `--shell-bottom-height`, so a sticky `ActionBar` sits above the phone tab
+      bar instead of half behind it. That affected every in-shell screen with an ActionBar.
   095 facts:
   - A sent PO's fulfilment (`PoFulfilmentStage`: `sent` → `delivered`) lives per line
     (`PurchaseOrderLineItem.fulfilmentStage`), with append-only `SupplierPurchaseOrder.statusEvents`.

@@ -21,15 +21,28 @@ export function AppShell() {
 
   // Publishes the sticky top area's live height (the demo banner wraps on a
   // phone) so a screen's own sticky filter bar can pin just below it.
+  // …and the bottom tab bar's (0 on desktop, where it's hidden), so a
+  // screen's sticky action bar sits above it instead of behind it.
   const topRef = useRef<HTMLDivElement>(null);
+  const tabbarRef = useRef<HTMLElement>(null);
   useEffect(() => {
-    const el = topRef.current;
-    if (!el) return undefined;
-    const publish = () => document.documentElement.style.setProperty('--shell-top-height', `${el.offsetHeight}px`);
+    const top = topRef.current;
+    const tabbar = tabbarRef.current;
+    if (!top || !tabbar) return undefined;
+    const root = document.documentElement.style;
+    const publish = () => {
+      root.setProperty('--shell-top-height', `${top.offsetHeight}px`);
+      root.setProperty('--shell-bottom-height', `${tabbar.offsetHeight}px`);
+    };
     publish();
     const observer = new ResizeObserver(publish);
-    observer.observe(el);
-    return () => observer.disconnect();
+    observer.observe(top);
+    observer.observe(tabbar);
+    window.addEventListener('resize', publish);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', publish);
+    };
   }, []);
 
   const items = role ? NAV_BY_ROLE[role] : [];
@@ -117,7 +130,7 @@ export function AppShell() {
         />
       </div>
 
-      <nav className="shell__tabbar" aria-label={t('nav.menu')}>
+      <nav className="shell__tabbar" aria-label={t('nav.menu')} ref={tabbarRef}>
         {items.map((item) => (
           <NavLink
             key={item.id}

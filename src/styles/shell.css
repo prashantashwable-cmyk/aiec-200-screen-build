@@ -58,6 +58,12 @@
   padding-block: var(--space-2);
 }
 
+/* A screen's sticky action bar sits just above the phone tab bar rather
+   than behind it (--shell-bottom-height is 0 on desktop). */
+.shell__main .ds-action-bar {
+  bottom: var(--shell-bottom-height, 0px);
+}
+
 /* ---- The assistant's bell ---- */
 .shell__bell {
   position: relative;

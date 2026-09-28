@@ -15,6 +15,7 @@ import {
   Select,
   Sheet,
   TextArea,
+  Toggle,
   formatDate,
   useToast,
 } from '@/design-system';
@@ -179,6 +180,12 @@ export function SupplierDirectoryView() {
                 {s.openRow.supplier.contactPhone ?? '—'}
               </span>
             </div>
+            <Toggle
+              checked={Boolean(s.openRow.supplier.isManufacturer)}
+              onChange={(next) => void s.setManufacturer(next)}
+              label={t(K.detail.manufacturer)}
+              description={t(K.detail.manufacturerHint)}
+            />
             <div className="stack gap-1">
               <span className="t-xs t-muted">{t(K.detail.categoriesLabel)}</span>
               <div className="row wrap gap-1">

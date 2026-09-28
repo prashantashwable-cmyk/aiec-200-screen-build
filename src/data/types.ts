@@ -632,6 +632,60 @@ export interface SupplierPurchaseOrder {
   isDemo: boolean;
 }
 
+/* ------------------------------------- Manufacturer production (096) */
+
+/** Inside a manufacturer's "in production" (095) — `complete` hands the line
+ *  to "ready to ship". A simple standard part uses a shorter list. */
+export type ProductionStage = 'raw_material' | 'fabrication' | 'quality_testing' | 'packaging' | 'complete';
+
+/** Part of AIEC's permanent documentation trail — what a later quality
+ *  dispute is settled against. Never deleted. */
+export interface ProductionEvidence {
+  id: string;
+  stage: ProductionStage;
+  fileName: string;
+  kind: 'photo' | 'document';
+  /** Session-only preview (no storage bucket in this build). */
+  previewUrl?: string;
+  note?: string;
+  uploadedBy: string;
+  uploadedAt: string;
+}
+
+export interface ProductionEvent {
+  id: string;
+  kind: 'advanced' | 'regressed' | 'skipped';
+  fromStage: ProductionStage;
+  toStage: ProductionStage;
+  at: string;
+  byName: string;
+  byRole: 'supplier' | 'admin';
+  /** Required for a regression (what the defect was) or a skip. */
+  reason?: string;
+  /** Moved together with the rest of its production batch. */
+  viaBatch?: boolean;
+}
+
+/** One manufactured PO line's production (096). Id is `prod-<lineItemId>`,
+ *  so any screen holding a line can link straight to it. */
+export interface ProductionRecord {
+  id: string;
+  poId: string;
+  lineItemId: string;
+  supplierId: string;
+  /** The stages that apply to this item, in order, ending `complete`. */
+  stages: ProductionStage[];
+  currentStage: ProductionStage;
+  stageEnteredAt: string;
+  startedAt: string;
+  completedAt?: string;
+  /** Several AIEC orders built in one run — why they move in lockstep. */
+  batchId?: string;
+  evidence: ProductionEvidence[];
+  events: ProductionEvent[];
+  isDemo: boolean;
+}
+
 /* ------------------------------------------ Auto-PO trigger rules (094) */
 
 /** When a won deal's POs draft by themselves. `on_first_payment` waits for
@@ -1494,6 +1548,9 @@ export interface Supplier {
    *  future purchase orders and deal links are reassigned to the
    *  canonical supplier so both records' history reads under one id. */
   mergedIntoSupplierId?: string;
+  /** Builds components to order (096) rather than reselling stock — only a
+   *  manufacturer's PO lines get production-stage tracking. Set in 091. */
+  isManufacturer?: boolean;
   isDemo: boolean;
 }
 

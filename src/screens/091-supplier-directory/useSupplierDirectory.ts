@@ -46,6 +46,8 @@ interface SupplierDirectoryState {
 
   approvingKyc: boolean;
   approveKyc: () => Promise<boolean>;
+  /** 096: only a manufacturer's order lines get production tracking. */
+  setManufacturer: (isManufacturer: boolean) => Promise<boolean>;
   rejectingKyc: boolean;
   rejectKyc: () => Promise<boolean>;
 
@@ -201,6 +203,20 @@ export function useSupplierDirectory(): SupplierDirectoryState {
     }
   }, [repository, openRow, user, load]);
 
+  const setManufacturer = useCallback(
+    async (isManufacturer: boolean) => {
+      if (!openRow || !user) return false;
+      try {
+        await repository.setSupplierManufacturer(openRow.supplier.id, isManufacturer, user.name);
+        await load();
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [repository, openRow, user, load],
+  );
+
   const rejectKyc = useCallback(async () => {
     if (!openRow || !user) return false;
     setRejectingKyc(true);
@@ -316,6 +332,7 @@ export function useSupplierDirectory(): SupplierDirectoryState {
     submitInvite,
     approvingKyc,
     approveKyc,
+    setManufacturer,
     rejectingKyc,
     rejectKyc,
     suspendOpen,

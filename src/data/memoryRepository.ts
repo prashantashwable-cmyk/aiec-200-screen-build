@@ -47,6 +47,7 @@ import {
   seedSuppliers,
   seedSupplierCatalogItems,
   seedCatalogPriceChanges,
+  seedProductionRecords,
   seedSupplierPurchaseOrders,
   seedTriggerRules,
   seedUsers,
@@ -113,6 +114,7 @@ import type {
   CatalogSaveResult,
   CatalogSettings,
   SupplierOrderCard,
+  ProductionRecordResult,
   PurchaseOrderLineView,
   SupplierDirectoryRow,
   SupplierInviteInput,
@@ -128,6 +130,9 @@ import type {
   CategoryMatchResult,
   Commitment,
   PoFulfilmentStage,
+  ProductionEvidence,
+  ProductionRecord,
+  ProductionStage,
   EscalationLevel,
   WorkNotification,
   AutomationRule,
@@ -233,6 +238,13 @@ import {
   poStageOf,
   stageIndex,
 } from '@/features/suppliers/fulfilment';
+import {
+  EVIDENCE_REQUIRED_STAGES,
+  assessStall,
+  completionPct,
+  nextStage,
+  stagesForCategory,
+} from '@/features/suppliers/production';
 import type { CommitmentSources } from '@/features/work/commitmentRules';
 
 /**
@@ -301,6 +313,8 @@ let contractSignatureCounter = 100;
 const supplierPurchaseOrders = [...seedSupplierPurchaseOrders];
 const supplierCatalogItems = [...seedSupplierCatalogItems];
 const catalogPriceChanges = [...seedCatalogPriceChanges];
+const productionRecords = [...seedProductionRecords];
+let productionCounter = 100;
 let catalogItemCounter = 100;
 let catalogPriceChangeCounter = 100;
 let catalogSettings: CatalogSettings = { priceReviewThresholdPct: DEFAULT_PRICE_REVIEW_THRESHOLD_PCT };
@@ -1910,6 +1924,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   runPaymentReminders(ASSISTANT_ACTOR, now);
   sendDueScheduledQuotations(now);
   autoDraftDuePurchaseOrders();
+  detectProductionStalls(now);
   for (const deal of deals) {
     if (payments.some((p) => p.dealId === deal.id && p.status === 'paid' && !invoices.some((inv) => inv.paymentId === p.id))) {
       ensureStageInvoices(deal.id, deal, resolveLead(deal.leadId));
@@ -2019,6 +2034,11 @@ function movePoLinesSync(
   );
   const allDelivered = nextLines.every((l) => l.fulfilmentStage === 'delivered');
   const anyPastSent = nextLines.some((l) => l.fulfilmentStage !== 'sent');
+  // Entering production opens (or, after rework, reopens) the line's
+  // manufacturer production record (096) — the same status, seen closer up.
+  if (toStage === 'in_production' && supplier?.isManufacturer) {
+    for (const line of targets) syncProductionOnEnter(po, line, actor, note, now);
+  }
   return patchInPlace(supplierPurchaseOrders, poId, {
     lineItems: nextLines,
     statusEvents: events,
@@ -2280,6 +2300,130 @@ function inFlightPoCountFor(item: SupplierCatalogItem): number {
 
 const pctOver = (price: number, base: number | null | undefined) =>
   base ? Math.round(((price - base) / base) * 1000) / 10 : null;
+
+
+/* ===================================== Manufacturer production (096) */
+
+const productionIdFor = (lineItemId: string) => `prod-${lineItemId}`;
+
+function newProductionRecord(po: SupplierPurchaseOrder, line: PurchaseOrderLineItem, at: string): ProductionRecord {
+  const stages = stagesForCategory(line.category);
+  const record: ProductionRecord = {
+    id: productionIdFor(line.id),
+    poId: po.id,
+    lineItemId: line.id,
+    supplierId: po.supplierId ?? '',
+    stages,
+    currentStage: stages[0],
+    stageEnteredAt: at,
+    startedAt: at,
+    evidence: [],
+    events: [],
+    isDemo: true,
+  };
+  productionRecords.push(record);
+  return record;
+}
+
+/** A line entering "in production": start its record, or — if production
+ *  had finished and the line came back for rework — reopen it at quality
+ *  testing with the reason, never a silent stall. */
+function syncProductionOnEnter(po: SupplierPurchaseOrder, line: PurchaseOrderLineItem, actor: User, note: string | undefined, at: string): void {
+  const existing = byId(productionRecords, productionIdFor(line.id));
+  if (!existing) {
+    newProductionRecord(po, line, at);
+    return;
+  }
+  if (existing.currentStage !== 'complete') return;
+  const reopenAt: ProductionStage = existing.stages.includes('quality_testing') ? 'quality_testing' : existing.stages[0];
+  patchInPlace(productionRecords, existing.id, {
+    currentStage: reopenAt,
+    stageEnteredAt: at,
+    completedAt: undefined,
+    events: [
+      ...existing.events,
+      { id: `pe-${existing.id}-${existing.events.length + 1}`, kind: 'regressed', fromStage: 'complete', toStage: reopenAt, at, byName: actor.name, byRole: actor.role === 'admin' ? 'admin' : 'supplier', reason: note },
+    ],
+  });
+}
+
+/** The manufacturer's own login, or Admin — anyone else is refused. */
+function assertProductionAccess(record: ProductionRecord, actor: User): void {
+  if (actor.role === 'admin') return;
+  const supplier = byId(suppliers, record.supplierId);
+  if (actor.role === 'supplier' && supplier && supplierUserFor(supplier)?.id === actor.id) return;
+  throw new RepositoryError('forbidden');
+}
+
+function lineFor(record: ProductionRecord) {
+  const po = byId(supplierPurchaseOrders, record.poId);
+  const line = po?.lineItems?.find((l) => l.id === record.lineItemId);
+  return { po, line };
+}
+
+function productionEvent(record: ProductionRecord, actor: User, fields: Omit<ProductionRecord['events'][number], 'id' | 'at' | 'byName' | 'byRole'>, at: string) {
+  return { id: `pe-${record.id}-${record.events.length + 1}-${(productionCounter += 1)}`, at, byName: actor.name, byRole: actor.role === 'admin' ? ('admin' as const) : ('supplier' as const), ...fields };
+}
+
+/** One record's sign-off; returns the updated record. */
+function advanceOne(record: ProductionRecord, actor: User, note: string | undefined, at: string, viaBatch: boolean): ProductionRecord {
+  const next = nextStage(record);
+  if (!next) throw new RepositoryError('already_complete');
+  if (EVIDENCE_REQUIRED_STAGES.includes(record.currentStage) && !record.evidence.some((e) => e.stage === record.currentStage)) {
+    throw new RepositoryError('evidence_required');
+  }
+  const updated = patchInPlace(productionRecords, record.id, {
+    currentStage: next,
+    stageEnteredAt: at,
+    completedAt: next === 'complete' ? at : undefined,
+    events: [...record.events, productionEvent(record, actor, { kind: 'advanced', fromStage: record.currentStage, toStage: next, reason: note?.trim() || undefined, viaBatch }, at)],
+  });
+  // Production done is the line's "ready to ship" — one true status (095).
+  if (next === 'complete') {
+    const { po, line } = lineFor(record);
+    if (po && line && stageIndex(lineStageOf(po, line)) < stageIndex('ready_to_ship')) {
+      movePoLinesSync(po.id, [line.id], 'ready_to_ship', actor, actor.role === 'admin' ? (note?.trim() || 'Production completed') : undefined);
+    }
+  }
+  return updated;
+}
+
+/** Stalls surface in the Alerts dashboard by themselves (heartbeat), judged
+ *  against the manufacturer's own usual pace — and clear themselves once
+ *  production moves on. */
+function detectProductionStalls(now: number): void {
+  for (const record of productionRecords) {
+    const { po, line } = lineFor(record);
+    if (!po || !line || po.status !== 'sent') continue;
+    const stall = assessStall(record, productionRecords, now);
+    const open = alerts.find((a) => a.relatedId === record.id && a.titleKey === 'production.alert.stalled' && a.status !== 'resolved');
+    if (stall.stalled && !open) {
+      const alert = raiseAlert({
+        titleKey: 'production.alert.stalled',
+        context: `${po.code} · ${line.description} · ${record.currentStage.replace(/_/g, ' ')} for ${stall.daysInStage}d (usually ${stall.expectedDays}d)`,
+        severity: 'medium',
+        category: 'supplier',
+        relatedId: record.id,
+        sourceRoute: `/orders/production/${record.id}`,
+      });
+      logAutomatedAction({
+        sourceKey: 'production.stall_alert',
+        triggeringCondition: `${line.description} on ${po.code} passed ×1.5 its manufacturer's usual ${record.currentStage} time`,
+        actionTaken: `Raised ${alert.code}`,
+        affectedRecordId: record.id,
+        affectedRecordType: 'purchase_order',
+        subjectLabel: po.code,
+      });
+    } else if (!stall.stalled && open) {
+      patchInPlace(alerts, open.id, {
+        status: 'resolved',
+        resolvedAt: new Date(now).toISOString(),
+        resolvedBy: 'system',
+        resolutionNote: `Production moved on to ${record.currentStage.replace(/_/g, ' ')}.`,
+      });
+    }
+  }
+}
 
 export const memoryRepository: Repository = {
   /* ------------------------------------------------------------- Users */
@@ -4930,6 +5074,154 @@ export const memoryRepository: Repository = {
       });
     }),
 
+  /* ------------------------------------- Manufacturer production (096) */
+  getProductionRecord: (recordId, byUserId) =>
+    simulateRead((): ProductionRecordResult => {
+      const actor = catalogActor(byUserId);
+      let record = byId(productionRecords, recordId);
+      const lineItemId = recordId.replace(/^prod-/, '');
+      const po = record ? byId(supplierPurchaseOrders, record.poId) : supplierPurchaseOrders.find((p) => p.lineItems?.some((l) => l.id === lineItemId));
+      const line = po?.lineItems?.find((l) => l.id === (record?.lineItemId ?? lineItemId));
+      if (!po || !line) return { status: 'unavailable', reason: 'not_found' };
+      const supplier = po.supplierId ? byId(suppliers, po.supplierId) : null;
+      if (actor.role === 'supplier' && (!supplier || supplierUserFor(supplier)?.id !== actor.id)) return { status: 'unavailable', reason: 'not_found' };
+      if (!supplier?.isManufacturer) return { status: 'unavailable', reason: 'not_manufacturer' };
+      const lineStage = lineStageOf(po, line);
+      if (!record) {
+        if (po.status !== 'sent' || stageIndex(lineStage) < stageIndex('in_production')) return { status: 'unavailable', reason: 'not_in_production' };
+        record = newProductionRecord(po, line, lineStageEnteredAt(po, line));
+      }
+      const deal = byId(deals, po.dealId);
+      const stall = assessStall(record, productionRecords, Date.now());
+      const siblings = record.batchId ? productionRecords.filter((r) => r.batchId === record!.batchId && r.id !== record!.id) : [];
+      return {
+        status: 'ok',
+        view: {
+          record,
+          poCode: po.code,
+          dealId: po.dealId,
+          lineDescription: line.description,
+          category: line.category,
+          supplierName: supplier.name,
+          dealCode: deal?.code ?? '',
+          siteName: deal ? (resolveLead(deal.leadId)?.siteName ?? '') : '',
+          lineStage,
+          completionPct: completionPct(record),
+          daysInStage: stall.daysInStage,
+          expectedDays: stall.expectedDays,
+          expectedIsDefault: stall.expectedIsDefault,
+          stalled: stall.stalled,
+          nextStage: nextStage(record),
+          evidenceRequired: EVIDENCE_REQUIRED_STAGES.includes(record.currentStage) && !record.evidence.some((e) => e.stage === record!.currentStage),
+          batchSiblings: siblings.map((r) => {
+            const sib = lineFor(r);
+            return { recordId: r.id, poCode: sib.po?.code ?? '', lineDescription: sib.line?.description ?? '', currentStage: r.currentStage };
+          }),
+          canUpdate: po.status === 'sent' && lineStage !== 'delivered',
+        },
+      };
+    }),
+
+  advanceProductionStage: (recordId, input, byUserId) =>
+    simulateWrite(() => {
+      const actor = catalogActor(byUserId);
+      const record = byId(productionRecords, recordId);
+      if (!record) throw new RepositoryError('not_found');
+      assertProductionAccess(record, actor);
+      // Admin signing off a manufacturer's stage is standing in for them.
+      if (actor.role === 'admin' && !input.note?.trim()) throw new RepositoryError('note_required');
+      const at = new Date().toISOString();
+      const batch = input.applyToBatch && record.batchId
+        ? productionRecords.filter((r) => r.batchId === record.batchId && r.id !== record.id && r.currentStage === record.currentStage)
+        : [];
+      // All or nothing: a batch sibling missing its test evidence stops the lot.
+      for (const r of [record, ...batch]) {
+        if (EVIDENCE_REQUIRED_STAGES.includes(r.currentStage) && !r.evidence.some((e) => e.stage === r.currentStage)) {
+          throw new RepositoryError('evidence_required');
+        }
+      }
+      const updated = advanceOne(record, actor, input.note, at, false);
+      for (const sibling of batch) advanceOne(sibling, actor, input.note, at, true);
+      return updated;
+    }),
+
+  regressProductionStage: (recordId, toStage, reason, byUserId) =>
+    simulateWrite(() => {
+      const actor = catalogActor(byUserId);
+      const record = byId(productionRecords, recordId);
+      if (!record) throw new RepositoryError('not_found');
+      assertProductionAccess(record, actor);
+      if (!reason.trim()) throw new RepositoryError('reason_required');
+      if (record.stages.indexOf(toStage) < 0 || record.stages.indexOf(toStage) >= record.stages.indexOf(record.currentStage)) {
+        throw new RepositoryError('invalid_stage');
+      }
+      const at = new Date().toISOString();
+      const { po, line } = lineFor(record);
+      // Reopening finished production takes the line back from "ready to ship".
+      if (record.currentStage === 'complete' && po && line) {
+        if (stageIndex(lineStageOf(po, line)) >= stageIndex('shipped')) throw new RepositoryError('already_shipped');
+        // Moving the line back reopens the record (logging the reason once).
+        movePoLinesSync(po.id, [line.id], 'in_production', actor, reason);
+      }
+      const current = byId(productionRecords, recordId)!;
+      if (current.currentStage === toStage) return current;
+      return patchInPlace(productionRecords, recordId, {
+        currentStage: toStage,
+        stageEnteredAt: at,
+        completedAt: undefined,
+        events: [...current.events, productionEvent(current, actor, { kind: 'regressed', fromStage: current.currentStage, toStage, reason: reason.trim() }, at)],
+      });
+    }),
+
+  skipProductionStage: (recordId, stage, reason, byUserId) =>
+    simulateWrite(() => {
+      const actor = catalogActor(byUserId);
+      const record = byId(productionRecords, recordId);
+      if (!record) throw new RepositoryError('not_found');
+      assertProductionAccess(record, actor);
+      if (!reason.trim()) throw new RepositoryError('reason_required');
+      if (stage === 'complete' || EVIDENCE_REQUIRED_STAGES.includes(stage)) throw new RepositoryError('not_skippable');
+      const index = record.stages.indexOf(stage);
+      if (index < 0 || index < record.stages.indexOf(record.currentStage)) throw new RepositoryError('invalid_stage');
+      const at = new Date().toISOString();
+      const stages = record.stages.filter((s) => s !== stage);
+      const skippingCurrent = record.currentStage === stage;
+      const moveTo = skippingCurrent ? stages[index] : record.currentStage;
+      return patchInPlace(productionRecords, recordId, {
+        stages,
+        currentStage: moveTo,
+        stageEnteredAt: skippingCurrent ? at : record.stageEnteredAt,
+        events: [...record.events, productionEvent(record, actor, { kind: 'skipped', fromStage: stage, toStage: moveTo, reason: reason.trim() }, at)],
+      });
+    }),
+
+  addProductionEvidence: (recordId, input, byUserId) =>
+    simulateWrite(() => {
+      const actor = catalogActor(byUserId);
+      const record = byId(productionRecords, recordId);
+      if (!record) throw new RepositoryError('not_found');
+      assertProductionAccess(record, actor);
+      if (!input.fileName.trim()) throw new RepositoryError('invalid_input');
+      productionCounter += 1;
+      const evidence: ProductionEvidence = {
+        id: `pev-new-${productionCounter}`,
+        stage: record.currentStage,
+        fileName: input.fileName.trim(),
+        kind: input.kind,
+        previewUrl: input.previewUrl,
+        note: input.note?.trim() || undefined,
+        uploadedBy: actor.name,
+        uploadedAt: new Date().toISOString(),
+      };
+      return patchInPlace(productionRecords, recordId, { evidence: [...record.evidence, evidence] });
+    }),
+
+  setSupplierManufacturer: (supplierId, isManufacturer) =>
+    simulateWrite(() => {
+      if (!byId(suppliers, supplierId)) throw new RepositoryError('not_found');
+      return patchInPlace(suppliers, supplierId, { isManufacturer });
+    }),
+
   /* --------------------------------------- Supplier order tracking (095) */
   listSupplierOrderBoard: (byUserId) =>
     simulateRead(() => {
@@ -4950,7 +5242,17 @@ export const memoryRepository: Repository = {
         .map((po): SupplierOrderCard => {
           const supplier = po.supplierId ? byId(suppliers, po.supplierId) ?? undefined : undefined;
           const deal = byId(deals, po.dealId);
-          const lines = (po.lineItems ?? []).map((line) => ({ line, stage: lineStageOf(po, line), stageEnteredAt: lineStageEnteredAt(po, line) }));
+          const lines = (po.lineItems ?? []).map((line) => {
+            const record = supplier?.isManufacturer ? byId(productionRecords, productionIdFor(line.id)) : null;
+            return {
+              line,
+              stage: lineStageOf(po, line),
+              stageEnteredAt: lineStageEnteredAt(po, line),
+              production: record
+                ? { recordId: record.id, stage: record.currentStage, completionPct: completionPct(record), stalled: assessStall(record, productionRecords, now).stalled }
+                : undefined,
+            };
+          });
           const delay = assessDelay(po, supplier, supplierPurchaseOrders, now);
           return {
             po,

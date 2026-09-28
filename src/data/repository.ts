@@ -72,6 +72,8 @@ import type {
   SupplierCatalogItem,
   CatalogPriceChange,
   PoFulfilmentStage,
+  ProductionRecord,
+  ProductionStage,
   AutoPoRules,
   AutoPoSimulationResult,
   SupplierPurchaseOrder,
@@ -778,6 +780,8 @@ export interface SupplierOrderLineStatus {
   line: PurchaseOrderLineItem;
   stage: PoFulfilmentStage;
   stageEnteredAt: string;
+  /** Present for a manufacturer's line that has reached production (096). */
+  production?: { recordId: string; stage: ProductionStage; completionPct: number; stalled: boolean };
 }
 
 /** The delay_risk_flag and what it's based on — computed on every read. */
@@ -807,6 +811,39 @@ export interface SupplierOrderCard {
   /** The supplier has their own login and can update this themselves. */
   supplierHasLogin: boolean;
 }
+
+/* ------------------------------------- Manufacturer production (096) */
+
+export interface ProductionRecordView {
+  record: ProductionRecord;
+  poCode: string;
+  dealId: string;
+  lineDescription: string;
+  category: string;
+  supplierName: string;
+  dealCode: string;
+  siteName: string;
+  /** The line's 095 status — production is the inside of "in production". */
+  lineStage: PoFulfilmentStage;
+  completionPct: number;
+  daysInStage: number;
+  /** This manufacturer's usual time in the current stage. */
+  expectedDays: number;
+  expectedIsDefault: boolean;
+  stalled: boolean;
+  nextStage: ProductionStage | null;
+  /** Evidence must exist for the current stage before it can be signed off. */
+  evidenceRequired: boolean;
+  batchSiblings: { recordId: string; poCode: string; lineDescription: string; currentStage: ProductionStage }[];
+  /** The signed-in person may update this (its manufacturer, or Admin). */
+  canUpdate: boolean;
+}
+
+export type ProductionRecordResult =
+  | { status: 'ok'; view: ProductionRecordView }
+  /** Distributors have no production of their own; a line not yet in
+   *  production has nothing to show yet. */
+  | { status: 'unavailable'; reason: 'not_found' | 'not_manufacturer' | 'not_in_production' };
 
 /* ------------------------------------------------ Supplier catalog (093) */
 
@@ -1559,6 +1596,25 @@ export interface Repository {
 
   /* Communication: analytics */
   getCommunicationAnalytics(): Promise<CommunicationAnalytics>;
+
+  /* Manufacturer production (096) — inside a manufacturer's "in production" */
+  getProductionRecord(recordId: string, byUserId: string): Promise<ProductionRecordResult>;
+  /** Signs off the current stage. Quality testing needs evidence first;
+   *  finishing the last stage hands the line to "ready to ship" (095).
+   *  `applyToBatch` moves every batch sibling at the same stage together. */
+  advanceProductionStage(recordId: string, input: { applyToBatch: boolean; note?: string }, byUserId: string): Promise<ProductionRecord>;
+  /** Rework — back to an earlier stage, with the defect written down. */
+  regressProductionStage(recordId: string, toStage: ProductionStage, reason: string, byUserId: string): Promise<ProductionRecord>;
+  /** For a stage that genuinely doesn't apply to this item. Quality testing
+   *  can never be skipped. */
+  skipProductionStage(recordId: string, stage: ProductionStage, reason: string, byUserId: string): Promise<ProductionRecord>;
+  addProductionEvidence(
+    recordId: string,
+    input: { fileName: string; kind: 'photo' | 'document'; previewUrl?: string; note?: string },
+    byUserId: string,
+  ): Promise<ProductionRecord>;
+  /** 091's flag: only a manufacturer's lines get production tracking. */
+  setSupplierManufacturer(supplierId: string, isManufacturer: boolean, byName: string): Promise<Supplier>;
 
   /* Supplier order tracking (095) — a sent PO's one true fulfilment status */
   /** Every sent PO still in flight plus anything delivered in the last 30

@@ -43,6 +43,8 @@ export const SUPPLIER_DIRECTORY_KEYS = {
   detail: {
     performanceScoreLabel: 'supplierDirectory.detail.performanceScoreLabel',
     viewCatalog: 'supplierDirectory.detail.viewCatalog',
+    manufacturer: 'supplierDirectory.detail.manufacturer',
+    manufacturerHint: 'supplierDirectory.detail.manufacturerHint',
     contactLabel: 'supplierDirectory.detail.contactLabel',
     categoriesLabel: 'supplierDirectory.detail.categoriesLabel',
     specialtiesLabel: 'supplierDirectory.detail.specialtiesLabel',
