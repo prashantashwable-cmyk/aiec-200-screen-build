@@ -92,9 +92,9 @@ After the **10th screen of a module**, run that module's checkpoint: click throu
 end to end, spot-check 2–3 screens from earlier modules for regressions, fix anything found, and add
 the module's section to `BUILD_README.md`.
 
-## Current status (as of 2026-09-27)
+## Current status (as of 2026-09-28)
 
-- Modules 1–9 (`001`–`090`) are built. Modules 5, 6, 7, 8 and 9 are checkpoint-verified.
+- Modules 1–10 (`001`–`100`) are built. Modules 5–10 are checkpoint-verified.
 - **Module 9 Payments & Financing is done**, including its checkpoint (all 10 screens clicked
   through as both Admin and Customer, 4 earlier-module screens spot-checked, nothing regressed —
   see `BUILD_README.md`'s Module 9 section for the full writeup, including the shared aging
@@ -107,8 +107,12 @@ the module's section to `BUILD_README.md`.
   (dl-1) was seeded one day short of the reminder cadence's own exhaustion threshold, so no real
   payment could ever reach 089's escalation queue while also belonging to a deal with an active
   Job — moved from 6 to 10 days overdue (and the stale `al-2` alert text updated to match).
-- **Module 10: `091`–`100` built. Next: the Module 10 checkpoint.** Add an Admin "Suppliers" nav
-  tab there: 091–100 are currently reachable for Admin only through deep links.
+- **Module 10 Supplier & Manufacturer Management is done, including its checkpoint.** See
+  BUILD_README's Module 10 section. **Next: `101`** (Module 11). Checkpoint fixes:
+  - Admin has a "Suppliers" nav tab, and 091 has a "Supplier tools" hub.
+  - A route's `tab` may be per role (`{ admin: 'suppliers', supplier: 'orders' }`).
+  - The shell now uses `Link` + its own `isActive` instead of `NavLink`. NavLink's prefix matching
+    had lit Admin's Home everywhere and ignored declared tabs.
   100 facts:
   - `SupplierPaymentTermsConfig` (memoryRepository `paymentTermsConfig`) holds tier defaults
     (`new` / `standard` / `trusted`). Each tier is a `SupplierPaymentTermSettings`: a `termType`
