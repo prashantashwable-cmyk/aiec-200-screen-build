@@ -15,6 +15,8 @@ export const MERGE_FIELD_FALLBACKS: Record<string, string> = {
   quoteAmount: 'your quote',
   installStep: 'the current stage',
   visitDate: 'the scheduled date',
+  etaTime: 'shortly',
+  shipmentLabel: 'delivery',
 };
 
 const TOKEN_PATTERN = /\{\{(\w+)\}\}/g;

@@ -9,6 +9,7 @@ export const MULTI_COLUMN_MIN_WIDTH = 1024;
 export const SUPPLIER_ORDERS_KEYS = {
   title: 'supplierOrders.title',
   deliveries: 'supplierOrders.deliveries',
+  shipments: 'supplierOrders.shipments',
   subtitleAdmin: 'supplierOrders.subtitleAdmin',
   subtitleSupplier: 'supplierOrders.subtitleSupplier',
   loading: 'supplierOrders.loading',

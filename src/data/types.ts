@@ -846,6 +846,51 @@ export interface DeliverySchedule {
   isDemo: boolean;
 }
 
+/* ------------------------------------------ Shipment tracking (102) */
+
+export type ShipmentMilestone = 'dispatched' | 'in_transit' | 'nearby' | 'arrived';
+
+/** How a vehicle's progress reaches AIEC: a live location feed, or the
+ *  supplier telling us by hand (a smaller supplier's own vehicle with no
+ *  telematics). A manual leg never shows a live pin. */
+export type ShipmentTrackingSource = 'live_gps' | 'manual';
+
+export interface ShipmentMilestoneEvent {
+  milestone: ShipmentMilestone;
+  at: string;
+  source: 'gps' | 'manual';
+  /** Who said so, for a manual update. */
+  byName?: string;
+  note?: string;
+  /** The customer was messaged about it (customer_notified_flag). */
+  customerNotifiedAt?: string;
+  /** Why they weren't, when they weren't. */
+  customerNotifySkipped?: 'opted_out' | 'no_contact';
+}
+
+/** One vehicle carrying some of a PO's lines. A PO whose lines ship on
+ *  different vehicles has one leg each, tracked on its own. */
+export interface ShipmentLeg {
+  id: string;
+  poId: string;
+  dealId: string;
+  supplierId: string;
+  lineItemIds: string[];
+  vehicleLabel: string;
+  driverName: string;
+  driverPhone?: string;
+  source: ShipmentTrackingSource;
+  origin: { name: string; lat: number; lng: number };
+  dispatchedAt: string;
+  /** The planned arrival — for a manual leg, the supplier's own estimate. */
+  etaAt: string;
+  /** A live feed that stopped reporting. The vehicle's position is frozen
+   *  here and shown honestly as last known. */
+  feedLostAt?: string;
+  milestones: ShipmentMilestoneEvent[];
+  isDemo: boolean;
+}
+
 /* ---------------------------------- Supplier payment terms (100) */
 
 /** Trust earned through performance: a new supplier pays its way in with an
@@ -2096,6 +2141,7 @@ export type CommitmentKind =
   | 'supplier_retention_decision'
   | 'delivery_schedule'
   | 'delivery_receive'
+  | 'shipment_status_update'
   | 'alert_acknowledge'
   | 'follow_up_task'
   | 'lead_revisit';
@@ -2116,7 +2162,8 @@ export type CommitmentSubjectType =
   | 'supplier_agreement'
   | 'supplier_thread'
   | 'supplier_retention'
-  | 'delivery';
+  | 'delivery'
+  | 'shipment';
 
 /**
  * 0 nothing sent yet · 1 owner nudged before due · 2 owner told it's overdue

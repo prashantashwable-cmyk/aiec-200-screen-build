@@ -5,6 +5,7 @@ import type {
   SupplierOrderRating,
   SupplierAgreementVersion,
   DeliverySchedule,
+  ShipmentLeg,
   SupplierMessage,
   SupplierRetention,
   SupplierThread,
@@ -30,6 +31,7 @@ import { RENEWAL_NOTICE, agreementState, promisedDeliveryOf, versionsOf } from '
 import { SUPPLIER_REPLY_WINDOW, byAt } from '@/features/suppliers/threads';
 import { RETENTION_DECISION_WINDOW, RETENTION_REVIEW_AFTER } from '@/features/suppliers/paymentTerms';
 import { windowEndsAt } from '@/features/logistics/deliverySlots';
+import { MANUAL_UPDATE_EVERY } from '@/features/logistics/shipmentTracking';
 
 /**
  * The manager's rulebook: every dated promise the business runs on, as data.
@@ -71,6 +73,7 @@ export interface CommitmentSources {
   supplierMessages: SupplierMessage[];
   supplierRetentions: SupplierRetention[];
   deliverySchedules: DeliverySchedule[];
+  shipmentLegs: ShipmentLeg[];
   /** Deals where someone paused payment reminders by hand (083). */
   pausedDealIds: Set<string>;
 }
@@ -843,6 +846,43 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
           completedAt: po.receivedAt,
           actionRoute: technician ? '/technician' : `/deliveries?poId=${po.id}`,
           oversightRoute: `/deliveries?poId=${po.id}`,
+        });
+      }
+      return out;
+    },
+  },
+  {
+    // Where a vehicle with no live feed is, is only what its supplier says.
+    // Until it arrives, the supplier owes an update every few hours — and a
+    // live vehicle whose feed dropped falls back to the same promise.
+    kind: 'shipment_status_update',
+    nudgeBefore: hours(1),
+    escalateAfter: hours(3),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'supplier',
+    collect(src) {
+      const admin = adminId(src);
+      const out: Obligation[] = [];
+      for (const leg of src.shipmentLegs) {
+        const needsWords = leg.source === 'manual' || (!!leg.feedLostAt && new Date(leg.feedLostAt).getTime() <= src.now);
+        if (!needsWords) continue;
+        const po = src.purchaseOrders.find((p) => p.id === leg.poId);
+        const supplier = src.suppliers.find((s) => s.id === leg.supplierId);
+        const portalUser = supplierUser(src, leg.supplierId);
+        const arrived = leg.milestones.find((e) => e.milestone === 'arrived');
+        const lastWord = leg.milestones.filter((e) => e.source === 'manual').map((e) => e.at).sort().pop() ?? leg.feedLostAt ?? leg.dispatchedAt;
+        out.push({
+          ...base('shipment_status_update', 'shipment', leg.id),
+          ownerUserId: portalUser?.id ?? admin,
+          titleKey: portalUser ? 'work.title.shipment_status_update' : 'work.title.shipment_status_update_proxy',
+          titleParams: { code: po?.code ?? '', supplier: supplier?.name ?? '' },
+          dueAt: plus(lastWord, MANUAL_UPDATE_EVERY),
+          state: arrived ? 'done' : 'open',
+          paused: false,
+          completedAt: arrived?.at,
+          actionRoute: `/shipments?leg=${leg.id}`,
+          oversightRoute: `/shipments?leg=${leg.id}`,
         });
       }
       return out;

@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { CalendarCheck, CaretLeft, CaretRight, ChatCircleDots, DotsSixVertical, Package, Warning } from '@phosphor-icons/react';
+import { CalendarCheck, CaretLeft, CaretRight, ChatCircleDots, DotsSixVertical, Package, Truck, Warning } from '@phosphor-icons/react';
 import {
   Badge,
   Button,
@@ -73,9 +73,14 @@ export function SupplierOrdersView() {
         title={t(K.title)}
         subtitle={t(s.isAdmin ? K.subtitleAdmin : K.subtitleSupplier)}
         action={
-          <Button size="sm" variant="secondary" icon={<CalendarCheck size={16} />} onClick={() => navigate('/deliveries')}>
-            {t(K.deliveries)}
-          </Button>
+          <div className="row gap-2 wrap">
+            <Button size="sm" variant="secondary" icon={<Truck size={16} />} onClick={() => navigate('/shipments')}>
+              {t(K.shipments)}
+            </Button>
+            <Button size="sm" variant="secondary" icon={<CalendarCheck size={16} />} onClick={() => navigate('/deliveries')}>
+              {t(K.deliveries)}
+            </Button>
+          </div>
         }
       />
 

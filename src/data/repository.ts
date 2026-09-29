@@ -79,6 +79,8 @@ import type {
   SupplierAgreementTerms,
   SupplierMessage,
   SupplierMessageAuthor,
+  ShipmentMilestone,
+  ShipmentTrackingSource,
   DeliveryRescheduleCause,
   DeliverySchedule,
   DeliveryWindow,
@@ -870,6 +872,88 @@ export interface SupplierScorecard {
   agreedTerms: SupplierAgreementTerms | null;
   /** Booked deliveries moved in the last 90 days (101), and how many were the supplier's doing. */
   deliveryReschedules: { total: number; supplierCaused: number };
+}
+
+/* ------------------------------------------ Shipment tracking (102) */
+
+/** One vehicle, as the viewer is allowed to see it. A customer's copy has no
+ *  vehicle, driver or supplier — just where it is and when it arrives. */
+export interface ShipmentView {
+  legId: string;
+  poId: string;
+  poCode: string;
+  dealId: string;
+  siteName: string;
+  destination: { lat: number; lng: number };
+  origin: { name: string; lat: number; lng: number };
+  /** What's on this vehicle. */
+  lines: { id: string; description: string }[];
+  /** "Leg 2 of 3" for a PO that ships in parts; 1 of 1 otherwise. */
+  legNumber: number;
+  legCount: number;
+  supplierId: string | null;
+  supplierName: string | null;
+  vehicleLabel: string | null;
+  driverName: string | null;
+  driverPhone: string | null;
+  source: ShipmentTrackingSource;
+  feed: 'live' | 'lost' | 'manual';
+  /** Null for a manual leg: never a pin that isn't real. */
+  position: { lat: number; lng: number } | null;
+  /** When the position was last reported — honest about a stale one. */
+  fixAt: string | null;
+  progress: number;
+  remainingKm: number | null;
+  dispatchedAt: string;
+  etaAt: string;
+  minutesToEta: number;
+  milestone: ShipmentMilestone;
+  arrived: boolean;
+  timeline: {
+    milestone: ShipmentMilestone;
+    reachedAt: string | null;
+    source: 'gps' | 'manual' | null;
+    byName?: string;
+    note?: string;
+    /** Whether the customer has been messaged about it (Admin's view). */
+    customerNotified: boolean;
+  }[];
+  /** The route the map draws: planned, and the part already driven. */
+  route: { lat: number; lng: number }[];
+  travelled: { lat: number; lng: number }[];
+  /** The delivery window booked in 101, and whether the ETA falls inside it. */
+  booked: { date: string; window: DeliveryWindow } | null;
+  etaOutsideWindow: boolean;
+  canUpdate: boolean;
+}
+
+export interface DispatchablePo {
+  poId: string;
+  poCode: string;
+  siteName: string;
+  supplierName: string;
+  /** Lines ready to ship that aren't on a vehicle yet. */
+  lines: { id: string; description: string }[];
+}
+
+export interface ShipmentBoard {
+  shipments: ShipmentView[];
+  dispatchable: DispatchablePo[];
+}
+
+export interface DispatchShipmentInput {
+  lineIds: string[];
+  vehicleLabel: string;
+  driverName: string;
+  driverPhone?: string;
+  source: ShipmentTrackingSource;
+}
+
+export interface UpdateShipmentInput {
+  milestone: ShipmentMilestone;
+  note?: string;
+  /** A revised arrival estimate, if the supplier gives one. */
+  etaAt?: string;
 }
 
 /* ---------------------------------------- Delivery scheduling (101) */
@@ -1938,6 +2022,14 @@ export interface Repository {
   recordAgreementVersion(supplierId: string, input: RecordAgreementVersionInput, byUserId: string): Promise<SupplierAgreementVersion>;
   /** The supplier confirms a recorded version is what they signed. */
   acknowledgeAgreementVersion(versionId: string, byUserId: string): Promise<SupplierAgreementVersion>;
+
+  /* Shipment tracking (102) — where each vehicle is, honestly, and when it arrives */
+  getShipmentBoard(byUserId: string): Promise<ShipmentBoard>;
+  /** Puts ready lines on a vehicle and moves them to shipped. */
+  dispatchShipment(poId: string, input: DispatchShipmentInput, byUserId: string): Promise<ShipmentView>;
+  /** A manual leg's milestone, from the supplier (or Admin for them). Also
+   *  lands in the PO's supplier thread. */
+  updateShipmentMilestone(legId: string, input: UpdateShipmentInput, byUserId: string): Promise<ShipmentView>;
 
   /* Delivery scheduling (101) — a booked day, in the supplier's real windows, at a ready site */
   getDeliveryBoard(byUserId: string): Promise<DeliveryBoard>;

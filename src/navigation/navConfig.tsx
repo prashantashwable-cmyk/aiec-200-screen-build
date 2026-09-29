@@ -83,10 +83,12 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   technician: [
     { id: 'home', labelKey: 'nav.home', path: '/technician', icon: <House size={ICON_SIZE} /> },
     { id: 'jobs', labelKey: 'nav.jobs', path: '/technician', icon: <Wrench size={ICON_SIZE} /> },
+    { id: 'shipments', labelKey: 'nav.shipments', path: '/shipments', icon: <Truck size={ICON_SIZE} /> },
     { id: 'settings', labelKey: 'nav.settings', path: '/settings', icon: <Gear size={ICON_SIZE} /> },
   ],
   customer: [
     { id: 'home', labelKey: 'nav.home', path: '/customer', icon: <House size={ICON_SIZE} /> },
+    { id: 'shipments', labelKey: 'nav.shipments', path: '/shipments', icon: <Truck size={ICON_SIZE} /> },
     { id: 'settings', labelKey: 'nav.settings', path: '/settings', icon: <Gear size={ICON_SIZE} /> },
   ],
   supplier: [

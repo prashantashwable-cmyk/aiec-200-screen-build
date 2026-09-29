@@ -139,6 +139,7 @@ const common: ScreenTranslations = {
       messages: 'Messages',
       suppliers: 'Suppliers',
       menu: 'Menu',
+      shipments: 'Delivery',
     },
     calendar: {
       previous: 'Previous',
@@ -272,6 +273,8 @@ const common: ScreenTranslations = {
         delivery_schedule: 'Book the delivery for {{code}} from {{supplier}}',
         delivery_rebook: 'Book a new date for {{code}}: the last delivery found the site not ready',
         delivery_receive: 'Receive delivery {{code}} at {{site}}',
+        shipment_status_update: 'Update where the {{code}} shipment has got to',
+        shipment_status_update_proxy: '{{supplier}} hasn’t updated the {{code}} shipment. Ask them where it is',
         alert_acknowledge: 'Acknowledge alert {{code}}: {{context}}',
         follow_up_task: 'Follow-up: {{title}}',
         lead_revisit: 'Revisit {{site}} with {{name}} — the lost lead is due another look',
@@ -300,6 +303,10 @@ const common: ScreenTranslations = {
         delivery: {
           technician_notified: 'Told the technician to receive delivery {{label}}',
           job_synced: 'Moved the installation job for {{label}} to follow its delivery',
+        },
+        shipment: {
+          customer_notified: 'Told the customer about shipment {{label}}',
+          feed_lost: 'Raised an alert: the shipment {{label}} stopped reporting its location',
         },
         retention: {
           released: 'Released the retention on {{label}} at installation handover',
@@ -452,6 +459,7 @@ const common: ScreenTranslations = {
       messages: 'संदेश',
       suppliers: 'सप्लायर',
       menu: 'मेन्यू',
+      shipments: 'डिलीवरी',
     },
     calendar: {
       previous: 'पिछला',
@@ -585,6 +593,8 @@ const common: ScreenTranslations = {
         delivery_schedule: '{{supplier}} से {{code}} की डिलीवरी बुक करें',
         delivery_rebook: '{{code}} की नई तारीख बुक करें: पिछली डिलीवरी पर साइट तैयार नहीं मिली',
         delivery_receive: '{{site}} पर डिलीवरी {{code}} लें',
+        shipment_status_update: '{{code}} की खेप कहाँ पहुँची, यह अपडेट करें',
+        shipment_status_update_proxy: '{{supplier}} ने {{code}} की खेप अपडेट नहीं की। उनसे पूछें कि वह कहाँ है',
         alert_acknowledge: 'अलर्ट {{code}} स्वीकार करें: {{context}}',
         follow_up_task: 'फ़ॉलो-अप: {{title}}',
         lead_revisit: '{{name}} के साथ {{site}} पर फिर जाएँ — खोई लीड दोबारा देखने का समय आ गया है',
@@ -613,6 +623,10 @@ const common: ScreenTranslations = {
         delivery: {
           technician_notified: 'टेक्नीशियन को डिलीवरी {{label}} लेने के लिए बताया',
           job_synced: '{{label}} की इंस्टॉलेशन जॉब को उसकी डिलीवरी के बाद कर दिया',
+        },
+        shipment: {
+          customer_notified: 'ग्राहक को खेप {{label}} के बारे में बताया',
+          feed_lost: 'चेतावनी दर्ज की: खेप {{label}} ने लोकेशन भेजना बंद कर दिया',
         },
         retention: {
           released: 'इंस्टॉलेशन हैंडओवर पर {{label}} का रिटेंशन जारी किया',
@@ -765,6 +779,7 @@ const common: ScreenTranslations = {
       messages: 'संदेश',
       suppliers: 'पुरवठादार',
       menu: 'मेनू',
+      shipments: 'डिलिव्हरी',
     },
     calendar: {
       previous: 'मागचा',
@@ -898,6 +913,8 @@ const common: ScreenTranslations = {
         delivery_schedule: '{{supplier}} कडून {{code}} ची डिलिव्हरी बुक करा',
         delivery_rebook: '{{code}} ची नवीन तारीख बुक करा: मागच्या डिलिव्हरीवेळी साइट तयार नव्हती',
         delivery_receive: '{{site}} येथे डिलिव्हरी {{code}} स्वीकारा',
+        shipment_status_update: '{{code}} ची खेप कुठवर पोहोचली ते अपडेट करा',
+        shipment_status_update_proxy: '{{supplier}} ने {{code}} ची खेप अपडेट केलेली नाही. ती कुठे आहे ते त्यांना विचारा',
         alert_acknowledge: 'अलर्ट {{code}} स्वीकारा: {{context}}',
         follow_up_task: 'पाठपुरावा: {{title}}',
         lead_revisit: '{{name}} यांच्यासोबत {{site}} ला पुन्हा भेट द्या — गमावलेली लीड पुन्हा पाहण्याची वेळ आली आहे',
@@ -926,6 +943,10 @@ const common: ScreenTranslations = {
         delivery: {
           technician_notified: 'टेक्निशियनला डिलिव्हरी {{label}} स्वीकारायला सांगितलं',
           job_synced: '{{label}} ची इन्स्टॉलेशन जॉब तिच्या डिलिव्हरीनंतर केली',
+        },
+        shipment: {
+          customer_notified: 'ग्राहकाला खेप {{label}} बद्दल कळवलं',
+          feed_lost: 'सूचना नोंदवली: खेप {{label}} ने लोकेशन पाठवणं थांबवलं',
         },
         retention: {
           released: 'इन्स्टॉलेशन हँडओव्हरवर {{label}} चं रिटेन्शन दिलं',

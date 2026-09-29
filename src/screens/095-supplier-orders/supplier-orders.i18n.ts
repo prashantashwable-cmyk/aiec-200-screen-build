@@ -9,6 +9,7 @@ const translations: ScreenTranslations = {
     supplierOrders: {
       title: 'Supplier orders',
       deliveries: 'Deliveries',
+      shipments: 'Shipments',
       subtitleAdmin: 'Every order sent to a supplier, where it really is, and which ones are running late for that supplier.',
       subtitleSupplier: 'Your AIEC orders. Update each one as it moves, so nobody has to phone you for it.',
       loading: 'Loading orders',
@@ -75,6 +76,7 @@ const translations: ScreenTranslations = {
     supplierOrders: {
       title: 'सप्लायर ऑर्डर',
       deliveries: 'डिलीवरी',
+      shipments: 'शिपमेंट',
       subtitleAdmin: 'सप्लायर को भेजा गया हर ऑर्डर, वह असल में कहाँ है, और कौन से उस सप्लायर के हिसाब से देर से चल रहे हैं।',
       subtitleSupplier: 'आपके AIEC ऑर्डर। हर एक को आगे बढ़ते ही अपडेट करें, ताकि किसी को आपको फ़ोन न करना पड़े।',
       loading: 'ऑर्डर लोड हो रहे हैं',
@@ -141,6 +143,7 @@ const translations: ScreenTranslations = {
     supplierOrders: {
       title: 'सप्लायर ऑर्डर',
       deliveries: 'डिलिव्हरी',
+      shipments: 'शिपमेंट',
       subtitleAdmin: 'सप्लायरला पाठवलेला प्रत्येक ऑर्डर, तो प्रत्यक्षात कुठे आहे, आणि कोणते त्या सप्लायरच्या मानाने उशिरा चालले आहेत.',
       subtitleSupplier: 'तुमचे AIEC ऑर्डर. प्रत्येक पुढे सरकताच अपडेट करा, म्हणजे कोणालाही तुम्हाला फोन करावा लागणार नाही.',
       loading: 'ऑर्डर लोड होत आहेत',

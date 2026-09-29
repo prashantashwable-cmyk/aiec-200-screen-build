@@ -57,6 +57,9 @@ import type {
   SupplierAgreementVersion,
   SupplierMessage,
   SupplierThread,
+  ShipmentLeg,
+  ShipmentMilestone,
+  ShipmentMilestoneEvent,
   DeliverySchedule,
   DeliveryWindow,
   SiteReadiness,
@@ -1285,6 +1288,12 @@ export const seedHistoricalPurchaseOrders: SupplierPurchaseOrder[] = [
   dl2Vertex,
   // Another AIEC order's controller, built in the same Vertex run as dl-2's.
   fulfilledPo('spo-203', 'AIEC-PO-8203', 'dl-h4', 'sp-1', 'Anil Mehta', 7, [0.5, 0.5], [['controller', 'Microprocessor lift controller', 95_000]], 30),
+  // Wing B's order for Shree Ram Heights, on the road today in three parts (102).
+  fulfilledPo('spo-204', 'AIEC-PO-8204', 'dl-1', 'sp-1', 'Anil Mehta', 13.2, [0.5, 1, 10, 1.5], [
+    ['traction_machine', 'Geared/gearless traction machine unit', 210_000],
+    ['controller', 'Microprocessor lift controller', 95_000],
+    ['door_operator', 'Automatic door operator', 52_000],
+  ], 14),
 ];
 
 /* ------------------------------- Supplier rating & quality scorecard (097) */
@@ -1445,6 +1454,7 @@ const readiness = (dealId: string, ready: boolean[], extra: Partial<SiteReadines
  *  building behind AIEC-PO-8203 is half-done: no delivery can be booked there. */
 export const seedSiteReadiness: SiteReadiness[] = [
   readiness('dl-2', [true, true, true, true, true, true], { contactName: 'Mr. Kulkarni, site engineer', confirmedBy: 'Prashant Vasant Wable', confirmedAt: daysAgo(6) }),
+  readiness('dl-1', [true, true, true, true, true, true], { contactName: 'Mr. Joshi, society secretary', confirmedBy: 'Prashant Vasant Wable', confirmedAt: daysAgo(4) }),
   readiness('dl-h4', [true, true, false, false, true, false], { contactName: 'Site supervisor' }),
   readiness('dl-h2', [true, true, true, true, true, true], { contactName: 'Mr. Deshmukh', confirmedBy: 'Prashant Vasant Wable', confirmedAt: daysAgo(48) }),
   readiness('dl-h3', [true, true, true, true, true, true], { contactName: 'Ms. Iyer', confirmedBy: 'Prashant Vasant Wable', confirmedAt: daysAgo(66) }),
@@ -1472,6 +1482,11 @@ export const seedDeliverySchedules: DeliverySchedule[] = [
     ],
   },
   {
+    // Wing B's parts are booked for the day their first vehicle is due.
+    id: 'dsch-5', poId: 'spo-204', dealId: 'dl-1', supplierId: 'sp-1', status: 'scheduled', date: dayKeyAhead(0), window: new Date(NOW + 25 * MINUTE).getHours() < 12 ? 'morning' : 'afternoon', failedAttempts: 0, createdAt: daysAgo(3), isDemo: true,
+    events: [{ id: 'dsch-5-e1', kind: 'scheduled', at: daysAgo(3), byName: 'Prashant Vasant Wable', byRole: 'admin', date: dayKeyAhead(0), window: new Date(NOW + 25 * MINUTE).getHours() < 12 ? 'morning' : 'afternoon' }],
+  },
+  {
     id: 'dsch-2', poId: 'spo-202', dealId: 'dl-2', supplierId: 'sp-1', status: 'scheduled', date: VERTEX_BOOKED, window: 'morning', dependsOnPoId: 'spo-201', jobId: 'j-4', failedAttempts: 0, createdAt: daysAgo(4), isDemo: true,
     events: [{ id: 'dsch-2-e1', kind: 'scheduled', at: daysAgo(4), byName: 'Prashant Vasant Wable', byRole: 'admin', date: VERTEX_BOOKED, window: 'morning' }],
   },
@@ -1486,6 +1501,37 @@ export const seedDeliverySchedules: DeliverySchedule[] = [
   {
     id: 'dsch-4', poId: 'spo-h5', dealId: 'dl-h3', supplierId: 'sp-3', status: 'scheduled', date: receivedKey('spo-h5'), window: 'afternoon', failedAttempts: 0, createdAt: daysAgo(20), isDemo: true,
     events: [{ id: 'dsch-4-e1', kind: 'scheduled', at: daysAgo(20), byName: 'Prashant Vasant Wable', byRole: 'admin', date: receivedKey('spo-h5'), window: 'afternoon' as DeliveryWindow }],
+  },
+];
+
+/* ------------------------------------------ Shipment tracking (102) */
+
+const MUMBAI_DOCK = { name: 'Vertex dispatch dock, Mumbai', lat: 19.076, lng: 72.8777 };
+const gps = (milestone: ShipmentMilestone, minutesBefore: number): ShipmentMilestoneEvent => ({ milestone, at: minutesAgo(minutesBefore), source: 'gps', customerNotifiedAt: minutesAgo(minutesBefore - 1) });
+
+/** Wing B's order on three vehicles, all Vertex's: the traction machine on a
+ *  truck with a live feed, the controller on the supplier's own tempo with
+ *  no telematics (manual updates only), and the door operator on a second
+ *  live-feed truck whose feed dropped 50 minutes ago. */
+export const seedShipmentLegs: ShipmentLeg[] = [
+  {
+    id: 'shp-1', poId: 'spo-204', dealId: 'dl-1', supplierId: 'sp-1', lineItemIds: ['spo-204-l1'], vehicleLabel: 'MH-04 KL 7712 · 14-ft truck', driverName: 'Ramesh Jadhav', driverPhone: '9822011234',
+    source: 'live_gps', origin: MUMBAI_DOCK, dispatchedAt: minutesAgo(155), etaAt: at(25 * MINUTE),
+    milestones: [gps('dispatched', 155), gps('in_transit', 145)], isDemo: true,
+  },
+  {
+    id: 'shp-2', poId: 'spo-204', dealId: 'dl-1', supplierId: 'sp-1', lineItemIds: ['spo-204-l2'], vehicleLabel: 'MH-43 AB 2290 · Vertex tempo', driverName: 'Sunil Gaikwad',
+    source: 'manual', origin: MUMBAI_DOCK, dispatchedAt: minutesAgo(240), etaAt: at(90 * MINUTE),
+    milestones: [
+      { milestone: 'dispatched', at: minutesAgo(240), source: 'manual', byName: 'Anil Mehta', note: 'Loaded and out of the gate.', customerNotifiedAt: minutesAgo(239) },
+      { milestone: 'in_transit', at: minutesAgo(60), source: 'manual', byName: 'Anil Mehta', note: 'Crossed the Lonavala toll.', customerNotifiedAt: minutesAgo(59) },
+    ],
+    isDemo: true,
+  },
+  {
+    id: 'shp-3', poId: 'spo-204', dealId: 'dl-1', supplierId: 'sp-1', lineItemIds: ['spo-204-l3'], vehicleLabel: 'MH-12 QR 5508 · 14-ft truck', driverName: 'Dattatray Pawar', driverPhone: '9822015678',
+    source: 'live_gps', origin: MUMBAI_DOCK, dispatchedAt: minutesAgo(120), etaAt: at(90 * MINUTE), feedLostAt: minutesAgo(50),
+    milestones: [gps('dispatched', 120), gps('in_transit', 110)], isDemo: true,
   },
 ];
 
@@ -2397,6 +2443,54 @@ const templateSeeds: TemplateSeed[] = [
       en: 'Update for {{buildingName}}: installation has reached "{{installStep}}". We will keep you posted as it progresses.',
       hi: '{{buildingName}} के लिए अपडेट: इंस्टॉलेशन "{{installStep}}" चरण तक पहुँच गया है। आगे की जानकारी देते रहेंगे।',
       mr: '{{buildingName}} साठी अपडेट: इंस्टॉलेशन "{{installStep}}" टप्प्यापर्यंत पोहोचले आहे. पुढील माहिती कळवत राहू.',
+    },
+  },
+  {
+    groupId: 'tpl-ship-dispatched',
+    name: 'Shipment Dispatched',
+    channel: 'whatsapp',
+    associatedStage: 'won',
+    mergeFields: ['customerName', 'buildingName', 'shipmentLabel'],
+    body: {
+      en: 'Hi {{customerName}}, your {{shipmentLabel}} for {{buildingName}} has left the supplier and is on its way. We will keep you posted.',
+      hi: 'नमस्ते {{customerName}}, {{buildingName}} के लिए आपका {{shipmentLabel}} सप्लायर से निकल चुका है और रास्ते में है। हम आपको जानकारी देते रहेंगे।',
+      mr: 'नमस्कार {{customerName}}, {{buildingName}} साठीचा तुमचा {{shipmentLabel}} पुरवठादाराकडून निघाला आहे आणि वाटेत आहे. आम्ही तुम्हाला कळवत राहू.',
+    },
+  },
+  {
+    groupId: 'tpl-ship-transit',
+    name: 'Shipment In Transit',
+    channel: 'whatsapp',
+    associatedStage: 'won',
+    mergeFields: ['customerName', 'buildingName', 'shipmentLabel', 'etaTime'],
+    body: {
+      en: 'Hi {{customerName}}, your {{shipmentLabel}} is on the road and should reach {{buildingName}} around {{etaTime}}.',
+      hi: 'नमस्ते {{customerName}}, आपका {{shipmentLabel}} रास्ते में है और {{buildingName}} लगभग {{etaTime}} तक पहुँच जाएगा।',
+      mr: 'नमस्कार {{customerName}}, तुमचा {{shipmentLabel}} वाटेत आहे आणि {{buildingName}} येथे साधारण {{etaTime}} पर्यंत पोहोचेल.',
+    },
+  },
+  {
+    groupId: 'tpl-ship-nearby',
+    name: 'Shipment Nearby',
+    channel: 'whatsapp',
+    associatedStage: 'won',
+    mergeFields: ['customerName', 'buildingName', 'shipmentLabel'],
+    body: {
+      en: 'Hi {{customerName}}, your {{shipmentLabel}} is nearby and will reach {{buildingName}} within minutes. Please keep the access route clear.',
+      hi: 'नमस्ते {{customerName}}, आपका {{shipmentLabel}} पास ही है और कुछ ही मिनटों में {{buildingName}} पहुँच जाएगा। कृपया रास्ता साफ़ रखें।',
+      mr: 'नमस्कार {{customerName}}, तुमचा {{shipmentLabel}} जवळच आहे आणि काही मिनिटांत {{buildingName}} येथे पोहोचेल. कृपया रस्ता मोकळा ठेवा.',
+    },
+  },
+  {
+    groupId: 'tpl-ship-arrived',
+    name: 'Shipment Arrived',
+    channel: 'whatsapp',
+    associatedStage: 'won',
+    mergeFields: ['customerName', 'buildingName', 'shipmentLabel'],
+    body: {
+      en: 'Hi {{customerName}}, your {{shipmentLabel}} has arrived at {{buildingName}}. Our team will check it with you now.',
+      hi: 'नमस्ते {{customerName}}, आपका {{shipmentLabel}} {{buildingName}} पहुँच गया है। हमारी टीम अब आपके साथ इसकी जाँच करेगी।',
+      mr: 'नमस्कार {{customerName}}, तुमचा {{shipmentLabel}} {{buildingName}} येथे पोहोचला आहे. आमची टीम आता तुमच्यासोबत त्याची तपासणी करेल.',
     },
   },
   {

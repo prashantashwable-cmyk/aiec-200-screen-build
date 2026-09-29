@@ -107,9 +107,35 @@ the module's section to `BUILD_README.md`.
   (dl-1) was seeded one day short of the reminder cadence's own exhaustion threshold, so no real
   payment could ever reach 089's escalation queue while also belonging to a deal with an active
   Job — moved from 6 to 10 days overdue (and the stale `al-2` alert text updated to match).
-- **Module 11 in progress:** `101` built. **Next: `102`** (live shipment tracking). At its
-  checkpoint (after 110), add an Admin logistics entry point: 101 is reachable for Admin only
-  from 091's hub and 095's header/PO sheet.
+- **Module 11 in progress:** `101`, `102` built. **Next: `103`**. At its checkpoint (after 110),
+  add an Admin logistics entry point: 101 and 102 are reachable for Admin only from 091's hub and
+  095's header (and 101's/102's own PO links).
+  102 facts:
+  - A `ShipmentLeg` is one vehicle carrying some of a PO's lines (`lineItemIds`), so a PO can have
+    several legs tracked separately. `dispatchShipment` is the only way to create one: it needs
+    lines at `ready_to_ship` that aren't on a leg yet, and moves them to `shipped` through
+    `movePoLinesSync` (one true status). Nothing else sets a line to shipped for a tracked leg.
+  - `source` is `live_gps` or `manual`. There is no randomness: a live vehicle's position is a
+    function of the clock, `dispatchedAt` and `etaAt` (`@/features/logistics/shipmentTracking`,
+    `legSnapshotOf`). `feedLostAt` freezes it. The map only ever shows a pin that is real: a manual
+    leg is a milestone card with no map, and a lost feed reads "last seen X ago".
+  - Milestones (`dispatched` → `in_transit` → `nearby` (≤5 km) → `arrived`) are derived on read and
+    persisted by the heartbeat's `advanceShipments`, which also messages the customer once per
+    milestone (Communication Engine templates `tpl-ship-*`, by preferred language, respecting
+    opt-out; `logAutomatedAction` `shipment.customer_notified`), nudges the site's technician at
+    `nearby`, and raises `shipmentTracking.alert.feedLost` after 30 min of silence (resolved on
+    arrival).
+  - Only a manual leg, or one whose feed dropped, is updated by hand (`updateShipmentMilestone`),
+    forward only. Admin standing in for a supplier must give a note. The update also lands in the
+    PO's 099 supplier thread.
+  - The `shipment_status_update` commitment (owner: the supplier's portal user, else Admin; due
+    6 h after the last manual update, feed loss or dispatch; done on arrival) keeps manual legs
+    honest. Live legs need none.
+  - `ShipmentView` is the one shape every role reads. The customer's copy drops the supplier,
+    vehicle, driver and notes. Visibility: Admin all, supplier own, customer by deal, technician by
+    a job still open on the deal. If the ETA falls outside 101's booked window, the screen warns.
+  - `/shipments` serves Admin, Customer, Technician and Supplier (new "Delivery" tabs for the
+    latter two; 091's hub and 095's header link Admin/Supplier). Reads poll every 15 s.
   101 facts:
   - `DeliverySchedule` (one per PO) holds a booked `date` (`yyyy-mm-dd`, the site's calendar day),
     a `window` (`morning` | `afternoon`), `dependsOnPoId`, `failedAttempts` and append-only

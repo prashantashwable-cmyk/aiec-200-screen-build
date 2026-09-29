@@ -58,6 +58,7 @@ import {
   seedDispatchAvailability,
   seedSiteReadiness,
   seedDeliverySchedules,
+  seedShipmentLegs,
   installSteps,
   seedSupplierPurchaseOrders,
   seedTriggerRules,
@@ -131,6 +132,9 @@ import type {
   AgreementOrderView,
   SupplierAgreementSummary,
   SupplierAgreementView,
+  ShipmentBoard,
+  ShipmentView,
+  DispatchablePo,
   DeliveryBoard,
   DeliveryCard,
   DeliveryScheduleResult,
@@ -166,6 +170,9 @@ import type {
   DeliverySchedule,
   DeliveryWindow,
   Job,
+  ShipmentLeg,
+  ShipmentMilestone,
+  ShipmentMilestoneEvent,
   SiteReadiness,
   SupplierDispatchAvailability,
   SupplierMessage,
@@ -251,7 +258,7 @@ import type {
   TriggerRule,
   User,
 } from './types';
-import { formatINR, formatINRCompact, haversineKm } from '@/design-system/format';
+import { formatINR, formatINRCompact, formatTime, haversineKm } from '@/design-system/format';
 import { MAX_SAFE_BOT_DISCOUNT_PCT } from '@/features/communication/botRules';
 import { extractMergeFields, renderTemplateBody } from '@/features/communication/templateRender';
 import { computeTotalReceivable, daysOverdue, isOutstanding, receivedAmountOf, remainingBalance } from '@/features/payments/aging';
@@ -292,6 +299,7 @@ import {
   PROMISE_MOVING_CAUSES,
   SLOT_HORIZON_DAYS,
   addDaysKey,
+  dateKey,
   emptyReadiness,
   endOfDayIso,
   laterThanPromise,
@@ -302,7 +310,20 @@ import {
   slotDays,
   slotState,
   wouldCycle,
+  WINDOW_HOURS,
 } from '@/features/logistics/deliverySlots';
+import {
+  FEED_LOST_ALERT_AFTER,
+  estimateEtaAt,
+  etaInsideWindow,
+  milestoneIndex,
+  originFor,
+  legSnapshotOf,
+  roundToQuarter,
+  routeFor,
+  timelineOf,
+  travelledRoute,
+} from '@/features/logistics/shipmentTracking';
 import {
   DEFAULT_PRICE_REVIEW_THRESHOLD_PCT,
   catalogMatchKey,
@@ -410,6 +431,10 @@ const dispatchAvailability = [...seedDispatchAvailability];
 const siteReadinessRecords = [...seedSiteReadiness];
 const deliverySchedules = [...seedDeliverySchedules];
 let deliveryCounter = 100;
+
+/** 102: each vehicle carrying a PO's lines. */
+const shipmentLegs = [...seedShipmentLegs];
+let shipmentCounter = 100;
 
 /** 100: the root of how AIEC pays suppliers. */
 let paymentTermsConfig: SupplierPaymentTermsConfig = { tiers: { ...DEFAULT_TIER_SETTINGS } };
@@ -1885,6 +1910,7 @@ function commitmentSources(now: number): CommitmentSources {
     supplierMessages,
     supplierRetentions,
     deliverySchedules,
+    shipmentLegs,
     pausedDealIds: new Set(paymentReminderPauses.filter((p) => p.paused).map((p) => p.dealId)),
   };
 }
@@ -2070,6 +2096,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   autoDraftDuePurchaseOrders();
   detectProductionStalls(now);
   settleRetentions(now);
+  advanceShipments(now);
   for (const deal of deals) {
     if (payments.some((p) => p.dealId === deal.id && p.status === 'paid' && !invoices.some((inv) => inv.paymentId === p.id))) {
       ensureStageInvoices(deal.id, deal, resolveLead(deal.leadId));
@@ -2580,6 +2607,205 @@ function detectProductionStalls(now: number): void {
 
 /* =============================== Supplier rating & quality scorecard (097) */
 
+/* ============================================== Shipment tracking (102) */
+
+interface ShipmentViewer {
+  actor: User;
+  supplierId: string | null;
+}
+
+function shipmentViewerOf(byUserId: string): ShipmentViewer {
+  const actor = catalogActor(byUserId);
+  if (!['admin', 'supplier', 'customer', 'technician'].includes(actor.role)) throw new RepositoryError('forbidden');
+  if (actor.role === 'supplier') {
+    const own = suppliers.find((sp) => supplierUserFor(sp)?.id === actor.id);
+    if (!own) throw new RepositoryError('forbidden');
+    return { actor, supplierId: own.id };
+  }
+  return { actor, supplierId: null };
+}
+
+function legVisibleTo(leg: ShipmentLeg, viewer: ShipmentViewer): boolean {
+  const { actor } = viewer;
+  if (actor.role === 'admin') return true;
+  if (actor.role === 'supplier') return leg.supplierId === viewer.supplierId;
+  if (actor.role === 'customer') return byId(deals, leg.dealId)?.customerId === actor.id;
+  // A technician follows the deliveries for the sites they're installing.
+  return jobs.some((j) => j.dealId === leg.dealId && j.technicianId === actor.id && j.status !== 'completed');
+}
+
+function shipmentSite(dealId: string): { lat: number; lng: number; siteName: string } | null {
+  const deal = byId(deals, dealId);
+  const lead = deal ? resolveLead(deal.leadId) : null;
+  return lead ? { lat: lead.location.lat, lng: lead.location.lng, siteName: lead.siteName } : null;
+}
+
+const routeOfLeg = (leg: ShipmentLeg) => {
+  const site = shipmentSite(leg.dealId);
+  return routeFor(leg.origin, site ?? leg.origin);
+};
+
+function shipmentLabelOf(leg: ShipmentLeg): string {
+  const po = byId(supplierPurchaseOrders, leg.poId);
+  const names = (po?.lineItems ?? []).filter((l) => leg.lineItemIds.includes(l.id)).map((l) => l.description.toLowerCase());
+  return names.length ? names.join(', ') : 'delivery';
+}
+
+/** A milestone message to the customer through the Communication Engine.
+ *  Once per milestone, however often it runs, and never to someone who has
+ *  opted out. */
+function notifyCustomerOfMilestone(legId: string, milestone: ShipmentMilestone): void {
+  const leg = byId(shipmentLegs, legId);
+  const event = leg?.milestones.find((e) => e.milestone === milestone);
+  if (!leg || !event || event.customerNotifiedAt || event.customerNotifySkipped) return;
+  const deal = byId(deals, leg.dealId);
+  const lead = deal ? resolveLead(deal.leadId) : null;
+  const po = byId(supplierPurchaseOrders, leg.poId);
+  const mark = (patch: Partial<ShipmentMilestoneEvent>) =>
+    patchInPlace(shipmentLegs, leg.id, { milestones: leg.milestones.map((e) => (e.milestone === milestone ? { ...e, ...patch } : e)) });
+  if (!lead) {
+    mark({ customerNotifySkipped: 'no_contact' });
+    return;
+  }
+  const language = lead.preferredLanguage ?? 'en';
+  const groupId = `tpl-ship-${milestone === 'in_transit' ? 'transit' : milestone}`;
+  const template = templateInGroup(groupId, language) ?? templateInGroup(groupId, 'en');
+  if (!template) return;
+  if (isOptedOutSync(lead.contactPhone, template.channel)) {
+    mark({ customerNotifySkipped: 'opted_out' });
+    return;
+  }
+  const now = new Date().toISOString();
+  const body = renderTemplateBody(template.body, {
+    customerName: lead.contactName,
+    buildingName: lead.siteName,
+    shipmentLabel: shipmentLabelOf(leg),
+    etaTime: formatTime(roundToQuarter(leg.etaAt).toISOString(), language),
+  });
+  let conversation = conversations.find((c) => c.leadId === lead.id) ?? null;
+  if (!conversation) {
+    conversationCounter += 1;
+    conversation = { id: `conv-new-${conversationCounter}`, leadId: lead.id, lastMessageAt: now, isDemo: true };
+    conversations.push(conversation);
+  }
+  messageCounter += 1;
+  commMessages.push({ id: `cm-new-${messageCounter}`, conversationId: conversation.id, channel: template.channel, sender: 'bot', body, templateGroupId: groupId, status: 'sent', at: now, handled: true });
+  patchInPlace(conversations, conversation.id, { lastMessageAt: now });
+  mark({ customerNotifiedAt: now });
+  logAutomatedAction({
+    sourceKey: 'shipment.customer_notified',
+    triggeringCondition: `${shipmentLabelOf(leg)} on ${po?.code ?? leg.poId} is ${milestone.replace('_', ' ')}`,
+    actionTaken: `Messaged ${lead.contactName} on ${template.channel}`,
+    affectedRecordId: leg.poId,
+    affectedRecordType: 'purchase_order',
+    subjectLabel: po?.code ?? leg.poId,
+  });
+}
+
+function shipmentViewOf(leg: ShipmentLeg, viewer: ShipmentViewer, now: number): ShipmentView {
+  const isCustomer = viewer.actor.role === 'customer';
+  const site = shipmentSite(leg.dealId);
+  const route = routeOfLeg(leg);
+  const snap = legSnapshotOf(leg, route, now);
+  const timeline = timelineOf(leg, route, now);
+  const po = byId(supplierPurchaseOrders, leg.poId);
+  const siblings = shipmentLegs.filter((l) => l.poId === leg.poId).sort((a, b) => (a.dispatchedAt < b.dispatchedAt ? -1 : 1));
+  const supplier = byId(suppliers, leg.supplierId);
+  const schedule = scheduleOfPo(leg.poId);
+  const booked = schedule?.status === 'scheduled' && schedule.date && schedule.window ? { date: schedule.date, window: schedule.window } : null;
+  const etaDay = dateKey(new Date(leg.etaAt));
+  const isAdmin = viewer.actor.role === 'admin';
+  const canUpdate = !snap.arrived && (leg.source === 'manual' || snap.feed === 'lost') && (isAdmin || (viewer.actor.role === 'supplier' && viewer.supplierId === leg.supplierId));
+  return {
+    legId: leg.id,
+    poId: leg.poId,
+    poCode: po?.code ?? leg.poId,
+    dealId: leg.dealId,
+    siteName: site?.siteName ?? '',
+    destination: site ? { lat: site.lat, lng: site.lng } : { lat: leg.origin.lat, lng: leg.origin.lng },
+    origin: leg.origin,
+    lines: (po?.lineItems ?? []).filter((l) => leg.lineItemIds.includes(l.id)).map((l) => ({ id: l.id, description: l.description })),
+    legNumber: siblings.findIndex((l) => l.id === leg.id) + 1,
+    legCount: siblings.length,
+    supplierId: isCustomer ? null : leg.supplierId,
+    supplierName: isCustomer ? null : (supplier?.name ?? null),
+    vehicleLabel: isCustomer ? null : leg.vehicleLabel,
+    driverName: isCustomer ? null : leg.driverName,
+    driverPhone: isCustomer ? null : (leg.driverPhone ?? null),
+    source: leg.source,
+    feed: snap.feed,
+    position: snap.position,
+    fixAt: snap.fixAt,
+    progress: snap.progress,
+    remainingKm: snap.remainingKm,
+    dispatchedAt: leg.dispatchedAt,
+    etaAt: leg.etaAt,
+    minutesToEta: snap.minutesToEta,
+    milestone: snap.milestone,
+    arrived: snap.arrived,
+    timeline: timeline.map((e) => ({
+      milestone: e.milestone,
+      reachedAt: e.reachedAt,
+      source: e.source,
+      byName: isCustomer ? undefined : e.byName,
+      note: isCustomer ? undefined : e.note,
+      customerNotified: !!e.customerNotifiedAt,
+    })),
+    route,
+    travelled: snap.feed === 'manual' ? [] : travelledRoute(route, snap.progress),
+    booked,
+    etaOutsideWindow: !!booked && !snap.arrived && (booked.date !== etaDay || !etaInsideWindow(leg.etaAt, WINDOW_HOURS[booked.window])),
+    canUpdate,
+  };
+}
+
+/** The heartbeat's shipment pass: a live vehicle's milestones are written down
+ *  as it reaches them (each messaging the customer once), a technician hears
+ *  when it's nearby, and a feed that has been silent for too long is put in
+ *  front of Admin. Idempotent throughout. */
+function advanceShipments(now: number): void {
+  for (const original of [...shipmentLegs]) {
+    const route = routeOfLeg(original);
+    const po = byId(supplierPurchaseOrders, original.poId);
+    let leg = original;
+    if (leg.source === 'live_gps') {
+      const fresh = timelineOf(leg, route, now).filter((e) => e.reachedAt && !e.persisted && e.source === 'gps');
+      if (fresh.length > 0) {
+        leg = patchInPlace(shipmentLegs, leg.id, { milestones: [...leg.milestones, ...fresh.map((e) => ({ milestone: e.milestone, at: e.reachedAt!, source: 'gps' as const }))] });
+        for (const e of fresh) {
+          notifyCustomerOfMilestone(leg.id, e.milestone);
+          if (e.milestone === 'nearby' && po) notifyTechnicianOfDelivery(po, new Date(now).toISOString(), `${shipmentLabelOf(leg)} on ${po.code} is nearby`);
+        }
+      }
+    }
+    const arrived = leg.milestones.some((e) => e.milestone === 'arrived');
+    const open = alerts.find((a) => a.relatedId === leg.id && a.titleKey === 'shipmentTracking.alert.feedLost' && a.status !== 'resolved');
+    const silent = leg.source === 'live_gps' && !!leg.feedLostAt && !arrived && now - new Date(leg.feedLostAt).getTime() >= FEED_LOST_ALERT_AFTER;
+    if (silent && !open) {
+      const last = legSnapshotOf(leg, route, now).position;
+      const alert = raiseAlert({
+        titleKey: 'shipmentTracking.alert.feedLost',
+        context: `${po?.code ?? leg.poId} · ${leg.vehicleLabel}`,
+        severity: 'medium',
+        category: 'supplier',
+        relatedId: leg.id,
+        sourceRoute: `/shipments?leg=${leg.id}`,
+        location: last ?? undefined,
+      });
+      logAutomatedAction({
+        sourceKey: 'shipment.feed_lost',
+        triggeringCondition: `${leg.vehicleLabel} stopped reporting its location`,
+        actionTaken: `Raised ${alert.code}`,
+        affectedRecordId: leg.id,
+        affectedRecordType: 'purchase_order',
+        subjectLabel: po?.code ?? leg.poId,
+      });
+    } else if (open && arrived) {
+      patchInPlace(alerts, open.id, { status: 'resolved', resolvedAt: new Date(now).toISOString(), resolvedBy: 'system', resolutionNote: 'The shipment has arrived.' });
+    }
+  }
+}
+
 /* ============================================ Delivery scheduling (101) */
 
 const availabilityOf = (supplierId: string) => dispatchAvailability.find((a) => a.supplierId === supplierId) ?? null;
@@ -2653,7 +2879,7 @@ function syncInstallationJob(dealId: string, at: string): Job | null {
 
 /** Tells the technician (through the assistant) a delivery they'll receive
  *  has been confirmed or moved. Returns whether a technician was reached. */
-function notifyTechnicianOfDelivery(po: SupplierPurchaseOrder, at: string): boolean {
+function notifyTechnicianOfDelivery(po: SupplierPurchaseOrder, at: string, reason = `Delivery ${po.code} was booked or moved`): boolean {
   syncCommitments(new Date(at).getTime());
   const commitment = commitments.find((c) => c.kind === 'delivery_receive' && c.subject.id === po.id && c.status === 'open');
   const owner = commitment ? byId(users, commitment.ownerUserId) : null;
@@ -2661,7 +2887,7 @@ function notifyTechnicianOfDelivery(po: SupplierPurchaseOrder, at: string): bool
   notifyWork(owner.id, commitment, 'nudge', at);
   logAutomatedAction({
     sourceKey: 'delivery.technician_notified',
-    triggeringCondition: `Delivery ${po.code} was booked or moved`,
+    triggeringCondition: reason,
     actionTaken: `Told ${owner.name} to receive it`,
     affectedRecordId: po.id,
     affectedRecordType: 'purchase_order',
@@ -5788,6 +6014,122 @@ export const memoryRepository: Repository = {
       };
       supplierAgreementVersions.push(created);
       return created;
+    }),
+
+  /* -------------------------------------------- Shipment tracking (102) */
+  getShipmentBoard: (byUserId) =>
+    simulateRead((): ShipmentBoard => {
+      const viewer = shipmentViewerOf(byUserId);
+      const now = Date.now();
+      const recent = new Date(now - 3 * 86_400_000).toISOString();
+      const shipments = shipmentLegs
+        .filter((l) => legVisibleTo(l, viewer))
+        .map((l) => shipmentViewOf(l, viewer, now))
+        // Arrived a while ago and no longer news.
+        .filter((s) => !s.arrived || (s.timeline.find((e) => e.milestone === 'arrived')?.reachedAt ?? '') > recent)
+        .sort((a, b) => Number(a.arrived) - Number(b.arrived) || (a.etaAt < b.etaAt ? -1 : 1));
+      const canDispatch = viewer.actor.role === 'admin' || viewer.actor.role === 'supplier';
+      const onALeg = new Set(shipmentLegs.flatMap((l) => l.lineItemIds));
+      const dispatchable: DispatchablePo[] = !canDispatch
+        ? []
+        : supplierPurchaseOrders
+            .filter((po) => po.status === 'sent' && po.supplierId && (!viewer.supplierId || po.supplierId === viewer.supplierId) && shipmentSite(po.dealId))
+            .map((po) => ({
+              poId: po.id,
+              poCode: po.code,
+              siteName: shipmentSite(po.dealId)?.siteName ?? '',
+              supplierName: byId(suppliers, po.supplierId!)?.name ?? '',
+              lines: (po.lineItems ?? []).filter((l) => lineStageOf(po, l) === 'ready_to_ship' && !onALeg.has(l.id)).map((l) => ({ id: l.id, description: l.description })),
+            }))
+            .filter((p) => p.lines.length > 0);
+      return { shipments, dispatchable };
+    }),
+
+  dispatchShipment: (poId, input, byUserId) =>
+    simulateWrite(() => {
+      const viewer = shipmentViewerOf(byUserId);
+      if (viewer.actor.role !== 'admin' && viewer.actor.role !== 'supplier') throw new RepositoryError('forbidden');
+      const po = deliveryPoOrThrow(poId);
+      if (viewer.supplierId && po.supplierId !== viewer.supplierId) throw new RepositoryError('forbidden');
+      const supplier = byId(suppliers, po.supplierId!)!;
+      const site = shipmentSite(po.dealId);
+      if (!site) throw new RepositoryError('no_destination');
+      if (input.vehicleLabel.trim().length < 2 || input.driverName.trim().length < 2) throw new RepositoryError('invalid_input');
+      if (input.source !== 'live_gps' && input.source !== 'manual') throw new RepositoryError('invalid_input');
+      const onALeg = new Set(shipmentLegs.flatMap((l) => l.lineItemIds));
+      const lines = (po.lineItems ?? []).filter((l) => input.lineIds.includes(l.id));
+      // Only what's really ready, and only what isn't already on a vehicle.
+      if (lines.length === 0 || lines.length !== input.lineIds.length || lines.some((l) => lineStageOf(po, l) !== 'ready_to_ship' || onALeg.has(l.id))) throw new RepositoryError('invalid_state');
+      const now = Date.now();
+      const origin = originFor(supplier.city);
+      // Moving the lines to shipped is the one status change; the leg is what it's now tracked by.
+      movePoLinesSync(po.id, lines.map((l) => l.id), 'shipped', viewer.actor, viewer.actor.role === 'admin' ? 'Dispatched from the shipment tracker' : undefined);
+      shipmentCounter += 1;
+      const at = new Date(now).toISOString();
+      const leg: ShipmentLeg = {
+        id: `shp-new-${shipmentCounter}`,
+        poId: po.id,
+        dealId: po.dealId,
+        supplierId: supplier.id,
+        lineItemIds: lines.map((l) => l.id),
+        vehicleLabel: input.vehicleLabel.trim(),
+        driverName: input.driverName.trim(),
+        driverPhone: input.driverPhone?.trim() || undefined,
+        source: input.source,
+        origin: { name: `${supplier.name}, ${origin.name}`, lat: origin.lat, lng: origin.lng },
+        dispatchedAt: at,
+        etaAt: estimateEtaAt(origin, site, now),
+        milestones: [{ milestone: 'dispatched', at, source: input.source === 'live_gps' ? 'gps' : 'manual', byName: input.source === 'manual' ? viewer.actor.name : undefined }],
+        isDemo: true,
+      };
+      shipmentLegs.push(leg);
+      notifyCustomerOfMilestone(leg.id, 'dispatched');
+      syncCommitments(now);
+      return shipmentViewOf(byId(shipmentLegs, leg.id)!, viewer, now);
+    }),
+
+  updateShipmentMilestone: (legId, input, byUserId) =>
+    simulateWrite(() => {
+      const viewer = shipmentViewerOf(byUserId);
+      const leg = byId(shipmentLegs, legId);
+      if (!leg || !legVisibleTo(leg, viewer)) throw new RepositoryError('not_found');
+      const isAdmin = viewer.actor.role === 'admin';
+      if (!isAdmin && !(viewer.actor.role === 'supplier' && viewer.supplierId === leg.supplierId)) throw new RepositoryError('forbidden');
+      const now = Date.now();
+      const snap = legSnapshotOf(leg, routeOfLeg(leg), now);
+      // A live feed is the truth while it works; only a manual leg, or one whose feed has dropped, is updated by hand.
+      if (snap.arrived || (leg.source === 'live_gps' && snap.feed !== 'lost')) throw new RepositoryError('invalid_state');
+      if (milestoneIndex(input.milestone) <= milestoneIndex(snap.milestone)) throw new RepositoryError('invalid_input');
+      // AIEC standing in for the supplier says where the word came from.
+      if (isAdmin && (input.note ?? '').trim().length < 4) throw new RepositoryError('reason_required');
+      if (input.etaAt && (Number.isNaN(new Date(input.etaAt).getTime()) || (input.milestone !== 'arrived' && new Date(input.etaAt).getTime() < now))) throw new RepositoryError('invalid_input');
+      const at = new Date(now).toISOString();
+      const note = input.note?.trim() || undefined;
+      const updated = patchInPlace(shipmentLegs, leg.id, {
+        etaAt: input.etaAt && input.milestone !== 'arrived' ? new Date(input.etaAt).toISOString() : leg.etaAt,
+        milestones: [...leg.milestones, { milestone: input.milestone, at, source: 'manual', byName: viewer.actor.name, note }],
+      });
+      // The supplier's word belongs in their conversation with AIEC, so the whole picture stays in one place.
+      const supplier = byId(suppliers, leg.supplierId)!;
+      const po = byId(supplierPurchaseOrders, leg.poId)!;
+      const text = `Shipment update: ${leg.vehicleLabel} is ${input.milestone.replace('_', ' ')}${note ? `. ${note}` : ''}`;
+      pushSupplierMessage(ensureSupplierThread(supplier.id, po.id), {
+        author: 'supplier',
+        authorName: isAdmin ? supplier.name : viewer.actor.name,
+        authorUserId: isAdmin ? undefined : viewer.actor.id,
+        body: text,
+        channel: isAdmin ? 'phone' : 'in_app',
+        at,
+        loggedBy: isAdmin ? viewer.actor.name : undefined,
+        expectsReply: false,
+        poRef: po.id,
+        readAt: isAdmin ? at : undefined,
+      });
+      notifyCustomerOfMilestone(leg.id, input.milestone);
+      if (input.milestone === 'nearby') notifyTechnicianOfDelivery(po, at, `${shipmentLabelOf(updated)} on ${po.code} is nearby`);
+      advanceShipments(now);
+      syncCommitments(now);
+      return shipmentViewOf(byId(shipmentLegs, leg.id)!, viewer, now);
     }),
 
   /* ------------------------------------------- Delivery scheduling (101) */
