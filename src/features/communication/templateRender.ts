@@ -17,6 +17,9 @@ export const MERGE_FIELD_FALLBACKS: Record<string, string> = {
   visitDate: 'the scheduled date',
   etaTime: 'shortly',
   shipmentLabel: 'delivery',
+  etaDate: 'shortly',
+  originalDate: 'the date we promised',
+  delayReason: 'a disruption',
 };
 
 const TOKEN_PATTERN = /\{\{(\w+)\}\}/g;

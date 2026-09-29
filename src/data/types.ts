@@ -749,6 +749,8 @@ export interface SupplierOrderRating {
   adminQualityBy?: string;
   adminQualityAt?: string;
   dispute?: RatingDispute;
+  /** Why it was late, when Admin tagged it (105). `external_event` is an excused delay. */
+  delayCause?: DelayRootCause;
   isDemo: boolean;
 }
 
@@ -989,6 +991,56 @@ export interface DeliveryDiscrepancyReport {
   status: 'open' | 'withdrawn';
   createdAt: string;
   createdByName: string;
+  isDemo: boolean;
+}
+
+/* ------------------------------------ Delivery delay escalation (105) */
+
+/** How worried to be. `watch`: trending late but not yet. `late`: past what
+ *  we are held to. `critical`: an installation is blocked, or it is days late. */
+export type DelaySeverity = 'watch' | 'late' | 'critical';
+
+/** What a late delivery does to the customer's installation. */
+export type DelayImpact = 'blocks_install' | 'tight' | 'flexible' | 'none';
+
+/** The real cause of a delay, so it is attributed rather than blended into
+ *  "was late". `external_event` (a flood, a strike) is nobody's fault: the
+ *  supplier's promise moves and their on-time rate is not marked down. */
+export type DelayRootCause = 'supplier_production' | 'logistics_transit' | 'customs_documentation' | 'external_event';
+
+/** One delivery that has been running late, and what has been done about it.
+ *  Opened by the heartbeat when the live assessment first goes wrong, kept
+ *  when it recovers (so the good news is visible), never deleted. */
+export interface DeliveryDelayCase {
+  id: string;
+  poId: string;
+  dealId: string;
+  supplierId: string;
+  status: 'open' | 'recovered';
+  openedAt: string;
+  /** The worst it has been while open. */
+  worstSeverity: DelaySeverity;
+  /** When it first went past what we are held to (a watch is not yet late). */
+  lateSince?: string;
+  /** Worst it has been, in hours past what we are held to. */
+  peakGapHours: number;
+  recoveredAt?: string;
+  /** What "recovered" looked like: the ETA it settled at. */
+  recoveredEta?: string;
+  rootCause?: DelayRootCause;
+  rootCauseNote?: string;
+  /** The shared event, so one cause across many orders reads as one. */
+  externalLabel?: string;
+  causeTaggedByName?: string;
+  causeTaggedAt?: string;
+  /** Set when an external cause moved the promise, with the date it moved from. */
+  promiseMovedFrom?: string;
+  contactedSupplierAt?: string;
+  customerNotifiedAt?: string;
+  /** The arrival time the customer was told, so a later change can be told again. */
+  customerNotifiedEta?: string;
+  escalatedAt?: string;
+  escalatedByName?: string;
   isDemo: boolean;
 }
 
@@ -2302,6 +2354,7 @@ export type CommitmentKind =
   | 'delivery_receive'
   | 'shipment_status_update'
   | 'delivery_confirmation_sign'
+  | 'delivery_delay_action'
   | 'alert_acknowledge'
   | 'follow_up_task'
   | 'lead_revisit';

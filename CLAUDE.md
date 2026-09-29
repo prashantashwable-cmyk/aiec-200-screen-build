@@ -107,9 +107,36 @@ the module's section to `BUILD_README.md`.
   (dl-1) was seeded one day short of the reminder cadence's own exhaustion threshold, so no real
   payment could ever reach 089's escalation queue while also belonging to a deal with an active
   Job — moved from 6 to 10 days overdue (and the stale `al-2` alert text updated to match).
-- **Module 11 in progress:** `101`–`104` built. **Next: `105`**. At its checkpoint (after 110),
+- **Module 11 in progress:** `101`–`105` built. **Next: `106`**. At its checkpoint (after 110),
   add an Admin logistics entry point: 101 and 102 are reachable for Admin only from 091's hub and
   095's header (and 101's/102's own PO links).
+  105 facts:
+  - `@/features/logistics/delay` (`judgeDelay`, `compareDelays`) is the one judgement of a late
+    delivery, computed on read from `DelayFacts` built by `delayFactsOf`. It is held to the booked
+    window (101) once there is one, else `promisedDeliveryOf`. It is compared with the tracker's
+    ETA (102) once a vehicle is out, else 095's stage estimate. **An estimate can only ever be a
+    `watch`**: `late`/`critical` need a tracker ETA or a deadline that has actually passed.
+    `impact` is what it does to the deal's pending installation job (`blocks_install` / `tight` /
+    `flexible`); a blocked install makes it `critical`.
+  - `DeliveryDelayCase` is what remembers: opened by the heartbeat's `syncDelayCases` the first time a
+    delivery goes wrong, kept when it recovers (so the good news shows), never deleted. The heartbeat
+    raises the `deliveryDelay.alert.delayed` alert only for `late`/`critical` and resolves it
+    itself on recovery or delivery; `getDelayBoard` runs the same sync first, idempotently.
+  - Three one-tap actions, all Admin only: `contactSupplierAboutDelay` posts into the order's 099
+    thread (so the `supplier_thread_reply` commitment follows) or logs the call/email just made,
+    refusing an in-app message to a supplier with no login; `notifyDelayCustomers` sends one
+    Communication Engine message per customer however many orders (`tpl-delay-notice`, or
+    `tpl-delay-external` naming the event), in their language, skipping opted-out and already-told
+    (an ETA that has since moved 12 h or more is told again); `escalateDelay` raises a high alert.
+  - Root cause (`DelayRootCause`) is tagged per case or in a batch. `external_event` needs a label,
+    moves `expectedDeliveryDate` to when it can arrive (only if that is later), and adds a 097
+    context note, so the supplier is not marked down. `createOrderRating` records `delayCause` on the
+    rating and 097 shows it next to the late badge. 105 owns the shared `deliveryDelay.cause.*`
+    namespace. 110 (delivery analytics) should read `DeliveryDelayCase` rather than recompute.
+  - Commitment `delivery_delay_action` exists only once a case has been `late` (`lateSince`):
+    Admin owns "tell the customer and say why", due 6 h (critical) or 24 h after; done when the
+    customer is told and a cause named, or when it recovers.
+  - `/delivery-delays` is Admin only, reached from 091's hub, the alert and the assistant drawer.
   104 facts:
   - A `DeliveryConfirmation` is created the moment a checklist (103) closes, in `awaiting_signature`,
     with the checklist's items frozen into it. Signing locks it: `status: 'signed'`, never edited, a

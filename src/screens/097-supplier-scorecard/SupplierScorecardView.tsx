@@ -331,6 +331,7 @@ function OrderList({ rows, s, t, lang, emptyKey, emptyBody }: { rows: ScoredOrde
                 {r.onTime ? t(K.orders.onTime) : t(K.orders.late, { days: r.rating.timelinessDays })}
               </Badge>
               {disputeBadge(r, t)}
+              {r.rating.delayCause && <Badge tone={r.rating.delayCause === 'external_event' ? 'neutral' : 'warning'}>{t(`deliveryDelay.cause.${r.rating.delayCause}`)}</Badge>}
             </span>
           </span>
           <span className="num t-semibold shrink-0">{r.orderScore.toFixed(2)}</span>

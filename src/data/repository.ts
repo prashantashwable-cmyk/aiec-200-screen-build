@@ -83,6 +83,9 @@ import type {
   ShipmentTrackingSource,
   DeliveryRescheduleCause,
   ConfirmationPartyRole,
+  DelayImpact,
+  DelayRootCause,
+  DelaySeverity,
   DeliveryChecklist,
   DeliveryConfirmation,
   DeliveryDiscrepancyReport,
@@ -1027,6 +1030,82 @@ export interface CompleteChecklistResult {
   jobReady: boolean;
   /** The signable confirmation (104) this checklist produced. */
   confirmationId: string;
+}
+
+/* -------------------------------- Delivery delay escalation (105) */
+
+/** One late (or trending-late) delivery: the live judgement, and everything done about it. */
+export interface DelayRow {
+  caseId: string;
+  status: 'open' | 'recovered';
+  poId: string;
+  poCode: string;
+  dealId: string;
+  siteName: string;
+  customerName: string;
+  supplierId: string;
+  supplierName: string;
+  supplierHasLogin: boolean;
+  dealValue: number;
+  stage: PoFulfilmentStage;
+  lineSummary: string;
+  /** The live read. Null once it is back on track. */
+  severity: DelaySeverity | null;
+  worstSeverity: DelaySeverity;
+  gapHours: number | null;
+  peakGapHours: number;
+  expectedAt: string | null;
+  expectedSource: 'booked' | 'promised';
+  currentEta: string;
+  etaSource: 'tracker' | 'estimate';
+  /** A dropped feed or a quiet vehicle: the ETA is a guess. */
+  uncertain: boolean;
+  impact: DelayImpact;
+  installStart: string | null;
+  installCode: string | null;
+  openedAt: string;
+  recoveredAt: string | null;
+  delivered: boolean;
+  rootCause: DelayRootCause | null;
+  rootCauseNote: string | null;
+  externalLabel: string | null;
+  promiseMovedFrom: string | null;
+  contactedSupplierAt: string | null;
+  customerNotifiedAt: string | null;
+  customerNotifiedEta: string | null;
+  /** The ETA has moved since the customer was told. */
+  notifyStale: boolean;
+  escalatedAt: string | null;
+  customerOptedOut: boolean;
+  /** What the customer would be sent, in their own language. */
+  customerPreview: string;
+  threadId: string | null;
+}
+
+export interface DelayBoard {
+  /** Most customer-impactful first. */
+  open: DelayRow[];
+  /** Back on track or delivered in the last three days: the good news. */
+  recovered: DelayRow[];
+}
+
+export interface TagDelayCauseInput {
+  cause: DelayRootCause;
+  note?: string;
+  /** Required for an external event, so one shared cause reads as one. */
+  externalLabel?: string;
+}
+
+export interface ContactSupplierInput {
+  /** In the app, or the call/email that just happened. */
+  channel: 'in_app' | 'phone' | 'email' | 'whatsapp' | 'in_person';
+  body: string;
+  expectsReply: boolean;
+}
+
+export interface NotifyDelayResult {
+  notified: number;
+  skipped: { caseId: string; reason: 'opted_out' | 'no_contact' | 'already_told' }[];
 }
 
 /* -------------------------------------- Delivery confirmation (104) */
@@ -2141,6 +2220,17 @@ export interface Repository {
   completeDeliveryChecklist(checklistId: string, input: CompleteChecklistInput, byUserId: string): Promise<CompleteChecklistResult>;
   /** Abandons an unfinished checklist started by mistake. */
   cancelDeliveryChecklist(checklistId: string, byUserId: string): Promise<void>;
+
+  /* Delivery delay escalation (105) — surfaced before the customer has to ask */
+  getDelayBoard(byUserId: string): Promise<DelayBoard>;
+  /** One cause for one or many orders. An external event moves the promise, so nobody is marked down for it. */
+  tagDelayCause(caseIds: string[], input: TagDelayCauseInput, byUserId: string): Promise<void>;
+  /** Puts the chase into the order's supplier thread, or logs the call just made. Returns the thread. */
+  contactSupplierAboutDelay(caseId: string, input: ContactSupplierInput, byUserId: string): Promise<{ threadId: string }>;
+  /** An honest updated timeline to each affected customer: one message per customer, however many orders. */
+  notifyDelayCustomers(caseIds: string[], byUserId: string): Promise<NotifyDelayResult>;
+  /** Takes it to Admin's own supplier relationship as a high-priority alert. */
+  escalateDelay(caseId: string, note: string, byUserId: string): Promise<void>;
 
   /* Delivery confirmation (104) — the signable, lockable summary of a checked delivery */
   getDeliveryConfirmations(byUserId: string): Promise<DeliveryConfirmationView[]>;

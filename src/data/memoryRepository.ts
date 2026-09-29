@@ -59,6 +59,7 @@ import {
   seedSiteReadiness,
   seedDeliverySchedules,
   seedShipmentLegs,
+  seedDeliveryDelayCases,
   installSteps,
   seedSupplierPurchaseOrders,
   seedTriggerRules,
@@ -138,6 +139,9 @@ import type {
   ChecklistArrival,
   DeliveryChecklistBoard,
   DeliveryConfirmationView,
+  DelayBoard,
+  DelayRow,
+  NotifyDelayResult,
   DeliveryChecklistView,
   CheckItemInput,
   CompleteChecklistInput,
@@ -181,6 +185,8 @@ import type {
   DeliverySchedule,
   DeliveryWindow,
   Job,
+  DeliveryDelayCase,
+  DelaySeverity,
   ShipmentLeg,
   ShipmentMilestone,
   ShipmentMilestoneEvent,
@@ -269,7 +275,7 @@ import type {
   TriggerRule,
   User,
 } from './types';
-import { formatINR, formatINRCompact, formatTime, haversineKm } from '@/design-system/format';
+import { formatDate, formatDateTime, formatINR, formatINRCompact, formatTime, haversineKm } from '@/design-system/format';
 import { MAX_SAFE_BOT_DISCOUNT_PCT } from '@/features/communication/botRules';
 import { extractMergeFields, renderTemplateBody } from '@/features/communication/templateRender';
 import { computeTotalReceivable, daysOverdue, isOutstanding, receivedAmountOf, remainingBalance } from '@/features/payments/aging';
@@ -321,11 +327,15 @@ import {
   sequenceOk,
   slotDays,
   slotState,
+  windowEndsAt,
   wouldCycle,
   WINDOW_HOURS,
 } from '@/features/logistics/deliverySlots';
+import { compareDelays, etaMovedSince, judgeDelay } from '@/features/logistics/delay';
+import type { DelayFacts } from '@/features/logistics/delay';
 import {
   FEED_LOST_ALERT_AFTER,
+  MANUAL_UPDATE_EVERY,
   estimateEtaAt,
   etaInsideWindow,
   milestoneIndex,
@@ -458,6 +468,10 @@ let checklistPhotoCounter = 100;
 /** 104: the signable, lockable summary of each checked delivery. */
 const deliveryConfirmations: DeliveryConfirmation[] = [];
 let confirmationCounter = 100;
+
+/** 105: each delivery that has run late, and what was done about it. */
+const delayCases: DeliveryDelayCase[] = [...seedDeliveryDelayCases];
+let delayCounter = 100;
 
 /** 100: the root of how AIEC pays suppliers. */
 let paymentTermsConfig: SupplierPaymentTermsConfig = { tiers: { ...DEFAULT_TIER_SETTINGS } };
@@ -1938,6 +1952,7 @@ function commitmentSources(now: number): CommitmentSources {
     shipmentLegs,
     deliveryConfirmations,
     deliveryChecklists,
+    delayCases,
     pausedDealIds: new Set(paymentReminderPauses.filter((p) => p.paused).map((p) => p.dealId)),
   };
 }
@@ -2124,6 +2139,8 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   detectProductionStalls(now);
   settleRetentions(now);
   advanceShipments(now);
+  // 105: a delivery running late is noticed, and one that caught up is cleared, without anyone looking.
+  syncDelayCases(now);
   for (const deal of deals) {
     if (payments.some((p) => p.dealId === deal.id && p.status === 'paid' && !invoices.some((inv) => inv.paymentId === p.id))) {
       ensureStageInvoices(deal.id, deal, resolveLead(deal.leadId));
@@ -3087,6 +3104,194 @@ function anchorMaterialPayments(dealId: string, at: string): string[] {
 
 const looksLikeSignature = (dataUrl: string) => /^data:image\/png;base64,[A-Za-z0-9+/=]{60,}$/.test(dataUrl);
 
+/* ==================================== Delivery delay escalation (105) */
+
+/** A late-running delivery, judged live from what we are held to and what the tracker says. */
+function delayFactsOf(po: SupplierPurchaseOrder, now: number): DelayFacts | null {
+  if (po.status !== 'sent' || po.receivedAt || !po.supplierId) return null;
+  const supplier = byId(suppliers, po.supplierId) ?? undefined;
+  const estimate = assessDelay(po, supplier, supplierPurchaseOrders, now);
+  const schedule = scheduleOfPo(po.id);
+  const booked = schedule?.status === 'scheduled' && schedule.date && schedule.window ? windowEndsAt(schedule.date, schedule.window) : null;
+  const expectedAt = booked ?? promisedDeliveryOf(po) ?? null;
+  const lines = po.lineItems ?? [];
+  const shipped = lines.filter((l) => lineStageOf(po, l) === 'shipped');
+  const unshipped = lines.filter((l) => lineStageOf(po, l) !== 'shipped' && lineStageOf(po, l) !== 'delivered');
+  // Every vehicle still carrying something for this order, and how far each can be trusted.
+  let uncertain = false;
+  const legEtas: number[] = [];
+  for (const leg of shipmentLegs.filter((l) => l.poId === po.id && l.lineItemIds.some((id) => shipped.some((s) => s.id === id)))) {
+    const snap = legSnapshotOf(leg, routeOfLeg(leg), now);
+    if (snap.arrived) continue;
+    legEtas.push(new Date(leg.etaAt).getTime());
+    const lastWord = Math.max(new Date(leg.dispatchedAt).getTime(), ...leg.milestones.map((e) => new Date(e.at).getTime()));
+    if (snap.feed === 'lost' || (snap.feed === 'manual' && now - lastWord > MANUAL_UPDATE_EVERY)) uncertain = true;
+  }
+  const projected = estimate.projectedDelivery ? new Date(estimate.projectedDelivery).getTime() : now;
+  const trackerOnly = legEtas.length > 0 && unshipped.length === 0;
+  const currentEta = new Date(trackerOnly ? Math.max(...legEtas) : Math.max(projected, ...legEtas)).toISOString();
+  const job = pendingJobFor(po.dealId, schedule);
+  return {
+    expectedAt,
+    expectedSource: booked ? 'booked' : 'promised',
+    currentEta,
+    etaSource: trackerOnly ? 'tracker' : 'estimate',
+    uncertain,
+    estimateAtRisk: estimate.risk !== 'on_track' && !trackerOnly,
+    installStart: job && !job.startedAt ? job.scheduledFor : null,
+  };
+}
+
+function delayAlertFor(caseId: string) {
+  return alerts.find((a) => a.relatedId === caseId && a.titleKey === 'deliveryDelay.alert.delayed' && a.status !== 'resolved');
+}
+
+/** The heartbeat's half: opens a case the first time a delivery goes wrong, raises an alert once it is
+ *  actually late, and closes both on its own the moment the supplier catches up. Idempotent. */
+function syncDelayCases(now: number): void {
+  const at = new Date(now).toISOString();
+  for (const po of supplierPurchaseOrders) {
+    const open = delayCases.find((c) => c.poId === po.id && c.status === 'open');
+    const facts = delayFactsOf(po, now);
+    const verdict = facts ? judgeDelay(facts, now) : null;
+    const site = shipmentSite(po.dealId)?.siteName ?? '';
+    if (facts && verdict?.severity) {
+      const gap = Math.max(0, verdict.gapHours ?? 0);
+      let current = open;
+      if (!current) {
+        delayCounter += 1;
+        current = { id: `ddc-new-${delayCounter}`, poId: po.id, dealId: po.dealId, supplierId: po.supplierId!, status: 'open', openedAt: at, worstSeverity: verdict.severity, peakGapHours: gap, isDemo: true };
+        delayCases.push(current);
+        logAutomatedAction({
+          sourceKey: 'delivery.delay_opened',
+          triggeringCondition: `${po.code} for ${site} is ${verdict.severity === 'watch' ? 'trending late' : 'running late'}`,
+          actionTaken: 'Opened a delivery delay case',
+          affectedRecordId: po.id,
+          affectedRecordType: 'purchase_order',
+          subjectLabel: po.code,
+        });
+      }
+      const worst = SEVERITY_ORDER[verdict.severity] > SEVERITY_ORDER[current.worstSeverity] ? verdict.severity : current.worstSeverity;
+      current = patchInPlace(delayCases, current.id, {
+        worstSeverity: worst,
+        peakGapHours: Math.max(current.peakGapHours, gap),
+        lateSince: current.lateSince ?? (verdict.severity !== 'watch' ? at : undefined),
+      });
+      // A watch is for Admin's eyes on this screen; an alert is for a delivery that is genuinely late.
+      if (verdict.severity !== 'watch') {
+        raiseAlert({
+          titleKey: 'deliveryDelay.alert.delayed',
+          context: `${po.code} · ${site} · ${Math.max(1, gap)} h late`,
+          severity: verdict.severity === 'critical' ? 'high' : 'medium',
+          category: 'supplier',
+          relatedId: current.id,
+          sourceRoute: `/delivery-delays?case=${current.id}`,
+        });
+      }
+    } else if (open) {
+      // Caught up, or delivered: the good news is kept, the alert clears itself.
+      patchInPlace(delayCases, open.id, { status: 'recovered', recoveredAt: at, recoveredEta: po.receivedAt ?? facts?.currentEta ?? at });
+      const alert = delayAlertFor(open.id);
+      if (alert) patchInPlace(alerts, alert.id, { status: 'resolved', resolvedAt: at, resolvedBy: 'system', resolutionNote: po.receivedAt ? 'The delivery arrived.' : 'The delivery is back on track.' });
+      logAutomatedAction({
+        sourceKey: 'delivery.delay_recovered',
+        triggeringCondition: `${po.code} is ${po.receivedAt ? 'delivered' : 'back on track'}`,
+        actionTaken: 'Closed the delay case and cleared its alert',
+        affectedRecordId: po.id,
+        affectedRecordType: 'purchase_order',
+        subjectLabel: po.code,
+      });
+    }
+  }
+}
+const SEVERITY_ORDER: Record<DelaySeverity, number> = { watch: 1, late: 2, critical: 3 };
+
+function delayCaseOrThrow(caseId: string): DeliveryDelayCase {
+  const found = byId(delayCases, caseId);
+  if (!found) throw new RepositoryError('not_found');
+  return found;
+}
+
+/** The exact message a customer would get for these orders, in their own language. */
+function delayMessageFor(c: DeliveryDelayCase, facts: DelayFacts | null): { channel: CommChannel; body: string; lead: Lead | null; template: CommTemplate | undefined } {
+  const lead = resolveLead(byId(deals, c.dealId)?.leadId ?? '');
+  const language = lead?.preferredLanguage ?? 'en';
+  const groupId = c.rootCause === 'external_event' ? 'tpl-delay-external' : 'tpl-delay-notice';
+  const template = templateInGroup(groupId, language) ?? templateInGroup(groupId, 'en');
+  const po = byId(supplierPurchaseOrders, c.poId);
+  const etaIso = facts?.currentEta ?? c.recoveredEta ?? new Date().toISOString();
+  const original = c.promiseMovedFrom ?? facts?.expectedAt ?? po?.expectedDeliveryDate ?? etaIso;
+  const body = template
+    ? renderTemplateBody(template.body, {
+        customerName: lead?.contactName,
+        buildingName: lead?.siteName,
+        shipmentLabel: (po?.lineItems ?? []).map((l) => l.description.toLowerCase()).slice(0, 2).join(', ') || 'delivery',
+        // Late by hours on the same day: the date alone would say nothing, so say the time too.
+        etaDate: original.slice(0, 10) === etaIso.slice(0, 10) ? formatDateTime(etaIso, language) : formatDate(etaIso, language),
+        originalDate: original.slice(0, 10) === etaIso.slice(0, 10) ? formatDateTime(original, language) : formatDate(original, language),
+        delayReason: c.externalLabel,
+      })
+    : '';
+  return { channel: template?.channel ?? 'whatsapp', body, lead, template };
+}
+
+function delayRowOf(c: DeliveryDelayCase, now: number): DelayRow {
+  const po = byId(supplierPurchaseOrders, c.poId)!;
+  const supplier = byId(suppliers, c.supplierId);
+  const deal = byId(deals, c.dealId);
+  const lead = deal ? resolveLead(deal.leadId) : null;
+  const facts = delayFactsOf(po, now);
+  const verdict = facts ? judgeDelay(facts, now) : null;
+  const job = pendingJobFor(po.dealId, scheduleOfPo(po.id));
+  const message = delayMessageFor(c, facts);
+  const thread = supplierThreads.find((t) => t.supplierId === c.supplierId && t.relatedPoId === c.poId);
+  const stage = poStageOf(po);
+  const etaNow = facts?.currentEta ?? c.recoveredEta ?? c.openedAt;
+  return {
+    caseId: c.id,
+    status: c.status,
+    poId: po.id,
+    poCode: po.code,
+    dealId: c.dealId,
+    // A historical deal may have no lead on file; its own code still says which job this is.
+    siteName: shipmentSite(c.dealId)?.siteName ?? deal?.code ?? c.dealId,
+    customerName: lead?.contactName ?? '',
+    supplierId: c.supplierId,
+    supplierName: supplier?.name ?? '',
+    supplierHasLogin: !!supplier && !!supplierUserFor(supplier),
+    dealValue: deal?.agreedPrice || deal?.quotedPrice || 0,
+    stage,
+    lineSummary: (po.lineItems ?? []).map((l) => l.description).join(', '),
+    severity: c.status === 'open' ? (verdict?.severity ?? null) : null,
+    worstSeverity: c.worstSeverity,
+    gapHours: verdict?.gapHours ?? null,
+    peakGapHours: c.peakGapHours,
+    expectedAt: facts?.expectedAt ?? null,
+    expectedSource: facts?.expectedSource ?? 'promised',
+    currentEta: etaNow,
+    etaSource: facts?.etaSource ?? 'estimate',
+    uncertain: facts?.uncertain ?? false,
+    impact: verdict?.impact ?? 'none',
+    installStart: facts?.installStart ?? null,
+    installCode: job && !job.startedAt ? job.code : null,
+    openedAt: c.openedAt,
+    recoveredAt: c.recoveredAt ?? null,
+    delivered: !!po.receivedAt,
+    rootCause: c.rootCause ?? null,
+    rootCauseNote: c.rootCauseNote ?? null,
+    externalLabel: c.externalLabel ?? null,
+    promiseMovedFrom: c.promiseMovedFrom ?? null,
+    contactedSupplierAt: c.contactedSupplierAt ?? null,
+    customerNotifiedAt: c.customerNotifiedAt ?? null,
+    customerNotifiedEta: c.customerNotifiedEta ?? null,
+    notifyStale: !!c.customerNotifiedAt && c.status === 'open' && etaMovedSince(c.customerNotifiedEta, etaNow),
+    escalatedAt: c.escalatedAt ?? null,
+    customerOptedOut: !!lead && !!message.template && isOptedOutSync(lead.contactPhone, message.template.channel),
+    customerPreview: message.body,
+    threadId: thread?.id ?? null,
+  };
+}
+
 /* ============================================ Delivery scheduling (101) */
 
 const availabilityOf = (supplierId: string) => dispatchAvailability.find((a) => a.supplierId === supplierId) ?? null;
@@ -3337,6 +3542,8 @@ function createOrderRating(po: SupplierPurchaseOrder, deliveredAt: string): void
     expectedDeliveryDate: expected,
     deliveredAt,
     timelinessDays: Math.round((new Date(deliveredAt).getTime() - new Date(expected).getTime()) / 86_400_000),
+    // 105: why it was late, when someone said, so the scorecard can tell a supplier's fault from a flood.
+    delayCause: [...delayCases].reverse().find((c) => c.poId === po.id && c.rootCause)?.rootCause,
     defects: [],
     isDemo: true,
   });
@@ -6630,6 +6837,155 @@ export const memoryRepository: Repository = {
       if (materialsComplete) anchorMaterialPayments(confirmation.dealId, signedAt);
       syncCommitments(now);
       return confirmationViewOf(signed, actor);
+    }),
+
+  /* ------------------------------ Delivery delay escalation (105) */
+  getDelayBoard: (byUserId) =>
+    simulateRead((): DelayBoard => {
+      adminOnly(byUserId);
+      const now = Date.now();
+      // The heartbeat keeps this current; reading it first means a screen opened between beats is never behind.
+      syncDelayCases(now);
+      const recent = now - 3 * 86_400_000;
+      const rows = delayCases.filter((c) => byId(supplierPurchaseOrders, c.poId)).map((c) => delayRowOf(c, now));
+      const open = rows
+        .filter((r) => r.status === 'open')
+        .map((r) => ({ ...r, severity: r.severity ?? r.worstSeverity }))
+        .sort((a, b) => compareDelays({ severity: a.severity, impact: a.impact, gapHours: a.gapHours, dealValue: a.dealValue }, { severity: b.severity, impact: b.impact, gapHours: b.gapHours, dealValue: b.dealValue }));
+      const recovered = rows.filter((r) => r.status === 'recovered' && r.recoveredAt && new Date(r.recoveredAt).getTime() > recent).sort((a, b) => ((b.recoveredAt ?? '') < (a.recoveredAt ?? '') ? -1 : 1));
+      return { open, recovered };
+    }),
+
+  tagDelayCause: (caseIds, input, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      if (caseIds.length === 0) throw new RepositoryError('invalid_input');
+      const label = input.externalLabel?.trim();
+      if (input.cause === 'external_event' && (!label || label.length < 3)) throw new RepositoryError('label_required');
+      const now = Date.now();
+      const at = new Date(now).toISOString();
+      for (const id of caseIds) {
+        const c = delayCaseOrThrow(id);
+        if (c.status !== 'open') throw new RepositoryError('invalid_state');
+        const po = byId(supplierPurchaseOrders, c.poId)!;
+        let moved: string | undefined;
+        if (input.cause === 'external_event') {
+          // Nobody's fault, so the supplier is measured against when it can actually arrive, not the date before the flood.
+          const facts = delayFactsOf(po, now);
+          const promised = promisedDeliveryOf(po);
+          if (facts && promised && new Date(facts.currentEta).getTime() > new Date(promised).getTime()) {
+            patchInPlace(supplierPurchaseOrders, po.id, { expectedDeliveryDate: endOfDayIso(facts.currentEta.slice(0, 10)) });
+            moved = promised;
+          }
+          ratingCounter += 1;
+          scoreContextNotes.push({
+            id: `scn-new-${ratingCounter}`,
+            supplierId: c.supplierId,
+            note: `${po.code} was delayed by ${label}. The delivery date was moved, so it does not count against the on-time rate.`,
+            addedBy: actor.name,
+            addedAt: at,
+            isDemo: true,
+          });
+        }
+        patchInPlace(delayCases, c.id, {
+          rootCause: input.cause,
+          rootCauseNote: input.note?.trim() || undefined,
+          externalLabel: input.cause === 'external_event' ? label : undefined,
+          causeTaggedByName: actor.name,
+          causeTaggedAt: at,
+          promiseMovedFrom: moved ?? c.promiseMovedFrom,
+        });
+      }
+      syncDelayCases(now);
+      syncCommitments(now);
+    }),
+
+  contactSupplierAboutDelay: (caseId, input, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const c = delayCaseOrThrow(caseId);
+      const po = byId(supplierPurchaseOrders, c.poId);
+      const supplier = byId(suppliers, c.supplierId);
+      if (!po || !supplier) throw new RepositoryError('not_found');
+      if (input.body.trim().length < 4) throw new RepositoryError('invalid_input');
+      const thread = ensureSupplierThread(supplier.id, po.id);
+      const at = new Date().toISOString();
+      if (input.channel === 'in_app') {
+        // Nothing waits in an inbox nobody opens.
+        if (!supplierUserFor(supplier)) throw new RepositoryError('no_portal');
+        pushSupplierMessage(thread, { author: 'aiec', authorName: actor.name, authorUserId: actor.id, body: input.body.trim(), channel: 'in_app', at, expectsReply: input.expectsReply, poRef: po.id });
+      } else {
+        pushSupplierMessage(thread, { author: 'aiec', authorName: actor.name, authorUserId: actor.id, body: input.body.trim(), channel: input.channel, at, loggedBy: actor.name, expectsReply: input.expectsReply, poRef: po.id, readAt: at });
+      }
+      patchInPlace(delayCases, c.id, { contactedSupplierAt: at });
+      syncCommitments(Date.now());
+      return { threadId: thread.id };
+    }),
+
+  notifyDelayCustomers: (caseIds, byUserId) =>
+    simulateWrite((): NotifyDelayResult => {
+      const actor = adminOnly(byUserId);
+      const now = Date.now();
+      const at = new Date(now).toISOString();
+      const result: NotifyDelayResult = { notified: 0, skipped: [] };
+      // One message per customer, however many of their orders are late.
+      const told = new Set<string>();
+      for (const id of caseIds) {
+        const c = delayCaseOrThrow(id);
+        if (c.status !== 'open') throw new RepositoryError('invalid_state');
+        const po = byId(supplierPurchaseOrders, c.poId)!;
+        const facts = delayFactsOf(po, now);
+        const message = delayMessageFor(c, facts);
+        const eta = facts?.currentEta ?? at;
+        if (!message.lead || !message.template) {
+          result.skipped.push({ caseId: id, reason: 'no_contact' });
+          continue;
+        }
+        if (c.customerNotifiedAt && !etaMovedSince(c.customerNotifiedEta, eta)) {
+          result.skipped.push({ caseId: id, reason: 'already_told' });
+          continue;
+        }
+        if (isOptedOutSync(message.lead.contactPhone, message.template.channel)) {
+          result.skipped.push({ caseId: id, reason: 'opted_out' });
+          continue;
+        }
+        if (!told.has(message.lead.id)) {
+          let conversation = conversations.find((cv) => cv.leadId === message.lead!.id) ?? null;
+          if (!conversation) {
+            conversationCounter += 1;
+            conversation = { id: `conv-new-${conversationCounter}`, leadId: message.lead.id, lastMessageAt: at, isDemo: true };
+            conversations.push(conversation);
+          }
+          messageCounter += 1;
+          commMessages.push({ id: `cm-new-${messageCounter}`, conversationId: conversation.id, channel: message.channel, sender: 'agent', body: message.body, templateGroupId: message.template.groupId, status: 'sent', at, handled: true });
+          patchInPlace(conversations, conversation.id, { lastMessageAt: at });
+          told.add(message.lead.id);
+          result.notified += 1;
+          void actor;
+        }
+        patchInPlace(delayCases, c.id, { customerNotifiedAt: at, customerNotifiedEta: eta });
+      }
+      syncCommitments(now);
+      return result;
+    }),
+
+  escalateDelay: (caseId, note, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const c = delayCaseOrThrow(caseId);
+      if (c.status !== 'open') throw new RepositoryError('invalid_state');
+      if (note.trim().length < 4) throw new RepositoryError('invalid_input');
+      const po = byId(supplierPurchaseOrders, c.poId)!;
+      raiseAlert({
+        titleKey: 'deliveryDelay.alert.escalated',
+        context: `${po.code} · ${byId(suppliers, c.supplierId)?.name ?? ''} · ${note.trim()}`,
+        severity: 'high',
+        category: 'supplier',
+        relatedId: c.id,
+        sourceRoute: `/delivery-delays?case=${c.id}`,
+      });
+      patchInPlace(delayCases, c.id, { escalatedAt: new Date().toISOString(), escalatedByName: actor.name });
+      syncCommitments(Date.now());
     }),
 
   /* ------------------------------------------- Delivery scheduling (101) */

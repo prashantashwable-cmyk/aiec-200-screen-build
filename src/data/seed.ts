@@ -57,6 +57,7 @@ import type {
   SupplierAgreementVersion,
   SupplierMessage,
   SupplierThread,
+  DeliveryDelayCase,
   ShipmentLeg,
   ShipmentMilestone,
   ShipmentMilestoneEvent,
@@ -1509,6 +1510,33 @@ export const seedDeliverySchedules: DeliverySchedule[] = [
 const MUMBAI_DOCK = { name: 'Vertex dispatch dock, Mumbai', lat: 19.076, lng: 72.8777 };
 const gps = (milestone: ShipmentMilestone, minutesBefore: number): ShipmentMilestoneEvent => ({ milestone, at: minutesAgo(minutesBefore), source: 'gps', customerNotifiedAt: minutesAgo(minutesBefore - 1) });
 
+/** 105: history a demo can read. AIEC-PO-8203's controller was running two
+ *  days behind when Vertex's second shift caught it up: recovered, the
+ *  customer already told, so the screen shows what good news looks like. */
+export const seedDeliveryDelayCases: DeliveryDelayCase[] = [
+  {
+    id: 'ddc-1',
+    poId: 'spo-203',
+    dealId: 'dl-h4',
+    supplierId: 'sp-1',
+    status: 'recovered',
+    openedAt: hoursAgo(30),
+    worstSeverity: 'late',
+    lateSince: hoursAgo(28),
+    peakGapHours: 44,
+    recoveredAt: hoursAgo(5),
+    recoveredEta: new Date(NOW + 11 * DAY).toISOString(),
+    rootCause: 'supplier_production',
+    rootCauseNote: 'A batch of boards failed Vertex’s own test and was rebuilt.',
+    causeTaggedByName: 'Prashant Vasant Wable',
+    causeTaggedAt: hoursAgo(26),
+    contactedSupplierAt: hoursAgo(27),
+    customerNotifiedAt: hoursAgo(25),
+    customerNotifiedEta: new Date(NOW + 13 * DAY).toISOString(),
+    isDemo: true,
+  },
+];
+
 /** Wing B's order on three vehicles, all Vertex's: the traction machine on a
  *  truck with a live feed, the controller on the supplier's own tempo with
  *  no telematics (manual updates only), and the door operator on a second
@@ -2491,6 +2519,30 @@ const templateSeeds: TemplateSeed[] = [
       en: 'Hi {{customerName}}, your {{shipmentLabel}} has arrived at {{buildingName}}. Our team will check it with you now.',
       hi: 'नमस्ते {{customerName}}, आपका {{shipmentLabel}} {{buildingName}} पहुँच गया है। हमारी टीम अब आपके साथ इसकी जाँच करेगी।',
       mr: 'नमस्कार {{customerName}}, तुमचा {{shipmentLabel}} {{buildingName}} येथे पोहोचला आहे. आमची टीम आता तुमच्यासोबत त्याची तपासणी करेल.',
+    },
+  },
+  {
+    groupId: 'tpl-delay-notice',
+    name: 'Delivery Delay Notice',
+    channel: 'whatsapp',
+    associatedStage: 'won',
+    mergeFields: ['customerName', 'buildingName', 'shipmentLabel', 'etaDate', 'originalDate'],
+    body: {
+      en: 'Hi {{customerName}}, a quick and honest update: your {{shipmentLabel}} for {{buildingName}} is running behind. It was due {{originalDate}} and we now expect it around {{etaDate}}. We are on it and will tell you the moment that changes.',
+      hi: 'नमस्ते {{customerName}}, एक सच्ची और सीधी जानकारी: {{buildingName}} के लिए आपका {{shipmentLabel}} देर से चल रहा है। यह {{originalDate}} को आना था और अब हमें इसके लगभग {{etaDate}} तक पहुँचने की उम्मीद है। हम इस पर लगे हैं और जैसे ही कुछ बदलेगा आपको बताएँगे।',
+      mr: 'नमस्कार {{customerName}}, एक स्पष्ट आणि खरी माहिती: {{buildingName}} साठीचा तुमचा {{shipmentLabel}} उशिराने चालला आहे. तो {{originalDate}} ला यायचा होता आणि आता तो साधारण {{etaDate}} पर्यंत पोहोचेल अशी आम्हाला अपेक्षा आहे. आम्ही त्यावर काम करत आहोत आणि काही बदललं की लगेच कळवू.',
+    },
+  },
+  {
+    groupId: 'tpl-delay-external',
+    name: 'Delivery Delay Notice (shared cause)',
+    channel: 'whatsapp',
+    associatedStage: 'won',
+    mergeFields: ['customerName', 'buildingName', 'shipmentLabel', 'etaDate', 'originalDate', 'delayReason'],
+    body: {
+      en: 'Hi {{customerName}}, a quick and honest update: {{delayReason}} is holding up deliveries, and your {{shipmentLabel}} for {{buildingName}} is affected. It was due {{originalDate}} and we now expect it around {{etaDate}}. This is outside anyone’s control, and we will tell you the moment it moves.',
+      hi: 'नमस्ते {{customerName}}, एक सच्ची और सीधी जानकारी: {{delayReason}} के कारण डिलीवरी रुकी हुई हैं, और {{buildingName}} के लिए आपका {{shipmentLabel}} इससे प्रभावित है। यह {{originalDate}} को आना था और अब हमें इसके लगभग {{etaDate}} तक पहुँचने की उम्मीद है। यह किसी के बस में नहीं है, और जैसे ही कुछ बदलेगा हम आपको बताएँगे।',
+      mr: 'नमस्कार {{customerName}}, एक स्पष्ट आणि खरी माहिती: {{delayReason}} मुळे डिलिव्हऱ्या थांबल्या आहेत, आणि {{buildingName}} साठीचा तुमचा {{shipmentLabel}} त्यामुळे प्रभावित झाला आहे. तो {{originalDate}} ला यायचा होता आणि आता तो साधारण {{etaDate}} पर्यंत पोहोचेल अशी आम्हाला अपेक्षा आहे. हे कोणाच्याही हातात नाही, आणि काही बदललं की लगेच कळवू.',
     },
   },
   {

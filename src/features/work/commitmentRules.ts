@@ -25,6 +25,7 @@ import type {
   User,
   DeliveryChecklist,
   DeliveryConfirmation,
+  DeliveryDelayCase,
 } from '@/data/types';
 import { remainingBalance } from '@/features/payments/aging';
 import { days, hours, minutes } from '@/features/sla/clock';
@@ -78,6 +79,7 @@ export interface CommitmentSources {
   shipmentLegs: ShipmentLeg[];
   deliveryConfirmations: DeliveryConfirmation[];
   deliveryChecklists: DeliveryChecklist[];
+  delayCases: DeliveryDelayCase[];
   /** Deals where someone paused payment reminders by hand (083). */
   pausedDealIds: Set<string>;
 }
@@ -850,6 +852,43 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
           completedAt: po.receivedAt,
           actionRoute: `/delivery-checklist?poId=${po.id}`,
           oversightRoute: `/deliveries?poId=${po.id}`,
+        });
+      }
+      return out;
+    },
+  },
+  {
+    // A delivery that has gone past what we promised is Admin's to run down: tell the
+    // customer honestly, and say why it is late. Once both are done, or it has caught up,
+    // there is nothing left to chase.
+    kind: 'delivery_delay_action',
+    nudgeBefore: hours(1),
+    escalateAfter: hours(6),
+    escalates: true,
+    // The delay already raised its own alert; escalating would raise a second for the same thing.
+    raisesAlert: false,
+    alertCategory: 'supplier',
+    collect(src) {
+      const admin = adminId(src);
+      const out: Obligation[] = [];
+      for (const c of src.delayCases) {
+        // A watch is not yet a promise broken.
+        if (!c.lateSince) continue;
+        const po = src.purchaseOrders.find((p) => p.id === c.poId);
+        const deal = src.deals.find((d) => d.id === c.dealId);
+        const site = src.leads.find((l) => l.id === deal?.leadId)?.siteName ?? '';
+        out.push({
+          ...base('delivery_delay_action', 'delivery', c.id),
+          ownerUserId: admin,
+          titleKey: 'work.title.delivery_delay_action',
+          titleParams: { code: po?.code ?? '', site },
+          // Sooner when the install is what is being held up.
+          dueAt: plus(c.lateSince, c.worstSeverity === 'critical' ? hours(6) : hours(24)),
+          state: c.status === 'recovered' || (c.customerNotifiedAt && c.rootCause) ? ('done' as const) : ('open' as const),
+          paused: false,
+          completedAt: c.recoveredAt ?? c.customerNotifiedAt,
+          actionRoute: `/delivery-delays?case=${c.id}`,
+          oversightRoute: `/delivery-delays?case=${c.id}`,
         });
       }
       return out;
