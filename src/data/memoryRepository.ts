@@ -137,6 +137,7 @@ import type {
   DispatchablePo,
   ChecklistArrival,
   DeliveryChecklistBoard,
+  DeliveryConfirmationView,
   DeliveryChecklistView,
   CheckItemInput,
   CompleteChecklistInput,
@@ -173,6 +174,7 @@ import type {
   SupplierAgreementVersion,
   DeliveryCheckItem,
   DeliveryChecklist,
+  DeliveryConfirmation,
   DeliveryDiscrepancyReport,
   DeliveryEvent,
   DeliveryRescheduleCause,
@@ -452,6 +454,10 @@ let checklistCounter = 100;
 const discrepancyReports: DeliveryDiscrepancyReport[] = [];
 let discrepancyCounter = 100;
 let checklistPhotoCounter = 100;
+
+/** 104: the signable, lockable summary of each checked delivery. */
+const deliveryConfirmations: DeliveryConfirmation[] = [];
+let confirmationCounter = 100;
 
 /** 100: the root of how AIEC pays suppliers. */
 let paymentTermsConfig: SupplierPaymentTermsConfig = { tiers: { ...DEFAULT_TIER_SETTINGS } };
@@ -1004,9 +1010,11 @@ function buildDealCelebrationStaffSummaries(lead: Lead, deal: Deal): DealCelebra
  *  milestone that was never about them. */
 function resolveMilestoneDueDate(dealId: string, triggerMilestone: string): string | null {
   const primaryJob = jobs.find((j) => j.dealId === dealId);
-  if (!primaryJob) return null;
-  const step = primaryJob.steps.find((s) => s.labelKey === triggerMilestone);
-  return step && step.status === 'complete' && step.completedAt ? step.completedAt : null;
+  const step = primaryJob?.steps.find((s) => s.labelKey === triggerMilestone);
+  if (step && step.status === 'complete' && step.completedAt) return step.completedAt;
+  // "Materials received" is also what a signed delivery confirmation (104) says,
+  // before anyone has ticked the installation step for it.
+  return triggerMilestone === MATERIALS_MILESTONE ? materialsConfirmedAt(dealId) : null;
 }
 
 /** What the schedule's stages must sum to exactly — derived from the
@@ -1928,6 +1936,8 @@ function commitmentSources(now: number): CommitmentSources {
     supplierRetentions,
     deliverySchedules,
     shipmentLegs,
+    deliveryConfirmations,
+    deliveryChecklists,
     pausedDealIds: new Set(paymentReminderPauses.filter((p) => p.paused).map((p) => p.dealId)),
   };
 }
@@ -2954,12 +2964,128 @@ function syncDiscrepancyReport(checklist: DeliveryChecklist, actor: User): void 
   }
 }
 
+/** The real purchase orders for a deal: the ones with parts on them. A bare "triggered" or
+ *  "failed" placeholder from deal closure carries nothing to receive. */
+const dealOrderedPos = (dealId: string) => supplierPurchaseOrders.filter((p) => p.dealId === dealId && (p.lineItems ?? []).length > 0);
+
 /** All of a deal's parts are on site and none of them is in question. */
 function dealMaterialsOnSite(dealId: string): boolean {
-  const pos = supplierPurchaseOrders.filter((p) => p.dealId === dealId);
+  const pos = dealOrderedPos(dealId);
   if (pos.length === 0 || !pos.every((p) => p.status === 'sent' && p.receivedAt)) return false;
   return !discrepancyReports.some((r) => r.dealId === dealId && r.status === 'open');
 }
+
+/* ========================================== Delivery confirmation (104) */
+
+function confirmationActorOf(byUserId: string): User {
+  const actor = catalogActor(byUserId);
+  if (actor.role !== 'admin' && actor.role !== 'technician' && actor.role !== 'customer') throw new RepositoryError('forbidden');
+  return actor;
+}
+
+/** A customer sees their own deals' confirmations, once signed; AIEC's own people see the rest. */
+function confirmationVisibleTo(c: DeliveryConfirmation, actor: User): boolean {
+  if (actor.role === 'customer') return c.status === 'signed' && byId(deals, c.dealId)?.customerId === actor.id;
+  return checklistDealVisible(c.dealId, actor);
+}
+
+function createDeliveryConfirmation(checklist: DeliveryChecklist): DeliveryConfirmation {
+  confirmationCounter += 1;
+  const report = reportOfChecklist(checklist.id);
+  const created: DeliveryConfirmation = {
+    id: `dcf-new-${confirmationCounter}`,
+    code: `AIEC-DC-${5000 + confirmationCounter}`,
+    checklistId: checklist.id,
+    poId: checklist.poId,
+    dealId: checklist.dealId,
+    supplierId: checklist.supplierId,
+    legId: checklist.legId,
+    status: 'awaiting_signature',
+    // Frozen here: the checklist itself never changes, and what is signed is what it said.
+    items: checklist.items.map((i) => ({
+      lineItemId: i.lineItemId,
+      description: i.description,
+      expectedQty: i.expectedQty,
+      receivedQty: i.verdict === 'not_arrived' ? 0 : (i.receivedQty ?? i.expectedQty),
+      verdict: i.verdict === 'pending' ? 'not_arrived' : i.verdict,
+      kinds: i.kinds,
+      photoCount: i.photos.length,
+      note: i.note,
+    })),
+    createdAt: checklist.completedAt ?? new Date().toISOString(),
+    signatures: [],
+    reportIds: report && report.status === 'open' ? [report.id] : [],
+    isDemo: true,
+  };
+  deliveryConfirmations.push(created);
+  return created;
+}
+
+function confirmationViewOf(c: DeliveryConfirmation, actor: User): DeliveryConfirmationView {
+  const po = byId(supplierPurchaseOrders, c.poId);
+  const checklist = byId(deliveryChecklists, c.checklistId);
+  const leg = c.legId ? byId(shipmentLegs, c.legId) : undefined;
+  const isCustomer = actor.role === 'customer';
+  return {
+    ...c,
+    poCode: po?.code ?? c.poId,
+    siteName: shipmentSite(c.dealId)?.siteName ?? '',
+    address: resolveLead(byId(deals, c.dealId)?.leadId ?? '')?.address ?? null,
+    supplierName: isCustomer ? null : (byId(suppliers, c.supplierId)?.name ?? null),
+    vehicleLabel: isCustomer ? null : (leg?.vehicleLabel ?? null),
+    receiver: checklist?.receivedBy ?? null,
+    reports: c.reportIds.map((id) => byId(discrepancyReports, id)).filter((r): r is DeliveryDiscrepancyReport => !!r).map((r) => ({ id: r.id, code: r.code, status: r.status, itemCount: r.items.length })),
+    poFullyDelivered: !!po?.receivedAt,
+    canSign: c.status === 'awaiting_signature' && actor.role !== 'customer',
+    // The customer's copy leaves out what only AIEC needs: internal notes on the parts.
+    ...(isCustomer ? { items: c.items.map((i) => ({ ...i, note: undefined })), recordedByName: undefined } : {}),
+  };
+}
+
+/** A confirmation signed after the parts they cover were all delivered, and every
+ *  other one for the deal signed too, is what "materials received" means. */
+function dealMaterialsConfirmed(dealId: string, includingId: string): boolean {
+  const pos = dealOrderedPos(dealId);
+  if (pos.length === 0 || !pos.every((p) => p.status === 'sent' && p.receivedAt)) return false;
+  return deliveryConfirmations.filter((c) => c.dealId === dealId).every((c) => c.status === 'signed' || c.id === includingId);
+}
+
+/** When the parts for a deal were confirmed on site, if a signed confirmation says so. */
+function materialsConfirmedAt(dealId: string): string | null {
+  return deliveryConfirmations.find((c) => c.dealId === dealId && c.status === 'signed' && c.materialsComplete)?.signedAt ?? null;
+}
+
+const MATERIALS_MILESTONE = 'job.step.materialsReceived';
+
+/** A payment stage that falls due on "materials received" is due the day that is
+ *  confirmed. Never re-fired once the installation job has already recorded the step,
+ *  and never touching a stage anyone has already paid or disputed. */
+function anchorMaterialPayments(dealId: string, at: string): string[] {
+  const primaryJob = jobs.find((j) => j.dealId === dealId);
+  const step = primaryJob?.steps.find((s) => s.labelKey === MATERIALS_MILESTONE);
+  if (step && step.status === 'complete' && step.completedAt) return [];
+  const schedule = paymentSchedules.find((s) => s.dealId === dealId && s.activated);
+  if (!schedule) return [];
+  const anchored: string[] = [];
+  for (const stage of schedule.stages) {
+    if (stage.dueTrigger !== 'milestone' || stage.triggerMilestone !== MATERIALS_MILESTONE) continue;
+    for (const payment of payments.filter((p) => p.dealId === dealId && p.stage === stage.stage && p.status === 'due')) {
+      patchInPlace(payments, payment.id, { dueDate: at });
+      anchored.push(payment.id);
+      logAutomatedAction({
+        sourceKey: 'delivery.payment_due',
+        triggeringCondition: `Delivery of the parts for ${shipmentSite(dealId)?.siteName ?? dealId} was signed for`,
+        actionTaken: `Made ${payment.code} due on ${at.slice(0, 10)}`,
+        affectedRecordId: payment.id,
+        affectedRecordType: 'payment',
+        subjectLabel: payment.code,
+      });
+    }
+  }
+  return anchored;
+}
+
+const looksLikeSignature = (dataUrl: string) => /^data:image\/png;base64,[A-Za-z0-9+/=]{60,}$/.test(dataUrl);
 
 /* ============================================ Delivery scheduling (101) */
 
@@ -6407,8 +6533,11 @@ export const memoryRepository: Repository = {
         siteAck: ackName ? { name: ackName, at } : undefined,
         note: input.note?.trim() || undefined,
         recordedByName: actor.name !== receiverName ? actor.name : undefined,
+        completedByUserId: actor.id,
       });
       syncDiscrepancyReport(done, actor);
+      // Ready to be signed: the checklist is the working document, this its clean summary.
+      const confirmation = createDeliveryConfirmation(done);
 
       // Every part on site and none in question: the technician can now really start.
       let jobReady = false;
@@ -6428,7 +6557,7 @@ export const memoryRepository: Repository = {
         }
       }
       syncCommitments(now);
-      return { checklist: checklistViewOf(done), deliveredLineCount: receivedLineIds.length, poFullyDelivered: !!byId(supplierPurchaseOrders, po.id)?.receivedAt, jobReady };
+      return { checklist: checklistViewOf(done), deliveredLineCount: receivedLineIds.length, poFullyDelivered: !!byId(supplierPurchaseOrders, po.id)?.receivedAt, jobReady, confirmationId: confirmation.id };
     }),
 
   cancelDeliveryChecklist: (checklistId, byUserId) =>
@@ -6441,6 +6570,66 @@ export const memoryRepository: Repository = {
       syncDiscrepancyReport(emptied, actor);
       deliveryChecklists.splice(deliveryChecklists.indexOf(checklist), 1);
       syncCommitments(Date.now());
+    }),
+
+  /* ---------------------------------------- Delivery confirmation (104) */
+  getDeliveryConfirmations: (byUserId) =>
+    simulateRead((): DeliveryConfirmationView[] => {
+      const actor = confirmationActorOf(byUserId);
+      const recent = new Date(Date.now() - 180 * 86_400_000).toISOString();
+      return deliveryConfirmations
+        .filter((c) => confirmationVisibleTo(c, actor) && (c.status === 'awaiting_signature' || (c.signedAt ?? '') > recent))
+        .sort((a, b) => Number(b.status === 'awaiting_signature') - Number(a.status === 'awaiting_signature') || ((b.signedAt ?? b.createdAt) < (a.signedAt ?? a.createdAt) ? -1 : 1))
+        .map((c) => confirmationViewOf(c, actor));
+    }),
+
+  signDeliveryConfirmation: (confirmationId, input, byUserId) =>
+    simulateWrite(() => {
+      const actor = confirmationActorOf(byUserId);
+      if (actor.role === 'customer') throw new RepositoryError('forbidden');
+      const confirmation = byId(deliveryConfirmations, confirmationId);
+      if (!confirmation || !confirmationVisibleTo(confirmation, actor)) throw new RepositoryError('not_found');
+      // Locked once signed: no second signature, no edit.
+      if (confirmation.status !== 'awaiting_signature') throw new RepositoryError('invalid_state');
+      const checklist = byId(deliveryChecklists, confirmation.checklistId);
+      const receiver = checklist?.receivedBy;
+      if (!checklist || !receiver) throw new RepositoryError('invalid_state');
+
+      // The one the checklist named as having received it must sign; a second party may.
+      const primary = input.signatures.find((s) => s.role === receiver.role);
+      const second = input.signatures.find((s) => s !== primary);
+      if (!primary || primary.name.trim().length < 2 || !looksLikeSignature(primary.signature)) throw new RepositoryError('signature_required');
+      if (input.signatures.length > 2) throw new RepositoryError('invalid_input');
+      if (second) {
+        if (second.role === receiver.role || (second.role !== 'customer' && second.role !== 'site_contact')) throw new RepositoryError('invalid_input');
+        if (second.name.trim().length < 2 || !looksLikeSignature(second.signature)) throw new RepositoryError('signature_required');
+      } else if ((input.note ?? '').trim().length < 4) {
+        // Signing alone is fine, but it says why.
+        throw new RepositoryError('note_required');
+      }
+
+      const now = Date.now();
+      const capturedMs = input.capturedAt ? new Date(input.capturedAt).getTime() : now;
+      const closedMs = new Date(checklist.completedAt ?? confirmation.createdAt).getTime();
+      // Drawn after the checklist closed, and never in the future.
+      if (Number.isNaN(capturedMs) || capturedMs > now + 60_000 || capturedMs < closedMs) throw new RepositoryError('invalid_input');
+      const signedAt = new Date(Math.min(capturedMs, now)).toISOString();
+      const delayed = now - capturedMs > 60_000;
+
+      const materialsComplete = dealMaterialsConfirmed(confirmation.dealId, confirmation.id);
+      const signed = patchInPlace(deliveryConfirmations, confirmation.id, {
+        status: 'signed',
+        signatures: [primary, ...(second ? [second] : [])].map((s) => ({ role: s.role, name: s.name.trim(), signature: s.signature, signedAt })),
+        note: input.note?.trim() || undefined,
+        recordedByName: actor.name !== primary.name.trim() ? actor.name : undefined,
+        capturedAt: delayed ? signedAt : undefined,
+        signedAt,
+        reportsAtSigning: confirmation.reportIds.map((id) => byId(discrepancyReports, id)).filter((r): r is DeliveryDiscrepancyReport => !!r).map((r) => ({ id: r.id, code: r.code, status: r.status })),
+        materialsComplete,
+      });
+      if (materialsComplete) anchorMaterialPayments(confirmation.dealId, signedAt);
+      syncCommitments(now);
+      return confirmationViewOf(signed, actor);
     }),
 
   /* ------------------------------------------- Delivery scheduling (101) */

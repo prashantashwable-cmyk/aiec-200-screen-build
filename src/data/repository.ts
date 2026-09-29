@@ -82,7 +82,9 @@ import type {
   ShipmentMilestone,
   ShipmentTrackingSource,
   DeliveryRescheduleCause,
+  ConfirmationPartyRole,
   DeliveryChecklist,
+  DeliveryConfirmation,
   DeliveryDiscrepancyReport,
   DeliveryReceiver,
   DeliverySchedule,
@@ -1023,6 +1025,35 @@ export interface CompleteChecklistResult {
   poFullyDelivered: boolean;
   /** The deal's installation job was moved to "scheduled" because all its parts are now on site. */
   jobReady: boolean;
+  /** The signable confirmation (104) this checklist produced. */
+  confirmationId: string;
+}
+
+/* -------------------------------------- Delivery confirmation (104) */
+
+export interface DeliveryConfirmationView extends DeliveryConfirmation {
+  poCode: string;
+  siteName: string;
+  address: string | null;
+  /** Null in the customer's copy: the supplier and vehicle are AIEC's business. */
+  supplierName: string | null;
+  vehicleLabel: string | null;
+  /** Who stood at the tailgate, from the checklist. */
+  receiver: DeliveryReceiver | null;
+  /** The reports as they stand now (at signing they are in `reportsAtSigning`). */
+  reports: { id: string; code: string; status: 'open' | 'withdrawn'; itemCount: number }[];
+  poFullyDelivered: boolean;
+  /** Whether the signed-in person may sign it now. */
+  canSign: boolean;
+}
+
+export interface SignConfirmationInput {
+  /** The receiver's signature, plus the customer's or a second contact's if present. */
+  signatures: { role: ConfirmationPartyRole; name: string; signature: string }[];
+  /** Required when only one side signed. */
+  note?: string;
+  /** When they were drawn, if the network was down on site. */
+  capturedAt?: string;
 }
 
 /* ---------------------------------------- Delivery scheduling (101) */
@@ -2110,6 +2141,11 @@ export interface Repository {
   completeDeliveryChecklist(checklistId: string, input: CompleteChecklistInput, byUserId: string): Promise<CompleteChecklistResult>;
   /** Abandons an unfinished checklist started by mistake. */
   cancelDeliveryChecklist(checklistId: string, byUserId: string): Promise<void>;
+
+  /* Delivery confirmation (104) — the signable, lockable summary of a checked delivery */
+  getDeliveryConfirmations(byUserId: string): Promise<DeliveryConfirmationView[]>;
+  /** Signs and locks it. Proceeds with unresolved discrepancies, which stay flagged. */
+  signDeliveryConfirmation(confirmationId: string, input: SignConfirmationInput, byUserId: string): Promise<DeliveryConfirmationView>;
 
   /* Delivery scheduling (101) — a booked day, in the supplier's real windows, at a ready site */
   getDeliveryBoard(byUserId: string): Promise<DeliveryBoard>;

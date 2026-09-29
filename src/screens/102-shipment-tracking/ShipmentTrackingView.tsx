@@ -160,6 +160,7 @@ function LegPicker({ s, t }: { s: ShipmentTrackingState; t: T }) {
 /* -------------------------------------------------------------- the hero */
 
 function Hero({ leg, now, lang, t, isCustomer, onUpdate, canUpdate }: { leg: ShipmentView; now: number; lang: string; t: T; isCustomer: boolean; onUpdate: () => void; canUpdate: boolean }) {
+  const navigate = useNavigate();
   const minutesLeft = Math.round((new Date(leg.etaAt).getTime() - now) / 60_000);
   const arrivedAt = leg.timeline.find((e) => e.milestone === 'arrived')?.reachedAt ?? null;
   const fix = leg.fixAt ? relativeTimeParts(leg.fixAt, now) : null;
@@ -216,6 +217,13 @@ function Hero({ leg, now, lang, t, isCustomer, onUpdate, canUpdate }: { leg: Shi
           </p>
         )}
         {isCustomer && leg.feed !== 'live' && !leg.arrived && <p className="t-xs t-muted">{t(K.customer.manualHint)}</p>}
+        {isCustomer && leg.arrived && (
+          <div>
+            <Button size="sm" variant="secondary" onClick={() => navigate(`/delivery-confirmation?poId=${leg.poId}`)}>
+              {t(K.customer.viewConfirmation)}
+            </Button>
+          </div>
+        )}
         {canUpdate && (
           <div>
             <Button size="sm" variant={leg.feed === 'lost' ? 'primary' : 'secondary'} onClick={onUpdate}>

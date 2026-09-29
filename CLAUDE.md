@@ -107,9 +107,35 @@ the module's section to `BUILD_README.md`.
   (dl-1) was seeded one day short of the reminder cadence's own exhaustion threshold, so no real
   payment could ever reach 089's escalation queue while also belonging to a deal with an active
   Job — moved from 6 to 10 days overdue (and the stale `al-2` alert text updated to match).
-- **Module 11 in progress:** `101`–`103` built. **Next: `104`**. At its checkpoint (after 110),
+- **Module 11 in progress:** `101`–`104` built. **Next: `105`**. At its checkpoint (after 110),
   add an Admin logistics entry point: 101 and 102 are reachable for Admin only from 091's hub and
   095's header (and 101's/102's own PO links).
+  104 facts:
+  - A `DeliveryConfirmation` is created the moment a checklist (103) closes, in `awaiting_signature`,
+    with the checklist's items frozen into it. Signing locks it: `status: 'signed'`, never edited, a
+    second signature refused (`invalid_state`). It is the clean summary; the checklist stays the
+    working document.
+  - The receiver named on the checklist (`technician` or `site_contact`) must sign, drawn on
+    `SignaturePad`. A second party (`customer` or `site_contact`) may. With only one signature a note
+    saying why is required. Unresolved discrepancy reports never block signing: they are listed on the
+    document (`reportsAtSigning`) and stay open with the supplier.
+  - Offline on site: the signature is queued in `localStorage` (`aiec.deliveryConfirmQueue`) exactly
+    as drawn, with its `capturedAt`, and sent by the hook when the network returns. The lock time is
+    `capturedAt`, never the sync time (`capturedAt` on the record marks a delayed one). The repository
+    refuses a `capturedAt` before the checklist closed or in the future.
+  - Signing the confirmation that completes the deal (`materialsComplete`: every real PO, meaning
+    one with lines, delivered and every confirmation signed) is what fires "due on material delivery":
+    `resolveMilestoneDueDate` resolves `job.step.materialsReceived` from `materialsConfirmedAt`
+    when the job's own step isn't complete yet, and `anchorMaterialPayments` sets a still-`due`
+    milestone payment's `dueDate` to the signing time (`delivery.payment_due`, logged). A paid,
+    disputed or already-fired stage is never touched. **Module 12's installation SOP screens should
+    treat `materialsReceived` as satisfied by a signed confirmation**, not tick it a second time.
+  - Commitment `delivery_confirmation_sign`: owner the checklist's `completedByUserId` if a
+    technician, else Admin; due 24 h after the checklist closes; done when signed.
+  - `/delivery-confirmation` serves Admin, Technician and Customer. The customer sees only signed
+    confirmations for their deals, without supplier, vehicle or internal part notes: this is the
+    "document in their portal". Reached from 103's result card, 102's customer view once arrived, and
+    091's hub.
   103 facts:
   - `DeliveryChecklist` is one arrival checked on site: one vehicle's load (`legId`) or the untracked
     remainder. A PO delivered in parts has several. Items snapshot the line (`expectedQty`,

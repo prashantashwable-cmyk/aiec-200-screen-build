@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { CheckCircle, ClipboardText, Package, Truck, Warning } from '@phosphor-icons/react';
 import {
   ActionBar,
@@ -499,6 +500,7 @@ function SignOffSheet({ s, checklist, t, report }: { s: DeliveryChecklistState; 
 }
 
 function ResultCard({ s, t }: { s: DeliveryChecklistState; t: T }) {
+  const navigate = useNavigate();
   const r = s.result!;
   return (
     <Card>
@@ -509,8 +511,12 @@ function ResultCard({ s, t }: { s: DeliveryChecklistState; t: T }) {
         <p className="t-sm">{r.poFullyDelivered ? t(K.done.fully, { code: r.checklist.poCode }) : t(K.done.partial, { code: r.checklist.poCode, count: r.deliveredLineCount })}</p>
         {r.checklist.report?.status === 'open' && <p className="t-sm t-warning">{t(K.done.report, { code: r.checklist.report.code })}</p>}
         {r.jobReady && <p className="t-sm">{t(K.done.jobReady)}</p>}
-        <div>
-          <Button size="sm" variant="secondary" onClick={s.closeChecklist}>
+        <p className="t-xs t-muted">{t(K.done.signHint)}</p>
+        <div className="row gap-2 wrap">
+          <Button size="sm" onClick={() => navigate(`/delivery-confirmation?confirmation=${r.confirmationId}`)}>
+            {t(K.done.sign)}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={s.closeChecklist}>
             {t(K.done.back)}
           </Button>
         </div>

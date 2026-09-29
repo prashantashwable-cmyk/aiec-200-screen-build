@@ -959,6 +959,7 @@ export interface DeliveryChecklist {
   note?: string;
   /** Who used the app, if not the receiver (Admin recording for someone on site). */
   recordedByName?: string;
+  completedByUserId?: string;
   completedAt?: string;
   isDemo: boolean;
 }
@@ -988,6 +989,64 @@ export interface DeliveryDiscrepancyReport {
   status: 'open' | 'withdrawn';
   createdAt: string;
   createdByName: string;
+  isDemo: boolean;
+}
+
+/* -------------------------------- Delivery confirmation (104) */
+
+/** Who put a signature on it: whoever AIEC's checklist named as the receiver,
+ *  and, when present, the customer or a second site contact. */
+export type ConfirmationPartyRole = 'technician' | 'site_contact' | 'customer';
+
+export interface ConfirmationSignature {
+  role: ConfirmationPartyRole;
+  name: string;
+  /** A flat PNG data URL, as SignaturePad produces. */
+  signature: string;
+  signedAt: string;
+}
+
+/** One line of what was checked, frozen the moment the checklist closed. */
+export interface DeliveryConfirmationItem {
+  lineItemId: string;
+  description: string;
+  expectedQty: number;
+  receivedQty: number;
+  verdict: 'ok' | 'discrepancy' | 'not_arrived';
+  kinds: DiscrepancyKind[];
+  photoCount: number;
+  note?: string;
+}
+
+/** The clean, signable summary of one checked delivery. It exists from the
+ *  moment the checklist (103) closes, and is locked the moment it is signed:
+ *  a signed confirmation is never edited. */
+export interface DeliveryConfirmation {
+  id: string;
+  code: string;
+  checklistId: string;
+  poId: string;
+  dealId: string;
+  supplierId: string;
+  legId?: string;
+  status: 'awaiting_signature' | 'signed';
+  items: DeliveryConfirmationItem[];
+  createdAt: string;
+  signatures: ConfirmationSignature[];
+  /** Why only one side signed (the customer was not on site). */
+  note?: string;
+  /** Who used the app, if not the person who signed. */
+  recordedByName?: string;
+  /** When the signatures were actually drawn, if they reached the server later (offline on site). */
+  capturedAt?: string;
+  signedAt?: string;
+  /** The discrepancy reports (103) this delivery raised. */
+  reportIds: string[];
+  /** Their state at the moment of signing: an unresolved one does not block the signature. */
+  reportsAtSigning?: { id: string; code: string; status: 'open' | 'withdrawn' }[];
+  /** Whether signing this finished every part ordered for the deal, which is what fires a
+   *  "due on material delivery" payment stage. */
+  materialsComplete?: boolean;
   isDemo: boolean;
 }
 
@@ -2242,6 +2301,7 @@ export type CommitmentKind =
   | 'delivery_schedule'
   | 'delivery_receive'
   | 'shipment_status_update'
+  | 'delivery_confirmation_sign'
   | 'alert_acknowledge'
   | 'follow_up_task'
   | 'lead_revisit';

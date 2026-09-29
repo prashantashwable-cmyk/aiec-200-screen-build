@@ -55,6 +55,7 @@ const translations: ScreenTranslations = {
         arrived: 'Your order has arrived',
         around: 'Arriving around {{time}}',
         manualHint: 'We will message you at each step.',
+        viewConfirmation: 'See the delivery confirmation',
       },
       window: {
         heading: 'Booked delivery window',
@@ -178,6 +179,7 @@ const translations: ScreenTranslations = {
         arrived: 'आपका ऑर्डर पहुँच गया है',
         around: 'लगभग {{time}} तक पहुँचेगा',
         manualHint: 'हर चरण पर हम आपको संदेश भेजेंगे।',
+        viewConfirmation: 'डिलीवरी कन्फ़र्मेशन देखें',
       },
       window: {
         heading: 'बुक की गई डिलीवरी का समय',
@@ -301,6 +303,7 @@ const translations: ScreenTranslations = {
         arrived: 'तुमची ऑर्डर पोहोचली आहे',
         around: 'साधारण {{time}} पर्यंत पोहोचेल',
         manualHint: 'प्रत्येक टप्प्यावर आम्ही तुम्हाला मेसेज पाठवू.',
+        viewConfirmation: 'डिलिव्हरी कन्फर्मेशन पाहा',
       },
       window: {
         heading: 'बुक केलेली डिलिव्हरी वेळ',

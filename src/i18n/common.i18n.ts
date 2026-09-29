@@ -273,6 +273,7 @@ const common: ScreenTranslations = {
         delivery_rebook: 'Book a new date for {{code}}: the last delivery found the site not ready',
         delivery_receive: 'Receive delivery {{code}} at {{site}}',
         shipment_status_update: 'Update where the {{code}} shipment has got to',
+        delivery_confirmation_sign: 'Sign the delivery confirmation for {{code}} at {{site}}',
         shipment_status_update_proxy: '{{supplier}} hasn’t updated the {{code}} shipment. Ask them where it is',
         alert_acknowledge: 'Acknowledge alert {{code}}: {{context}}',
         follow_up_task: 'Follow-up: {{title}}',
@@ -303,6 +304,7 @@ const common: ScreenTranslations = {
           technician_notified: 'Told the technician to receive delivery {{label}}',
           job_synced: 'Moved the installation job for {{label}} to follow its delivery',
           job_ready: 'Every part is on site, so installation job {{label}} is now scheduled',
+          payment_due: 'Made payment {{label}} due, because the delivery of the parts was signed for',
         },
         shipment: {
           customer_notified: 'Told the customer about shipment {{label}}',
@@ -593,6 +595,7 @@ const common: ScreenTranslations = {
         delivery_rebook: '{{code}} की नई तारीख बुक करें: पिछली डिलीवरी पर साइट तैयार नहीं मिली',
         delivery_receive: '{{site}} पर डिलीवरी {{code}} लें',
         shipment_status_update: '{{code}} की खेप कहाँ पहुँची, यह अपडेट करें',
+        delivery_confirmation_sign: '{{site}} पर {{code}} की डिलीवरी कन्फ़र्मेशन पर दस्तख़त करें',
         shipment_status_update_proxy: '{{supplier}} ने {{code}} की खेप अपडेट नहीं की। उनसे पूछें कि वह कहाँ है',
         alert_acknowledge: 'अलर्ट {{code}} स्वीकार करें: {{context}}',
         follow_up_task: 'फ़ॉलो-अप: {{title}}',
@@ -623,6 +626,7 @@ const common: ScreenTranslations = {
           technician_notified: 'टेक्नीशियन को डिलीवरी {{label}} लेने के लिए बताया',
           job_synced: '{{label}} की इंस्टॉलेशन जॉब को उसकी डिलीवरी के बाद कर दिया',
           job_ready: 'सारे पार्ट्स साइट पर हैं, इसलिए इंस्टॉलेशन जॉब {{label}} अब शेड्यूल हो गई',
+          payment_due: 'पेमेंट {{label}} देय कर दिया, क्योंकि पार्ट्स की डिलीवरी पर दस्तख़त हो गए',
         },
         shipment: {
           customer_notified: 'ग्राहक को खेप {{label}} के बारे में बताया',
@@ -913,6 +917,7 @@ const common: ScreenTranslations = {
         delivery_rebook: '{{code}} ची नवीन तारीख बुक करा: मागच्या डिलिव्हरीवेळी साइट तयार नव्हती',
         delivery_receive: '{{site}} येथे डिलिव्हरी {{code}} स्वीकारा',
         shipment_status_update: '{{code}} ची खेप कुठवर पोहोचली ते अपडेट करा',
+        delivery_confirmation_sign: '{{site}} येथील {{code}} च्या डिलिव्हरी कन्फर्मेशनवर सही करा',
         shipment_status_update_proxy: '{{supplier}} ने {{code}} ची खेप अपडेट केलेली नाही. ती कुठे आहे ते त्यांना विचारा',
         alert_acknowledge: 'अलर्ट {{code}} स्वीकारा: {{context}}',
         follow_up_task: 'पाठपुरावा: {{title}}',
@@ -943,6 +948,7 @@ const common: ScreenTranslations = {
           technician_notified: 'टेक्निशियनला डिलिव्हरी {{label}} स्वीकारायला सांगितलं',
           job_synced: '{{label}} ची इन्स्टॉलेशन जॉब तिच्या डिलिव्हरीनंतर केली',
           job_ready: 'सर्व पार्ट्स साइटवर आहेत, म्हणून इन्स्टॉलेशन जॉब {{label}} आता शेड्यूल झाली',
+          payment_due: 'पेमेंट {{label}} देय केलं, कारण पार्ट्सच्या डिलिव्हरीवर सही झाली',
         },
         shipment: {
           customer_notified: 'ग्राहकाला खेप {{label}} बद्दल कळवलं',

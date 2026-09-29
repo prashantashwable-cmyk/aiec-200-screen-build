@@ -107,6 +107,8 @@ const translations: ScreenTranslations = {
         report: 'Report {{code}} was raised for the problems found. AIEC has been alerted.',
         jobReady: 'Every part for this site is here, so its installation job is now scheduled.',
         back: 'Back to deliveries',
+        sign: 'Sign the confirmation',
+        signHint: 'The delivery is recorded. The formal confirmation is the last step: a signature that locks it.',
       },
       record: {
         completedAt: 'Signed off {{time}}',
@@ -241,6 +243,8 @@ const translations: ScreenTranslations = {
         report: 'पाई गई समस्याओं के लिए रिपोर्ट {{code}} बनी। AIEC को सूचित कर दिया गया है।',
         jobReady: 'इस साइट के सारे पार्ट्स आ गए हैं, इसलिए इसकी इंस्टॉलेशन जॉब अब शेड्यूल हो गई है।',
         back: 'डिलीवरी पर लौटें',
+        sign: 'कन्फ़र्मेशन पर दस्तख़त करें',
+        signHint: 'डिलीवरी दर्ज हो गई। औपचारिक कन्फ़र्मेशन आख़िरी चरण है: एक दस्तख़त जो इसे लॉक कर देता है।',
       },
       record: {
         completedAt: '{{time}} को दस्तख़त हुए',
@@ -375,6 +379,8 @@ const translations: ScreenTranslations = {
         report: 'आढळलेल्या समस्यांसाठी अहवाल {{code}} तयार झाला. AIEC ला कळवलं आहे.',
         jobReady: 'या साइटचे सर्व पार्ट्स आले आहेत, म्हणून तिची इन्स्टॉलेशन जॉब आता शेड्यूल झाली आहे.',
         back: 'डिलिव्हरीकडे परत',
+        sign: 'कन्फर्मेशनवर सही करा',
+        signHint: 'डिलिव्हरीची नोंद झाली. औपचारिक कन्फर्मेशन हा शेवटचा टप्पा आहे: एक सही जी ते लॉक करते.',
       },
       record: {
         completedAt: '{{time}} ला सही झाली',

@@ -78,6 +78,7 @@ export const SHIPMENT_TRACKING_KEYS = {
     dispatched: 'shipmentTracking.customer.dispatched',
     around: 'shipmentTracking.customer.around',
     manualHint: 'shipmentTracking.customer.manualHint',
+    viewConfirmation: 'shipmentTracking.customer.viewConfirmation',
   },
   window: {
     heading: 'shipmentTracking.window.heading',

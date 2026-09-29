@@ -23,6 +23,8 @@ import type {
   Supplier,
   SupplierPurchaseOrder,
   User,
+  DeliveryChecklist,
+  DeliveryConfirmation,
 } from '@/data/types';
 import { remainingBalance } from '@/features/payments/aging';
 import { days, hours, minutes } from '@/features/sla/clock';
@@ -74,6 +76,8 @@ export interface CommitmentSources {
   supplierRetentions: SupplierRetention[];
   deliverySchedules: DeliverySchedule[];
   shipmentLegs: ShipmentLeg[];
+  deliveryConfirmations: DeliveryConfirmation[];
+  deliveryChecklists: DeliveryChecklist[];
   /** Deals where someone paused payment reminders by hand (083). */
   pausedDealIds: Set<string>;
 }
@@ -849,6 +853,38 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
         });
       }
       return out;
+    },
+  },
+  {
+    // A checked delivery is only formal once it is signed (104). Whoever
+    // received it owns that, Admin when nobody with a login did.
+    kind: 'delivery_confirmation_sign',
+    nudgeBefore: hours(4),
+    escalateAfter: hours(12),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'supplier',
+    collect(src) {
+      const admin = adminId(src);
+      return src.deliveryConfirmations.map((c) => {
+        const po = src.purchaseOrders.find((p) => p.id === c.poId);
+        const checklist = src.deliveryChecklists.find((k) => k.id === c.checklistId);
+        const receiver = activeUser(src, checklist?.completedByUserId);
+        const deal = src.deals.find((d) => d.id === c.dealId);
+        const site = src.leads.find((l) => l.id === deal?.leadId)?.siteName ?? '';
+        return {
+          ...base('delivery_confirmation_sign', 'delivery', c.id),
+          ownerUserId: receiver && receiver.role === 'technician' ? receiver.id : admin,
+          titleKey: 'work.title.delivery_confirmation_sign',
+          titleParams: { code: po?.code ?? '', site },
+          dueAt: plus(c.createdAt, hours(24)),
+          state: c.status === 'signed' ? ('done' as const) : ('open' as const),
+          paused: false,
+          completedAt: c.signedAt,
+          actionRoute: `/delivery-confirmation?confirmation=${c.id}`,
+          oversightRoute: `/delivery-confirmation?confirmation=${c.id}`,
+        };
+      });
     },
   },
   {
