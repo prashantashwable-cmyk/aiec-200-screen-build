@@ -82,6 +82,9 @@ import type {
   ShipmentMilestone,
   ShipmentTrackingSource,
   DeliveryRescheduleCause,
+  DeliveryChecklist,
+  DeliveryDiscrepancyReport,
+  DeliveryReceiver,
   DeliverySchedule,
   DeliveryWindow,
   SiteReadiness,
@@ -361,7 +364,7 @@ export interface WorkItem {
   /** Name of whoever it escalated to, when it has. */
   escalatedToName?: string;
   /** Present only where the owner's say-so is the proof of done. */
-  quickAction?: 'complete_task' | 'acknowledge_po' | 'confirm_po_received';
+  quickAction?: 'complete_task' | 'acknowledge_po';
 }
 
 export interface MyWork {
@@ -954,6 +957,72 @@ export interface UpdateShipmentInput {
   note?: string;
   /** A revised arrival estimate, if the supplier gives one. */
   etaAt?: string;
+}
+
+/* ------------------------------------- Site delivery checklist (103) */
+
+/** Something that can be checked in right now: one vehicle's worth of parts
+ *  that shipped and haven't been verified on site. */
+export interface ChecklistArrival {
+  key: string;
+  poId: string;
+  poCode: string;
+  dealId: string;
+  siteName: string;
+  address: string | null;
+  supplierName: string;
+  /** Null for parts that shipped with no tracked vehicle, or that missed the truck. */
+  legId: string | null;
+  vehicleLabel: string | null;
+  legMilestone: ShipmentMilestone | null;
+  etaAt: string | null;
+  lines: { id: string; description: string; quantity: number }[];
+  /** An unfinished checklist for exactly this arrival. */
+  checklistId: string | null;
+}
+
+export interface DeliveryChecklistView extends DeliveryChecklist {
+  poCode: string;
+  siteName: string;
+  supplierName: string;
+  address: string | null;
+  vehicleLabel: string | null;
+  /** The report raised from it, if anything was wrong. */
+  report: DeliveryDiscrepancyReport | null;
+  /** Whether that delivery finished the PO. */
+  poFullyDelivered: boolean;
+}
+
+export interface DeliveryChecklistBoard {
+  arrivals: ChecklistArrival[];
+  /** Unfinished, and finished in the last two weeks, newest first. */
+  checklists: DeliveryChecklistView[];
+}
+
+export interface CheckItemInput {
+  /** False when the part isn't on this delivery (another vehicle, backordered). */
+  arrived: boolean;
+  receivedQty?: number;
+  conditionOk?: boolean;
+  specOk?: boolean;
+  note?: string;
+  /** The whole set, kept ones by id and new ones without. */
+  photos: { id?: string; fileName: string; previewUrl?: string; capturedAt: string }[];
+}
+
+export interface CompleteChecklistInput {
+  receiver: DeliveryReceiver;
+  /** A customer or site contact who also acknowledges, when the technician received. */
+  siteAckName?: string;
+  note?: string;
+}
+
+export interface CompleteChecklistResult {
+  checklist: DeliveryChecklistView;
+  deliveredLineCount: number;
+  poFullyDelivered: boolean;
+  /** The deal's installation job was moved to "scheduled" because all its parts are now on site. */
+  jobReady: boolean;
 }
 
 /* ---------------------------------------- Delivery scheduling (101) */
@@ -2031,6 +2100,17 @@ export interface Repository {
    *  lands in the PO's supplier thread. */
   updateShipmentMilestone(legId: string, input: UpdateShipmentInput, byUserId: string): Promise<ShipmentView>;
 
+  /* Site delivery checklist (103) — the authoritative "it arrived", verified item by item */
+  getDeliveryChecklistBoard(byUserId: string): Promise<DeliveryChecklistBoard>;
+  /** Opens the checklist for one arrival (a vehicle, or the untracked remainder). Idempotent. */
+  startDeliveryChecklist(poId: string, legId: string | null, byUserId: string): Promise<DeliveryChecklistView>;
+  /** Records one part. A part that arrived needs a photo; a discrepancy also needs words. */
+  saveDeliveryCheckItem(checklistId: string, lineItemId: string, input: CheckItemInput, byUserId: string): Promise<DeliveryChecklistView>;
+  /** Closes the checklist: what arrived becomes delivered, everywhere. */
+  completeDeliveryChecklist(checklistId: string, input: CompleteChecklistInput, byUserId: string): Promise<CompleteChecklistResult>;
+  /** Abandons an unfinished checklist started by mistake. */
+  cancelDeliveryChecklist(checklistId: string, byUserId: string): Promise<void>;
+
   /* Delivery scheduling (101) — a booked day, in the supplier's real windows, at a ready site */
   getDeliveryBoard(byUserId: string): Promise<DeliveryBoard>;
   /** Bookable slots for this PO's supplier over the next 60 days. */
@@ -2161,7 +2241,6 @@ export interface Repository {
   /** The supplier's "we have this order". */
   acknowledgePurchaseOrder(poId: string, byUserId: string): Promise<SupplierPurchaseOrder>;
   /** Admin's "the goods arrived" — a stand-in until Module 11 owns receipt. */
-  confirmPurchaseOrderReceived(poId: string, byUserId: string): Promise<SupplierPurchaseOrder>;
   /** Completes a commitment whose proof of done is the owner's say-so
    *  (`WorkItem.quickAction`), through the same write its own screen uses. */
   completeCommitmentQuickAction(commitmentId: string, byUserId: string): Promise<Commitment>;

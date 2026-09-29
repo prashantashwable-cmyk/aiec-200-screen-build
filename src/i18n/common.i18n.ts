@@ -234,7 +234,6 @@ const common: ScreenTranslations = {
       quick: {
         complete_task: 'Mark done',
         acknowledge_po: 'Acknowledge order',
-        confirm_po_received: 'Confirm received',
       },
       quickDone: 'Done — recorded',
       quickFailed: 'Could not record that. Try again.',
@@ -303,6 +302,7 @@ const common: ScreenTranslations = {
         delivery: {
           technician_notified: 'Told the technician to receive delivery {{label}}',
           job_synced: 'Moved the installation job for {{label}} to follow its delivery',
+          job_ready: 'Every part is on site, so installation job {{label}} is now scheduled',
         },
         shipment: {
           customer_notified: 'Told the customer about shipment {{label}}',
@@ -554,7 +554,6 @@ const common: ScreenTranslations = {
       quick: {
         complete_task: 'पूरा चिह्नित करें',
         acknowledge_po: 'ऑर्डर स्वीकार करें',
-        confirm_po_received: 'प्राप्ति की पुष्टि करें',
       },
       quickDone: 'हो गया — दर्ज किया गया',
       quickFailed: 'यह दर्ज नहीं हो सका। फिर कोशिश करें।',
@@ -623,6 +622,7 @@ const common: ScreenTranslations = {
         delivery: {
           technician_notified: 'टेक्नीशियन को डिलीवरी {{label}} लेने के लिए बताया',
           job_synced: '{{label}} की इंस्टॉलेशन जॉब को उसकी डिलीवरी के बाद कर दिया',
+          job_ready: 'सारे पार्ट्स साइट पर हैं, इसलिए इंस्टॉलेशन जॉब {{label}} अब शेड्यूल हो गई',
         },
         shipment: {
           customer_notified: 'ग्राहक को खेप {{label}} के बारे में बताया',
@@ -874,7 +874,6 @@ const common: ScreenTranslations = {
       quick: {
         complete_task: 'पूर्ण म्हणून नोंदवा',
         acknowledge_po: 'ऑर्डर स्वीकारा',
-        confirm_po_received: 'मिळाल्याची खात्री करा',
       },
       quickDone: 'झाले — नोंदवले',
       quickFailed: 'हे नोंदवता आले नाही. पुन्हा प्रयत्न करा.',
@@ -943,6 +942,7 @@ const common: ScreenTranslations = {
         delivery: {
           technician_notified: 'टेक्निशियनला डिलिव्हरी {{label}} स्वीकारायला सांगितलं',
           job_synced: '{{label}} ची इन्स्टॉलेशन जॉब तिच्या डिलिव्हरीनंतर केली',
+          job_ready: 'सर्व पार्ट्स साइटवर आहेत, म्हणून इन्स्टॉलेशन जॉब {{label}} आता शेड्यूल झाली',
         },
         shipment: {
           customer_notified: 'ग्राहकाला खेप {{label}} बद्दल कळवलं',

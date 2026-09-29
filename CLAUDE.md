@@ -107,9 +107,38 @@ the module's section to `BUILD_README.md`.
   (dl-1) was seeded one day short of the reminder cadence's own exhaustion threshold, so no real
   payment could ever reach 089's escalation queue while also belonging to a deal with an active
   Job — moved from 6 to 10 days overdue (and the stale `al-2` alert text updated to match).
-- **Module 11 in progress:** `101`, `102` built. **Next: `103`**. At its checkpoint (after 110),
+- **Module 11 in progress:** `101`–`103` built. **Next: `104`**. At its checkpoint (after 110),
   add an Admin logistics entry point: 101 and 102 are reachable for Admin only from 091's hub and
   095's header (and 101's/102's own PO links).
+  103 facts:
+  - `DeliveryChecklist` is one arrival checked on site: one vehicle's load (`legId`) or the untracked
+    remainder. A PO delivered in parts has several. Items snapshot the line (`expectedQty`,
+    description) and carry a verdict (`ok` / `discrepancy` / `not_arrived`), `kinds`
+    (`damaged` / `count` / `wrong_spec`) and photos. `@/features/logistics/deliveryChecklist` holds
+    the one set of rules (`problemWith`, `kindsOf`, `progressOf`), read by the screen and by the
+    repository alike: an arrived part needs a photo, a discrepancy needs words, a count of 0 needs
+    words but no photo, and nothing can be signed until every part is answered and at least one is here.
+  - Completing it is the only path to `delivered` for a PO line (`movePoLinesSync`'s `checklistId`
+    argument lets a technician do it, because the checklist is the evidence). Only parts that
+    physically arrived move. A part that is `not_arrived` (another vehicle, backordered) stays
+    `shipped` and comes back as a new arrival. Completed checklists never change; a later defect is
+    an installation issue (a later module), not an edit.
+  - The receiver is `technician` or `site_contact` (`receivedBy.role`), and `PurchaseOrder.receivedBy`
+    names them, not whoever held the phone. Admin recording for someone on site is `recordedByName`.
+  - A signed checklist marks its vehicle's leg `arrived` (source manual, "Confirmed on site") and
+    the customer is told once. The tracker follows the checklist, never the other way round.
+  - `DeliveryDiscrepancyReport` is raised the moment an item is confirmed wrong, one per checklist
+    (never per item), and withdrawn if every item is corrected before close. It also raises a
+    `quality` Alert (`deliveryChecklist.alert.discrepancy`) as the beacon. **108 owns it from here**:
+    resolution status, attribution, supplier thread routing, the Quality Scorecard flag and payment
+    hold all belong there, and it must add the commitment for an unresolved report (only the
+    alert's own acknowledge commitment exists today).
+  - When every PO on a deal is fully delivered and no report is open, the deal's pending installation
+    job moves `materials_pending` to `scheduled` (`delivery.job_ready`, logged). This is the first
+    place a job is tied to its deliveries; 100's retention release still reads the deal's handover.
+  - `po_delivery` and `delivery_receive` commitments now route to `/delivery-checklist?poId=`.
+  - `/delivery-checklist` serves Admin and Technician (a technician sees only deals they have an
+    open job on). Reached from 102's detail card, 091's hub and the assistant drawer.
   102 facts:
   - A `ShipmentLeg` is one vehicle carrying some of a PO's lines (`lineItemIds`), so a PO can have
     several legs tracked separately. `dispatchShipment` is the only way to create one: it needs
@@ -337,7 +366,9 @@ the module's section to `BUILD_README.md`.
   When a later screen owns something the layer stands in for, it takes over from the stand-in
   rather than duplicating it:
   - 095's supplier order tracking should read `SupplierPurchaseOrder.acknowledgedAt`.
-  - 101–104 should replace Admin's interim `receivedAt` confirmation.
+  - 103 replaced Admin's interim `receivedAt` confirmation (the `confirm_po_received` quick action and
+    `confirmPurchaseOrderReceived` are gone): a PO is received only through the delivery checklist.
+    104 adds the formal signature on top of it.
   - 180 and 193 should read `Commitment`/`WorkNotification`.
 
 ### Module 9 facts worth knowing

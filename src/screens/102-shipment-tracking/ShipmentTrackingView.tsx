@@ -126,7 +126,7 @@ export function ShipmentTrackingView() {
             </div>
             <div className="stack gap-3">
               <Timeline leg={s.selected} t={t} lang={lang} isCustomer={s.isCustomer} isAdmin={s.isAdmin} />
-              <Details leg={s.selected} t={t} lang={lang} isCustomer={s.isCustomer} isAdmin={s.isAdmin} navigate={navigate} />
+              <Details leg={s.selected} t={t} lang={lang} isCustomer={s.isCustomer} isAdmin={s.isAdmin} canCheck={s.isAdmin || (!s.isSupplier && !s.isCustomer)} navigate={navigate} />
             </div>
           </div>
         </div>
@@ -329,7 +329,7 @@ function Timeline({ leg, t, lang, isCustomer, isAdmin }: { leg: ShipmentView; t:
 
 /* -------------------------------------------------------------- details */
 
-function Details({ leg, t, lang, isCustomer, isAdmin, navigate }: { leg: ShipmentView; t: T; lang: string; isCustomer: boolean; isAdmin: boolean; navigate: (to: string) => void }) {
+function Details({ leg, t, lang, isCustomer, isAdmin, canCheck, navigate }: { leg: ShipmentView; t: T; lang: string; isCustomer: boolean; isAdmin: boolean; canCheck: boolean; navigate: (to: string) => void }) {
   return (
     <Card>
       <div className="stack gap-3">
@@ -360,14 +360,23 @@ function Details({ leg, t, lang, isCustomer, isAdmin, navigate }: { leg: Shipmen
             </a>
           </div>
         )}
-        {isAdmin && (
+        {(isAdmin || canCheck) && (
           <div className="row gap-2 wrap">
-            <Button size="sm" variant="ghost" onClick={() => navigate(`/orders?poId=${leg.poId}`)}>
-              {t(K.detail.openPo)}
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => navigate(`/deliveries?poId=${leg.poId}`)}>
-              {t(K.detail.openDelivery)}
-            </Button>
+            {canCheck && !leg.arrived && (
+              <Button size="sm" variant="secondary" onClick={() => navigate(`/delivery-checklist?poId=${leg.poId}`)}>
+                {t(K.detail.checkDelivery)}
+              </Button>
+            )}
+            {isAdmin && (
+              <>
+                <Button size="sm" variant="ghost" onClick={() => navigate(`/orders?poId=${leg.poId}`)}>
+                  {t(K.detail.openPo)}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => navigate(`/deliveries?poId=${leg.poId}`)}>
+                  {t(K.detail.openDelivery)}
+                </Button>
+              </>
+            )}
           </div>
         )}
       </div>

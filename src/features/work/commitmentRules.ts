@@ -98,7 +98,7 @@ export interface Obligation {
   oversightRoute: string;
 }
 
-export type QuickAction = 'complete_task' | 'acknowledge_po' | 'confirm_po_received';
+export type QuickAction = 'complete_task' | 'acknowledge_po';
 
 export interface CommitmentRule {
   kind: CommitmentKind;
@@ -430,7 +430,6 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
     escalates: true,
     raisesAlert: false,
     alertCategory: 'supplier',
-    quickAction: 'confirm_po_received',
     collect(src) {
       const admin = adminId(src);
       return src.purchaseOrders
@@ -444,7 +443,8 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
           state: po.receivedAt ? ('done' as const) : ('open' as const),
           paused: false,
           completedAt: po.receivedAt,
-          actionRoute: `/admin/deals/${po.dealId}/purchase-orders`,
+          // Receipt is verified item by item on site (103), never just ticked.
+          actionRoute: `/delivery-checklist?poId=${po.id}`,
           oversightRoute: `/admin/deals/${po.dealId}/purchase-orders`,
         }));
     },
@@ -844,7 +844,7 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
           state: po.receivedAt ? 'done' : 'open',
           paused: false,
           completedAt: po.receivedAt,
-          actionRoute: technician ? '/technician' : `/deliveries?poId=${po.id}`,
+          actionRoute: `/delivery-checklist?poId=${po.id}`,
           oversightRoute: `/deliveries?poId=${po.id}`,
         });
       }

@@ -135,6 +135,12 @@ import type {
   ShipmentBoard,
   ShipmentView,
   DispatchablePo,
+  ChecklistArrival,
+  DeliveryChecklistBoard,
+  DeliveryChecklistView,
+  CheckItemInput,
+  CompleteChecklistInput,
+  CompleteChecklistResult,
   DeliveryBoard,
   DeliveryCard,
   DeliveryScheduleResult,
@@ -165,6 +171,9 @@ import type {
   SupplierScoreContextNote,
   SupplierAgreementStatus,
   SupplierAgreementVersion,
+  DeliveryCheckItem,
+  DeliveryChecklist,
+  DeliveryDiscrepancyReport,
   DeliveryEvent,
   DeliveryRescheduleCause,
   DeliverySchedule,
@@ -264,6 +273,7 @@ import { extractMergeFields, renderTemplateBody } from '@/features/communication
 import { computeTotalReceivable, daysOverdue, isOutstanding, receivedAmountOf, remainingBalance } from '@/features/payments/aging';
 import { isSupplierEligibleForPO } from '@/features/suppliers/eligibility';
 import { buildAlert, findOpenAlertFor } from '@/features/attention/raiseAlert';
+import { isReceived, kindsOf, problemWith, progressOf, verdictOf } from '@/features/logistics/deliveryChecklist';
 import type { AttentionAlertInput } from '@/features/attention/raiseAlert';
 import { businessMinutesSince, days, hours, isBreached } from '@/features/sla/clock';
 import { buildAutomatedActionEntry } from '@/features/audit/logAutomatedAction';
@@ -435,6 +445,13 @@ let deliveryCounter = 100;
 /** 102: each vehicle carrying a PO's lines. */
 const shipmentLegs = [...seedShipmentLegs];
 let shipmentCounter = 100;
+
+/** 103: each arrival checked on site, and the report raised when one is wrong. */
+const deliveryChecklists: DeliveryChecklist[] = [];
+let checklistCounter = 100;
+const discrepancyReports: DeliveryDiscrepancyReport[] = [];
+let discrepancyCounter = 100;
+let checklistPhotoCounter = 100;
 
 /** 100: the root of how AIEC pays suppliers. */
 let paymentTermsConfig: SupplierPaymentTermsConfig = { tiers: { ...DEFAULT_TIER_SETTINGS } };
@@ -2158,13 +2175,17 @@ function movePoLinesSync(
   toStage: PoFulfilmentStage,
   actor: User,
   note?: string,
+  /** Set by the on-site checklist (103): whoever stood at the tailgate may say
+   *  "delivered", because the checklist itself is the evidence. */
+  checklistId?: string,
 ): SupplierPurchaseOrder {
   const po = byId(supplierPurchaseOrders, poId);
   if (!po) throw new RepositoryError('not_found');
   if (po.status !== 'sent') throw new RepositoryError('not_sent');
   const supplier = po.supplierId ? byId(suppliers, po.supplierId) : null;
   const isAdmin = actor.role === 'admin';
-  if (!isAdmin) {
+  const verifiedOnSite = !!checklistId && toStage === 'delivered';
+  if (!isAdmin && !verifiedOnSite) {
     if (actor.role !== 'supplier' || !supplier || supplierUserFor(supplier)?.id !== actor.id) throw new RepositoryError('forbidden');
     if (!SUPPLIER_SETTABLE_STAGES.includes(toStage)) throw new RepositoryError('forbidden_stage');
   }
@@ -2193,9 +2214,10 @@ function movePoLinesSync(
       toStage,
       at: now,
       byName: actor.name,
-      byRole: isAdmin ? 'admin' : 'supplier',
+      byRole: isAdmin ? 'admin' : actor.role === 'technician' ? 'technician' : 'supplier',
       onBehalf,
       note: note?.trim() || undefined,
+      checklistId,
     });
   }
   const targetIds = new Set(targets.map((l) => l.id));
@@ -2237,13 +2259,6 @@ function acknowledgePurchaseOrderSync(poId: string, byUserId: string) {
   const sentLines = (po.lineItems ?? []).filter((l) => lineStageOf(po, l) === 'sent').map((l) => l.id);
   // Admin acknowledging for a supplier without a login is on their behalf.
   return movePoLinesSync(poId, sentLines, 'acknowledged', actor, actor.role === 'admin' ? 'Acknowledged by phone on the supplier’s behalf' : undefined);
-}
-
-function confirmPurchaseOrderReceivedSync(poId: string, byUserId: string) {
-  const po = byId(supplierPurchaseOrders, poId);
-  if (!po) throw new RepositoryError('not_found');
-  if (po.receivedAt) return po;
-  return movePoLinesSync(poId, 'all', 'delivered', catalogActor(byUserId));
 }
 
 /* ============================================= Supplier catalog (093) */
@@ -2804,6 +2819,146 @@ function advanceShipments(now: number): void {
       patchInPlace(alerts, open.id, { status: 'resolved', resolvedAt: new Date(now).toISOString(), resolvedBy: 'system', resolutionNote: 'The shipment has arrived.' });
     }
   }
+}
+
+/* ========================================= Site delivery checklist (103) */
+
+/** A technician checks in deliveries for the sites they're installing; Admin
+ *  for any. Nobody else stands at a tailgate for AIEC. */
+function checklistActorOf(byUserId: string): User {
+  const actor = catalogActor(byUserId);
+  if (actor.role !== 'admin' && actor.role !== 'technician') throw new RepositoryError('forbidden');
+  return actor;
+}
+
+function checklistDealVisible(dealId: string, actor: User): boolean {
+  if (actor.role === 'admin') return true;
+  return jobs.some((j) => j.dealId === dealId && j.technicianId === actor.id && j.status !== 'completed');
+}
+
+function checklistOrThrow(checklistId: string, actor: User): DeliveryChecklist {
+  const checklist = byId(deliveryChecklists, checklistId);
+  if (!checklist || !checklistDealVisible(checklist.dealId, actor)) throw new RepositoryError('not_found');
+  return checklist;
+}
+
+const reportOfChecklist = (checklistId: string) => discrepancyReports.find((r) => r.checklistId === checklistId) ?? null;
+
+function checklistViewOf(c: DeliveryChecklist): DeliveryChecklistView {
+  const po = byId(supplierPurchaseOrders, c.poId);
+  const leg = c.legId ? byId(shipmentLegs, c.legId) : undefined;
+  return {
+    ...c,
+    poCode: po?.code ?? c.poId,
+    siteName: shipmentSite(c.dealId)?.siteName ?? '',
+    address: resolveLead(byId(deals, c.dealId)?.leadId ?? '')?.address ?? null,
+    supplierName: byId(suppliers, c.supplierId)?.name ?? '',
+    vehicleLabel: leg?.vehicleLabel ?? null,
+    report: reportOfChecklist(c.id),
+    poFullyDelivered: !!po?.receivedAt,
+  };
+}
+
+/** Everything that shipped and hasn't been verified on site, grouped the way it
+ *  travelled: one vehicle's load, or the remainder that has no vehicle of its own. */
+function checklistArrivals(actor: User): ChecklistArrival[] {
+  const out: ChecklistArrival[] = [];
+  const open = deliveryChecklists.filter((c) => c.status === 'in_progress');
+  for (const po of supplierPurchaseOrders) {
+    if (po.status !== 'sent' || !po.supplierId || !checklistDealVisible(po.dealId, actor)) continue;
+    const shipped = (po.lineItems ?? []).filter((l) => lineStageOf(po, l) === 'shipped');
+    if (shipped.length === 0) continue;
+    const site = shipmentSite(po.dealId);
+    const checkedLegs = new Set(deliveryChecklists.filter((c) => c.poId === po.id && c.status === 'completed' && c.legId).map((c) => c.legId));
+    const claimed = new Set<string>();
+    const make = (leg: ShipmentLeg | null, lines: typeof shipped): ChecklistArrival => ({
+      key: `${po.id}:${leg?.id ?? 'loose'}`,
+      poId: po.id,
+      poCode: po.code,
+      dealId: po.dealId,
+      siteName: site?.siteName ?? '',
+      address: resolveLead(byId(deals, po.dealId)?.leadId ?? '')?.address ?? null,
+      supplierName: byId(suppliers, po.supplierId!)?.name ?? '',
+      legId: leg?.id ?? null,
+      vehicleLabel: leg?.vehicleLabel ?? null,
+      legMilestone: leg ? legSnapshotOf(leg, routeOfLeg(leg), Date.now()).milestone : null,
+      etaAt: leg?.etaAt ?? null,
+      lines: lines.map((l) => ({ id: l.id, description: l.description, quantity: l.quantity })),
+      checklistId: open.find((c) => c.poId === po.id && (c.legId ?? null) === (leg?.id ?? null))?.id ?? null,
+    });
+    for (const leg of shipmentLegs.filter((l) => l.poId === po.id)) {
+      if (checkedLegs.has(leg.id)) continue;
+      const lines = shipped.filter((l) => leg.lineItemIds.includes(l.id));
+      if (lines.length === 0) continue;
+      lines.forEach((l) => claimed.add(l.id));
+      out.push(make(leg, lines));
+    }
+    const rest = shipped.filter((l) => !claimed.has(l.id));
+    if (rest.length > 0) out.push(make(null, rest));
+  }
+  const rank = (a: ChecklistArrival) => (a.checklistId ? 0 : a.legMilestone === 'arrived' ? 1 : a.legMilestone === 'nearby' ? 2 : a.legId ? 3 : 4);
+  return out.sort((a, b) => rank(a) - rank(b) || ((a.etaAt ?? '9999') < (b.etaAt ?? '9999') ? -1 : 1));
+}
+
+/** Keeps the delivery's one report in step with what's been found. Raised the
+ *  moment something is wrong; withdrawn if every item is corrected before close. */
+function syncDiscrepancyReport(checklist: DeliveryChecklist, actor: User): void {
+  const po = byId(supplierPurchaseOrders, checklist.poId);
+  const wrong = checklist.items.filter((i) => i.verdict === 'discrepancy');
+  const items = wrong.map((i) => ({
+    lineItemId: i.lineItemId,
+    description: i.description,
+    kinds: i.kinds,
+    expectedQty: i.expectedQty,
+    receivedQty: i.receivedQty ?? i.expectedQty,
+    note: i.note,
+    photoCount: i.photos.length,
+  }));
+  let report = reportOfChecklist(checklist.id);
+  const now = new Date().toISOString();
+  if (!report) {
+    if (items.length === 0) return;
+    discrepancyCounter += 1;
+    report = {
+      id: `ddr-new-${discrepancyCounter}`,
+      code: `AIEC-DR-${5000 + discrepancyCounter}`,
+      poId: checklist.poId,
+      dealId: checklist.dealId,
+      supplierId: checklist.supplierId,
+      checklistId: checklist.id,
+      items,
+      status: 'open',
+      createdAt: now,
+      createdByName: actor.name,
+      isDemo: true,
+    };
+    discrepancyReports.push(report);
+  } else {
+    report = patchInPlace(discrepancyReports, report.id, { items, status: items.length > 0 ? 'open' : 'withdrawn' });
+  }
+  const alertOf = () => alerts.find((a) => a.relatedId === report!.id && a.titleKey === 'deliveryChecklist.alert.discrepancy' && a.status !== 'resolved');
+  if (report.status === 'open') {
+    // Wrong or wrong-spec parts stop an installation; a short count usually just delays it.
+    const stops = wrong.some((i) => i.kinds.includes('damaged') || i.kinds.includes('wrong_spec'));
+    raiseAlert({
+      titleKey: 'deliveryChecklist.alert.discrepancy',
+      context: `${po?.code ?? checklist.poId} · ${shipmentSite(checklist.dealId)?.siteName ?? ''} · ${report.code}`,
+      severity: stops ? 'high' : 'medium',
+      category: 'quality',
+      relatedId: report.id,
+      sourceRoute: `/delivery-checklist?poId=${checklist.poId}`,
+    });
+  } else {
+    const open = alertOf();
+    if (open) patchInPlace(alerts, open.id, { status: 'resolved', resolvedAt: now, resolvedBy: actor.name, resolutionNote: 'Every item was corrected before the checklist closed.' });
+  }
+}
+
+/** All of a deal's parts are on site and none of them is in question. */
+function dealMaterialsOnSite(dealId: string): boolean {
+  const pos = supplierPurchaseOrders.filter((p) => p.dealId === dealId);
+  if (pos.length === 0 || !pos.every((p) => p.status === 'sent' && p.receivedAt)) return false;
+  return !discrepancyReports.some((r) => r.dealId === dealId && r.status === 'open');
 }
 
 /* ============================================ Delivery scheduling (101) */
@@ -6132,6 +6287,162 @@ export const memoryRepository: Repository = {
       return shipmentViewOf(byId(shipmentLegs, leg.id)!, viewer, now);
     }),
 
+  /* --------------------------------------- Site delivery checklist (103) */
+  getDeliveryChecklistBoard: (byUserId) =>
+    simulateRead((): DeliveryChecklistBoard => {
+      const actor = checklistActorOf(byUserId);
+      const recent = new Date(Date.now() - 14 * 86_400_000).toISOString();
+      const checklists = deliveryChecklists
+        .filter((c) => checklistDealVisible(c.dealId, actor) && (c.status === 'in_progress' || (c.completedAt ?? '') > recent))
+        .sort((a, b) => Number(b.status === 'in_progress') - Number(a.status === 'in_progress') || ((b.completedAt ?? b.startedAt) < (a.completedAt ?? a.startedAt) ? -1 : 1))
+        .map(checklistViewOf);
+      return { arrivals: checklistArrivals(actor), checklists };
+    }),
+
+  startDeliveryChecklist: (poId, legId, byUserId) =>
+    simulateWrite(() => {
+      const actor = checklistActorOf(byUserId);
+      const arrival = checklistArrivals(actor).find((a) => a.poId === poId && a.legId === legId);
+      if (!arrival) throw new RepositoryError('invalid_state');
+      const existing = arrival.checklistId ? byId(deliveryChecklists, arrival.checklistId) : undefined;
+      if (existing) return checklistViewOf(existing);
+      const po = byId(supplierPurchaseOrders, poId)!;
+      checklistCounter += 1;
+      const created: DeliveryChecklist = {
+        id: `dck-new-${checklistCounter}`,
+        poId,
+        dealId: po.dealId,
+        supplierId: po.supplierId!,
+        legId: legId ?? undefined,
+        status: 'in_progress',
+        startedAt: new Date().toISOString(),
+        startedByName: actor.name,
+        items: arrival.lines.map((l): DeliveryCheckItem => ({ lineItemId: l.id, description: l.description, expectedQty: l.quantity, verdict: 'pending', kinds: [], photos: [] })),
+        isDemo: true,
+      };
+      deliveryChecklists.push(created);
+      return checklistViewOf(created);
+    }),
+
+  saveDeliveryCheckItem: (checklistId, lineItemId, input, byUserId) =>
+    simulateWrite(() => {
+      const actor = checklistActorOf(byUserId);
+      const checklist = checklistOrThrow(checklistId, actor);
+      // A finished checklist is what could be verified at that moment. It is never rewritten.
+      if (checklist.status !== 'in_progress') throw new RepositoryError('invalid_state');
+      const item = checklist.items.find((i) => i.lineItemId === lineItemId);
+      if (!item) throw new RepositoryError('not_found');
+      const findings = { arrived: input.arrived, receivedQty: input.receivedQty, conditionOk: input.conditionOk, specOk: input.specOk, note: input.note, photoCount: input.photos.length };
+      const problem = problemWith(findings, item.expectedQty);
+      if (problem === 'quantity') throw new RepositoryError('invalid_quantity');
+      if (problem === 'photo') throw new RepositoryError('photo_required');
+      if (problem === 'note') throw new RepositoryError('note_required');
+      const now = new Date().toISOString();
+      const kept = new Map(item.photos.map((p) => [p.id, p]));
+      const photos = input.photos.map((p) => {
+        const known = p.id ? kept.get(p.id) : undefined;
+        if (known) return known;
+        checklistPhotoCounter += 1;
+        return { id: `dph-new-${checklistPhotoCounter}`, fileName: p.fileName, previewUrl: p.previewUrl, capturedAt: p.capturedAt };
+      });
+      const kinds = kindsOf(findings, item.expectedQty);
+      const arrived = input.arrived;
+      const next: DeliveryCheckItem = {
+        ...item,
+        verdict: verdictOf(findings, item.expectedQty),
+        receivedQty: arrived ? (input.receivedQty ?? item.expectedQty) : 0,
+        // A part that isn't there has no condition to speak of.
+        conditionOk: arrived && (input.receivedQty ?? item.expectedQty) > 0 ? input.conditionOk !== false : undefined,
+        specOk: arrived && (input.receivedQty ?? item.expectedQty) > 0 ? input.specOk !== false : undefined,
+        kinds,
+        photos: arrived ? photos : [],
+        note: input.note?.trim() || undefined,
+        checkedAt: now,
+        checkedByName: actor.name,
+      };
+      const updated = patchInPlace(deliveryChecklists, checklist.id, { items: checklist.items.map((i) => (i.lineItemId === lineItemId ? next : i)) });
+      syncDiscrepancyReport(updated, actor);
+      syncCommitments(Date.now());
+      return checklistViewOf(updated);
+    }),
+
+  completeDeliveryChecklist: (checklistId, input, byUserId) =>
+    simulateWrite(() => {
+      const actor = checklistActorOf(byUserId);
+      const checklist = checklistOrThrow(checklistId, actor);
+      if (checklist.status !== 'in_progress') throw new RepositoryError('invalid_state');
+      const progress = progressOf(checklist.items);
+      if (!progress.complete) throw new RepositoryError(progress.nothingArrived ? 'nothing_arrived' : 'incomplete');
+      const receiverName = input.receiver.name.trim();
+      if (receiverName.length < 2 || (input.receiver.role !== 'technician' && input.receiver.role !== 'site_contact')) throw new RepositoryError('receiver_required');
+      // A site contact's own word is the acknowledgment; only a technician's receipt asks for a second name.
+      const ackName = input.receiver.role === 'technician' ? input.siteAckName?.trim() : undefined;
+      const po = byId(supplierPurchaseOrders, checklist.poId);
+      if (!po) throw new RepositoryError('not_found');
+      const now = Date.now();
+      const at = new Date(now).toISOString();
+      const receiver = { role: input.receiver.role, name: receiverName, phone: input.receiver.phone?.trim() || undefined };
+      const receivedLineIds = checklist.items.filter(isReceived).map((i) => i.lineItemId).filter((id) => {
+        const line = (po.lineItems ?? []).find((l) => l.id === id);
+        return line && lineStageOf(po, line) === 'shipped';
+      });
+      const wasReceived = !!po.receivedAt;
+      const roleWord = receiver.role === 'site_contact' ? 'site contact' : 'technician';
+      const moved = receivedLineIds.length > 0 ? movePoLinesSync(po.id, receivedLineIds, 'delivered', actor, `Verified on site by ${receiverName} (${roleWord})`, checklist.id) : po;
+      // The one who stood at the tailgate is who received it, not whoever held the phone.
+      if (!wasReceived && moved.receivedAt) patchInPlace(supplierPurchaseOrders, po.id, { receivedBy: `${receiverName} (${roleWord})` });
+
+      // The checklist is the authoritative "it arrived": the vehicle's tracker follows it, not the other way round.
+      const leg = checklist.legId ? byId(shipmentLegs, checklist.legId) : undefined;
+      if (leg && !legSnapshotOf(leg, routeOfLeg(leg), now).arrived) {
+        patchInPlace(shipmentLegs, leg.id, { milestones: [...leg.milestones, { milestone: 'arrived' as const, at, source: 'manual' as const, byName: receiverName, note: 'Confirmed on site by checklist' }] });
+        notifyCustomerOfMilestone(leg.id, 'arrived');
+        advanceShipments(now);
+      }
+
+      const done = patchInPlace(deliveryChecklists, checklist.id, {
+        status: 'completed',
+        completedAt: at,
+        receivedBy: receiver,
+        siteAck: ackName ? { name: ackName, at } : undefined,
+        note: input.note?.trim() || undefined,
+        recordedByName: actor.name !== receiverName ? actor.name : undefined,
+      });
+      syncDiscrepancyReport(done, actor);
+
+      // Every part on site and none in question: the technician can now really start.
+      let jobReady = false;
+      if (dealMaterialsOnSite(po.dealId)) {
+        const job = pendingJobFor(po.dealId);
+        if (job && job.status === 'materials_pending') {
+          patchInPlace(jobs, job.id, { status: 'scheduled' });
+          jobReady = true;
+          logAutomatedAction({
+            sourceKey: 'delivery.job_ready',
+            triggeringCondition: `Every part for ${shipmentSite(po.dealId)?.siteName ?? po.dealId} is on site`,
+            actionTaken: `Moved installation job ${job.code} to scheduled`,
+            affectedRecordId: job.id,
+            affectedRecordType: 'other',
+            subjectLabel: job.code,
+          });
+        }
+      }
+      syncCommitments(now);
+      return { checklist: checklistViewOf(done), deliveredLineCount: receivedLineIds.length, poFullyDelivered: !!byId(supplierPurchaseOrders, po.id)?.receivedAt, jobReady };
+    }),
+
+  cancelDeliveryChecklist: (checklistId, byUserId) =>
+    simulateWrite(() => {
+      const actor = checklistActorOf(byUserId);
+      const checklist = checklistOrThrow(checklistId, actor);
+      if (checklist.status !== 'in_progress') throw new RepositoryError('invalid_state');
+      // Nothing left standing that the abandoned checklist raised.
+      const emptied = { ...checklist, items: checklist.items.map((i) => ({ ...i, verdict: 'pending' as const, kinds: [] })) };
+      syncDiscrepancyReport(emptied, actor);
+      deliveryChecklists.splice(deliveryChecklists.indexOf(checklist), 1);
+      syncCommitments(Date.now());
+    }),
+
   /* ------------------------------------------- Delivery scheduling (101) */
   getDeliveryBoard: (byUserId) =>
     simulateRead((): DeliveryBoard => {
@@ -7061,8 +7372,6 @@ export const memoryRepository: Repository = {
 
   acknowledgePurchaseOrder: (poId, byUserId) => simulateWrite(() => acknowledgePurchaseOrderSync(poId, byUserId)),
 
-  confirmPurchaseOrderReceived: (poId, byUserId) => simulateWrite(() => confirmPurchaseOrderReceivedSync(poId, byUserId)),
-
   completeCommitmentQuickAction: (commitmentId, byUserId) =>
     simulateWrite(() => {
       const commitment = commitments.find((c) => c.id === commitmentId);
@@ -7073,8 +7382,7 @@ export const memoryRepository: Repository = {
       // Only the owner may say "done" on their own promise.
       if (commitment.ownerUserId !== byUserId) throw new RepositoryError('not_owner');
       if (action === 'complete_task') completeFollowUpTaskSync(commitment.subject.id, nameOf(byUserId));
-      else if (action === 'acknowledge_po') acknowledgePurchaseOrderSync(commitment.subject.id, byUserId);
-      else confirmPurchaseOrderReceivedSync(commitment.subject.id, byUserId);
+      else acknowledgePurchaseOrderSync(commitment.subject.id, byUserId);
       // Reflect it at once rather than on the next tick.
       syncCommitments(Date.now());
       return commitmentByKey.get(commitment.key) ?? commitment;

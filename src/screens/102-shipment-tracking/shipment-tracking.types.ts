@@ -98,6 +98,7 @@ export const SHIPMENT_TRACKING_KEYS = {
     timelineHeading: 'shipmentTracking.detail.timelineHeading',
     openPo: 'shipmentTracking.detail.openPo',
     openDelivery: 'shipmentTracking.detail.openDelivery',
+    checkDelivery: 'shipmentTracking.detail.checkDelivery',
   },
   update: {
     open: 'shipmentTracking.update.open',

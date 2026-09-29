@@ -585,10 +585,12 @@ export interface PoStatusEvent {
   toStage: PoFulfilmentStage;
   at: string;
   byName: string;
-  byRole: 'supplier' | 'admin';
+  byRole: 'supplier' | 'admin' | 'technician';
   /** Admin recorded it for a supplier who hadn't updated it themselves. */
   onBehalf: boolean;
   note?: string;
+  /** The on-site checklist (103) that verified a delivery. */
+  checklistId?: string;
 }
 
 /** A minimal record that a supplier PO was kicked off by a deal closure —
@@ -888,6 +890,104 @@ export interface ShipmentLeg {
    *  here and shown honestly as last known. */
   feedLostAt?: string;
   milestones: ShipmentMilestoneEvent[];
+  isDemo: boolean;
+}
+
+/* ------------------------------------ Site delivery checklist (103) */
+
+/** What was actually found when a part was checked against its PO line.
+ *  `not_arrived` is not a fault: the part is on another vehicle or backordered,
+ *  and stays shipped until it turns up. */
+export type DeliveryItemVerdict = 'pending' | 'ok' | 'discrepancy' | 'not_arrived';
+
+/** Any of these on an arrived item is a discrepancy. `count` covers short and over. */
+export type DiscrepancyKind = 'damaged' | 'count' | 'wrong_spec';
+
+/** A photograph taken at the tailgate. Session-only preview (no storage
+ *  bucket in this build), permanent metadata — what a later dispute is
+ *  settled against. */
+export interface DeliveryPhoto {
+  id: string;
+  fileName: string;
+  previewUrl?: string;
+  capturedAt: string;
+}
+
+export interface DeliveryCheckItem {
+  lineItemId: string;
+  /** Snapshots, so the checklist reads the same after the PO is edited. */
+  description: string;
+  expectedQty: number;
+  verdict: DeliveryItemVerdict;
+  receivedQty?: number;
+  conditionOk?: boolean;
+  specOk?: boolean;
+  kinds: DiscrepancyKind[];
+  photos: DeliveryPhoto[];
+  note?: string;
+  checkedAt?: string;
+  checkedByName?: string;
+}
+
+/** Who stood at the tailgate. A site contact receiving in the technician's
+ *  absence is a different accountability, recorded as such. */
+export type DeliveryReceiverRole = 'technician' | 'site_contact';
+
+export interface DeliveryReceiver {
+  role: DeliveryReceiverRole;
+  name: string;
+  phone?: string;
+}
+
+/** One arrival, checked. A PO delivered in parts has one per arrival. Once
+ *  completed it is never edited: a defect found at installation is a
+ *  different record (an installation issue), not a rewrite of this one. */
+export interface DeliveryChecklist {
+  id: string;
+  poId: string;
+  dealId: string;
+  supplierId: string;
+  /** The vehicle it came on, when one was tracked (102). */
+  legId?: string;
+  status: 'in_progress' | 'completed';
+  startedAt: string;
+  startedByName: string;
+  items: DeliveryCheckItem[];
+  receivedBy?: DeliveryReceiver;
+  /** A customer or site contact's acknowledgment, when the technician received. */
+  siteAck?: { name: string; at: string };
+  note?: string;
+  /** Who used the app, if not the receiver (Admin recording for someone on site). */
+  recordedByName?: string;
+  completedAt?: string;
+  isDemo: boolean;
+}
+
+export interface DiscrepancyReportItem {
+  lineItemId: string;
+  description: string;
+  kinds: DiscrepancyKind[];
+  expectedQty: number;
+  receivedQty: number;
+  note?: string;
+  photoCount: number;
+}
+
+/** Raised the instant a checked item is found wrong, one per delivery
+ *  (never one per item). Screen 108 owns what happens next; this is the
+ *  record it starts from. */
+export interface DeliveryDiscrepancyReport {
+  id: string;
+  code: string;
+  poId: string;
+  dealId: string;
+  supplierId: string;
+  checklistId: string;
+  items: DiscrepancyReportItem[];
+  /** `withdrawn` when every item was corrected before the checklist closed. */
+  status: 'open' | 'withdrawn';
+  createdAt: string;
+  createdByName: string;
   isDemo: boolean;
 }
 

@@ -75,6 +75,7 @@ const translations: ScreenTranslations = {
         timelineHeading: 'Progress',
         openPo: 'Open the order',
         openDelivery: 'Open the delivery booking',
+        checkDelivery: 'Check the delivery in',
       },
       update: {
         open: 'Update status',
@@ -197,6 +198,7 @@ const translations: ScreenTranslations = {
         timelineHeading: 'प्रगति',
         openPo: 'ऑर्डर खोलें',
         openDelivery: 'डिलीवरी बुकिंग खोलें',
+        checkDelivery: 'डिलीवरी की जाँच करें',
       },
       update: {
         open: 'स्थिति अपडेट करें',
@@ -319,6 +321,7 @@ const translations: ScreenTranslations = {
         timelineHeading: 'प्रगती',
         openPo: 'ऑर्डर उघडा',
         openDelivery: 'डिलिव्हरी बुकिंग उघडा',
+        checkDelivery: 'डिलिव्हरी तपासा',
       },
       update: {
         open: 'स्थिती अपडेट करा',
