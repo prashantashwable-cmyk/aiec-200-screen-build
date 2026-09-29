@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { CaretLeft, CaretRight, ChatCircleDots, DotsSixVertical, Package, Warning } from '@phosphor-icons/react';
+import { CalendarCheck, CaretLeft, CaretRight, ChatCircleDots, DotsSixVertical, Package, Warning } from '@phosphor-icons/react';
 import {
   Badge,
   Button,
@@ -39,6 +39,7 @@ const RISK_TONE: Record<SupplierOrderCard['delay']['risk'], BadgeTone> = { on_tr
  */
 export function SupplierOrdersView() {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
   const toast = useToast();
   const s = useSupplierOrders();
   const lang = i18n.language;
@@ -68,7 +69,15 @@ export function SupplierOrdersView() {
 
   return (
     <Screen width="wide">
-      <ScreenHeader title={t(K.title)} subtitle={t(s.isAdmin ? K.subtitleAdmin : K.subtitleSupplier)} />
+      <ScreenHeader
+        title={t(K.title)}
+        subtitle={t(s.isAdmin ? K.subtitleAdmin : K.subtitleSupplier)}
+        action={
+          <Button size="sm" variant="secondary" icon={<CalendarCheck size={16} />} onClick={() => navigate('/deliveries')}>
+            {t(K.deliveries)}
+          </Button>
+        }
+      />
 
       {s.cards.length === 0 ? (
         <EmptyState icon={<Package size={26} />} title={t(K.empty.title)} body={t(s.isAdmin ? K.empty.bodyAdmin : K.empty.bodySupplier)} />
@@ -354,6 +363,10 @@ function OrderSheet({ s, t, lang, notify }: { s: SupplierOrdersState; t: T; lang
                 {t(K.sheet.messages)}
               </Button>
             )}
+            {/* 101: when the parts actually reach the site. */}
+            <Button size="sm" variant="ghost" icon={<CalendarCheck size={16} />} onClick={() => navigate(`/deliveries?poId=${card.po.id}`)}>
+              {t(K.sheet.delivery)}
+            </Button>
           </div>
 
           <section className="stack gap-2">

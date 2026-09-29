@@ -8,6 +8,7 @@ export const MULTI_COLUMN_MIN_WIDTH = 1024;
 
 export const SUPPLIER_ORDERS_KEYS = {
   title: 'supplierOrders.title',
+  deliveries: 'supplierOrders.deliveries',
   subtitleAdmin: 'supplierOrders.subtitleAdmin',
   subtitleSupplier: 'supplierOrders.subtitleSupplier',
   loading: 'supplierOrders.loading',
@@ -69,6 +70,7 @@ export const SUPPLIER_ORDERS_KEYS = {
     logisticsPending: 'supplierOrders.sheet.logisticsPending',
     openPo: 'supplierOrders.sheet.openPo',
     messages: 'supplierOrders.sheet.messages',
+    delivery: 'supplierOrders.sheet.delivery',
   },
 
   toast: {

@@ -13,6 +13,7 @@ export const KNOWN_DRIVE_TYPES = ['hydraulic', 'geared_traction', 'gearless_trac
 export const SUPPLIER_HUB = [
   { key: 'orders', path: '/orders' },
   { key: 'messages', path: '/supplier-messages' },
+  { key: 'deliveries', path: '/deliveries' },
   { key: 'agreements', path: '/agreement' },
   { key: 'scorecards', path: '/scorecard' },
   { key: 'paymentTerms', path: '/admin/suppliers/payment-terms' },
@@ -25,6 +26,7 @@ export const SUPPLIER_DIRECTORY_KEYS = {
     label: 'supplierDirectory.hub.label',
     orders: 'supplierDirectory.hub.orders',
     messages: 'supplierDirectory.hub.messages',
+    deliveries: 'supplierDirectory.hub.deliveries',
     agreements: 'supplierDirectory.hub.agreements',
     scorecards: 'supplierDirectory.hub.scorecards',
     paymentTerms: 'supplierDirectory.hub.paymentTerms',

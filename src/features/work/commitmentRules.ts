@@ -4,6 +4,7 @@ import type {
   CatalogPriceChange,
   SupplierOrderRating,
   SupplierAgreementVersion,
+  DeliverySchedule,
   SupplierMessage,
   SupplierRetention,
   SupplierThread,
@@ -28,6 +29,7 @@ import { AT_RISK_RATIO, poStageEnteredAt, poStageOf, typicalStageDays } from '@/
 import { RENEWAL_NOTICE, agreementState, promisedDeliveryOf, versionsOf } from '@/features/suppliers/agreement';
 import { SUPPLIER_REPLY_WINDOW, byAt } from '@/features/suppliers/threads';
 import { RETENTION_DECISION_WINDOW, RETENTION_REVIEW_AFTER } from '@/features/suppliers/paymentTerms';
+import { windowEndsAt } from '@/features/logistics/deliverySlots';
 
 /**
  * The manager's rulebook: every dated promise the business runs on, as data.
@@ -68,6 +70,7 @@ export interface CommitmentSources {
   supplierThreads: SupplierThread[];
   supplierMessages: SupplierMessage[];
   supplierRetentions: SupplierRetention[];
+  deliverySchedules: DeliverySchedule[];
   /** Deals where someone paused payment reminders by hand (083). */
   pausedDealIds: Set<string>;
 }
@@ -770,6 +773,79 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
           oversightRoute: '/admin/suppliers/payment-terms',
         };
       });
+    },
+  },
+  {
+    // A sent PO with no booked delivery is parts with nowhere to go. Admin
+    // owns getting it booked — early enough that the site and the supplier
+    // can both plan for it — and again if a truck turned up at a site that
+    // wasn't ready.
+    kind: 'delivery_schedule',
+    nudgeBefore: days(2),
+    escalateAfter: days(2),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'supplier',
+    collect(src) {
+      const admin = adminId(src);
+      const out: Obligation[] = [];
+      for (const po of src.purchaseOrders) {
+        if (po.status !== 'sent' || !po.sentAt || !po.supplierId) continue;
+        const schedule = src.deliverySchedules.find((s) => s.poId === po.id);
+        const booked = schedule?.status === 'scheduled';
+        const failedAt = schedule?.status === 'attempt_failed' ? [...schedule.events].reverse().find((e) => e.kind === 'attempt_failed')?.at : undefined;
+        const bookedAt = schedule ? [...schedule.events].reverse().find((e) => e.kind === 'scheduled' || e.kind === 'rescheduled')?.at : undefined;
+        const promised = promisedDeliveryOf(po);
+        out.push({
+          ...base('delivery_schedule', 'delivery', po.id),
+          ownerUserId: admin,
+          titleKey: failedAt ? 'work.title.delivery_rebook' : 'work.title.delivery_schedule',
+          titleParams: { code: po.code, supplier: src.suppliers.find((s) => s.id === po.supplierId)?.name ?? '' },
+          dueAt: failedAt ? plus(failedAt, days(2)) : promised ? plus(promised, -days(10)) : plus(po.sentAt, days(14)),
+          state: booked || po.receivedAt ? 'done' : 'open',
+          paused: false,
+          completedAt: booked ? bookedAt : po.receivedAt,
+          actionRoute: `/deliveries?poId=${po.id}`,
+          oversightRoute: `/deliveries?poId=${po.id}`,
+        });
+      }
+      return out;
+    },
+  },
+  {
+    // The booked delivery is the technician's to receive — or Admin's while
+    // the job has nobody on it. Due when the booked window closes.
+    kind: 'delivery_receive',
+    nudgeBefore: hours(18),
+    escalateAfter: hours(4),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'supplier',
+    collect(src) {
+      const admin = adminId(src);
+      const out: Obligation[] = [];
+      for (const s of src.deliverySchedules) {
+        if (s.status !== 'scheduled' || !s.date || !s.window) continue;
+        const po = src.purchaseOrders.find((p) => p.id === s.poId);
+        if (!po) continue;
+        const job = (s.jobId ? src.jobs.find((j) => j.id === s.jobId) : undefined) ?? src.jobs.find((j) => j.dealId === s.dealId && !j.startedAt && (j.status === 'materials_pending' || j.status === 'scheduled'));
+        const technician = activeUser(src, job?.technicianId);
+        const deal = src.deals.find((d) => d.id === s.dealId);
+        const site = src.leads.find((l) => l.id === deal?.leadId)?.siteName ?? '';
+        out.push({
+          ...base('delivery_receive', 'delivery', po.id),
+          ownerUserId: technician?.id ?? admin,
+          titleKey: 'work.title.delivery_receive',
+          titleParams: { code: po.code, site },
+          dueAt: windowEndsAt(s.date, s.window),
+          state: po.receivedAt ? 'done' : 'open',
+          paused: false,
+          completedAt: po.receivedAt,
+          actionRoute: technician ? '/technician' : `/deliveries?poId=${po.id}`,
+          oversightRoute: `/deliveries?poId=${po.id}`,
+        });
+      }
+      return out;
     },
   },
   {

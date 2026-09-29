@@ -55,6 +55,10 @@ import {
   seedSupplierMessages,
   seedSupplierTermsHistory,
   seedSupplierRetentions,
+  seedDispatchAvailability,
+  seedSiteReadiness,
+  seedDeliverySchedules,
+  installSteps,
   seedSupplierPurchaseOrders,
   seedTriggerRules,
   seedUsers,
@@ -127,6 +131,11 @@ import type {
   AgreementOrderView,
   SupplierAgreementSummary,
   SupplierAgreementView,
+  DeliveryBoard,
+  DeliveryCard,
+  DeliveryScheduleResult,
+  DeliverySlotView,
+  DeliveryStatus,
   SupplierMessageSearchHit,
   SupplierPaymentTermsView,
   SupplierTermsRow,
@@ -152,6 +161,13 @@ import type {
   SupplierScoreContextNote,
   SupplierAgreementStatus,
   SupplierAgreementVersion,
+  DeliveryEvent,
+  DeliveryRescheduleCause,
+  DeliverySchedule,
+  DeliveryWindow,
+  Job,
+  SiteReadiness,
+  SupplierDispatchAvailability,
   SupplierMessage,
   SupplierMessageAuthor,
   SupplierThread,
@@ -273,6 +289,21 @@ import {
   tierOf,
 } from '@/features/suppliers/paymentTerms';
 import {
+  PROMISE_MOVING_CAUSES,
+  SLOT_HORIZON_DAYS,
+  addDaysKey,
+  emptyReadiness,
+  endOfDayIso,
+  laterThanPromise,
+  parseKey,
+  readinessConfirmed,
+  sequenceConflicts,
+  sequenceOk,
+  slotDays,
+  slotState,
+  wouldCycle,
+} from '@/features/logistics/deliverySlots';
+import {
   DEFAULT_PRICE_REVIEW_THRESHOLD_PCT,
   catalogMatchKey,
   categoryReferencePrices,
@@ -373,11 +404,19 @@ const scoreContextNotes = [...seedScoreContextNotes];
 let ratingCounter = 100;
 const supplierAgreementVersions = [...seedSupplierAgreementVersions];
 let agreementCounter = 100;
+/** 101: what suppliers can dispatch, whether each site is ready, and each
+ *  PO's booked delivery. */
+const dispatchAvailability = [...seedDispatchAvailability];
+const siteReadinessRecords = [...seedSiteReadiness];
+const deliverySchedules = [...seedDeliverySchedules];
+let deliveryCounter = 100;
+
 /** 100: the root of how AIEC pays suppliers. */
 let paymentTermsConfig: SupplierPaymentTermsConfig = { tiers: { ...DEFAULT_TIER_SETTINGS } };
 const supplierTermsHistory = [...seedSupplierTermsHistory];
 const supplierRetentions = [...seedSupplierRetentions];
 let paymentTermsCounter = 100;
+let jobCounter = 100;
 // Seeded orders were sent before these terms existed here — stamp each with
 // the terms its supplier is on, as 098 does with the agreement.
 for (const po of supplierPurchaseOrders) {
@@ -1845,6 +1884,7 @@ function commitmentSources(now: number): CommitmentSources {
     supplierThreads,
     supplierMessages,
     supplierRetentions,
+    deliverySchedules,
     pausedDealIds: new Set(paymentReminderPauses.filter((p) => p.paused).map((p) => p.dealId)),
   };
 }
@@ -2539,6 +2579,183 @@ function detectProductionStalls(now: number): void {
 
 
 /* =============================== Supplier rating & quality scorecard (097) */
+
+/* ============================================ Delivery scheduling (101) */
+
+const availabilityOf = (supplierId: string) => dispatchAvailability.find((a) => a.supplierId === supplierId) ?? null;
+const readinessOf = (dealId: string) => siteReadinessRecords.find((r) => r.dealId === dealId) ?? emptyReadiness(dealId);
+const scheduleOfPo = (poId: string) => deliverySchedules.find((s) => s.poId === poId);
+
+function deliveryPoOrThrow(poId: string): SupplierPurchaseOrder {
+  const po = byId(supplierPurchaseOrders, poId);
+  if (!po || po.status !== 'sent' || !po.supplierId) throw new RepositoryError('not_found');
+  return po;
+}
+
+function siteOfDeal(dealId: string): { siteName: string; address: string | null } {
+  const deal = byId(deals, dealId);
+  const lead = deal ? resolveLead(deal.leadId) : null;
+  return { siteName: lead?.siteName ?? '', address: lead ? `${lead.address}, ${lead.city}` : null };
+}
+
+/** The installation job this deal's deliveries are holding up. */
+function pendingJobFor(dealId: string, schedule?: DeliverySchedule): Job | undefined {
+  const linked = schedule?.jobId ? byId(jobs, schedule.jobId) : undefined;
+  if (linked) return linked;
+  return jobs.filter((j) => j.dealId === dealId && !j.startedAt && (j.status === 'materials_pending' || j.status === 'scheduled')).sort((a, b) => (a.scheduledFor < b.scheduledFor ? -1 : 1))[0];
+}
+
+/**
+ * Confirming a date is what puts the installation on the technician's
+ * calendar: the deal's pending job can't start before its last delivery
+ * lands, so it moves with the deliveries (or is created if there isn't one).
+ * The technician then hears about it through the manager layer.
+ */
+function syncInstallationJob(dealId: string, at: string): Job | null {
+  const booked = deliverySchedules.filter((s) => s.dealId === dealId && s.status === 'scheduled' && s.date && !byId(supplierPurchaseOrders, s.poId)?.receivedAt);
+  if (booked.length === 0) return null;
+  const lastDelivery = booked.map((s) => s.date!).sort().pop()!;
+  const start = new Date(parseKey(addDaysKey(lastDelivery, 1)).setHours(9, 0, 0, 0)).toISOString();
+  let job = pendingJobFor(dealId, booked[0]);
+  const deal = byId(deals, dealId);
+  const lead = deal ? resolveLead(deal.leadId) : null;
+  if (!job) {
+    // An install already under way (or finished) doesn't get a second job.
+    if (jobs.some((j) => j.dealId === dealId)) return null;
+    jobCounter += 1;
+    job = { id: `j-new-${jobCounter}`, code: `AIEC-J-${3200 + jobCounter}`, dealId, status: 'materials_pending', siteName: lead?.siteName ?? '', address: lead?.address ?? '', location: lead?.location ?? { lat: 0, lng: 0 }, scheduledFor: start, steps: installSteps(0), isDemo: true };
+    jobs.push(job);
+    logAutomatedAction({
+      sourceKey: 'delivery.job_synced',
+      triggeringCondition: `A delivery was confirmed for ${lead?.siteName ?? dealId}`,
+      actionTaken: `Created installation job ${job.code} for ${start.slice(0, 10)}`,
+      affectedRecordId: job.id,
+      affectedRecordType: 'other',
+      subjectLabel: job.code,
+    });
+    return job;
+  }
+  const moves = job.status === 'materials_pending' ? job.scheduledFor !== start : start > job.scheduledFor;
+  if (moves) {
+    job = patchInPlace(jobs, job.id, { scheduledFor: start });
+    logAutomatedAction({
+      sourceKey: 'delivery.job_synced',
+      triggeringCondition: `The last delivery for ${lead?.siteName ?? dealId} is now booked for ${lastDelivery}`,
+      actionTaken: `Moved installation job ${job.code} to ${start.slice(0, 10)}`,
+      affectedRecordId: job.id,
+      affectedRecordType: 'other',
+      subjectLabel: job.code,
+    });
+  }
+  void at;
+  return job;
+}
+
+/** Tells the technician (through the assistant) a delivery they'll receive
+ *  has been confirmed or moved. Returns whether a technician was reached. */
+function notifyTechnicianOfDelivery(po: SupplierPurchaseOrder, at: string): boolean {
+  syncCommitments(new Date(at).getTime());
+  const commitment = commitments.find((c) => c.kind === 'delivery_receive' && c.subject.id === po.id && c.status === 'open');
+  const owner = commitment ? byId(users, commitment.ownerUserId) : null;
+  if (!commitment || owner?.role !== 'technician') return false;
+  notifyWork(owner.id, commitment, 'nudge', at);
+  logAutomatedAction({
+    sourceKey: 'delivery.technician_notified',
+    triggeringCondition: `Delivery ${po.code} was booked or moved`,
+    actionTaken: `Told ${owner.name} to receive it`,
+    affectedRecordId: po.id,
+    affectedRecordType: 'purchase_order',
+    subjectLabel: po.code,
+  });
+  return true;
+}
+
+function deliveryCardFor(po: SupplierPurchaseOrder, now: number): DeliveryCard {
+  const supplier = byId(suppliers, po.supplierId!)!;
+  const schedule = scheduleOfPo(po.id) ?? null;
+  const readiness = readinessOf(po.dealId);
+  const confirmed = readinessConfirmed(readiness);
+  const delivered = !!po.receivedAt || poStageOf(po) === 'delivered';
+  const status: DeliveryStatus = delivered ? 'delivered' : schedule?.status === 'attempt_failed' ? 'attempt_failed' : schedule ? 'scheduled' : 'unscheduled';
+  const promised = promisedDeliveryOf(po);
+  const conflicts = sequenceConflicts(deliverySchedules);
+  const pre = schedule?.dependsOnPoId ? byId(supplierPurchaseOrders, schedule.dependsOnPoId) : undefined;
+  const preSchedule = pre ? scheduleOfPo(pre.id) : undefined;
+  const job = pendingJobFor(po.dealId, schedule ?? undefined);
+  const tech = job?.technicianId ? byId(users, job.technicianId) : undefined;
+  const others = deliverySchedules.filter((s) => s.supplierId === po.supplierId && s.poId !== po.id);
+  const booked = status === 'scheduled' && schedule?.date && schedule.window;
+  const bookedState = booked ? slotState(availabilityOf(supplier.id), others, schedule!.date!, schedule!.window!, now) : 'free';
+  const lines = po.lineItems ?? [];
+  const { siteName, address } = siteOfDeal(po.dealId);
+  return {
+    poId: po.id,
+    poCode: po.code,
+    dealId: po.dealId,
+    siteName,
+    address,
+    supplier: { id: supplier.id, name: supplier.name, hasAvailability: !!availabilityOf(supplier.id) },
+    poStage: poStageOf(po),
+    lineSummary: lines.map((l) => l.description).join(' · '),
+    totalAmount: poTotalOf(lines),
+    promisedDelivery: promised,
+    status,
+    schedule,
+    laterThanPromise: !!(booked && laterThanPromise(schedule!.date!, promised)),
+    readiness,
+    readinessConfirmed: confirmed,
+    readinessLost: status === 'scheduled' && !confirmed,
+    outsideSupplierWindows: bookedState === 'off_day' || bookedState === 'window_not_offered' || bookedState === 'blackout',
+    dependsOn: pre
+      ? { poId: pre.id, poCode: pre.code, date: preSchedule?.status === 'scheduled' ? (preSchedule.date ?? null) : null, window: preSchedule?.status === 'scheduled' ? (preSchedule.window ?? null) : null, delivered: !!pre.receivedAt }
+      : null,
+    dependents: deliverySchedules.filter((s) => s.dependsOnPoId === po.id).map((s) => ({ poId: s.poId, poCode: byId(supplierPurchaseOrders, s.poId)?.code ?? s.poId })),
+    sequenceConflict: conflicts.has(po.id),
+    technician: tech ? { id: tech.id, name: tech.name } : null,
+    jobCode: job?.code ?? null,
+    siblingPos: supplierPurchaseOrders.filter((p) => p.dealId === po.dealId && p.id !== po.id && p.status === 'sent').map((p) => ({ poId: p.id, poCode: p.code })),
+  };
+}
+
+/** Everything that must hold before a slot is booked, for either side. */
+function assertBookable(po: SupplierPurchaseOrder, date: string, window: DeliveryWindow, dependsOnPoId: string | null | undefined, now: number): void {
+  const availability = availabilityOf(po.supplierId!);
+  if (!availability) throw new RepositoryError('no_availability');
+  const others = deliverySchedules.filter((s) => s.supplierId === po.supplierId && s.poId !== po.id);
+  // The supplier's own real windows — never a date they can't meet.
+  if (slotState(availability, others, date, window, now) !== 'free') throw new RepositoryError('slot_unavailable');
+  if (!dependsOnPoId) return;
+  const pre = byId(supplierPurchaseOrders, dependsOnPoId);
+  if (!pre || pre.dealId !== po.dealId || pre.id === po.id || pre.status !== 'sent') throw new RepositoryError('invalid_input');
+  if (wouldCycle(deliverySchedules, po.id, dependsOnPoId)) throw new RepositoryError('dependency_cycle');
+  if (pre.receivedAt) return;
+  const preSchedule = scheduleOfPo(pre.id);
+  if (preSchedule?.status !== 'scheduled' || !preSchedule.date || !preSchedule.window) throw new RepositoryError('prerequisite_not_scheduled');
+  if (!sequenceOk({ date, window }, { date: preSchedule.date, window: preSchedule.window })) throw new RepositoryError('sequence_conflict');
+}
+
+/** Only AIEC's or the site's delay moves the supplier's promise. A supplier's
+ *  own stays measured against the original — 097 sees it. */
+function movePromiseIfSiteCaused(po: SupplierPurchaseOrder, date: string, cause: DeliveryRescheduleCause): string | undefined {
+  if (!PROMISE_MOVING_CAUSES.includes(cause)) return undefined;
+  const promised = promisedDeliveryOf(po);
+  if (!promised || !laterThanPromise(date, promised)) return undefined;
+  patchInPlace(supplierPurchaseOrders, po.id, { expectedDeliveryDate: endOfDayIso(date) });
+  return promised;
+}
+
+function deliveryEvent(fields: Omit<DeliveryEvent, 'id'>): DeliveryEvent {
+  deliveryCounter += 1;
+  return { id: `dev-${deliveryCounter}`, ...fields };
+}
+
+function finishDeliveryBooking(po: SupplierPurchaseOrder, schedule: DeliverySchedule, at: string): DeliveryScheduleResult {
+  const job = syncInstallationJob(po.dealId, at);
+  const linked = job && schedule.jobId !== job.id ? patchInPlace(deliverySchedules, schedule.id, { jobId: job.id }) : schedule;
+  const notified = notifyTechnicianOfDelivery(po, at);
+  const conflicts = [...sequenceConflicts(deliverySchedules)].map((id) => byId(supplierPurchaseOrders, id)?.code ?? id);
+  return { schedule: linked, conflicts, technicianNotified: notified, jobCode: job?.code ?? null };
+}
 
 /* ======================================= Supplier payment terms (100) */
 
@@ -5379,6 +5596,11 @@ export const memoryRepository: Repository = {
         ),
         contextNotes: scoreContextNotes.filter((n) => n.supplierId === supplierId).sort((a, b) => (a.addedAt < b.addedAt ? 1 : -1)),
         agreedTerms: agreementStateFor(supplierId).current?.terms ?? null,
+        deliveryReschedules: (() => {
+          const since = new Date(Date.now() - 90 * 86_400_000).toISOString();
+          const moved = deliverySchedules.filter((s) => s.supplierId === supplierId).flatMap((s) => s.events).filter((e) => e.kind === 'rescheduled' && e.at > since);
+          return { total: moved.length, supplierCaused: moved.filter((e) => e.cause === 'supplier').length };
+        })(),
       };
     }),
 
@@ -5566,6 +5788,173 @@ export const memoryRepository: Repository = {
       };
       supplierAgreementVersions.push(created);
       return created;
+    }),
+
+  /* ------------------------------------------- Delivery scheduling (101) */
+  getDeliveryBoard: (byUserId) =>
+    simulateRead((): DeliveryBoard => {
+      const { supplierId } = threadViewer(byUserId);
+      const now = Date.now();
+      const recent = now - 60 * 86_400_000;
+      const cards = supplierPurchaseOrders
+        .filter((po) => po.status === 'sent' && po.supplierId && byId(suppliers, po.supplierId))
+        .filter((po) => !supplierId || po.supplierId === supplierId)
+        // Delivered orders stay for the calendar's recent past, and only if they were booked.
+        .filter((po) => !po.receivedAt || (scheduleOfPo(po.id) && new Date(po.receivedAt).getTime() > recent))
+        .map((po) => deliveryCardFor(po, now));
+      return {
+        cards,
+        ownAvailability: supplierId ? availabilityOf(supplierId) : null,
+        availabilityBySupplier: Object.fromEntries(dispatchAvailability.filter((a) => !supplierId || a.supplierId === supplierId).map((a) => [a.supplierId, a])),
+      };
+    }),
+
+  getDeliverySlots: (poId, byUserId) =>
+    simulateRead((): DeliverySlotView | null => {
+      const { supplierId } = threadViewer(byUserId);
+      const po = byId(supplierPurchaseOrders, poId);
+      if (!po || po.status !== 'sent' || !po.supplierId || (supplierId && po.supplierId !== supplierId)) return null;
+      const availability = availabilityOf(po.supplierId);
+      const others = deliverySchedules.filter((s) => s.supplierId === po.supplierId && s.poId !== po.id);
+      return { availability, days: slotDays(availability, others, Date.now()) };
+    }),
+
+  setSiteReadiness: (dealId, input, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      if (!byId(deals, dealId) && !supplierPurchaseOrders.some((p) => p.dealId === dealId)) throw new RepositoryError('not_found');
+      const complete = Object.values(input.items).every(Boolean);
+      // Confirmation is somebody on site vouching for the whole list — never a bare tick.
+      if (complete && input.contactName.trim().length < 2) throw new RepositoryError('contact_required');
+      const now = new Date().toISOString();
+      const previous = readinessOf(dealId);
+      const wasConfirmed = readinessConfirmed(previous);
+      const next: SiteReadiness = {
+        ...previous,
+        dealId,
+        items: { ...input.items },
+        contactName: input.contactName.trim() || previous.contactName,
+        confirmedAt: complete ? (wasConfirmed ? previous.confirmedAt : now) : undefined,
+        confirmedBy: complete ? (wasConfirmed ? previous.confirmedBy : actor.name) : undefined,
+        isDemo: true,
+      };
+      const index = siteReadinessRecords.findIndex((r) => r.dealId === dealId);
+      if (index === -1) siteReadinessRecords.push(next);
+      else siteReadinessRecords[index] = next;
+      return next;
+    }),
+
+  scheduleDelivery: (poId, input, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const po = deliveryPoOrThrow(poId);
+      const existing = scheduleOfPo(poId);
+      if (po.receivedAt || existing?.status === 'scheduled') throw new RepositoryError('invalid_state');
+      // Structurally: no date for a shipment that would arrive at a site with no shaft to receive it.
+      if (!readinessConfirmed(readinessOf(po.dealId))) throw new RepositoryError('readiness_required');
+      const dependsOn = input.dependsOnPoId === undefined ? existing?.dependsOnPoId : input.dependsOnPoId;
+      const now = Date.now();
+      assertBookable(po, input.date, input.window, dependsOn, now);
+      const late = laterThanPromise(input.date, promisedDeliveryOf(po));
+      if (late && !input.lateCause) throw new RepositoryError('late_cause_required');
+      const at = new Date(now).toISOString();
+      const promiseMovedFrom = late ? movePromiseIfSiteCaused(po, input.date, input.lateCause!) : undefined;
+      const event = deliveryEvent({ kind: 'scheduled', at, byName: actor.name, byRole: 'admin', date: input.date, window: input.window, cause: late ? input.lateCause : undefined, reason: input.note?.trim() || undefined, promiseMovedFrom });
+      let schedule: DeliverySchedule;
+      if (existing) {
+        schedule = patchInPlace(deliverySchedules, existing.id, { status: 'scheduled', date: input.date, window: input.window, dependsOnPoId: dependsOn ?? undefined, events: [...existing.events, event] });
+      } else {
+        deliveryCounter += 1;
+        schedule = { id: `dsch-new-${deliveryCounter}`, poId, dealId: po.dealId, supplierId: po.supplierId!, status: 'scheduled', date: input.date, window: input.window, dependsOnPoId: dependsOn ?? undefined, failedAttempts: 0, events: [event], createdAt: at, isDemo: true };
+        deliverySchedules.push(schedule);
+      }
+      return finishDeliveryBooking(po, schedule, at);
+    }),
+
+  rescheduleDelivery: (poId, input, byUserId) =>
+    simulateWrite(() => {
+      const { actor, supplierId } = threadViewer(byUserId);
+      const po = deliveryPoOrThrow(poId);
+      if (supplierId && po.supplierId !== supplierId) throw new RepositoryError('forbidden');
+      const existing = scheduleOfPo(poId);
+      if (po.receivedAt || existing?.status !== 'scheduled' || !existing.date || !existing.window) throw new RepositoryError('invalid_state');
+      const byRole = actor.role === 'admin' ? 'admin' : 'supplier';
+      // A supplier can only ever move a date on its own account.
+      const cause: DeliveryRescheduleCause = byRole === 'supplier' ? 'supplier' : input.cause;
+      // Always with a reason — it keeps the customer's expectations honest and feeds the supplier's record.
+      if (input.reason.trim().length < 4) throw new RepositoryError('reason_required');
+      if (input.date === existing.date && input.window === existing.window && input.dependsOnPoId === undefined) throw new RepositoryError('invalid_input');
+      if (byRole === 'admin' && !readinessConfirmed(readinessOf(po.dealId))) throw new RepositoryError('readiness_required');
+      const dependsOn = input.dependsOnPoId === undefined ? existing.dependsOnPoId : input.dependsOnPoId;
+      const now = Date.now();
+      assertBookable(po, input.date, input.window, dependsOn, now);
+      const at = new Date(now).toISOString();
+      const promiseMovedFrom = movePromiseIfSiteCaused(po, input.date, cause);
+      const event = deliveryEvent({
+        kind: 'rescheduled', at, byName: actor.name, byRole, date: input.date, window: input.window, fromDate: existing.date, fromWindow: existing.window, cause, reason: input.reason.trim(), promiseMovedFrom,
+      });
+      const schedule = patchInPlace(deliverySchedules, existing.id, { date: input.date, window: input.window, dependsOnPoId: dependsOn ?? undefined, events: [...existing.events, event] });
+      return finishDeliveryBooking(po, schedule, at);
+    }),
+
+  recordDeliveryAttempt: (poId, note, byUserId) =>
+    simulateWrite(() => {
+      const { actor, supplierId } = threadViewer(byUserId);
+      const po = deliveryPoOrThrow(poId);
+      if (supplierId && po.supplierId !== supplierId) throw new RepositoryError('forbidden');
+      const existing = scheduleOfPo(poId);
+      if (po.receivedAt || existing?.status !== 'scheduled') throw new RepositoryError('invalid_state');
+      if (note.trim().length < 10) throw new RepositoryError('reason_required');
+      const at = new Date().toISOString();
+      const byRole = actor.role === 'admin' ? 'admin' : 'supplier';
+      const event = deliveryEvent({ kind: 'attempt_failed', at, byName: actor.name, byRole, date: existing.date, window: existing.window, reason: note.trim() });
+      // Not a reschedule: the trip was made and wasted. The site's confirmation is void until it's vouched for again.
+      const schedule = patchInPlace(deliverySchedules, existing.id, { status: 'attempt_failed', date: undefined, window: undefined, failedAttempts: existing.failedAttempts + 1, events: [...existing.events, event] });
+      const readiness = readinessOf(po.dealId);
+      const reset: SiteReadiness = { ...readiness, confirmedAt: undefined, confirmedBy: undefined, resetReason: note.trim(), resetAt: at };
+      const index = siteReadinessRecords.findIndex((r) => r.dealId === po.dealId);
+      if (index === -1) siteReadinessRecords.push(reset);
+      else siteReadinessRecords[index] = reset;
+      raiseAlert({
+        titleKey: 'deliveryScheduling.alert.attemptFailed',
+        context: `${po.code}${siteOfDeal(po.dealId).siteName ? ` — ${siteOfDeal(po.dealId).siteName}` : ''}: ${note.trim()}`,
+        severity: 'high',
+        category: 'supplier',
+        relatedId: po.id,
+        sourceRoute: `/deliveries?poId=${po.id}`,
+      });
+      syncCommitments(Date.now());
+      return schedule;
+    }),
+
+  saveDispatchAvailability: (input, byUserId) =>
+    simulateWrite(() => {
+      const { actor, supplierId } = threadViewer(byUserId);
+      if (supplierId && input.supplierId !== supplierId) throw new RepositoryError('forbidden');
+      if (!byId(suppliers, input.supplierId)) throw new RepositoryError('not_found');
+      const weekdays = [...new Set(input.weekdays)].sort();
+      const windows = [...new Set(input.windows)];
+      const validKey = (k: string) => /^\d{4}-\d{2}-\d{2}$/.test(k) && !Number.isNaN(parseKey(k).getTime());
+      if (weekdays.length === 0 || weekdays.some((d) => !Number.isInteger(d) || d < 0 || d > 6)) throw new RepositoryError('invalid_input');
+      if (windows.length === 0) throw new RepositoryError('invalid_input');
+      if (!Number.isInteger(input.maxPerDay) || input.maxPerDay < 1 || input.maxPerDay > 10) throw new RepositoryError('invalid_input');
+      if (!Number.isInteger(input.leadDays) || input.leadDays < 0 || input.leadDays > 30) throw new RepositoryError('invalid_input');
+      if (input.blackouts.length > 60 || input.blackouts.some((b) => !validKey(b.date) || b.reason.trim().length < 2)) throw new RepositoryError('invalid_input');
+      const next: SupplierDispatchAvailability = {
+        supplierId: input.supplierId,
+        weekdays,
+        windows,
+        maxPerDay: input.maxPerDay,
+        leadDays: input.leadDays,
+        blackouts: [...input.blackouts].map((b) => ({ date: b.date, reason: b.reason.trim() })).sort((a, b) => (a.date < b.date ? -1 : 1)),
+        updatedBy: actor.name,
+        updatedAt: new Date().toISOString(),
+        isDemo: true,
+      };
+      const index = dispatchAvailability.findIndex((a) => a.supplierId === input.supplierId);
+      if (index === -1) dispatchAvailability.push(next);
+      else dispatchAvailability[index] = next;
+      return next;
     }),
 
   /* ------------------------------------------ Supplier payment terms (100) */

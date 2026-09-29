@@ -764,6 +764,88 @@ export interface SupplierScoreContextNote {
   isDemo: boolean;
 }
 
+/* ------------------------------------------ Delivery scheduling (101) */
+
+/** Calendar dates in this section are plain `yyyy-mm-dd` keys, not instants:
+ *  a delivery is booked for a day on the site's own calendar. */
+export type DeliveryWindow = 'morning' | 'afternoon';
+
+/** When a supplier can actually dispatch — what Admin may book against. */
+export interface SupplierDispatchAvailability {
+  supplierId: string;
+  /** 0 = Sunday … 6 = Saturday. */
+  weekdays: number[];
+  windows: DeliveryWindow[];
+  /** Deliveries the supplier can make in one day, across all their orders. */
+  maxPerDay: number;
+  /** Minimum notice, in days. */
+  leadDays: number;
+  blackouts: { date: string; reason: string }[];
+  updatedBy: string;
+  updatedAt: string;
+  isDemo: boolean;
+}
+
+export type SiteReadinessItem = 'shaft_civil' | 'pit_depth' | 'machine_room' | 'power_supply' | 'access_route' | 'storage_space';
+
+/** Whether the site can receive parts — one record per deal, because every
+ *  PO on the deal goes to the same shaft. Confirmed only when every item is. */
+export interface SiteReadiness {
+  dealId: string;
+  items: Record<SiteReadinessItem, boolean>;
+  /** The person on site who vouched for it. */
+  contactName?: string;
+  confirmedBy?: string;
+  confirmedAt?: string;
+  /** Why a confirmed site was reset (a delivery turned up and it wasn't). */
+  resetReason?: string;
+  resetAt?: string;
+  isDemo: boolean;
+}
+
+/** Who a date moved on account of. Only `site` and `aiec` move the supplier's
+ *  promised date — a supplier-caused delay stays measured against the
+ *  original promise, so 097's on-time rating sees it. */
+export type DeliveryRescheduleCause = 'supplier' | 'site' | 'aiec' | 'other';
+
+export type DeliveryEventKind = 'scheduled' | 'rescheduled' | 'attempt_failed';
+
+export interface DeliveryEvent {
+  id: string;
+  kind: DeliveryEventKind;
+  at: string;
+  byName: string;
+  byRole: 'admin' | 'supplier';
+  date?: string;
+  window?: DeliveryWindow;
+  fromDate?: string;
+  fromWindow?: DeliveryWindow;
+  cause?: DeliveryRescheduleCause;
+  reason?: string;
+  /** The supplier's promised date before this event moved it. */
+  promiseMovedFrom?: string;
+}
+
+/** One PO's booked delivery. `attempt_failed` is a delivery that turned up
+ *  and couldn't unload — not a reschedule — and needs a fresh date. */
+export interface DeliverySchedule {
+  id: string;
+  poId: string;
+  dealId: string;
+  supplierId: string;
+  status: 'scheduled' | 'attempt_failed';
+  date?: string;
+  window?: DeliveryWindow;
+  /** A PO on the same deal that must be delivered first (cabin before drive unit). */
+  dependsOnPoId?: string;
+  failedAttempts: number;
+  /** The installation job this delivery is what's holding up. */
+  jobId?: string;
+  events: DeliveryEvent[];
+  createdAt: string;
+  isDemo: boolean;
+}
+
 /* ---------------------------------- Supplier payment terms (100) */
 
 /** Trust earned through performance: a new supplier pays its way in with an
@@ -2012,6 +2094,8 @@ export type CommitmentKind =
   | 'supplier_agreement_acknowledge'
   | 'supplier_thread_reply'
   | 'supplier_retention_decision'
+  | 'delivery_schedule'
+  | 'delivery_receive'
   | 'alert_acknowledge'
   | 'follow_up_task'
   | 'lead_revisit';
@@ -2031,7 +2115,8 @@ export type CommitmentSubjectType =
   | 'supplier_order_rating'
   | 'supplier_agreement'
   | 'supplier_thread'
-  | 'supplier_retention';
+  | 'supplier_retention'
+  | 'delivery';
 
 /**
  * 0 nothing sent yet · 1 owner nudged before due · 2 owner told it's overdue

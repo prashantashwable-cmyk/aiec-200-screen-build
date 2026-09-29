@@ -264,6 +264,9 @@ function Breakdown({ s, t }: { s: SupplierScorecardState; t: T }) {
           <p className="t-xs t-muted">{t(K.breakdown.howOnTime)}</p>
           <p className="t-xs t-muted">{t(K.breakdown.howQuality)}</p>
           <p className="t-xs t-muted">{t(K.breakdown.howWindow, { count: card.windowSize })}</p>
+          {card.deliveryReschedules.total > 0 && (
+            <p className="t-xs t-muted">{t(K.breakdown.reschedules, { total: card.deliveryReschedules.total, supplier: card.deliveryReschedules.supplierCaused })}</p>
+          )}
         </div>
       </Card>
 

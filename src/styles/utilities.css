@@ -247,3 +247,17 @@
     display: none;
   }
 }
+
+/* A main column with a narrower aside beside it on wide screens; stacked, in
+   reading order, on a phone. */
+.main-aside {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+@media (min-width: 1024px) {
+  .main-aside {
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+  }
+}

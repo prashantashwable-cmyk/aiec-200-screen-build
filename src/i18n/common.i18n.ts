@@ -140,6 +140,14 @@ const common: ScreenTranslations = {
       suppliers: 'Suppliers',
       menu: 'Menu',
     },
+    calendar: {
+      previous: 'Previous',
+      next: 'Next',
+      today: 'Today',
+      agendaEmpty: 'Nothing in the next 30 days.',
+      eventCount_one: '{{count}} item',
+      eventCount_other: '{{count}} items',
+    },
     time: {
       justNow: 'Just now',
       minutesAgo: '{{count}} min ago',
@@ -261,6 +269,9 @@ const common: ScreenTranslations = {
         supplier_thread_answer: 'Answer {{supplier}}’s message',
         supplier_retention_paused: 'Decide the retention on {{code}}: a supplier defect paused it',
         supplier_retention_review: 'Retention on {{code}} is still held with no handover. Review it',
+        delivery_schedule: 'Book the delivery for {{code}} from {{supplier}}',
+        delivery_rebook: 'Book a new date for {{code}}: the last delivery found the site not ready',
+        delivery_receive: 'Receive delivery {{code}} at {{site}}',
         alert_acknowledge: 'Acknowledge alert {{code}}: {{context}}',
         follow_up_task: 'Follow-up: {{title}}',
         lead_revisit: 'Revisit {{site}} with {{name}} — the lost lead is due another look',
@@ -285,6 +296,10 @@ const common: ScreenTranslations = {
         },
         production: {
           stall_alert: 'Flagged a production stall on {{label}}',
+        },
+        delivery: {
+          technician_notified: 'Told the technician to receive delivery {{label}}',
+          job_synced: 'Moved the installation job for {{label}} to follow its delivery',
         },
         retention: {
           released: 'Released the retention on {{label}} at installation handover',
@@ -438,6 +453,14 @@ const common: ScreenTranslations = {
       suppliers: 'सप्लायर',
       menu: 'मेन्यू',
     },
+    calendar: {
+      previous: 'पिछला',
+      next: 'अगला',
+      today: 'आज',
+      agendaEmpty: 'अगले 30 दिनों में कुछ नहीं।',
+      eventCount_one: '{{count}} प्रविष्टि',
+      eventCount_other: '{{count}} प्रविष्टियाँ',
+    },
     time: {
       justNow: 'अभी-अभी',
       minutesAgo: '{{count}} मिनट पहले',
@@ -559,6 +582,9 @@ const common: ScreenTranslations = {
         supplier_thread_answer: '{{supplier}} के संदेश का जवाब दें',
         supplier_retention_paused: '{{code}} के रिटेंशन पर फ़ैसला करें: सप्लायर की खराबी से यह रुका है',
         supplier_retention_review: '{{code}} का रिटेंशन बिना हैंडओवर के अब भी रुका है। इसकी समीक्षा करें',
+        delivery_schedule: '{{supplier}} से {{code}} की डिलीवरी बुक करें',
+        delivery_rebook: '{{code}} की नई तारीख बुक करें: पिछली डिलीवरी पर साइट तैयार नहीं मिली',
+        delivery_receive: '{{site}} पर डिलीवरी {{code}} लें',
         alert_acknowledge: 'अलर्ट {{code}} स्वीकार करें: {{context}}',
         follow_up_task: 'फ़ॉलो-अप: {{title}}',
         lead_revisit: '{{name}} के साथ {{site}} पर फिर जाएँ — खोई लीड दोबारा देखने का समय आ गया है',
@@ -583,6 +609,10 @@ const common: ScreenTranslations = {
         },
         production: {
           stall_alert: '{{label}} पर उत्पादन रुकने की सूचना दी',
+        },
+        delivery: {
+          technician_notified: 'टेक्नीशियन को डिलीवरी {{label}} लेने के लिए बताया',
+          job_synced: '{{label}} की इंस्टॉलेशन जॉब को उसकी डिलीवरी के बाद कर दिया',
         },
         retention: {
           released: 'इंस्टॉलेशन हैंडओवर पर {{label}} का रिटेंशन जारी किया',
@@ -736,6 +766,14 @@ const common: ScreenTranslations = {
       suppliers: 'पुरवठादार',
       menu: 'मेनू',
     },
+    calendar: {
+      previous: 'मागचा',
+      next: 'पुढचा',
+      today: 'आज',
+      agendaEmpty: 'पुढच्या 30 दिवसांत काहीही नाही.',
+      eventCount_one: '{{count}} नोंद',
+      eventCount_other: '{{count}} नोंदी',
+    },
     time: {
       justNow: 'आत्ताच',
       minutesAgo: '{{count}} मिनिटांपूर्वी',
@@ -857,6 +895,9 @@ const common: ScreenTranslations = {
         supplier_thread_answer: '{{supplier}} यांच्या संदेशाला उत्तर द्या',
         supplier_retention_paused: '{{code}} च्या रिटेन्शनवर निर्णय घ्या: पुरवठादाराच्या दोषामुळे ते थांबलं आहे',
         supplier_retention_review: '{{code}} चं रिटेन्शन हँडओव्हरशिवाय अजून राखून आहे. त्याचं पुनरावलोकन करा',
+        delivery_schedule: '{{supplier}} कडून {{code}} ची डिलिव्हरी बुक करा',
+        delivery_rebook: '{{code}} ची नवीन तारीख बुक करा: मागच्या डिलिव्हरीवेळी साइट तयार नव्हती',
+        delivery_receive: '{{site}} येथे डिलिव्हरी {{code}} स्वीकारा',
         alert_acknowledge: 'अलर्ट {{code}} स्वीकारा: {{context}}',
         follow_up_task: 'पाठपुरावा: {{title}}',
         lead_revisit: '{{name}} यांच्यासोबत {{site}} ला पुन्हा भेट द्या — गमावलेली लीड पुन्हा पाहण्याची वेळ आली आहे',
@@ -881,6 +922,10 @@ const common: ScreenTranslations = {
         },
         production: {
           stall_alert: '{{label}} वर उत्पादन अडकल्याची सूचना दिली',
+        },
+        delivery: {
+          technician_notified: 'टेक्निशियनला डिलिव्हरी {{label}} स्वीकारायला सांगितलं',
+          job_synced: '{{label}} ची इन्स्टॉलेशन जॉब तिच्या डिलिव्हरीनंतर केली',
         },
         retention: {
           released: 'इन्स्टॉलेशन हँडओव्हरवर {{label}} चं रिटेन्शन दिलं',

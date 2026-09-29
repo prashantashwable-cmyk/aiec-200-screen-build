@@ -57,6 +57,10 @@ import type {
   SupplierAgreementVersion,
   SupplierMessage,
   SupplierThread,
+  DeliverySchedule,
+  DeliveryWindow,
+  SiteReadiness,
+  SupplierDispatchAvailability,
   SupplierTermsChange,
   SupplierRetention,
   ProductionEvent,
@@ -69,6 +73,7 @@ import type {
   TriggerRule,
   User,
 } from './types';
+import { addDaysKey, dateKey } from '../features/logistics/deliverySlots';
 
 /**
  * The seeded AIEC demo dataset.
@@ -912,7 +917,7 @@ export const seedDealCelebrations: DealCelebration[] = [
 
 /* -------------------------------------------------------------------- Jobs */
 
-const installSteps = (completedCount: number): Job['steps'] => {
+export const installSteps = (completedCount: number): Job['steps'] => {
   const defs: Array<{ id: string; key: string; evidence: boolean }> = [
     { id: 's1', key: 'job.step.siteReadiness', evidence: true },
     { id: 's2', key: 'job.step.materialsReceived', evidence: true },
@@ -939,7 +944,7 @@ export const seedJobs: Job[] = [
   { id: 'j-1', code: 'AIEC-J-3101', dealId: 'dl-1', technicianId: 'u-tech-1', status: 'in_progress', siteName: 'Shree Ram Heights', address: 'Phase 2, Hinjawadi', location: { lat: 18.5913, lng: 73.7389 }, scheduledFor: daysAgo(21), startedAt: daysAgo(21), steps: installSteps(7), isDemo: true },
   { id: 'j-2', code: 'AIEC-J-3102', dealId: 'dl-2', technicianId: 'u-tech-2', status: 'qc_pending', siteName: 'Kulkarni Signature', address: 'Kharadi Bypass', location: { lat: 18.5515, lng: 73.947 }, scheduledFor: daysAgo(28), startedAt: daysAgo(28), steps: installSteps(9), isDemo: true },
   { id: 'j-3', code: 'AIEC-J-3103', dealId: 'dl-1', technicianId: 'u-tech-3', status: 'materials_pending', siteName: 'Shree Ram Heights — Wing B', address: 'Phase 2, Hinjawadi', location: { lat: 18.592, lng: 73.7401 }, scheduledFor: daysAhead(3), steps: installSteps(1), isDemo: true },
-  { id: 'j-4', code: 'AIEC-J-3104', dealId: 'dl-2', technicianId: 'u-tech-1', status: 'scheduled', siteName: 'Kulkarni Signature — Tower 2', address: 'Kharadi Bypass', location: { lat: 18.5522, lng: 73.9481 }, scheduledFor: daysAhead(6), steps: installSteps(0), isDemo: true },
+  { id: 'j-4', code: 'AIEC-J-3104', dealId: 'dl-2', technicianId: 'u-tech-1', status: 'scheduled', siteName: 'Kulkarni Signature — Tower 2', address: 'Kharadi Bypass', location: { lat: 18.5522, lng: 73.9481 }, scheduledFor: daysAhead(8), steps: installSteps(0), isDemo: true },
   { id: 'j-5', code: 'AIEC-J-3105', dealId: 'dl-1', technicianId: 'u-tech-2', status: 'completed', siteName: 'Shree Ram Heights — Service Lift', address: 'Phase 2, Hinjawadi', location: { lat: 18.5908, lng: 73.7378 }, scheduledFor: daysAgo(56), startedAt: daysAgo(56), completedAt: daysAgo(38), steps: installSteps(10), isDemo: true },
   { id: 'j-6', code: 'AIEC-J-3106', dealId: 'dl-2', technicianId: 'u-tech-3', status: 'on_hold', siteName: 'Kulkarni Signature — Basement', address: 'Kharadi Bypass', location: { lat: 18.5509, lng: 73.9462 }, scheduledFor: daysAgo(4), startedAt: daysAgo(4), steps: installSteps(3), isDemo: true },
 ];
@@ -1386,6 +1391,101 @@ export const seedScoreContextNotes: SupplierScoreContextNote[] = [
     addedBy: 'Prashant Vasant Wable',
     addedAt: daysAgo(6),
     isDemo: true,
+  },
+];
+
+/* ------------------------------------------ Delivery scheduling (101) */
+
+/** A calendar day offset from today, as the `yyyy-mm-dd` key deliveries use. */
+const dayKeyAhead = (n: number) => dateKey(new Date(NOW + n * DAY));
+/** The first day on or after `fromOffset` that a supplier works and hasn't blacked out. */
+function firstDeliveryDay(fromOffset: number, weekdays: number[], blackouts: string[] = []): string {
+  for (let i = fromOffset; i < fromOffset + 21; i += 1) {
+    const key = dayKeyAhead(i);
+    if (weekdays.includes(new Date(NOW + i * DAY).getDay()) && !blackouts.includes(key)) return key;
+  }
+  return dayKeyAhead(fromOffset);
+}
+/** The first working day strictly after a calendar day. */
+function firstDeliveryDayAfter(key: string, weekdays: number[], blackouts: string[] = []): string {
+  for (let i = 1; i < 21; i += 1) {
+    const next = addDaysKey(key, i);
+    if (weekdays.includes(new Date(`${next}T12:00:00`).getDay()) && !blackouts.includes(next)) return next;
+  }
+  return addDaysKey(key, 1);
+}
+
+const VERTEX_DAYS = [1, 2, 3, 4, 5, 6];
+const SANGHVI_DAYS = [1, 2, 3, 4, 5];
+const VERTEX_BLACKOUTS = [dayKeyAhead(3), dayKeyAhead(10)];
+
+/** What each supplier can actually dispatch. Rathi, still pending approval,
+ *  hasn't given any — so nothing can be booked against them. */
+export const seedDispatchAvailability: SupplierDispatchAvailability[] = [
+  {
+    supplierId: 'sp-1', weekdays: VERTEX_DAYS, windows: ['morning', 'afternoon'], maxPerDay: 2, leadDays: 2, updatedBy: 'Anil Mehta', updatedAt: daysAgo(30), isDemo: true,
+    blackouts: [
+      { date: VERTEX_BLACKOUTS[0], reason: 'Plant closed for annual maintenance' },
+      { date: VERTEX_BLACKOUTS[1], reason: 'Transporter fleet audit' },
+    ],
+  },
+  { supplierId: 'sp-2', weekdays: SANGHVI_DAYS, windows: ['morning'], maxPerDay: 1, leadDays: 3, blackouts: [], updatedBy: 'Meenal Sanghvi', updatedAt: daysAgo(45), isDemo: true },
+  { supplierId: 'sp-3', weekdays: [1, 3, 5], windows: ['morning', 'afternoon'], maxPerDay: 2, leadDays: 3, blackouts: [], updatedBy: 'Suresh Konark', updatedAt: daysAgo(60), isDemo: true },
+  { supplierId: 'sp-4', weekdays: [2, 3, 4, 5, 6], windows: ['afternoon'], maxPerDay: 2, leadDays: 4, blackouts: [], updatedBy: 'Prashant Vasant Wable', updatedAt: daysAgo(20), isDemo: true },
+];
+
+const readiness = (dealId: string, ready: boolean[], extra: Partial<SiteReadiness> = {}): SiteReadiness => ({
+  dealId,
+  items: { shaft_civil: ready[0], pit_depth: ready[1], machine_room: ready[2], power_supply: ready[3], access_route: ready[4], storage_space: ready[5] },
+  isDemo: true,
+  ...extra,
+});
+
+/** Kulkarni Signature is ready and confirmed by the site engineer. The
+ *  building behind AIEC-PO-8203 is half-done: no delivery can be booked there. */
+export const seedSiteReadiness: SiteReadiness[] = [
+  readiness('dl-2', [true, true, true, true, true, true], { contactName: 'Mr. Kulkarni, site engineer', confirmedBy: 'Prashant Vasant Wable', confirmedAt: daysAgo(6) }),
+  readiness('dl-h4', [true, true, false, false, true, false], { contactName: 'Site supervisor' }),
+  readiness('dl-h2', [true, true, true, true, true, true], { contactName: 'Mr. Deshmukh', confirmedBy: 'Prashant Vasant Wable', confirmedAt: daysAgo(48) }),
+  readiness('dl-h3', [true, true, true, true, true, true], { contactName: 'Ms. Iyer', confirmedBy: 'Prashant Vasant Wable', confirmedAt: daysAgo(66) }),
+];
+
+const receivedKey = (poId: string) => dateKey(new Date(seedHistoricalPurchaseOrders.find((p) => p.id === poId)!.receivedAt!));
+
+/** Sanghvi's cabins were booked for the promised day and the supplier moved
+ *  them a day (their fault — the promise stays where it was). Vertex's
+ *  drive unit must follow them. And once, a truck arrived at a site whose
+ *  pit wasn't finished: a failed attempt, not a reschedule. */
+const PROMISE_201 = dateKey(new Date(seedHistoricalPurchaseOrders.find((po) => po.id === 'spo-201')?.expectedDeliveryDate ?? at(3 * DAY)));
+const SANGHVI_BOOKED = firstDeliveryDayAfter(PROMISE_201, SANGHVI_DAYS);
+const VERTEX_BOOKED = firstDeliveryDayAfter(SANGHVI_BOOKED, VERTEX_DAYS, VERTEX_BLACKOUTS);
+const H4_DAY = receivedKey('spo-h4');
+export const seedDeliverySchedules: DeliverySchedule[] = [
+  {
+    id: 'dsch-1', poId: 'spo-201', dealId: 'dl-2', supplierId: 'sp-2', status: 'scheduled', date: SANGHVI_BOOKED, window: 'morning', failedAttempts: 0, createdAt: daysAgo(5), isDemo: true,
+    events: [
+      { id: 'dsch-1-e1', kind: 'scheduled', at: daysAgo(5), byName: 'Prashant Vasant Wable', byRole: 'admin', date: PROMISE_201, window: 'morning' },
+      {
+        id: 'dsch-1-e2', kind: 'rescheduled', at: daysAgo(1), byName: 'Meenal Sanghvi', byRole: 'supplier', date: SANGHVI_BOOKED, window: 'morning', fromDate: PROMISE_201, fromWindow: 'morning',
+        cause: 'supplier', reason: 'The cabin paint needs one more day to cure before it can be loaded.',
+      },
+    ],
+  },
+  {
+    id: 'dsch-2', poId: 'spo-202', dealId: 'dl-2', supplierId: 'sp-1', status: 'scheduled', date: VERTEX_BOOKED, window: 'morning', dependsOnPoId: 'spo-201', jobId: 'j-4', failedAttempts: 0, createdAt: daysAgo(4), isDemo: true,
+    events: [{ id: 'dsch-2-e1', kind: 'scheduled', at: daysAgo(4), byName: 'Prashant Vasant Wable', byRole: 'admin', date: VERTEX_BOOKED, window: 'morning' }],
+  },
+  {
+    id: 'dsch-3', poId: 'spo-h4', dealId: 'dl-h2', supplierId: 'sp-2', status: 'scheduled', date: H4_DAY, window: 'morning', failedAttempts: 1, createdAt: daysAgo(58), isDemo: true,
+    events: [
+      { id: 'dsch-3-e1', kind: 'scheduled', at: daysAgo(58), byName: 'Prashant Vasant Wable', byRole: 'admin', date: addDaysKey(H4_DAY, -2), window: 'morning' },
+      { id: 'dsch-3-e2', kind: 'attempt_failed', at: daysAgo(49), byName: 'Meenal Sanghvi', byRole: 'supplier', date: addDaysKey(H4_DAY, -2), window: 'morning', reason: 'The lift pit was still being waterproofed, so the cabin could not be unloaded.' },
+      { id: 'dsch-3-e3', kind: 'scheduled', at: daysAgo(48), byName: 'Prashant Vasant Wable', byRole: 'admin', date: H4_DAY, window: 'morning' },
+    ],
+  },
+  {
+    id: 'dsch-4', poId: 'spo-h5', dealId: 'dl-h3', supplierId: 'sp-3', status: 'scheduled', date: receivedKey('spo-h5'), window: 'afternoon', failedAttempts: 0, createdAt: daysAgo(20), isDemo: true,
+    events: [{ id: 'dsch-4-e1', kind: 'scheduled', at: daysAgo(20), byName: 'Prashant Vasant Wable', byRole: 'admin', date: receivedKey('spo-h5'), window: 'afternoon' as DeliveryWindow }],
   },
 ];
 

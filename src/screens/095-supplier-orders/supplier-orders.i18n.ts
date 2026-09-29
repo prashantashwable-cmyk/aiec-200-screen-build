@@ -8,6 +8,7 @@ const translations: ScreenTranslations = {
   en: {
     supplierOrders: {
       title: 'Supplier orders',
+      deliveries: 'Deliveries',
       subtitleAdmin: 'Every order sent to a supplier, where it really is, and which ones are running late for that supplier.',
       subtitleSupplier: 'Your AIEC orders. Update each one as it moves, so nobody has to phone you for it.',
       loading: 'Loading orders',
@@ -57,6 +58,7 @@ const translations: ScreenTranslations = {
         logisticsPending: 'Shipped. Live delivery tracking opens here once Material Logistics (screens 101–110) is built.',
         openPo: 'Open the purchase order',
         messages: 'Messages about this order',
+        delivery: 'Delivery date',
       },
       toast: { updated: 'Status updated', error: 'That didn’t go through. Try again.' },
     },
@@ -72,6 +74,7 @@ const translations: ScreenTranslations = {
   hi: {
     supplierOrders: {
       title: 'सप्लायर ऑर्डर',
+      deliveries: 'डिलीवरी',
       subtitleAdmin: 'सप्लायर को भेजा गया हर ऑर्डर, वह असल में कहाँ है, और कौन से उस सप्लायर के हिसाब से देर से चल रहे हैं।',
       subtitleSupplier: 'आपके AIEC ऑर्डर। हर एक को आगे बढ़ते ही अपडेट करें, ताकि किसी को आपको फ़ोन न करना पड़े।',
       loading: 'ऑर्डर लोड हो रहे हैं',
@@ -121,6 +124,7 @@ const translations: ScreenTranslations = {
         logisticsPending: 'भेज दिया गया। मटीरियल लॉजिस्टिक्स (स्क्रीन 101–110) बनने के बाद लाइव डिलीवरी ट्रैकिंग यहाँ खुलेगी।',
         openPo: 'खरीद आदेश खोलें',
         messages: 'इस ऑर्डर के बारे में संदेश',
+        delivery: 'डिलीवरी की तारीख',
       },
       toast: { updated: 'स्थिति अपडेट हुई', error: 'यह पूरा नहीं हुआ। फिर कोशिश करें।' },
     },
@@ -136,6 +140,7 @@ const translations: ScreenTranslations = {
   mr: {
     supplierOrders: {
       title: 'सप्लायर ऑर्डर',
+      deliveries: 'डिलिव्हरी',
       subtitleAdmin: 'सप्लायरला पाठवलेला प्रत्येक ऑर्डर, तो प्रत्यक्षात कुठे आहे, आणि कोणते त्या सप्लायरच्या मानाने उशिरा चालले आहेत.',
       subtitleSupplier: 'तुमचे AIEC ऑर्डर. प्रत्येक पुढे सरकताच अपडेट करा, म्हणजे कोणालाही तुम्हाला फोन करावा लागणार नाही.',
       loading: 'ऑर्डर लोड होत आहेत',
@@ -185,6 +190,7 @@ const translations: ScreenTranslations = {
         logisticsPending: 'पाठवले. मटेरियल लॉजिस्टिक्स (स्क्रीन 101–110) तयार झाल्यावर लाइव्ह डिलिव्हरी ट्रॅकिंग इथे उघडेल.',
         openPo: 'खरेदी आदेश उघडा',
         messages: 'या ऑर्डरबद्दलचे संदेश',
+        delivery: 'डिलिव्हरीची तारीख',
       },
       toast: { updated: 'स्थिती अपडेट झाली', error: 'हे पूर्ण झाले नाही. पुन्हा प्रयत्न करा.' },
     },

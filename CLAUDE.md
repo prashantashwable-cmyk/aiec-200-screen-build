@@ -107,8 +107,41 @@ the module's section to `BUILD_README.md`.
   (dl-1) was seeded one day short of the reminder cadence's own exhaustion threshold, so no real
   payment could ever reach 089's escalation queue while also belonging to a deal with an active
   Job — moved from 6 to 10 days overdue (and the stale `al-2` alert text updated to match).
+- **Module 11 in progress:** `101` built. **Next: `102`** (live shipment tracking). At its
+  checkpoint (after 110), add an Admin logistics entry point: 101 is reachable for Admin only
+  from 091's hub and 095's header/PO sheet.
+  101 facts:
+  - `DeliverySchedule` (one per PO) holds a booked `date` (`yyyy-mm-dd`, the site's calendar day),
+    a `window` (`morning` | `afternoon`), `dependsOnPoId`, `failedAttempts` and append-only
+    `events`. `attempt_failed` is its own status, not a reschedule.
+  - `SiteReadiness` is per deal, six checklist items. `readinessConfirmed` (deliverySlots.ts) is
+    derived: all items ticked, someone on site vouching, and made after any reset. No delivery can
+    be booked without it (`readiness_required`).
+  - `SupplierDispatchAvailability` is what a supplier can actually dispatch (weekdays, windows,
+    max per day, lead days, closed days). The supplier sets it, or Admin on their behalf, and a
+    booking is refused outside it (`slot_unavailable`, `no_availability`).
+  - `@/features/logistics/deliverySlots` is the pure logic: `slotState`, `slotDays`, `sequenceOk`,
+    `sequenceConflicts`, `wouldCycle`, `readinessConfirmed`.
+  - Dependency ordering: a dependent must land in a strictly later slot than its prerequisite,
+    and the prerequisite must be booked first. Moving a prerequisite later flags its dependents
+    as out of sequence instead of moving them.
+  - Reschedule cause matters: `site` and `aiec` move the PO's `expectedDeliveryDate` (the
+    promise 095 and 097 read), so the supplier isn't rated late for a delay that wasn't theirs.
+    `supplier` and `other` leave the promise, so 097's on-time rating sees it. 097's breakdown
+    tab shows moves in the last 90 days.
+  - Booking or moving a date calls `syncInstallationJob` (moves the deal's pending job to the day
+    after the last delivery, or creates a `materials_pending` job) and
+    `notifyTechnicianOfDelivery`. Both are logged with `logAutomatedAction`.
+  - `recordDeliveryAttempt` (Admin or the supplier) voids the site's readiness and raises an
+    Alert, and Admin owns a `delivery_rebook`.
+  - New commitments: `delivery_schedule` (Admin, promise − 10 days) and `delivery_receive`
+    (technician, or Admin while the job has nobody; due when the window closes).
+  - Shared `@/features/calendar` (`CalendarView`, `calendarMath`): month, week and agenda, status
+    colours, dots on a phone. `calendar.*` is a shared namespace. `.main-aside` is a main column
+    with a narrower aside.
+  - `/deliveries` serves Admin and Supplier (a supplier reaches it from 095's header).
 - **Module 10 Supplier & Manufacturer Management is done, including its checkpoint.** See
-  BUILD_README's Module 10 section. **Next: `101`** (Module 11). Checkpoint fixes:
+  BUILD_README's Module 10 section. Checkpoint fixes:
   - Admin has a "Suppliers" nav tab, and 091 has a "Supplier tools" hub.
   - A route's `tab` may be per role (`{ admin: 'suppliers', supplier: 'orders' }`).
   - The shell now uses `Link` + its own `isActive` instead of `NavLink`. NavLink's prefix matching

@@ -60,6 +60,7 @@ export const SUPPLIER_SCORECARD_KEYS = {
     howOnTime: 'supplierScorecard.breakdown.howOnTime',
     howQuality: 'supplierScorecard.breakdown.howQuality',
     howWindow: 'supplierScorecard.breakdown.howWindow',
+    reschedules: 'supplierScorecard.breakdown.reschedules',
     trend: 'supplierScorecard.breakdown.trend',
     trendHint: 'supplierScorecard.breakdown.trendHint',
     trendEmpty: 'supplierScorecard.breakdown.trendEmpty',

@@ -79,6 +79,12 @@ import type {
   SupplierAgreementTerms,
   SupplierMessage,
   SupplierMessageAuthor,
+  DeliveryRescheduleCause,
+  DeliverySchedule,
+  DeliveryWindow,
+  SiteReadiness,
+  SiteReadinessItem,
+  SupplierDispatchAvailability,
   SupplierPaymentTermSettings,
   SupplierPaymentTermsConfig,
   SupplierRetention,
@@ -96,6 +102,7 @@ import type {
   User,
   WorkNotification,
 } from './types';
+import type { SlotDay } from '@/features/logistics/deliverySlots';
 
 /**
  * The data contract every screen codes against.
@@ -861,6 +868,93 @@ export interface SupplierScorecard {
   contextNotes: SupplierScoreContextNote[];
   /** The standard the supplier agreed to (098), to read the score against. */
   agreedTerms: SupplierAgreementTerms | null;
+  /** Booked deliveries moved in the last 90 days (101), and how many were the supplier's doing. */
+  deliveryReschedules: { total: number; supplierCaused: number };
+}
+
+/* ---------------------------------------- Delivery scheduling (101) */
+
+export type DeliveryStatus = 'unscheduled' | 'scheduled' | 'attempt_failed' | 'delivered';
+
+/** One sent PO and where its delivery stands. */
+export interface DeliveryCard {
+  poId: string;
+  poCode: string;
+  dealId: string;
+  siteName: string;
+  address: string | null;
+  supplier: { id: string; name: string; hasAvailability: boolean };
+  poStage: PoFulfilmentStage;
+  lineSummary: string;
+  totalAmount: number;
+  /** What the supplier was promised — Admin's date, or the agreed SLA. */
+  promisedDelivery: string | null;
+  status: DeliveryStatus;
+  schedule: DeliverySchedule | null;
+  /** The delivery day is after the promised day. */
+  laterThanPromise: boolean;
+  /** Deal-wide: every PO on the deal goes to the same shaft. */
+  readiness: SiteReadiness;
+  readinessConfirmed: boolean;
+  /** Booked, but the site has since stopped being confirmed ready. */
+  readinessLost: boolean;
+  /** Booked, but the supplier has since changed its windows and can no longer do that day. */
+  outsideSupplierWindows: boolean;
+  dependsOn: { poId: string; poCode: string; date: string | null; window: DeliveryWindow | null; delivered: boolean } | null;
+  dependents: { poId: string; poCode: string }[];
+  sequenceConflict: boolean;
+  technician: { id: string; name: string } | null;
+  jobCode: string | null;
+  /** Other POs on this deal, for choosing what this one must follow. */
+  siblingPos: { poId: string; poCode: string }[];
+}
+
+export interface DeliveryBoard {
+  cards: DeliveryCard[];
+  /** A supplier's own dispatch availability; null for Admin. */
+  ownAvailability: SupplierDispatchAvailability | null;
+  /** Admin: every supplier's, to show alongside a booking. */
+  availabilityBySupplier: Record<string, SupplierDispatchAvailability>;
+}
+
+export interface DeliverySlotView {
+  availability: SupplierDispatchAvailability | null;
+  days: SlotDay[];
+}
+
+export interface DeliveryScheduleResult {
+  schedule: DeliverySchedule;
+  /** POs now booked no later than something they should follow. */
+  conflicts: string[];
+  technicianNotified: boolean;
+  jobCode: string | null;
+}
+
+export interface ScheduleDeliveryInput {
+  date: string;
+  window: DeliveryWindow;
+  /** `undefined` leaves it as it is; `null` clears it. */
+  dependsOnPoId?: string | null;
+  /** Required when the date is after the day the supplier was promised. */
+  lateCause?: DeliveryRescheduleCause;
+  note?: string;
+}
+
+export interface RescheduleDeliveryInput {
+  date: string;
+  window: DeliveryWindow;
+  cause: DeliveryRescheduleCause;
+  reason: string;
+  dependsOnPoId?: string | null;
+}
+
+export interface SaveAvailabilityInput {
+  supplierId: string;
+  weekdays: number[];
+  windows: DeliveryWindow[];
+  maxPerDay: number;
+  leadDays: number;
+  blackouts: { date: string; reason: string }[];
 }
 
 /* -------------------------------------- Supplier payment terms (100) */
@@ -1844,6 +1938,21 @@ export interface Repository {
   recordAgreementVersion(supplierId: string, input: RecordAgreementVersionInput, byUserId: string): Promise<SupplierAgreementVersion>;
   /** The supplier confirms a recorded version is what they signed. */
   acknowledgeAgreementVersion(versionId: string, byUserId: string): Promise<SupplierAgreementVersion>;
+
+  /* Delivery scheduling (101) — a booked day, in the supplier's real windows, at a ready site */
+  getDeliveryBoard(byUserId: string): Promise<DeliveryBoard>;
+  /** Bookable slots for this PO's supplier over the next 60 days. */
+  getDeliverySlots(poId: string, byUserId: string): Promise<DeliverySlotView | null>;
+  /** Admin: which items are ready at the site, and who on site said so. */
+  setSiteReadiness(dealId: string, input: { items: Record<SiteReadinessItem, boolean>; contactName: string }, byUserId: string): Promise<SiteReadiness>;
+  /** Admin books the first date. Refused until the site is confirmed ready. */
+  scheduleDelivery(poId: string, input: ScheduleDeliveryInput, byUserId: string): Promise<DeliveryScheduleResult>;
+  /** Admin or the supplier moves a booked date; always with a reason. */
+  rescheduleDelivery(poId: string, input: RescheduleDeliveryInput, byUserId: string): Promise<DeliveryScheduleResult>;
+  /** The delivery turned up and the site wasn't ready. Distinct from a reschedule. */
+  recordDeliveryAttempt(poId: string, note: string, byUserId: string): Promise<DeliverySchedule>;
+  /** A supplier sets its own windows; Admin can on their behalf. */
+  saveDispatchAvailability(input: SaveAvailabilityInput, byUserId: string): Promise<SupplierDispatchAvailability>;
 
   /* Supplier payment terms (100) — the root every supplier payment runs on */
   getSupplierPaymentTerms(byUserId: string): Promise<SupplierPaymentTermsView>;
