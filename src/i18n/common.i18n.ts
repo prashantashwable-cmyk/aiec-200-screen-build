@@ -119,6 +119,7 @@ const common: ScreenTranslations = {
     nav: {
       home: 'Home',
       map: 'Map',
+      installation: 'Installation',
       analytics: 'Analytics',
       alerts: 'Alerts',
       settings: 'Settings',
@@ -494,6 +495,7 @@ const common: ScreenTranslations = {
     nav: {
       home: 'होम',
       map: 'नक्शा',
+      installation: 'इंस्टॉलेशन',
       analytics: 'विश्लेषण',
       alerts: 'चेतावनी',
       settings: 'सेटिंग',
@@ -869,6 +871,7 @@ const common: ScreenTranslations = {
     nav: {
       home: 'होम',
       map: 'नकाशा',
+      installation: 'इन्स्टॉलेशन',
       analytics: 'विश्लेषण',
       alerts: 'सूचना',
       settings: 'सेटिंग',

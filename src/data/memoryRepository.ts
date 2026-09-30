@@ -212,6 +212,15 @@ import type {
   JobIssuesView,
   JobIssueView,
   MaterialLogView,
+  InstallTimelineView,
+  TimelineAudience,
+  TimelineEvent,
+  TimelineIssueView,
+  TimelineListItem,
+  TimelineMilestone,
+  TimelineStepView,
+  TimelineTeamMember,
+  TimelineDelayReason,
   MaterialPlanLine,
   MaterialPoolItem,
   MaterialSupplierPattern,
@@ -351,6 +360,7 @@ import type {
   JobIssue,
   JobIssueEvent,
   JobMaterialLog,
+  InstallSopPhase,
   JobMaterialUse,
   MaterialDeviationKind,
   IssuePatternReview,
@@ -534,6 +544,8 @@ import { DISPUTE_TARGET, NOTE_MIN, POSITION_MIN, REOPEN_WINDOW, canPartial, deci
 import { SOS_CANCEL_WINDOW_MS, SOS_SAME_INCIDENT } from '@/features/safety/sos';
 import { capturedAtProblem, completionProblem, isDone, missingSlots, naProblem, qcReadiness, slotsFor, stepApplies, suggestedNext, unmetDependencies, versionInForce as installVersionInForce } from '@/features/technician/installSop';
 import type { SpecFacts } from '@/features/technician/installSop';
+import { PHASES, REASON_OF, estimateOf, freshnessOf, plannedDuration, stageExpectedAt } from '@/features/technician/timeline';
+import type { Estimate, PlannedDuration } from '@/features/technician/timeline';
 import { REASON_MIN, extrasCost, identifierKind, isSupplierFault, leftoverValue, logProblems } from '@/features/technician/materials';
 import { RESOLVE_TARGET, blockedMs, canReopen, canResolve, categoryCounts, minSeverityFor, patternsOf, pausesWork, reportProblem, severityAtLeast, NOTE_MIN as ISSUE_NOTE_MIN } from '@/features/technician/issues';
 import { MAX_FAILS, SAFETY_ITEMS, defOf as safetyDefOf, disagreementProblem, failCount, fixProblem, isCleared, itemsFor as safetyItemsForSpec, overrideProblem, readiness as safetyReadiness, resultProblem, safetyState, DISAGREEMENT_NOTE_MIN, RESOLUTION_NOTE_MIN } from '@/features/technician/safety';
@@ -5826,6 +5838,183 @@ function syncMaterialDeviations(automated: boolean, now: number): void {
     if (automated) logAutomatedAction({ sourceKey: 'materials.supplier_pattern', triggeringCondition: `${p.supplierName}'s parts were replaced ${p.deviations} times across ${p.jobs} jobs`, actionTaken: 'Raised an alert pointing at the supplier’s scorecard', affectedRecordId: p.supplierId, affectedRecordType: 'other', subjectLabel: p.supplierName });
   }
   for (const a of alerts) if (a.relatedId?.startsWith('matdev:') && a.status !== 'resolved' && !live.has(a.relatedId)) patchInPlace(alerts, a.id, { status: 'resolved', resolvedAt: at, resolvedBy: 'system', resolutionNote: 'No longer a pattern.' });
+}
+
+/* ============================== Installation progress timeline (129) */
+
+interface TimelineCore {
+  steps: { def: InstallSopStepDef; step: JobStep }[];
+  stepsDone: number;
+  stepsTotal: number;
+  current: InstallSopPhase | null;
+  estimate: Estimate;
+  planned: PlannedDuration;
+  stoppedNow: boolean;
+  blocked: number;
+  openStops: JobIssue[];
+}
+
+/** Who may follow this job's timeline, and in which words: a customer only for a deal of their own. */
+function timelineActor(jobId: string, userId: string): { job: Job; user: User; audience: TimelineAudience } {
+  const user = byId(users, userId);
+  const job = byId(jobs, jobId);
+  if (!user) throw new RepositoryError('forbidden');
+  if (!job) throw new RepositoryError('not_found');
+  if (user.role === 'admin') return { job, user, audience: 'staff' };
+  if (user.role === 'technician') {
+    if (!isOnJob(job, userId)) throw new RepositoryError('forbidden');
+    return { job, user, audience: 'staff' };
+  }
+  if (user.role === 'customer') {
+    if (byId(deals, job.dealId)?.customerId !== user.id) throw new RepositoryError('forbidden');
+    return { job, user, audience: 'customer' };
+  }
+  throw new RepositoryError('forbidden');
+}
+
+/** The one reading of how far a job is and when it will be done, shared by the timeline and the list, so they can never disagree. */
+function timelineCoreOf(job: Job, now: number): TimelineCore {
+  const spec = sopSpecOf(job);
+  const steps = sopVersionOf(job).steps.flatMap((def) => {
+    const step = job.steps.find((x) => x.id === def.id);
+    return step && stepApplies(def, spec) ? [{ def, step }] : [];
+  });
+  const stepsDone = steps.filter((x) => isDone(x.step)).length;
+  const own = jobIssues.filter((i) => i.jobId === job.id);
+  const openStops = own.filter((i) => i.status === 'open' && pausesWork(i.severity));
+  const stoppedNow = openStops.length > 0 || job.status === 'on_hold';
+  const blocked = blockedMs(own, now);
+  const finished = jobs.filter((j) => j.status === 'completed' && j.id !== job.id);
+  const planned = plannedDuration(finished);
+  // A report that has just stopped the work is expected to take its resolve target to clear: the date moves the moment it is logged, and
+  // only moves further (day by day) once that time has passed with it still open.
+  const stopAllowanceMs = openStops.reduce((max, i) => Math.max(max, RESOLVE_TARGET[i.severity as 'blocking' | 'safety'] - (now - new Date(i.createdAt).getTime())), 0);
+  const estimate = estimateOf({ now, scheduledFor: job.scheduledFor, startedAt: job.startedAt, completedAt: job.completedAt, stepsTotal: steps.length, stepsDone, plannedMs: planned.ms, blockedMs: blocked, stoppedNow, stopAllowanceMs });
+  const firstOpen = steps.find((x) => !isDone(x.step));
+  const currentStep = steps.find((x) => x.step.status === 'current') ?? firstOpen;
+  return { steps, stepsDone, stepsTotal: steps.length, current: currentStep ? currentStep.def.phase : null, estimate, planned, stoppedNow, blocked, openStops };
+}
+
+function timelineViewOf(job: Job, user: User, audience: TimelineAudience, now: number): InstallTimelineView {
+  const core = timelineCoreOf(job, now);
+  const staff = audience === 'staff';
+  const own = jobIssues.filter((i) => i.jobId === job.id);
+  const hidden = audience === 'customer' && !!job.customerTimelineHidden;
+  const iso = (ms: number) => new Date(ms).toISOString();
+  const start = job.startedAt ? new Date(job.startedAt).getTime() : new Date(job.scheduledFor).getTime();
+  const totalSteps = Math.max(1, core.stepsTotal);
+  const remainingAll = core.steps.filter((x) => !isDone(x.step)).length;
+
+  let throughDone = 0;
+  let throughRemaining = 0;
+  const milestones: TimelineMilestone[] = PHASES.flatMap((phase) => {
+    const inPhase = core.steps.filter((x) => x.def.phase === phase);
+    if (inPhase.length === 0) return [];
+    const done = inPhase.filter((x) => isDone(x.step));
+    throughDone += inPhase.length;
+    throughRemaining += inPhase.length - done.length;
+    const allDone = done.length === inPhase.length;
+    const doneAt = allDone ? (inPhase.map((x) => x.step.completedAt).filter((x): x is string => !!x).sort().pop() ?? null) : null;
+    const originalAt = start + core.planned.ms * (throughDone / totalSteps);
+    const expectedMs = allDone ? null : stageExpectedAt(now, core.estimate.currentAt, throughRemaining, remainingAll);
+    const compareTo = doneAt ? new Date(doneAt).getTime() : (expectedMs ?? originalAt);
+    const slipDays = Math.round((compareTo - originalAt) / 86_400_000);
+    const stops = core.openStops.filter((i) => (i.stepId ? inPhase.some((x) => x.def.id === i.stepId) : phase === core.current));
+    return [
+      {
+        phase,
+        status: allDone ? ('done' as const) : phase === core.current ? ('current' as const) : ('upcoming' as const),
+        blocked: !allDone && stops.length > 0,
+        stepsDone: done.length,
+        stepsTotal: inPhase.length,
+        evidenceCount: inPhase.reduce((sum, x) => sum + x.step.evidenceCount, 0),
+        doneAt,
+        expectedAt: expectedMs === null ? null : iso(expectedMs),
+        originalAt: iso(originalAt),
+        slipDays,
+        steps: staff ? inPhase.map((x): TimelineStepView => ({ id: x.step.id, labelKey: x.step.labelKey, status: x.step.status, completedAt: x.step.completedAt ?? null, completedByName: x.step.completedByName ?? null, evidenceCount: x.step.evidenceCount, safetyCritical: x.def.safetyCritical, notApplicable: !!x.step.notApplicable })) : [],
+        issues: staff ? own.filter((i) => (i.stepId ? inPhase.some((x) => x.def.id === i.stepId) : false)).map((i): TimelineIssueView => ({ id: i.id, code: i.code, category: i.category, severity: i.severity, status: i.status, createdAt: i.createdAt, resolvedAt: i.resolution?.at ?? null })) : [],
+      },
+    ];
+  });
+
+  // What made it later, in the words of a cause, never the report itself.
+  const reasons: InstallTimelineView['reasons'] = [];
+  const push = (code: TimelineDelayReason, open: boolean) => {
+    const existing = reasons.find((r) => r.code === code);
+    if (existing) existing.open = existing.open || open;
+    else reasons.push({ code, open });
+  };
+  for (const i of own) if (pausesWork(i.severity)) push(REASON_OF[i.category], i.status === 'open');
+  if (job.status === 'materials_pending' && new Date(job.scheduledFor).getTime() <= now) push('materials_pending', true);
+  if (job.status === 'on_hold' && core.openStops.length === 0) push('hold', true);
+  if (core.estimate.slipped && core.estimate.pace > 1.15 && !job.completedAt) push('pace', true);
+
+  const stamps = [job.startedAt, ...job.steps.map((x) => x.completedAt), ...job.steps.flatMap((x) => (x.evidence ?? []).map((e) => e.capturedAt)), ...own.map((i) => i.createdAt), ...own.map((i) => i.resolution?.at)].filter((x): x is string => !!x).map((x) => new Date(x).getTime());
+  const lastAt = stamps.length ? Math.max(...stamps) : null;
+  const lastDone = core.steps.filter((x) => x.step.completedAt).sort((a, b) => (b.step.completedAt ?? '').localeCompare(a.step.completedAt ?? ''))[0];
+  const lastPhaseDone = lastDone ? core.steps.filter((x) => x.def.phase === lastDone.def.phase).every((x) => isDone(x.step)) : false;
+  const nextStarted = core.steps.some((x) => x.def.phase === core.current && !isDone(x.step) && x.step.evidenceCount > 0) || milestones.some((m) => m.phase === core.current && m.stepsDone > 0);
+  const freshness = freshnessOf({ status: job.status, lastAt, now, stoppedNow: core.stoppedNow, nextStarted, justCompletedStage: lastPhaseDone && !!lastDone && lastDone.def.phase !== core.current });
+
+  const events: TimelineEvent[] = staff
+    ? [
+        ...(job.startedAt ? [{ id: 'started', at: job.startedAt, kind: 'started' as const, labelKey: null, byName: null, code: null, severity: null }] : []),
+        ...core.steps.filter((x) => x.step.completedAt).map((x) => ({ id: `step-${x.step.id}`, at: x.step.completedAt as string, kind: 'step_done' as const, labelKey: x.step.labelKey, byName: x.step.completedByName ?? null, code: null, severity: null })),
+        ...own.flatMap((i) => [
+          { id: `iss-${i.id}`, at: i.createdAt, kind: 'issue_reported' as const, labelKey: null, byName: i.reportedByName, code: i.code, severity: i.severity },
+          ...(i.resolution ? [{ id: `res-${i.id}`, at: i.resolution.at, kind: 'issue_resolved' as const, labelKey: null, byName: i.resolution.byName, code: i.code, severity: i.severity }] : []),
+        ]),
+        ...(job.completedAt ? [{ id: 'completed', at: job.completedAt, kind: 'completed' as const, labelKey: null, byName: null, code: null, severity: null }] : []),
+      ]
+        .sort((a, b) => b.at.localeCompare(a.at))
+        .slice(0, 30)
+    : [];
+
+  const team: TimelineTeamMember[] = staff
+    ? peopleOn(job).map((uid): TimelineTeamMember => {
+        const person = byId(users, uid);
+        const ownIds = ownStepIds(job, uid);
+        const mine = ownIds === null ? null : core.steps.filter((x) => ownIds.includes(x.step.id));
+        return {
+          userId: uid,
+          name: person?.name ?? uid,
+          role: roleOf(job, uid) ?? 'assistant',
+          owned: mine === null ? null : mine.length,
+          ownedDone: mine === null ? core.stepsDone : mine.filter((x) => isDone(x.step)).length,
+          completedByThem: core.steps.filter((x) => x.step.completedByName && x.step.completedByName === person?.name).length,
+          onSiteNow: siteCheckIns.some((v) => v.jobId === job.id && v.userId === uid && !v.checkOutAt),
+        };
+      })
+    : [];
+
+  return {
+    audience,
+    job: { id: job.id, code: job.code, siteName: job.siteName, status: job.status, scheduledFor: job.scheduledFor, startedAt: job.startedAt ?? null, completedAt: job.completedAt ?? null },
+    hiddenFromCustomer: !!job.customerTimelineHidden,
+    progress: { stepsDone: core.stepsDone, stepsTotal: core.stepsTotal, percent: core.stepsTotal ? Math.round((core.stepsDone / core.stepsTotal) * 100) : 0 },
+    current: core.current,
+    milestones: hidden ? [] : milestones,
+    estimate: hidden
+      ? null
+      : {
+          originalAt: iso(core.estimate.originalAt),
+          currentAt: iso(core.estimate.currentAt),
+          slipDays: core.estimate.slipDays,
+          slipped: core.estimate.slipped,
+          atLeast: core.estimate.atLeast && !job.completedAt,
+          basis: core.planned.basis,
+          plannedDays: Math.round(core.planned.ms / 86_400_000),
+          pace: staff ? Math.round(core.estimate.pace * 100) / 100 : null,
+        },
+    reasons: hidden ? [] : reasons,
+    freshness,
+    lastUpdateAt: lastAt === null ? null : iso(lastAt),
+    blockedMs: staff ? core.blocked : 0,
+    events,
+    team,
+    canToggleVisibility: user.role === 'admin',
+  };
 }
 
 /* ============================== Installation SOP (123) */
@@ -11960,6 +12149,37 @@ export const memoryRepository: Repository = {
       if (unmetDependencies(def as InstallSopStepDef, job.steps).length > 0) throw new RepositoryError('depends_on');
       const updated = patchInPlace(jobs, job.id, { steps: withCurrent(job.steps, sopVersionOf(job).steps, stepId) });
       return installationSopViewOf(updated, technicianId);
+    }),
+
+  /* --------------------------------- Installation progress timeline (129) */
+  getInstallationTimeline: (jobId, userId) =>
+    simulateRead((): InstallTimelineView => {
+      const { job, user, audience } = timelineActor(jobId, userId);
+      return timelineViewOf(job, user, audience, Date.now());
+    }),
+
+  listInstallationTimelines: (userId) =>
+    simulateRead((): TimelineListItem[] => {
+      const user = byId(users, userId);
+      if (!user) throw new RepositoryError('forbidden');
+      const now = Date.now();
+      const mine = jobs.filter((j) => (user.role === 'admin' ? true : user.role === 'technician' ? isOnJob(j, userId) : user.role === 'customer' ? byId(deals, j.dealId)?.customerId === userId : false));
+      return mine
+        .map((j): TimelineListItem => {
+          const core = timelineCoreOf(j, now);
+          const hiddenFromCustomer = user.role === 'customer' && !!j.customerTimelineHidden;
+          return { jobId: j.id, code: j.code, siteName: j.siteName, status: j.status, percent: core.stepsTotal ? Math.round((core.stepsDone / core.stepsTotal) * 100) : 0, currentAt: hiddenFromCustomer ? null : new Date(core.estimate.currentAt).toISOString(), slipDays: core.estimate.slipDays, slipped: core.estimate.slipped, blocked: core.stoppedNow, current: core.current, hiddenFromCustomer };
+        })
+        .sort((a, b) => (a.status === 'completed' ? 1 : 0) - (b.status === 'completed' ? 1 : 0) || a.code.localeCompare(b.code));
+    }),
+
+  setTimelineCustomerVisible: (jobId, visible, note, adminId) =>
+    simulateWrite((): InstallTimelineView => {
+      adminOnly(adminId);
+      const { job, user } = timelineActor(jobId, adminId);
+      if (!visible && note.trim().length < 8) throw new RepositoryError('reason_required');
+      const updated = patchInPlace(jobs, job.id, { customerTimelineHidden: visible ? undefined : { at: new Date().toISOString(), byName: user.name, ...(note.trim() ? { note: note.trim() } : {}) } });
+      return timelineViewOf(updated, user, 'staff', Date.now());
     }),
 
   /* --------------------------------- As-installed material log (128) */

@@ -1654,6 +1654,118 @@ export interface JobIssueView {
   local?: boolean;
 }
 
+/* ------------------------------------ Installation progress timeline (129) */
+
+export type TimelineAudience = 'staff' | 'customer';
+export type TimelineFreshness = 'not_started' | 'done' | 'blocked' | 'just_completed' | 'quiet' | 'in_progress';
+export type TimelineDelayReason = 'parts' | 'site' | 'readiness' | 'safety' | 'other' | 'materials_pending' | 'hold' | 'pace';
+
+export interface TimelineStepView {
+  id: string;
+  labelKey: string;
+  status: JobStep['status'];
+  completedAt: string | null;
+  completedByName: string | null;
+  evidenceCount: number;
+  safetyCritical: boolean;
+  notApplicable: boolean;
+}
+
+export interface TimelineIssueView {
+  id: string;
+  code: string;
+  category: IssueCategory;
+  severity: IssueSeverity;
+  status: 'open' | 'resolved';
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
+export interface TimelineMilestone {
+  phase: InstallSopPhase;
+  status: 'done' | 'current' | 'upcoming';
+  /** Work on this stage is stopped by an open report. */
+  blocked: boolean;
+  stepsDone: number;
+  stepsTotal: number;
+  evidenceCount: number;
+  doneAt: string | null;
+  /** When it is now expected, for a stage not yet done. */
+  expectedAt: string | null;
+  /** When it was first expected. */
+  originalAt: string;
+  slipDays: number;
+  /** The underlying procedure steps and reports: staff only. */
+  steps: TimelineStepView[];
+  issues: TimelineIssueView[];
+}
+
+export interface TimelineEvent {
+  id: string;
+  at: string;
+  kind: 'started' | 'step_done' | 'issue_reported' | 'issue_resolved' | 'completed';
+  labelKey: string | null;
+  byName: string | null;
+  code: string | null;
+  severity: IssueSeverity | null;
+}
+
+export interface TimelineTeamMember {
+  userId: string;
+  name: string;
+  role: 'lead' | 'assistant';
+  /** Steps this person is responsible for, and how many of them are done (an assistant's own; the lead answers for the whole job). */
+  owned: number | null;
+  ownedDone: number;
+  completedByThem: number;
+  onSiteNow: boolean;
+}
+
+export interface TimelineEstimateView {
+  originalAt: string;
+  currentAt: string;
+  slipDays: number;
+  slipped: boolean;
+  /** Work is stopped, so this is the earliest it could be. */
+  atLeast: boolean;
+  basis: 'typical' | 'default';
+  plannedDays: number;
+  /** How the work has gone against plan: above 1 is slower. Staff only. */
+  pace: number | null;
+}
+
+export interface InstallTimelineView {
+  audience: TimelineAudience;
+  job: { id: string; code: string; siteName: string; status: Job['status']; scheduledFor: string; startedAt: string | null; completedAt: string | null };
+  /** Admin turned this off for the customer: they are told it will be available shortly. */
+  hiddenFromCustomer: boolean;
+  progress: { stepsDone: number; stepsTotal: number; percent: number };
+  current: InstallSopPhase | null;
+  milestones: TimelineMilestone[];
+  estimate: TimelineEstimateView | null;
+  reasons: { code: TimelineDelayReason; open: boolean }[];
+  freshness: TimelineFreshness;
+  lastUpdateAt: string | null;
+  blockedMs: number;
+  events: TimelineEvent[];
+  team: TimelineTeamMember[];
+  canToggleVisibility: boolean;
+}
+
+export interface TimelineListItem {
+  jobId: string;
+  code: string;
+  siteName: string;
+  status: Job['status'];
+  percent: number;
+  currentAt: string | null;
+  slipDays: number;
+  slipped: boolean;
+  blocked: boolean;
+  current: InstallSopPhase | null;
+  hiddenFromCustomer: boolean;
+}
+
 /* ------------------------------------ As-installed material log (128) */
 
 /** One line of the bill of materials the job was planned with: the deal's order lines, as they stand on the delivery records. */
@@ -4334,6 +4446,13 @@ export interface Repository {
   pingSiteLocation(technicianId: string, point: GeoPoint, at?: string): Promise<void>;
   /** Picks which step to do next, when the site does not allow the suggested order. Only steps whose prerequisites are done. */
   focusSopStep(jobId: string, stepId: string, technicianId: string): Promise<InstallationSopView>;
+
+  /* Installation progress timeline (129) */
+  getInstallationTimeline(jobId: string, userId: string): Promise<InstallTimelineView>;
+  /** The installations this person may follow: a technician's own, a customer's, or every one for Admin. */
+  listInstallationTimelines(userId: string): Promise<TimelineListItem[]>;
+  /** Admin only: shows or hides the customer's view of a job's timeline. Hiding needs a reason. */
+  setTimelineCustomerVisible(jobId: string, visible: boolean, note: string, adminId: string): Promise<InstallTimelineView>;
 
   /* As-installed material log (128) */
   getMaterialLog(jobId: string, userId: string): Promise<MaterialLogView>;

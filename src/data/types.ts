@@ -2750,6 +2750,8 @@ export interface Job {
   sopVersion?: number;
   /** Where a job goes back to when a hold that an issue report put on it is lifted (127). Set only while such a hold is in place. */
   resumeStatus?: JobStatus;
+  /** Admin has turned the customer's view of this job's timeline off (129), with when, by whom and why. Unset means the customer sees it. */
+  customerTimelineHidden?: { at: string; byName: string; note?: string };
   isDemo: boolean;
 }
 
