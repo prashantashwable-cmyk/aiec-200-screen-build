@@ -29,6 +29,7 @@ export function useTechnicianHome() {
   const [lastSyncedAt, setLastSyncedAt] = useState<string>(() => localStorage.getItem(LAST_SYNC_KEY) ?? new Date().toISOString());
   const [busy, setBusy] = useState(false);
   const [qcOpen, setQcOpen] = useState(0);
+  const [reworkOpen, setReworkOpen] = useState(0);
 
   useEffect(() => {
     const on = () => setIsOnline(true);
@@ -47,6 +48,8 @@ export function useTechnicianHome() {
       setHome(await repository.getTechnicianHome(user.id));
       // Quality checks the person has been named to make (131): a card on the home only when there are some.
       setQcOpen(await repository.getQcBoard(user.id).then((b) => b.rows.filter((r) => r.assignment && r.assignment.status !== 'completed').length).catch(() => 0));
+      // Rework the person has been given to put right (136).
+      setReworkOpen(await repository.getSnagBoard(user.id).then((b) => b.rows.filter((r) => r.ownerId === user.id && (r.status === 'assigned' || r.status === 'in_progress')).length).catch(() => 0));
       const at = new Date().toISOString();
       localStorage.setItem(LAST_SYNC_KEY, at);
       setLastSyncedAt(at);
@@ -97,5 +100,5 @@ export function useTechnicianHome() {
       await repository.cancelFieldSos(sos.id, user.id);
     });
 
-  return { status, home, isOnline, lastSyncedAt, busy, qcOpen, reload, refresh: load, beginSos, cancelSos };
+  return { status, home, isOnline, lastSyncedAt, busy, qcOpen, reworkOpen, reload, refresh: load, beginSos, cancelSos };
 }

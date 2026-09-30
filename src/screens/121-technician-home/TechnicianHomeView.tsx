@@ -285,6 +285,17 @@ export function TechnicianHomeView() {
             </Card>
           )}
 
+          {s.reworkOpen > 0 && (
+            <Card flush className="mb-4">
+              <ListRow
+                title={t("rework.list.mine")}
+                subtitle={t("rework.list.heading")}
+                trailing={<Badge tone="accent">{s.reworkOpen}</Badge>}
+                onClick={() => navigate("/rework")}
+              />
+            </Card>
+          )}
+
           <h2 className="t-lg mb-2">{t(K.upcoming.heading)}</h2>
           {h.upcoming.length === 0 ? (
             <Card body={t(K.upcoming.empty)} />

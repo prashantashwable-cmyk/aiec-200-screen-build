@@ -1292,7 +1292,7 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
             dueAt: plus(r.raisedAt, ASSIGN_DUE[r.severity]),
             state: r.status === 'open' && !r.ownerId ? ('open' as const) : ('done' as const),
             paused: false,
-            actionRoute: `/snags/${r.jobId}?snag=${r.id}`,
+            actionRoute: `/rework/${r.id}`,
             oversightRoute: `/snags/${r.jobId}?snag=${r.id}`,
           };
         });
@@ -1321,7 +1321,7 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
             // A disagreement with the finding waits for Admin's decision, not the clock.
             paused: r.status === 'disputed',
             completedAt: r.fixedAt,
-            actionRoute: `/snags/${r.jobId}?snag=${r.id}`,
+            actionRoute: `/rework/${r.id}`,
             oversightRoute: `/snags/${r.jobId}?snag=${r.id}`,
           };
         });
@@ -1385,6 +1385,35 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
             oversightRoute: `/snags/${r.jobId}?snag=${r.id}`,
           };
         });
+    },
+  },
+  {
+    // A part the fix needs that was not delivered becomes a small purchase order, raised by Admin within a day of the request (136).
+    kind: 'snag_part_order',
+    nudgeBefore: hours(4),
+    escalateAfter: hours(12),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'quality',
+    collect(src) {
+      const admin = adminId(src);
+      return src.snags.flatMap((r) =>
+        (r.rework?.parts ?? []).map((p) => {
+          const job = src.jobs.find((j) => j.id === r.jobId);
+          return {
+            ...base('snag_part_order', 'snag', `${r.id}:${p.id}`),
+            ownerUserId: admin,
+            titleKey: 'work.title.snag_part_order',
+            titleParams: { snag: r.code, job: job?.code ?? '', what: p.description },
+            dueAt: plus(p.requestedAt, hours(24)),
+            state: p.poId ? ('done' as const) : ('open' as const),
+            paused: false,
+            completedAt: p.orderedAt,
+            actionRoute: `/rework/${r.id}`,
+            oversightRoute: `/rework/${r.id}`,
+          };
+        }),
+      );
     },
   },
   {

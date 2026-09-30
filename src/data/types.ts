@@ -649,6 +649,8 @@ export interface SupplierPurchaseOrder {
   paymentTerms?: PurchaseOrderPaymentSnapshot;
   /** Set when its deal was cancelled after the order was placed, and Admin decided what to do (106). */
   orphanResolution?: PurchaseOrderOrphanResolution;
+  /** Set on a small replacement order raised to put a snag right (136). */
+  reworkSnagId?: string;
   isDemo: boolean;
 }
 
@@ -2709,7 +2711,7 @@ export interface QcMechCheck {
   isDemo: boolean;
 }
 
-export type SnagEventKind = 'raised' | 'failed_again' | 'assigned' | 'reassigned' | 'regraded' | 'linked' | 'disputed' | 'dispute_decided' | 'ready_for_retest' | 'verified' | 'waived' | 'withdrawn';
+export type SnagEventKind = 'raised' | 'failed_again' | 'assigned' | 'reassigned' | 'handed_back' | 'rework_started' | 'escalated' | 'part_requested' | 'part_ordered' | 'regraded' | 'linked' | 'disputed' | 'dispute_decided' | 'ready_for_retest' | 'verified' | 'waived' | 'withdrawn';
 /** Append-only: what happened to a snag, by whom, and why. */
 export interface SnagEvent {
   id: string;
@@ -2760,7 +2762,35 @@ export interface ReworkRequest {
   /** Closed because the primary snag of its group was resolved. */
   resolvedVia?: string;
   events: SnagEvent[];
+  /** The work of putting it right (136): each attempt, the parts it needed, and how its scope grew. */
+  rework?: { rounds: ReworkRound[]; parts: ReworkPartRequest[]; scope: { at: string; byName: string; note: string; from: 'safety_critical' | 'functional' | 'cosmetic'; to: 'safety_critical' | 'functional' | 'cosmetic' }[] };
   isDemo: boolean;
+}
+
+/** One attempt at putting a snag right. A retest that fails again starts the next round; earlier rounds stay on the record. */
+export interface ReworkRound {
+  n: number;
+  startedAt: string;
+  startedById: string;
+  startedByName: string;
+  completedAt?: string;
+  notes?: string;
+  evidence: JobEvidence[];
+}
+
+/** A part the fix needs that was not part of the original delivery. Admin turns it into a small purchase order. */
+export interface ReworkPartRequest {
+  id: string;
+  description: string;
+  quantity: number;
+  note?: string;
+  requestedByName: string;
+  requestedAt: string;
+  /** The draft purchase order Admin raised for it (092 takes it from there). */
+  poId?: string;
+  itemId?: string;
+  orderedByName?: string;
+  orderedAt?: string;
 }
 
 /* ------------------------------------ QC inspector assignment (131) */
@@ -3663,6 +3693,7 @@ export type CommitmentKind =
   | 'snag_rework'
   | 'snag_reverify'
   | 'snag_dispute_decide'
+  | 'snag_part_order'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'

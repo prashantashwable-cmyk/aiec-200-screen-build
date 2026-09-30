@@ -218,6 +218,10 @@ import type {
   QcMechAttemptView,
   ComplianceCertificateView,
   ComplianceView,
+  ReworkPartOption,
+  ReworkPartView,
+  ReworkRoundView,
+  ReworkView,
   SnagBoardView,
   SnagDetailView,
   SnagRowView,
@@ -416,6 +420,7 @@ import type {
   CertificatePackage,
   ComplianceCertificate,
   SnagEvent,
+  ReworkRound,
   StateInspectionGuidance,
   JobStep,
   BankFeed,
@@ -593,6 +598,7 @@ import { capturedAtProblem, completionProblem, isDone, missingSlots, naProblem, 
 import type { SpecFacts } from '@/features/technician/installSop';
 import { ASSIGN_DUE, DISPUTE_DECIDE_DUE, REWORK_DUE, REVERIFY_DUE, blocksHandover as sgBlocks, decisionProblem as sgDecisionProblem, disputeProblem as sgDisputeProblem, isChecklistSnag as sgIsChecklist, isOpen as sgIsOpen, linkProblem as sgLinkProblem, raiseProblem as sgRaiseProblem, regradeProblem as sgRegradeProblem, severityOfSource as sgSeverityOfSource, severityRank as sgRank, verifyProblem as sgVerifyProblem, waiveProblem as sgWaiveProblem } from '@/features/qc/snags';
 import type { DisputeDecision, SnagSeverity } from '@/features/qc/snags';
+import { completeProblem as rwCompleteProblem, escalateProblem as rwEscalateProblem, handBackProblem as rwHandBackProblem, partProblem as rwPartProblem, partStatusOf as rwPartStatus, reassignProblem as rwReassignProblem, urgencyOf as rwUrgency } from '@/features/qc/rework';
 import { guidanceProblem, primaryOf as certPrimaryOf, readinessOf as certReadiness, reissueProblem as certReissueProblem, standardFor as certStandardFor, standardsProblem as certStandardsProblem } from '@/features/qc/compliance';
 import { ELEC_ITEMS, defOf as elecDef, attemptProblem as elecAttemptProblem, signOffProblem as elecSignOffProblem, stateOf as elecStateOf, suggestVerdict as elecSuggest } from '@/features/qc/electrical';
 import { MECH_ITEMS, INSTALL_STEPS, NOTE_MIN as NOTE_MIN_MECH, attemptProblem as mechAttemptProblem, itemState, isCleared as isMechCleared, signOffProblem as mechSignOffProblem, suggestVerdict as mechSuggest } from '@/features/qc/mechanical';
@@ -7056,7 +7062,7 @@ function syncSnagAlerts(now: number): void {
   const at = new Date(now).toISOString();
   const live = new Set<string>();
   for (const r of reworkRequests) {
-    if (r.source !== 'snag' || !sgBlocks(r)) continue;
+    if (r.source === 'qc_electrical' || !sgBlocks(r)) continue;
     const job = byId(jobs, r.jobId);
     if (!job) continue;
     const key = `snag:${r.id}`;
@@ -7068,6 +7074,67 @@ function syncSnagAlerts(now: number): void {
 
 /** Whether anything on this job stops handover: the one answer the handover screens read. */
 const snagBlockingOf = (jobId: string): number => (ensureSnagSeeds(), reworkRequests).filter((r) => r.jobId === jobId && sgBlocks(r)).length;
+
+/* ============================== Rework assignment (136) */
+
+const reworkOf = (r: ReworkRequest) => r.rework ?? (r.rework = { rounds: [], parts: [], scope: [] });
+/** A snag linked to others is put right once, at its root: the whole open group moves together. */
+const reworkGroupOf = (r: ReworkRequest): ReworkRequest[] => (r.groupId ? reworkRequests.filter((x) => x.groupId === r.groupId && sgIsOpen(x.status) && x.status !== 'disputed') : [r]);
+
+function reworkViewOf(r: ReworkRequest, userId: string, now: number): ReworkView {
+  const job = byId(jobs, r.jobId) as Job;
+  const detail = snagDetailOf(r, userId, now);
+  const role: SnagRole = snagRoleOf(job, r, userId) ?? 'crew';
+  const rw = r.rework ?? { rounds: [], parts: [], scope: [] };
+  const roundView = (x: ReworkRound): ReworkRoundView => ({ n: x.n, startedAt: x.startedAt, startedByName: x.startedByName, completedAt: x.completedAt ?? null, notes: x.notes ?? null, evidence: x.evidence.map((e) => ({ id: e.id, kind: e.kind, previewUrl: e.previewUrl, ...(e.mediaUrl ? { mediaUrl: e.mediaUrl } : {}), capturedAt: e.capturedAt })) });
+  const rounds = rw.rounds.map(roundView);
+  const working = r.status === 'assigned' || r.status === 'in_progress';
+  const isOwner = role === 'owner';
+  return {
+    snag: detail,
+    job: { id: job.id, code: job.code, siteName: job.siteName, address: job.address, location: job.location, status: job.status },
+    viewer: role === 'crew' ? 'crew' : role,
+    urgency: rwUrgency(r.severity),
+    rounds,
+    currentRound: rounds.find((x) => !x.completedAt) ?? null,
+    parts: rw.parts.map((p): ReworkPartView => {
+      const po = p.poId ? byId(supplierPurchaseOrders, p.poId) : undefined;
+      const line = po?.lineItems?.[0];
+      return { id: p.id, description: p.description, quantity: p.quantity, note: p.note ?? null, requestedByName: p.requestedByName, requestedAt: p.requestedAt, status: rwPartStatus(p, po ? { status: po.status, lineDelivered: line?.fulfilmentStage === 'delivered' || !!po.receivedAt, lineShipped: line?.fulfilmentStage === 'shipped' } : null), poCode: po?.code ?? null, orderedByName: p.orderedByName ?? null };
+    }),
+    scope: rw.scope.map((x) => ({ ...x })),
+    technicians: role === 'admin' ? users.filter((u) => u.role === 'technician' && u.status === 'active').map((u) => ({ id: u.id, name: u.name, openRework: reworkRequests.filter((x) => x.ownerId === u.id && (x.status === 'assigned' || x.status === 'in_progress')).length })) : [],
+    actions: {
+      assign: role === 'admin' && r.status === 'open' && !r.ownerId,
+      reassign: role === 'admin' && working && !!r.ownerId,
+      start: isOwner && r.status === 'assigned',
+      complete: isOwner && r.status === 'in_progress',
+      handBack: isOwner && working,
+      escalate: (isOwner || role === 'admin') && sgIsOpen(r.status) && r.status !== 'disputed' && r.status !== 'ready_for_retest',
+      requestPart: isOwner && working,
+      orderPart: role === 'admin' && rw.parts.some((p) => !p.poId),
+    },
+  };
+}
+
+function reworkOwnerOf(snagId: string, userId: string): { r: ReworkRequest; user: User } {
+  const { r, user, role } = snagOf(snagId, userId, 'read');
+  if (role !== 'owner') throw new RepositoryError('not_owner');
+  return { r, user };
+}
+
+/** What Admin can order for a rework: a live listing of a supplier that can be sent an order now, one per supplier and category. */
+function reworkPartOptions(): ReworkPartOption[] {
+  const out: ReworkPartOption[] = [];
+  for (const supplier of suppliers) {
+    if (!isSupplierEligibleForPO(supplier) || !canIssueNewPo(agreementStateFor(supplier.id).status)) continue;
+    for (const category of new Set(supplierCatalogItems.filter((c) => c.supplierId === supplier.id && c.status === 'active').map((c) => c.category))) {
+      const item = liveCatalogItemFor(supplier.id, category);
+      if (item) out.push({ itemId: item.id, supplierId: supplier.id, supplierName: supplier.name, category, description: item.description, unitPrice: item.unitPrice, leadTimeDays: item.leadTimeDays });
+    }
+  }
+  return out.sort((a, b) => a.category.localeCompare(b.category) || a.unitPrice - b.unitPrice);
+}
 
 /* ============================== Installation SOP (123) */
 
@@ -13264,6 +13331,161 @@ export const memoryRepository: Repository = {
       if (problem) throw new RepositoryError(problem);
       check.signedOff = { at: new Date().toISOString(), byUserId: user.id, byName: user.name };
       return elecViewOf(job, viewer, assignment);
+    }),
+
+  /* --------------------------------- Rework assignment (136) */
+  getRework: (snagId, userId) =>
+    simulateRead((): ReworkView => {
+      const { r } = snagOf(snagId, userId, 'read');
+      return reworkViewOf(r, userId, Date.now());
+    }),
+
+  assignRework: (snagId, technicianId, reason, adminId) =>
+    simulateWrite((): ReworkView => {
+      const { r, user } = snagOf(snagId, adminId, 'admin');
+      if (r.status !== 'open' && r.status !== 'assigned' && r.status !== 'in_progress') throw new RepositoryError('invalid_state');
+      const tech = byId(users, technicianId);
+      if (!tech || tech.role !== 'technician' || tech.status !== 'active') throw new RepositoryError('not_technician');
+      if (r.ownerId === tech.id) throw new RepositoryError('invalid_state');
+      const problem = rwReassignProblem({ hasOwner: !!r.ownerId, reason });
+      if (problem) throw new RepositoryError(problem);
+      const now = Date.now();
+      for (const m of reworkGroupOf(r)) {
+        if (m.status !== 'open' && m.status !== 'assigned' && m.status !== 'in_progress') continue;
+        const again = !!m.ownerId;
+        // The person who had it stops: their open attempt is closed with the reason, and what they did stays on the record.
+        for (const round of m.rework?.rounds ?? []) if (!round.completedAt) Object.assign(round, { completedAt: new Date(now).toISOString(), notes: round.notes ?? `Reassigned: ${reason.trim()}` });
+        Object.assign(m, { ownerId: tech.id, ownerName: tech.name, assignedAt: new Date(now).toISOString(), dueAt: new Date(now + REWORK_DUE[m.severity]).toISOString(), status: 'assigned' as const });
+        m.events.push(snagEvent(again ? 'reassigned' : 'assigned', user.name, reason.trim() ? `${tech.name}: ${reason.trim()}` : tech.name));
+      }
+      return reworkViewOf(r, adminId, now);
+    }),
+
+  startRework: (snagId, technicianId) =>
+    simulateWrite((): ReworkView => {
+      const { r, user } = reworkOwnerOf(snagId, technicianId);
+      if (r.status !== 'assigned') throw new RepositoryError('invalid_state');
+      const at = new Date().toISOString();
+      const rw = reworkOf(r);
+      rw.rounds.push({ n: rw.rounds.length + 1, startedAt: at, startedById: user.id, startedByName: user.name, evidence: [] });
+      for (const m of reworkGroupOf(r)) if (m.ownerId === user.id && m.status === 'assigned') {
+        m.status = 'in_progress';
+        m.events.push(snagEvent('rework_started', user.name, undefined, at));
+      }
+      return reworkViewOf(r, technicianId, Date.now());
+    }),
+
+  completeRework: (snagId, input, technicianId) =>
+    simulateWrite((): ReworkView => {
+      const { r, user } = reworkOwnerOf(snagId, technicianId);
+      const problem = rwCompleteProblem({ status: r.status, notes: input.notes, evidenceCount: input.evidence.length });
+      if (problem) throw new RepositoryError(problem);
+      if (input.evidence.length > 6) throw new RepositoryError('too_many_attachments');
+      const round = reworkOf(r).rounds.find((x) => !x.completedAt);
+      if (!round) throw new RepositoryError('invalid_state');
+      const id = `${r.id}-rw${round.n}`;
+      const evidence = input.evidence.map((m, n) => {
+        const bad = evidenceProblem(m.kind, { kind: m.kind, mimeType: m.mimeType, sizeBytes: m.sizeBytes, durationS: m.durationS });
+        if (bad) throw new RepositoryError(bad);
+        return mediaToEvidence(m, `${id}-ev${n + 1}`, 'qc.rework', user);
+      });
+      const at = new Date().toISOString();
+      Object.assign(round, { completedAt: at, notes: input.notes.trim(), evidence });
+      // Done is never closed: it is handed to QC to re-check, for this snag and every snag that shares its cause.
+      for (const m of reworkGroupOf(r)) if (m.ownerId === user.id && (m.status === 'in_progress' || m.status === 'assigned')) {
+        Object.assign(m, { status: 'ready_for_retest' as const, fixedById: user.id, fixedAt: at });
+        m.events.push(snagEvent('ready_for_retest', user.name, input.notes, at));
+      }
+      return reworkViewOf(r, technicianId, Date.now());
+    }),
+
+  handBackRework: (snagId, reason, technicianId) =>
+    simulateWrite((): ReworkView => {
+      const { r, user } = reworkOwnerOf(snagId, technicianId);
+      if (r.status !== 'assigned' && r.status !== 'in_progress') throw new RepositoryError('invalid_state');
+      const problem = rwHandBackProblem(reason);
+      if (problem) throw new RepositoryError(problem);
+      const at = new Date().toISOString();
+      for (const round of r.rework?.rounds ?? []) if (!round.completedAt) Object.assign(round, { completedAt: at, notes: round.notes ?? `Handed back: ${reason.trim()}` });
+      for (const m of reworkGroupOf(r)) if (m.ownerId === user.id) {
+        m.status = 'open';
+        delete m.ownerId;
+        delete m.ownerName;
+        delete m.assignedAt;
+        delete m.dueAt;
+        m.events.push(snagEvent('handed_back', user.name, reason, at));
+      }
+      return reworkViewOf(r, technicianId, Date.now());
+    }),
+
+  escalateRework: (snagId, input, userId) =>
+    simulateWrite((): ReworkView => {
+      const { r, user, role } = snagOf(snagId, userId, 'read');
+      if (role !== 'owner' && role !== 'admin') throw new RepositoryError('not_owner');
+      if (!sgIsOpen(r.status) || r.status === 'disputed' || r.status === 'ready_for_retest') throw new RepositoryError('invalid_state');
+      const problem = rwEscalateProblem({ from: r.severity, to: input.severity, note: input.note });
+      if (problem) throw new RepositoryError(problem);
+      const now = Date.now();
+      const from = r.severity;
+      reworkOf(r).scope.push({ at: new Date(now).toISOString(), byName: user.name, note: input.note.trim(), from, to: input.severity });
+      r.severity = input.severity;
+      if (r.ownerId && r.dueAt) r.dueAt = new Date(Math.min(new Date(r.dueAt).getTime(), now + REWORK_DUE[input.severity])).toISOString();
+      r.events.push(snagEvent('escalated', user.name, `${from} → ${input.severity}: ${input.note.trim()}`, new Date(now).toISOString()));
+      const job = byId(jobs, r.jobId) as Job;
+      // Reaching safety-critical has its own beacon (the list's); a wider scope at the same or a lower grade still tells Admin.
+      if (input.severity !== 'safety_critical') raiseAlert({ titleKey: 'snagRework.alert.escalated', context: `${job.code} · ${job.siteName}: ${r.title ?? r.itemId}`, severity: 'high', category: 'quality', relatedId: `snagesc:${r.id}:${reworkOf(r).scope.length}`, sourceRoute: `/rework/${r.id}`, location: job.location });
+      syncSnagAlerts(now);
+      return reworkViewOf(r, userId, now);
+    }),
+
+  requestReworkPart: (snagId, input, technicianId) =>
+    simulateWrite((): ReworkView => {
+      const { r, user } = reworkOwnerOf(snagId, technicianId);
+      if (r.status !== 'assigned' && r.status !== 'in_progress') throw new RepositoryError('invalid_state');
+      const problem = rwPartProblem(input);
+      if (problem) throw new RepositoryError(problem);
+      const at = new Date().toISOString();
+      snagCounter += 1;
+      reworkOf(r).parts.push({ id: `rwp-${snagCounter}`, description: input.description.trim(), quantity: input.quantity, ...(input.note?.trim() ? { note: input.note.trim() } : {}), requestedByName: user.name, requestedAt: at });
+      r.events.push(snagEvent('part_requested', user.name, `${input.quantity} × ${input.description.trim()}`, at));
+      return reworkViewOf(r, technicianId, Date.now());
+    }),
+
+  listReworkPartOptions: (adminId) =>
+    simulateRead((): ReworkPartOption[] => {
+      adminOnly(adminId);
+      return reworkPartOptions();
+    }),
+
+  orderReworkPart: (snagId, partId, input, adminId) =>
+    simulateWrite((): ReworkView => {
+      const { r, user, job } = snagOf(snagId, adminId, 'admin');
+      const part = r.rework?.parts.find((p) => p.id === partId);
+      if (!part) throw new RepositoryError('not_found');
+      if (part.poId) throw new RepositoryError('already_ordered');
+      const option = reworkPartOptions().find((o) => o.itemId === input.itemId);
+      if (!option) throw new RepositoryError('supplier_unavailable');
+      if (!Number.isInteger(input.quantity) || input.quantity < 1) throw new RepositoryError('quantity_required');
+      const deal = byId(deals, job.dealId);
+      if (!deal) throw new RepositoryError('not_found');
+      const at = new Date().toISOString();
+      supplierPurchaseOrderCounter += 1;
+      poLineItemCounter += 1;
+      const po: SupplierPurchaseOrder = {
+        id: `spo-new-${supplierPurchaseOrderCounter}`,
+        code: `AIEC-PO-${9000 + supplierPurchaseOrderCounter}`,
+        dealId: deal.id,
+        supplierId: option.supplierId,
+        status: 'draft',
+        triggeredAt: at,
+        lineItems: [{ id: `poli-${poLineItemCounter}`, category: option.category, description: option.description, quantity: input.quantity, catalogUnitPriceAtDraft: option.unitPrice, agreedUnitPrice: option.unitPrice }],
+        reworkSnagId: r.id,
+        isDemo: true,
+      };
+      supplierPurchaseOrders.push(po);
+      Object.assign(part, { poId: po.id, itemId: option.itemId, orderedByName: user.name, orderedAt: at });
+      r.events.push(snagEvent('part_ordered', user.name, `${po.code}: ${option.description}`, at));
+      return reworkViewOf(r, adminId, Date.now());
     }),
 
   /* --------------------------------- Defect / snag list (135) */

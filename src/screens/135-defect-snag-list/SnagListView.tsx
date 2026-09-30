@@ -468,6 +468,7 @@ function Detail({ d, s, t, lang, onAct }: { d: SnagDetailView; s: SnagState; t: 
         <div className="stack gap-2" data-actions>
           <strong className="t-xs">{t(K.detail.actions)}</strong>
           <div className="row gap-2 wrap">
+            {(a.assign || a.dispute || d.ownerId) && isOpen(d.status) && <Button size="sm" variant="secondary" onClick={() => s.goto(`/rework/${d.id}`)} data-act="rework">{t(K.detail.rework)}</Button>}
             {a.verify && <Button size="sm" onClick={() => onAct('verify')} data-act="verify">{t(K.verify.open)}</Button>}
             {a.decide && <Button size="sm" onClick={() => onAct('decide')} data-act="decide">{t(K.decide.open)}</Button>}
             {a.assign && <Button size="sm" variant="secondary" onClick={() => onAct('assign')} data-act="assign">{t(d.ownerId ? K.assign.reassign : K.assign.open)}</Button>}

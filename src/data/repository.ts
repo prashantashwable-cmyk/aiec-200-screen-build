@@ -1,6 +1,7 @@
 import type { ItemState, SignOffProblem } from '@/features/qc/mechanical';
 import type { ElecSignOffProblem, ElecState } from '@/features/qc/electrical';
 import type { DisputeDecision, SnagProblem, SnagSeverity } from '@/features/qc/snags';
+import type { PartStatus, ReworkProblem, Urgency } from '@/features/qc/rework';
 import type { GuidanceProblem, ReadinessProblem, ReissueProblem, StandardsProblem } from '@/features/qc/compliance';
 import type { BusyReason, EligibilityProblem, Involvement, SlotOffer } from '@/features/qc/inspectors';
 import type {
@@ -1724,6 +1725,56 @@ export interface QcElecInput {
   clientId?: string;
   capturedAt?: string;
 }
+
+/* ------------------------------------ Rework assignment (136) */
+
+export interface ReworkRoundView {
+  n: number;
+  startedAt: string;
+  startedByName: string;
+  completedAt: string | null;
+  notes: string | null;
+  evidence: { id: string; kind: 'photo' | 'video'; previewUrl: string; mediaUrl?: string; capturedAt: string }[];
+}
+
+export interface ReworkPartView {
+  id: string;
+  description: string;
+  quantity: number;
+  note: string | null;
+  requestedByName: string;
+  requestedAt: string;
+  status: PartStatus;
+  poCode: string | null;
+  orderedByName: string | null;
+}
+
+/** A part Admin can order for a rework: a live catalog listing of a supplier that can be sent an order now. */
+export interface ReworkPartOption {
+  itemId: string;
+  supplierId: string;
+  supplierName: string;
+  category: string;
+  description: string;
+  unitPrice: number;
+  leadTimeDays: number;
+}
+
+export interface ReworkView {
+  snag: SnagDetailView;
+  job: { id: string; code: string; siteName: string; address: string; location: GeoPoint; status: Job['status'] };
+  viewer: 'admin' | 'owner' | 'inspector' | 'lead' | 'crew';
+  urgency: Urgency;
+  rounds: ReworkRoundView[];
+  currentRound: ReworkRoundView | null;
+  parts: ReworkPartView[];
+  scope: { at: string; byName: string; note: string; from: SnagSeverity; to: SnagSeverity }[];
+  /** Admin's choice of who does it, with how much rework each already has. */
+  technicians: { id: string; name: string; openRework: number }[];
+  actions: { assign: boolean; reassign: boolean; start: boolean; complete: boolean; handBack: boolean; escalate: boolean; requestPart: boolean; orderPart: boolean };
+}
+
+export type ReworkError = ReworkProblem | SnagError | 'not_technician' | 'supplier_unavailable' | 'already_ordered';
 
 /* ------------------------------------ Defect / snag list (135) */
 
@@ -4857,6 +4908,22 @@ export interface Repository {
   pingSiteLocation(technicianId: string, point: GeoPoint, at?: string): Promise<void>;
   /** Picks which step to do next, when the site does not allow the suggested order. Only steps whose prerequisites are done. */
   focusSopStep(jobId: string, stepId: string, technicianId: string): Promise<InstallationSopView>;
+
+  /* Rework assignment (136) */
+  getRework(snagId: string, userId: string): Promise<ReworkView>;
+  /** Admin only: gives the snag (and every snag linked to it) to a technician, the original installer or not. A reassignment says why. */
+  assignRework(snagId: string, technicianId: string, reason: string, adminId: string): Promise<ReworkView>;
+  startRework(snagId: string, technicianId: string): Promise<ReworkView>;
+  /** Hands the snag to QC to re-check. It never closes it. Needs a note on what was done and a picture of it. */
+  completeRework(snagId: string, input: { notes: string; evidence: SopMediaInput[] }, technicianId: string): Promise<ReworkView>;
+  /** The technician cannot do it (away, elsewhere, not able): it goes back to Admin to be given to someone else. */
+  handBackRework(snagId: string, reason: string, technicianId: string): Promise<ReworkView>;
+  /** The fix turned out bigger than the snag says. Severity can only go up, and the scope is explained. */
+  escalateRework(snagId: string, input: { severity: SnagSeverity; note: string }, userId: string): Promise<ReworkView>;
+  requestReworkPart(snagId: string, input: { description: string; quantity: number; note?: string }, technicianId: string): Promise<ReworkView>;
+  listReworkPartOptions(adminId: string): Promise<ReworkPartOption[]>;
+  /** Admin only: turns a part request into a small draft purchase order for the job's deal (092 approves and sends it). */
+  orderReworkPart(snagId: string, partId: string, input: { itemId: string; quantity: number }, adminId: string): Promise<ReworkView>;
 
   /* Defect / snag list (135) */
   getSnagBoard(userId: string, jobId?: string): Promise<SnagBoardView>;
