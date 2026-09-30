@@ -9,6 +9,8 @@ import type { ItemProblem } from '@/features/logistics/deliveryChecklist';
 import type { DeliveryChecklistStatus } from './delivery-checklist.types';
 import { MAX_PHOTOS } from './delivery-checklist.types';
 
+const SOP_SEEN_KEY = 'aiec.sopSeen';
+
 export interface ActionResult {
   ok: boolean;
   /** The repository's error code, for a message that says exactly what to fix. */
@@ -32,11 +34,16 @@ export interface ItemDraft {
   specOk: boolean;
   note: string;
   photos: DraftPhoto[];
+  /** Answers on the centrally governed procedure steps (107), by step id. */
+  sop: Record<string, { done: boolean; photo?: DraftPhoto }>;
 }
+
+const sopFromItem = (item: DeliveryCheckItem): ItemDraft['sop'] =>
+  Object.fromEntries((item.sopResults ?? []).map((r) => [r.stepId, { done: r.done, photo: r.photo ? { id: r.photo.id, fileName: r.photo.fileName, previewUrl: r.photo.previewUrl, capturedAt: r.photo.capturedAt } : undefined }]));
 
 /** A part not yet checked starts from "as expected", so the common case is one photo and one tap. */
 export function draftFromItem(item: DeliveryCheckItem): ItemDraft {
-  if (item.verdict === 'pending') return { arrived: true, qty: String(item.expectedQty), conditionOk: true, specOk: true, note: '', photos: [] };
+  if (item.verdict === 'pending') return { arrived: true, qty: String(item.expectedQty), conditionOk: true, specOk: true, note: '', photos: [], sop: {} };
   return {
     arrived: item.verdict !== 'not_arrived',
     qty: String(item.receivedQty ?? item.expectedQty),
@@ -44,12 +51,23 @@ export function draftFromItem(item: DeliveryCheckItem): ItemDraft {
     specOk: item.specOk !== false,
     note: item.note ?? '',
     photos: item.photos.map((p) => ({ id: p.id, fileName: p.fileName, previewUrl: p.previewUrl, capturedAt: p.capturedAt })),
+    sop: sopFromItem(item),
   };
 }
 
-export function findingsOf(d: ItemDraft) {
+export function findingsOf(d: ItemDraft, item: DeliveryCheckItem) {
   const qty = d.qty.trim() === '' ? NaN : Number(d.qty);
-  return { arrived: d.arrived, receivedQty: qty, conditionOk: d.conditionOk, specOk: d.specOk, note: d.note, photoCount: d.photos.length };
+  const steps = item.sopSteps ?? [];
+  return {
+    arrived: d.arrived,
+    receivedQty: qty,
+    conditionOk: d.conditionOk,
+    specOk: d.specOk,
+    note: d.note,
+    photoCount: d.photos.length,
+    sopSteps: steps,
+    sopResults: steps.map((st) => ({ stepId: st.id, done: !!d.sop[st.id]?.done, photo: d.sop[st.id]?.photo })),
+  };
 }
 
 export interface SignOffDraft {
@@ -136,14 +154,55 @@ export function useDeliveryChecklist() {
   const draftOf = (item: DeliveryCheckItem): ItemDraft => drafts[draftKey(item)] ?? draftFromItem(item);
   const patchDraft = (item: DeliveryCheckItem, patch: Partial<ItemDraft>) => setDrafts((cur) => ({ ...cur, [draftKey(item)]: { ...(cur[draftKey(item)] ?? draftFromItem(item)), ...patch } }));
   const setPhotos = (item: DeliveryCheckItem, photos: DraftPhoto[]) => patchDraft(item, { photos: photos.slice(0, MAX_PHOTOS) });
+  const setSopStep = (item: DeliveryCheckItem, stepId: string, patch: { done?: boolean; photo?: DraftPhoto | null }) => {
+    const cur = draftOf(item).sop[stepId] ?? { done: false };
+    const next = { done: patch.done ?? cur.done, photo: patch.photo === null ? undefined : (patch.photo ?? cur.photo) };
+    // Unticking a step drops its photograph: the evidence belongs to the tick.
+    patchDraft(item, { sop: { ...draftOf(item).sop, [stepId]: next.done ? next : { done: false } } });
+  };
+
+  /* --------------------------------- a procedure that changed under the device */
+  // A device remembers the procedure it last showed. If the one now governing this part is newer, the
+  // person is told, and the steps they have not seen are pointed out so nothing is ticked off blind.
+  const [sopNotices, setSopNotices] = useState<Record<string, { from: number; to: number; newStepIds: string[] }>>({});
+  useEffect(() => {
+    if (!open || open.status !== 'in_progress') {
+      setSopNotices({});
+      return;
+    }
+    let seen: Record<string, { version: number; stepIds: string[] }> = {};
+    try {
+      seen = JSON.parse(window.localStorage.getItem(SOP_SEEN_KEY) ?? '{}');
+    } catch {
+      seen = {};
+    }
+    const notices: Record<string, { from: number; to: number; newStepIds: string[] }> = {};
+    for (const item of open.items) {
+      for (const ref of item.sopVersions ?? []) {
+        const steps = (item.sopSteps ?? []).filter((st) => (st as { source?: string }).source === (ref.category === 'all' ? 'all' : 'category'));
+        const known = seen[ref.templateId];
+        if (known && known.version < ref.version) {
+          const fresh = steps.filter((st) => !known.stepIds.includes(st.id)).map((st) => st.id);
+          notices[item.lineItemId] = { from: known.version, to: ref.version, newStepIds: [...(notices[item.lineItemId]?.newStepIds ?? []), ...fresh] };
+        }
+        seen[ref.templateId] = { version: Math.max(ref.version, known?.version ?? 0), stepIds: [...new Set([...(known?.stepIds ?? []), ...steps.map((st) => st.id)])] };
+      }
+    }
+    try {
+      window.localStorage.setItem(SOP_SEEN_KEY, JSON.stringify(seen));
+    } catch {
+      // Storage blocked: the notice simply won't appear.
+    }
+    setSopNotices(notices);
+  }, [open?.id, open?.status]);
 
   const firstPending = open?.items.find((i) => i.verdict === 'pending')?.lineItemId ?? null;
   // The next unchecked part opens by itself; a person can open any other.
   const expandedId = expanded === undefined ? firstPending : expanded;
   const toggleExpanded = (id: string) => setExpanded(expandedId === id ? null : id);
 
-  const problemFor = (item: DeliveryCheckItem): ItemProblem | null => problemWith(findingsOf(draftOf(item)), item.expectedQty);
-  const kindsFor = (item: DeliveryCheckItem) => kindsOf(findingsOf(draftOf(item)), item.expectedQty);
+  const problemFor = (item: DeliveryCheckItem): ItemProblem | null => problemWith(findingsOf(draftOf(item), item), item.expectedQty);
+  const kindsFor = (item: DeliveryCheckItem) => kindsOf(findingsOf(draftOf(item), item), item.expectedQty);
 
   const saveItem = async (item: DeliveryCheckItem): Promise<ActionResult> => {
     if (!user || !open) return { ok: false, code: 'forbidden' };
@@ -154,7 +213,15 @@ export function useDeliveryChecklist() {
       const next = await repository.saveDeliveryCheckItem(
         open.id,
         item.lineItemId,
-        { arrived: d.arrived, receivedQty: d.arrived ? qty : 0, conditionOk: d.conditionOk, specOk: d.specOk, note: d.note, photos: d.photos },
+        {
+          arrived: d.arrived,
+          receivedQty: d.arrived ? qty : 0,
+          conditionOk: d.conditionOk,
+          specOk: d.specOk,
+          note: d.note,
+          photos: d.photos,
+          sopResults: (item.sopSteps ?? []).map((st) => ({ stepId: st.id, done: !!d.sop[st.id]?.done, photo: d.sop[st.id]?.photo })),
+        },
         user.id,
       );
       await load();
@@ -246,6 +313,8 @@ export function useDeliveryChecklist() {
     draftOf,
     patchDraft,
     setPhotos,
+    setSopStep,
+    sopNotices,
     problemFor,
     kindsFor,
     saveItem,

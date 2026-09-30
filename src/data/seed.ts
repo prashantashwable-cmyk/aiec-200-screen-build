@@ -58,6 +58,8 @@ import type {
   SupplierMessage,
   SupplierThread,
   DeliveryDelayCase,
+  DeliverySopStep,
+  DeliverySopTemplate,
   ShipmentLeg,
   ShipmentMilestone,
   ShipmentMilestoneEvent,
@@ -1539,6 +1541,143 @@ export const seedDeliveryDelayCases: DeliveryDelayCase[] = [
     customerNotifiedAt: hoursAgo(25),
     customerNotifiedEta: new Date(NOW + 13 * DAY).toISOString(),
     isDemo: true,
+  },
+];
+
+/* ------------------------------------------- Delivery SOP (107) */
+
+const sopStep = (id: string, label: string, opts: Partial<DeliverySopStep> = {}): DeliverySopStep => ({ id, label, mandatory: true, needsPhoto: false, ...opts });
+
+/** The procedure every delivery checklist is built from. The master template applies to every part;
+ *  a category's own steps are added after it. Door operators have a second version already scheduled,
+ *  written after a real incident, to show what a lesson learned looks like as a versioned change. */
+export const seedDeliverySops: DeliverySopTemplate[] = [
+  {
+    id: 'sop-all',
+    category: 'all',
+    name: 'Every part',
+    createdByName: 'Prashant Vasant Wable',
+    createdAt: daysAgo(95),
+    isDemo: true,
+    versions: [
+      {
+        id: 'sop-all-v1',
+        templateId: 'sop-all',
+        version: 1,
+        effectiveFrom: daysAgo(90),
+        createdByName: 'Prashant Vasant Wable',
+        createdAt: daysAgo(95),
+        changeNote: 'First procedure: what every part gets checked for.',
+        steps: [
+          sopStep('sop-all-v1-s1', 'Packaging is sealed and undamaged', {
+            labelHi: 'पैकिंग सीलबंद और सही-सलामत है',
+            labelMr: 'पॅकिंग सीलबंद आणि सुस्थितीत आहे',
+            hint: 'Note any tears, dents or water marks.',
+            hintHi: 'कोई फटन, दबाव या पानी के निशान हों तो लिखें।',
+            hintMr: 'फाटलेलं, दबलेलं किंवा पाण्याचे डाग असतील तर नोंदवा.',
+          }),
+          sopStep('sop-all-v1-s2', 'Model label is legible', { labelHi: 'मॉडल लेबल पढ़ने लायक है', labelMr: 'मॉडेल लेबल वाचता येतं' }),
+        ],
+      },
+      {
+        id: 'sop-all-v2',
+        templateId: 'sop-all',
+        version: 2,
+        effectiveFrom: daysAgo(20),
+        createdByName: 'Prashant Vasant Wable',
+        createdAt: daysAgo(21),
+        changeNote: 'Serial number on the label must match the delivery note: a wrong batch was once accepted.',
+        steps: [
+          sopStep('sop-all-v1-s1', 'Packaging is sealed and undamaged', {
+            labelHi: 'पैकिंग सीलबंद और सही-सलामत है',
+            labelMr: 'पॅकिंग सीलबंद आणि सुस्थितीत आहे',
+            hint: 'Note any tears, dents or water marks.',
+            hintHi: 'कोई फटन, दबाव या पानी के निशान हों तो लिखें।',
+            hintMr: 'फाटलेलं, दबलेलं किंवा पाण्याचे डाग असतील तर नोंदवा.',
+          }),
+          sopStep('sop-all-v1-s2', 'Model label is legible', { labelHi: 'मॉडल लेबल पढ़ने लायक है', labelMr: 'मॉडेल लेबल वाचता येतं' }),
+          sopStep('sop-all-v2-s3', 'Serial number matches the delivery note', { labelHi: 'सीरियल नंबर डिलीवरी नोट से मेल खाता है', labelMr: 'सिरीयल नंबर डिलिव्हरी नोटशी जुळतो', needsPhoto: true }),
+        ],
+      },
+    ],
+  },
+  {
+    id: 'sop-cabin',
+    category: 'cabin',
+    name: 'Cabin',
+    createdByName: 'Prashant Vasant Wable',
+    createdAt: daysAgo(80),
+    isDemo: true,
+    versions: [
+      {
+        id: 'sop-cabin-v1',
+        templateId: 'sop-cabin',
+        version: 1,
+        effectiveFrom: daysAgo(80),
+        createdByName: 'Prashant Vasant Wable',
+        createdAt: daysAgo(80),
+        changeNote: 'Glass and finished panels are fragile: an extra check a steel panel does not need.',
+        steps: [
+          sopStep('sop-cabin-v1-s1', 'Glass and panel edges have no chips or cracks', { labelHi: 'काँच और पैनल के किनारों पर चिप या दरार नहीं है', labelMr: 'काच आणि पॅनेलच्या कडांवर चिप किंवा तडे नाहीत', needsPhoto: true }),
+          sopStep('sop-cabin-v1-s2', 'Protective film is still on every finished surface', { labelHi: 'हर फ़िनिश सतह पर सुरक्षा फ़िल्म लगी है', labelMr: 'प्रत्येक फिनिश पृष्ठभागावर संरक्षक फिल्म आहे', mandatory: false }),
+        ],
+      },
+    ],
+  },
+  {
+    id: 'sop-traction_machine',
+    category: 'traction_machine',
+    name: 'Traction machine',
+    createdByName: 'Prashant Vasant Wable',
+    createdAt: daysAgo(80),
+    isDemo: true,
+    versions: [
+      {
+        id: 'sop-traction_machine-v1',
+        templateId: 'sop-traction_machine',
+        version: 1,
+        effectiveFrom: daysAgo(80),
+        createdByName: 'Prashant Vasant Wable',
+        createdAt: daysAgo(80),
+        changeNote: 'Rated load and voltage are what the installation is designed around.',
+        steps: [
+          sopStep('sop-traction_machine-v1-s1', 'Nameplate shows the rated load and voltage in the spec', { labelHi: 'नेमप्लेट पर स्पेसिफ़िकेशन वाला रेटेड लोड और वोल्टेज है', labelMr: 'नेमप्लेटवर स्पेसिफिकेशनमधला रेटेड लोड आणि व्होल्टेज आहे', needsPhoto: true }),
+        ],
+      },
+    ],
+  },
+  {
+    id: 'sop-door_operator',
+    category: 'door_operator',
+    name: 'Door operator',
+    createdByName: 'Prashant Vasant Wable',
+    createdAt: daysAgo(70),
+    isDemo: true,
+    versions: [
+      {
+        id: 'sop-door_operator-v1',
+        templateId: 'sop-door_operator',
+        version: 1,
+        effectiveFrom: daysAgo(70),
+        createdByName: 'Prashant Vasant Wable',
+        createdAt: daysAgo(70),
+        changeNote: 'First procedure for door operators.',
+        steps: [sopStep('sop-door_operator-v1-s1', 'Motor and belt turn freely by hand', { labelHi: 'मोटर और बेल्ट हाथ से आसानी से घूमते हैं', labelMr: 'मोटर आणि बेल्ट हाताने सहज फिरतात' })],
+      },
+      {
+        id: 'sop-door_operator-v2',
+        templateId: 'sop-door_operator',
+        version: 2,
+        effectiveFrom: daysAhead(3),
+        createdByName: 'Prashant Vasant Wable',
+        createdAt: daysAgo(1),
+        changeNote: 'After the Kulkarni Signature incident: a loose mounting bracket was only found at installation. Check the bracket bolts on arrival.',
+        steps: [
+          sopStep('sop-door_operator-v1-s1', 'Motor and belt turn freely by hand', { labelHi: 'मोटर और बेल्ट हाथ से आसानी से घूमते हैं', labelMr: 'मोटर आणि बेल्ट हाताने सहज फिरतात' }),
+          sopStep('sop-door_operator-v2-s2', 'Mounting bracket bolts are all present and tight', { labelHi: 'माउंटिंग ब्रैकेट के सभी बोल्ट मौजूद और कसे हुए हैं', labelMr: 'माउंटिंग ब्रॅकेटचे सर्व बोल्ट आहेत आणि घट्ट आहेत', needsPhoto: true }),
+        ],
+      },
+    ],
   },
 ];
 

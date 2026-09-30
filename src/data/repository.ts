@@ -88,6 +88,8 @@ import type {
   DelaySeverity,
   DeliveryChecklist,
   DeliveryConfirmation,
+  DeliverySopStep,
+  DeliverySopVersion,
   DeliveryDiscrepancyReport,
   PurchaseOrderOrphanResolution,
   DeliveryReceiver,
@@ -115,6 +117,7 @@ import type {
 } from './types';
 import type { SlotDay } from '@/features/logistics/deliverySlots';
 import type { ArrivalWindow, CapacityWeek, ReadinessStatus } from '@/features/logistics/transit';
+import type { SopVersionStatus } from '@/features/logistics/deliverySop';
 
 /**
  * The data contract every screen codes against.
@@ -1013,6 +1016,8 @@ export interface CheckItemInput {
   conditionOk?: boolean;
   specOk?: boolean;
   note?: string;
+  /** Answers on the procedure steps (107) this part was pinned to. */
+  sopResults?: { stepId: string; done: boolean; photo?: { id?: string; fileName: string; previewUrl?: string; capturedAt: string } }[];
   /** The whole set, kept ones by id and new ones without. */
   photos: { id?: string; fileName: string; previewUrl?: string; capturedAt: string }[];
 }
@@ -1032,6 +1037,39 @@ export interface CompleteChecklistResult {
   jobReady: boolean;
   /** The signable confirmation (104) this checklist produced. */
   confirmationId: string;
+}
+
+/* ---------------------------------- Delivery SOP checklist (107) */
+
+export interface SopVersionView extends DeliverySopVersion {
+  status: SopVersionStatus;
+}
+
+export interface SopTemplateView {
+  id: string;
+  /** `all` for the master template. */
+  category: string;
+  name: string;
+  /** Newest first. */
+  versions: SopVersionView[];
+  activeVersion: number | null;
+  /** Checklists in progress that are finishing under an older version than the one now in force. */
+  inFlight: number;
+}
+
+export interface DeliverySopBoard {
+  templates: SopTemplateView[];
+  /** Part categories on POs or in the catalog that have no template of their own yet. */
+  untemplated: string[];
+}
+
+export interface SaveSopInput {
+  /** Amending an existing template; omit to start a new category's first version. */
+  templateId?: string;
+  category?: string;
+  steps: (Omit<DeliverySopStep, 'id'> & { id?: string })[];
+  effectiveFrom: string;
+  changeNote: string;
 }
 
 /* -------------------------------------- Stock in transit (106) */
@@ -2314,6 +2352,11 @@ export interface Repository {
   completeDeliveryChecklist(checklistId: string, input: CompleteChecklistInput, byUserId: string): Promise<CompleteChecklistResult>;
   /** Abandons an unfinished checklist started by mistake. */
   cancelDeliveryChecklist(checklistId: string, byUserId: string): Promise<void>;
+
+  /* Delivery SOP (107) — the one place a delivery checklist's steps are defined */
+  getDeliverySopBoard(byUserId: string): Promise<DeliverySopBoard>;
+  /** Appends a version (or a new category's first). Never edits one that exists. */
+  saveDeliverySopVersion(input: SaveSopInput, byUserId: string): Promise<SopTemplateView>;
 
   /* Stock in transit (106) — parts on their way to a specific site, never a warehouse */
   getTransitBoard(byUserId: string): Promise<TransitBoard>;

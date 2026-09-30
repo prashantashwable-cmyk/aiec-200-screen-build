@@ -59,6 +59,7 @@ import {
   seedSiteReadiness,
   seedDeliverySchedules,
   seedShipmentLegs,
+  seedDeliverySops,
   seedDeliveryDelayCases,
   installSteps,
   seedSupplierPurchaseOrders,
@@ -141,6 +142,8 @@ import type {
   DeliveryConfirmationView,
   DelayBoard,
   DelayRow,
+  DeliverySopBoard,
+  SopTemplateView,
   TransitBoard,
   TransitLine,
   TransitTotals,
@@ -183,6 +186,8 @@ import type {
   SupplierAgreementVersion,
   DeliveryCheckItem,
   DeliveryChecklist,
+  DeliverySopTemplate,
+  DeliverySopVersion,
   DeliveryConfirmation,
   DeliveryDiscrepancyReport,
   DeliveryEvent,
@@ -287,6 +292,8 @@ import { computeTotalReceivable, daysOverdue, isOutstanding, receivedAmountOf, r
 import { isSupplierEligibleForPO } from '@/features/suppliers/eligibility';
 import { buildAlert, findOpenAlertFor } from '@/features/attention/raiseAlert';
 import { isReceived, kindsOf, problemWith, progressOf, verdictOf } from '@/features/logistics/deliveryChecklist';
+import { checkSteps, MASTER_CATEGORY, resolveSopSteps, statusOf, versionInForce as sopVersionInForce } from '@/features/logistics/deliverySop';
+import { KNOWN_PART_CATEGORIES } from '@/features/suppliers/catalogRules';
 import type { AttentionAlertInput } from '@/features/attention/raiseAlert';
 import { businessMinutesSince, days, hours, isBreached } from '@/features/sla/clock';
 import { buildAutomatedActionEntry } from '@/features/audit/logAutomatedAction';
@@ -475,6 +482,10 @@ let checklistPhotoCounter = 100;
 /** 104: the signable, lockable summary of each checked delivery. */
 const deliveryConfirmations: DeliveryConfirmation[] = [];
 let confirmationCounter = 100;
+
+/** 107: the centrally governed procedure every delivery checklist is built from. */
+const deliverySops: DeliverySopTemplate[] = seedDeliverySops.map((t) => ({ ...t, versions: [...t.versions] }));
+let sopCounter = 100;
 
 /** 105: each delivery that has run late, and what was done about it. */
 const delayCases: DeliveryDelayCase[] = [...seedDeliveryDelayCases];
@@ -3296,6 +3307,23 @@ function delayRowOf(c: DeliveryDelayCase, now: number): DelayRow {
     customerOptedOut: !!lead && !!message.template && isOptedOutSync(lead.contactPhone, message.template.channel),
     customerPreview: message.body,
     threadId: thread?.id ?? null,
+  };
+}
+
+/* ============================================ Delivery SOP (107) */
+
+function sopTemplateViewOf(t: DeliverySopTemplate, now: number): SopTemplateView {
+  const inForce = sopVersionInForce(t, now);
+  const inFlight = deliveryChecklists.filter(
+    (c) => c.status === 'in_progress' && c.items.some((i) => (i.sopVersions ?? []).some((v) => v.templateId === t.id && inForce && v.version < inForce.version)),
+  ).length;
+  return {
+    id: t.id,
+    category: t.category,
+    name: t.name,
+    versions: [...t.versions].sort((a, b) => b.version - a.version).map((v) => ({ ...v, status: statusOf(t, v, now) })),
+    activeVersion: inForce?.version ?? null,
+    inFlight,
   };
 }
 
@@ -6791,7 +6819,13 @@ export const memoryRepository: Repository = {
         status: 'in_progress',
         startedAt: new Date().toISOString(),
         startedByName: actor.name,
-        items: arrival.lines.map((l): DeliveryCheckItem => ({ lineItemId: l.id, description: l.description, expectedQty: l.quantity, verdict: 'pending', kinds: [], photos: [] })),
+        // Each part is pinned to the procedure in force right now (107) and finishes under it,
+        // even if the procedure is amended while the truck is still being unloaded.
+        items: arrival.lines.map((l): DeliveryCheckItem => {
+          const category = (po.lineItems ?? []).find((x) => x.id === l.id)?.category ?? '';
+          const sop = resolveSopSteps(deliverySops, category, Date.now());
+          return { lineItemId: l.id, description: l.description, expectedQty: l.quantity, verdict: 'pending', kinds: [], photos: [], category, sopSteps: sop.steps, sopVersions: sop.versions, sopResults: [] };
+        }),
         isDemo: true,
       };
       deliveryChecklists.push(created);
@@ -6806,11 +6840,13 @@ export const memoryRepository: Repository = {
       if (checklist.status !== 'in_progress') throw new RepositoryError('invalid_state');
       const item = checklist.items.find((i) => i.lineItemId === lineItemId);
       if (!item) throw new RepositoryError('not_found');
-      const findings = { arrived: input.arrived, receivedQty: input.receivedQty, conditionOk: input.conditionOk, specOk: input.specOk, note: input.note, photoCount: input.photos.length };
+      const findings = { arrived: input.arrived, receivedQty: input.receivedQty, conditionOk: input.conditionOk, specOk: input.specOk, note: input.note, photoCount: input.photos.length, sopSteps: item.sopSteps, sopResults: input.sopResults };
       const problem = problemWith(findings, item.expectedQty);
       if (problem === 'quantity') throw new RepositoryError('invalid_quantity');
       if (problem === 'photo') throw new RepositoryError('photo_required');
       if (problem === 'note') throw new RepositoryError('note_required');
+      if (problem === 'sop_step') throw new RepositoryError('sop_incomplete');
+      if (problem === 'sop_photo') throw new RepositoryError('sop_photo_required');
       const now = new Date().toISOString();
       const kept = new Map(item.photos.map((p) => [p.id, p]));
       const photos = input.photos.map((p) => {
@@ -6830,6 +6866,12 @@ export const memoryRepository: Repository = {
         specOk: arrived && (input.receivedQty ?? item.expectedQty) > 0 ? input.specOk !== false : undefined,
         kinds,
         photos: arrived ? photos : [],
+        sopResults: arrived && (input.receivedQty ?? item.expectedQty) > 0 ? (item.sopSteps ?? []).map((st) => {
+          const r = input.sopResults?.find((x) => x.stepId === st.id);
+          checklistPhotoCounter += 1;
+          const prior = item.sopResults?.find((x) => x.stepId === st.id)?.photo;
+          return { stepId: st.id, done: !!r?.done, photo: r?.photo ? (r.photo.id && prior?.id === r.photo.id ? prior : { id: `dph-new-${checklistPhotoCounter}`, fileName: r.photo.fileName, previewUrl: r.photo.previewUrl, capturedAt: r.photo.capturedAt }) : undefined };
+        }) : [],
         note: input.note?.trim() || undefined,
         checkedAt: now,
         checkedByName: actor.name,
@@ -6978,6 +7020,59 @@ export const memoryRepository: Repository = {
       if (materialsComplete) anchorMaterialPayments(confirmation.dealId, signedAt);
       syncCommitments(now);
       return confirmationViewOf(signed, actor);
+    }),
+
+  /* --------------------------------------------- Delivery SOP (107) */
+  getDeliverySopBoard: (byUserId) =>
+    simulateRead((): DeliverySopBoard => {
+      adminOnly(byUserId);
+      const now = Date.now();
+      const templates = deliverySops.map((t) => sopTemplateViewOf(t, now));
+      const known = new Set(deliverySops.map((t) => t.category));
+      const seen = new Set<string>([...KNOWN_PART_CATEGORIES, ...supplierPurchaseOrders.flatMap((p) => (p.lineItems ?? []).map((l) => l.category))]);
+      return { templates, untemplated: [...seen].filter((c) => !known.has(c)).sort() };
+    }),
+
+  saveDeliverySopVersion: (input, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const now = Date.now();
+      if (input.changeNote.trim().length < 4) throw new RepositoryError('note_required');
+      const steps = input.steps.map((s) => ({ ...s, label: s.label.trim() }));
+      if (checkSteps(steps, false).length > 0) throw new RepositoryError('invalid_steps');
+      const effective = new Date(input.effectiveFrom).getTime();
+      const startOfToday = new Date(now).setHours(0, 0, 0, 0);
+      // A procedure can be scheduled or take effect today, but never rewrite the past.
+      if (Number.isNaN(effective) || effective < startOfToday) throw new RepositoryError('effective_in_past');
+      let template = input.templateId ? byId(deliverySops, input.templateId) : undefined;
+      if (input.templateId && !template) throw new RepositoryError('not_found');
+      const createdAt = new Date(now).toISOString();
+      if (!template) {
+        const category = (input.category ?? '').trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
+        if (category.length < 2 || category === MASTER_CATEGORY || deliverySops.some((t) => t.category === category)) throw new RepositoryError('invalid_category');
+        // A category's own template exists to add steps to the master's; it cannot be empty.
+        if (steps.length === 0) throw new RepositoryError('invalid_steps');
+        sopCounter += 1;
+        template = { id: `sop-new-${sopCounter}`, category, name: category, versions: [], createdByName: actor.name, createdAt, isDemo: true };
+        deliverySops.push(template);
+      }
+      const latest = [...template.versions].sort((a, b) => b.version - a.version)[0];
+      // Versions keep their order in time: a new one cannot take effect before the one it amends.
+      if (latest && effective < new Date(latest.effectiveFrom).getTime()) throw new RepositoryError('effective_before_previous');
+      if (template.category !== MASTER_CATEGORY && steps.length === 0) throw new RepositoryError('invalid_steps');
+      const version: DeliverySopVersion = {
+        id: `${template.id}-v${(latest?.version ?? 0) + 1}`,
+        templateId: template.id,
+        version: (latest?.version ?? 0) + 1,
+        effectiveFrom: new Date(effective).toISOString(),
+        // A step that already existed keeps its id, so older results still line up with it.
+        steps: steps.map((s, i) => ({ ...s, id: s.id ?? `${template!.id}-v${(latest?.version ?? 0) + 1}-s${i + 1}` })),
+        changeNote: input.changeNote.trim(),
+        createdByName: actor.name,
+        createdAt,
+      };
+      const updated = patchInPlace(deliverySops, template.id, { versions: [...template.versions, version] });
+      return sopTemplateViewOf(updated, now);
     }),
 
   /* --------------------------------------------- Stock in transit (106) */

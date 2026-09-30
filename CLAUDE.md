@@ -107,9 +107,26 @@ the module's section to `BUILD_README.md`.
   (dl-1) was seeded one day short of the reminder cadence's own exhaustion threshold, so no real
   payment could ever reach 089's escalation queue while also belonging to a deal with an active
   Job — moved from 6 to 10 days overdue (and the stale `al-2` alert text updated to match).
-- **Module 11 in progress:** `101`–`106` built. **Next: `107`**. At its checkpoint (after 110),
+- **Module 11 in progress:** `101`–`107` built. **Next: `108`**. At its checkpoint (after 110),
   add an Admin logistics entry point: 101 and 102 are reachable for Admin only from 091's hub and
   095's header (and 101's/102's own PO links).
+  107 facts:
+  - `DeliverySopTemplate` / `DeliverySopVersion` (memoryRepository `deliverySops`) are the only definition of a
+    delivery checklist's steps: 103 has no hardcoded list. `all` is the master template every part follows;
+    a category's own template adds steps after it. Versions are append-only and carry `effectiveFrom`
+    and a required `changeNote`; a version cannot start in the past or before the one it amends.
+    A step that already existed keeps its `id` across versions. `@/features/logistics/deliverySop` is the
+    pure logic (`resolveSopSteps`, `versionInForce`, `statusOf`, `sopProblem`, `checkSteps`).
+  - `startDeliveryChecklist` pins each item to the steps in force at that moment
+    (`DeliveryCheckItem.sopSteps` / `sopVersions`), so a checklist in progress finishes under the
+    version it began with, whatever is published meanwhile. 107 shows how many are still in flight.
+  - 103's `problemWith` (shared with the repository) now also refuses to confirm a part until every
+    mandatory step is ticked and every ticked photo step has its photo (`sop_incomplete`,
+    `sop_photo_required`). The core checks (count, condition, spec, photograph) stay built in.
+  - Stale device: 103 remembers the procedure version a device last showed (`aiec.sopSeen`); when the
+    version now governing a part is newer it says so and marks the steps the person had not seen as New.
+  - Steps carry optional Hindi and Marathi wording; the preview renders the technician's exact view in en/hi/mr.
+  - `/delivery-sop` is Admin only, reached from 091's hub.
   106 facts:
   - "In transit" is only ever parts on a sent PO, not yet delivered, for a specific deal (AIEC keeps no
     warehouse). `transitLinesOf` builds one `TransitLine` per undelivered PO line: value is

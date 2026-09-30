@@ -1,4 +1,6 @@
-import type { DeliveryCheckItem, DeliveryItemVerdict, DiscrepancyKind } from '@/data/types';
+import type { DeliveryCheckItem, DeliveryItemVerdict, DeliverySopStep, DiscrepancyKind } from '@/data/types';
+import { sopProblem } from '@/features/logistics/deliverySop';
+import type { SopAnswer } from '@/features/logistics/deliverySop';
 
 /**
  * Screen 103's checking rules, pure — shared by the screen (so a step visibly
@@ -18,9 +20,12 @@ export interface ItemFindings {
   specOk?: boolean;
   note?: string;
   photoCount: number;
+  /** The procedure (107) this part was pinned to, and what has been answered on it. */
+  sopSteps?: DeliverySopStep[];
+  sopResults?: SopAnswer[];
 }
 
-export type ItemProblem = 'quantity' | 'photo' | 'note' | 'condition';
+export type ItemProblem = 'quantity' | 'photo' | 'note' | 'condition' | 'sop_step' | 'sop_photo';
 
 export function receivedQtyOf(f: ItemFindings, expectedQty: number): number {
   return f.receivedQty ?? expectedQty;
@@ -52,6 +57,9 @@ export function problemWith(f: ItemFindings, expectedQty: number): ItemProblem |
   if (qty === 0) return (f.note ?? '').trim().length >= MIN_NOTE_LENGTH ? null : 'note';
   // Every part that turned up is photographed — the evidence trail.
   if (f.photoCount < 1) return 'photo';
+  // The centrally governed steps for this kind of part: nothing is ticked off around them.
+  const sop = sopProblem(f.sopSteps, f.sopResults);
+  if (sop) return sop;
   if (kindsOf(f, expectedQty).length > 0 && (f.note ?? '').trim().length < MIN_NOTE_LENGTH) return 'note';
   return null;
 }

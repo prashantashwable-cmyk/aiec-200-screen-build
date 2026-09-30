@@ -941,6 +941,12 @@ export interface DeliveryCheckItem {
   note?: string;
   checkedAt?: string;
   checkedByName?: string;
+  /** The part's category and the SOP (107) it was pinned to when the checklist started: a
+   *  checklist in progress finishes under the procedure it began with. */
+  category?: string;
+  sopSteps?: DeliverySopStep[];
+  sopVersions?: SopVersionRef[];
+  sopResults?: SopStepResult[];
 }
 
 /** Who stood at the tailgate. A site contact receiving in the technician's
@@ -1054,6 +1060,62 @@ export interface DeliveryDelayCase {
   escalatedAt?: string;
   escalatedByName?: string;
   isDemo: boolean;
+}
+
+/* --------------------------------- Delivery SOP checklist (107) */
+
+/** One thing a technician must verify on a part, beyond the counting, condition, spec and
+ *  photograph every part gets. Written once, centrally, by Admin. */
+export interface DeliverySopStep {
+  id: string;
+  label: string;
+  labelHi?: string;
+  labelMr?: string;
+  hint?: string;
+  hintHi?: string;
+  hintMr?: string;
+  /** A mandatory step must be ticked before the part can be confirmed. */
+  mandatory: boolean;
+  /** Ticking it needs a photograph of exactly that thing. */
+  needsPhoto: boolean;
+}
+
+/** One version of one template. Append-only: an amendment is a new version with its own
+ *  effective date, and the older one stays exactly as it was. */
+export interface DeliverySopVersion {
+  id: string;
+  templateId: string;
+  version: number;
+  /** Applies to checklists started from this instant on. */
+  effectiveFrom: string;
+  steps: DeliverySopStep[];
+  changeNote: string;
+  createdByName: string;
+  createdAt: string;
+}
+
+/** `all` is the master template every part follows; any other category adds its own steps to it. */
+export interface DeliverySopTemplate {
+  id: string;
+  category: string;
+  name: string;
+  versions: DeliverySopVersion[];
+  createdByName: string;
+  createdAt: string;
+  isDemo: boolean;
+}
+
+export interface SopVersionRef {
+  templateId: string;
+  versionId: string;
+  version: number;
+  category: string;
+}
+
+export interface SopStepResult {
+  stepId: string;
+  done: boolean;
+  photo?: DeliveryPhoto;
 }
 
 /* -------------------------------- Delivery confirmation (104) */

@@ -7,6 +7,7 @@ import {
   Badge,
   Button,
   Card,
+  Checkbox,
   EmptyState,
   ErrorState,
   Field,
@@ -25,6 +26,7 @@ import type { ChecklistArrival, DeliveryChecklistView as ChecklistView } from '@
 import type { DeliveryCheckItem, DeliveryItemVerdict, ShipmentMilestone } from '@/data/types';
 import { DocumentSlot } from '@/features/onboarding/DocumentSlot';
 import { MIN_NOTE_LENGTH, isReceived } from '@/features/logistics/deliveryChecklist';
+import { stepText } from '@/features/logistics/deliverySop';
 import { useDeliveryChecklist } from './useDeliveryChecklist';
 import type { ActionResult, DeliveryChecklistState } from './useDeliveryChecklist';
 import { DELIVERY_CHECKLIST_KEYS as K, MAX_PHOTOS, RECEIVER_ROLES } from './delivery-checklist.types';
@@ -413,6 +415,53 @@ function ItemCard({ item, s, t, lang, done, report }: { item: DeliveryCheckItem;
                         />
                       )}
                     </div>
+                    {(item.sopSteps ?? []).length > 0 && (
+                      <div className="stack gap-2 hairline-top pt-3">
+                        <span className="t-sm t-semibold">{t(K.item.sop.heading)}</span>
+                        <p className="t-xs t-muted">
+                          {t(K.item.sop.hint)}
+                          {item.sopVersions && item.sopVersions.length > 0 ? ` ${item.sopVersions.map((v) => t(K.item.sop.version, { version: v.version })).join(' · ')}` : ''}
+                        </p>
+                        {s.sopNotices[item.lineItemId] && (
+                          <p className="t-xs t-warning" role="status">
+                            {t(K.item.sop.updated, { from: s.sopNotices[item.lineItemId].from, to: s.sopNotices[item.lineItemId].to })}
+                          </p>
+                        )}
+                        {(item.sopSteps ?? []).map((st) => {
+                          const text = stepText(st, lang);
+                          const r = d.sop[st.id];
+                          const fresh = s.sopNotices[item.lineItemId]?.newStepIds.includes(st.id);
+                          return (
+                            <div key={st.id} className="stack gap-2">
+                              <Checkbox
+                                checked={!!r?.done}
+                                onChange={(v) => s.setSopStep(item, st.id, { done: v })}
+                                label={
+                                  <span className="stack">
+                                    <span className="row gap-2 wrap">
+                                      <span className="t-sm">{text.label}</span>
+                                      <Badge tone={st.mandatory ? 'accent' : 'neutral'}>{t(st.mandatory ? K.item.sop.mandatory : K.item.sop.optional)}</Badge>
+                                      {fresh && <Badge tone="warning">{t(K.item.sop.newStep)}</Badge>}
+                                    </span>
+                                    {text.hint && <span className="t-xs t-muted">{text.hint}</span>}
+                                  </span>
+                                }
+                              />
+                              {st.needsPhoto && r?.done && (
+                                <DocumentSlot
+                                  label={t(K.item.sop.photoSlot)}
+                                  required
+                                  value={r.photo ? { fileName: r.photo.fileName, capturedAt: r.photo.capturedAt, previewUrl: r.photo.previewUrl ?? '' } : null}
+                                  onChange={(v) => s.setSopStep(item, st.id, { photo: v ? { fileName: v.fileName, capturedAt: v.capturedAt, previewUrl: v.previewUrl } : null })}
+                                  accept="image/*"
+                                  skipQualityCheck
+                                />
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </>
                 )}
               </>
