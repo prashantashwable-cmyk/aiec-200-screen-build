@@ -114,12 +114,15 @@ export function JobDetailSiteInfoView() {
           {blocked ? t(job.action === 'on_hold' ? K.action.hold : K.action.waiting) : t(assistant ? K.action.mine : K.action.sop)} {!blocked && <ArrowRight size={16} aria-hidden="true" />}
         </Button>
         {!blocked && (
-          <div className="grid-2 mt-2">
+          <div className="grid-auto mt-2" style={{ ['--min' as string]: '130px' }}>
             <Button variant="secondary" onClick={() => navigate(`/safety-checklist/${job.id}`)}>
               {t(K.action.safety)}
             </Button>
             <Button variant="secondary" onClick={() => navigate(`/job-issues/${job.id}`)}>
               {t(K.action.issue)}
+            </Button>
+            <Button variant="secondary" onClick={() => navigate(`/material-usage/${job.id}`)}>
+              {t('materialLog.title')}
             </Button>
           </div>
         )}

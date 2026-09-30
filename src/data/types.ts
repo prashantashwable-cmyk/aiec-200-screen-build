@@ -2568,6 +2568,60 @@ export interface PreInspectionSummary {
   isDemo: boolean;
 }
 
+/* ------------------------------------ As-installed material log (128) */
+
+/** Where a part that was used came from. `stock` is the technician's own general stock (a small common fastener): accountable
+ *  differently from a delivered component, so it is never allowed to stand in for a major one. */
+export type MaterialSource = 'delivered' | 'stock' | 'local_purchase';
+/** Why a planned part was not used as planned (or why an unplanned one was). */
+export type MaterialDeviationKind = 'defective_replaced' | 'damaged_in_transit' | 'wrong_part_supplied' | 'unsuitable' | 'not_needed' | 'wastage' | 'substitute' | 'extra_needed' | 'other';
+/** What becomes of what was not used. `return_to_pool` keeps it as a reusable part for a nearby job. */
+export type LeftoverAction = 'return_to_pool' | 'return_to_supplier' | 'scrap' | 'left_with_customer';
+
+/** One installed unit's serial or batch number. A number that cannot be read is said to be unreadable, never made up. */
+export interface MaterialIdentifier {
+  serial?: string;
+  batch?: string;
+  legible: boolean;
+  note?: string;
+}
+
+/** What was actually done with one line of the bill of materials, or with a part that was not on it. The technician's own record,
+ *  closest to the ground truth: the original order is what was planned, this is what is in the lift. */
+export interface JobMaterialUse {
+  id: string;
+  source: MaterialSource;
+  /** The purchase-order line it stands for; unset for a part that was not on the plan. */
+  lineItemId?: string;
+  poCode?: string;
+  supplierId?: string;
+  category: string;
+  description: string;
+  plannedQty: number;
+  usedQty: number;
+  leftoverQty: number;
+  leftoverAction?: LeftoverAction;
+  deviation?: { kind: MaterialDeviationKind; reason: string; replacesLineItemId?: string };
+  identifiers: MaterialIdentifier[];
+  /** The order record still said this had not arrived when it was used: kept, so the two records can be reconciled. */
+  deliveryUnconfirmed?: boolean;
+  /** What a stock or locally bought part cost, when the person knows: it feeds the job's final costing. */
+  unitCost?: number;
+}
+
+export interface JobMaterialLog {
+  jobId: string;
+  uses: JobMaterialUse[];
+  status: 'draft' | 'confirmed';
+  savedAt: string;
+  savedByName: string;
+  confirmedAt?: string;
+  confirmedByName?: string;
+  /** Admin reopened it, with a reason: the record of a confirmed log being changed after the fact. */
+  reopened: { at: string; byName: string; reason: string }[];
+  isDemo: boolean;
+}
+
 /* ------------------------------------ Issue / blocker reports (127) */
 
 /** What kind of real-world problem it is: the ones the procedure has no step for. */
@@ -3272,6 +3326,7 @@ export type CommitmentKind =
   | 'site_checkout_confirm'
   | 'safety_review'
   | 'job_issue_resolve'
+  | 'material_log_confirm'
   | 'discrepancy_report_review'
   | 'partner_feed_restore'
   | 'supplier_payment_approve'
@@ -3294,6 +3349,7 @@ export type CommitmentKind =
   | 'lead_revisit';
 
 export type CommitmentSubjectType =
+  | 'material_log'
   | 'job_issue'
   | 'safety_test'
   | 'site_checkin'

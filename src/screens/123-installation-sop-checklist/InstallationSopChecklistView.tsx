@@ -101,6 +101,9 @@ export function InstallationSopChecklistView() {
             <Button size="sm" variant="ghost" onClick={() => navigate(`/job-issues/${v.job.id}`)} icon={<Flag size={16} aria-hidden="true" />}>
               {t(K.reportIssue)}
             </Button>
+            <Button size="sm" variant="ghost" onClick={() => navigate(`/material-usage/${v.job.id}`)} icon={<Package size={16} aria-hidden="true" />}>
+              {t('materialLog.title')}
+            </Button>
             <Button size="sm" variant="ghost" onClick={() => navigate(jobPath(v.job.id))} aria-label={t(K.back)}>
               <ArrowLeft size={16} aria-hidden="true" /> {t(K.back)}
             </Button>

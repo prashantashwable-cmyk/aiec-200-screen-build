@@ -32,6 +32,7 @@ import type {
   SiteCheckIn,
   JobSafetyTest,
   JobIssue,
+  JobMaterialLog,
   DeliveryDelayCase,
   DeliveryDiscrepancyReport,
   DeliveryPartner,
@@ -98,6 +99,7 @@ export interface CommitmentSources {
   siteCheckIns: SiteCheckIn[];
   jobSafetyTests: JobSafetyTest[];
   jobIssues: JobIssue[];
+  materialLogs: JobMaterialLog[];
   deliveryChecklists: DeliveryChecklist[];
   delayCases: DeliveryDelayCase[];
   discrepancyReports: DeliveryDiscrepancyReport[];
@@ -1104,6 +1106,44 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
             oversightRoute: `/job-issues/${i.jobId}?issue=${i.id}`,
           };
         });
+    },
+  },
+  {
+    // What was actually put in the lift is written down and confirmed by the lead technician within two days of the work being done (128):
+    // the warranty and AMC record is only as accurate as this. It is chased on the technician and, past its window, reaches Admin.
+    kind: 'material_log_confirm',
+    nudgeBefore: hours(6),
+    escalateAfter: hours(24),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'quality',
+    collect(src) {
+      const admin = adminId(src);
+      return src.jobs
+        .filter((j) => (j.status === 'qc_pending' || j.status === 'handover_pending' || j.status === 'completed') && j.technicianId)
+        .flatMap((j) => {
+          const log = src.materialLogs.find((l) => l.jobId === j.id);
+          const finishedAt = j.completedAt ?? j.steps.map((s) => s.completedAt).filter((x): x is string => !!x).sort().pop() ?? j.startedAt;
+          if (!finishedAt) return [];
+          const confirmed = log?.status === 'confirmed';
+          // A job with no order lines has no plan to log against, and work finished long before the log existed is history.
+          if (!confirmed && Date.now() - new Date(finishedAt).getTime() > days(45)) return [];
+          return [
+            {
+              ...base('material_log_confirm', 'material_log', j.id),
+              ownerUserId: j.technicianId as string,
+              titleKey: 'work.title.material_log_confirm',
+              titleParams: { code: j.code, site: j.siteName },
+              dueAt: plus(finishedAt, hours(48)),
+              state: confirmed ? ('done' as const) : ('open' as const),
+              paused: false,
+              completedAt: log?.confirmedAt,
+              actionRoute: `/material-usage/${j.id}`,
+              oversightRoute: `/material-usage/${j.id}`,
+            },
+          ];
+        })
+        .map((c) => ({ ...c, ...(c.ownerUserId ? {} : { ownerUserId: admin }) }));
     },
   },
   {

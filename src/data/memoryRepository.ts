@@ -211,6 +211,14 @@ import type {
   SafetyChecklistView,
   JobIssuesView,
   JobIssueView,
+  MaterialLogView,
+  MaterialPlanLine,
+  MaterialPoolItem,
+  MaterialSupplierPattern,
+  MaterialBoardRow,
+  MaterialBoardView,
+  AsInstalledPart,
+  AsInstalledView,
   IssueBoardView,
   IssuePatternView,
   SafetyItemView,
@@ -342,6 +350,9 @@ import type {
   JobSafetyTest,
   JobIssue,
   JobIssueEvent,
+  JobMaterialLog,
+  JobMaterialUse,
+  MaterialDeviationKind,
   IssuePatternReview,
   IssueSeverity,
   IssueResolutionKind,
@@ -523,6 +534,7 @@ import { DISPUTE_TARGET, NOTE_MIN, POSITION_MIN, REOPEN_WINDOW, canPartial, deci
 import { SOS_CANCEL_WINDOW_MS, SOS_SAME_INCIDENT } from '@/features/safety/sos';
 import { capturedAtProblem, completionProblem, isDone, missingSlots, naProblem, qcReadiness, slotsFor, stepApplies, suggestedNext, unmetDependencies, versionInForce as installVersionInForce } from '@/features/technician/installSop';
 import type { SpecFacts } from '@/features/technician/installSop';
+import { REASON_MIN, extrasCost, identifierKind, isSupplierFault, leftoverValue, logProblems } from '@/features/technician/materials';
 import { RESOLVE_TARGET, blockedMs, canReopen, canResolve, categoryCounts, minSeverityFor, patternsOf, pausesWork, reportProblem, severityAtLeast, NOTE_MIN as ISSUE_NOTE_MIN } from '@/features/technician/issues';
 import { MAX_FAILS, SAFETY_ITEMS, defOf as safetyDefOf, disagreementProblem, failCount, fixProblem, isCleared, itemsFor as safetyItemsForSpec, overrideProblem, readiness as safetyReadiness, resultProblem, safetyState, DISAGREEMENT_NOTE_MIN, RESOLUTION_NOTE_MIN } from '@/features/technician/safety';
 import { LEAVE_NOTE_MIN, MIN_TYPICAL_JOBS, OVERRIDE_REASON_MIN, daysOf, isStale, jobVisitProblem, leaveSeverity, leaveTimeProblem, medianOf, radiusFor, readPresence, timeOf, visitMinutes } from '@/features/technician/presence';
@@ -2186,6 +2198,7 @@ function commitmentSources(now: number): CommitmentSources {
     siteCheckIns,
     jobSafetyTests,
     jobIssues,
+    materialLogs: (ensureMaterialSeeds(), materialLogs),
     deliveryChecklists,
     delayCases,
     discrepancyReports,
@@ -2439,6 +2452,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   syncTechnicianClashes(now);
   syncSafetyAlerts(true, now);
   syncIssueAlerts(true, now);
+  syncMaterialDeviations(true, now);
   for (const j of jobs) syncIssueHold(j);
   syncSopHandoff();
   syncAdvanceExposure(now);
@@ -5637,6 +5651,181 @@ function syncIssueAlerts(automated: boolean, now: number): void {
   for (const a of alerts) {
     if ((a.relatedId?.startsWith('issue:') || a.relatedId?.startsWith('issuepattern:')) && a.status !== 'resolved' && !live.has(a.relatedId)) patchInPlace(alerts, a.id, { status: 'resolved', resolvedAt: at, resolvedBy: 'system', resolutionNote: 'Closed.' });
   }
+}
+
+/* ============================== As-installed material log (128) */
+
+const materialLogs: JobMaterialLog[] = [];
+let materialSeeded = false;
+let materialUseCounter = 0;
+/** Which supplier's parts keep being replaced: this many supplier-fault deviations on this many jobs in this many days is a pattern. */
+const MATERIAL_PATTERN = { deviations: 3, jobs: 2, days: 90 };
+
+/** The plan a job is logged against: the deal's order lines. Only the prices are kept from a technician. */
+function materialPlanOf(job: Job, withPrices: boolean): MaterialPlanLine[] {
+  const pos = supplierPurchaseOrders.filter((po) => po.dealId === job.dealId && po.status === 'sent' && (po.lineItems ?? []).length > 0);
+  const view = jobMaterialsOf(job.dealId);
+  return view.lines.map((l) => {
+    const po = pos.find((p) => p.code === l.poCode);
+    const line = po?.lineItems?.find((x) => x.id === l.id);
+    return { id: l.id, poCode: l.poCode, supplierId: po?.supplierId ?? null, supplierName: po?.supplierId ? (byId(suppliers, po.supplierId)?.name ?? null) : null, category: l.category, description: l.description, quantity: l.quantity, state: l.state, unitPrice: withPrices ? (line?.agreedUnitPrice ?? 0) : null };
+  });
+}
+
+/** A few finished jobs come with their record, so the board and the warranty feed are not empty on a fresh start. Built from the deal's own lines. */
+function ensureMaterialSeeds(): void {
+  if (materialSeeded) return;
+  materialSeeded = true;
+  const at = (daysBack: number) => new Date(Date.now() - daysBack * 86_400_000).toISOString();
+  const rowFor = (job: Job, l: MaterialPlanLine, over: Partial<JobMaterialUse> = {}): JobMaterialUse => {
+    materialUseCounter += 1;
+    const traced = identifierKind(l.category);
+    return {
+      id: `mu-seed-${materialUseCounter}`,
+      source: 'delivered',
+      lineItemId: l.id,
+      poCode: l.poCode,
+      ...(l.supplierId ? { supplierId: l.supplierId } : {}),
+      category: l.category,
+      description: l.description,
+      plannedQty: l.quantity,
+      usedQty: l.quantity,
+      leftoverQty: 0,
+      identifiers: traced === 'none' ? [] : Array.from({ length: traced === 'batch' ? 1 : l.quantity }, (_, n) => (traced === 'batch' ? { batch: `B-${job.code.slice(-4)}-${n + 1}`, legible: true } : { serial: `SN-${job.code.slice(-4)}-${l.id.slice(-2).toUpperCase()}${n + 1}`, legible: true })),
+      ...(l.state !== 'on_site' ? { deliveryUnconfirmed: true } : {}),
+      ...over,
+    };
+  };
+  const make = (jobId: string, status: 'draft' | 'confirmed', ago: number, build: (job: Job, plan: MaterialPlanLine[]) => JobMaterialUse[]) => {
+    const job = byId(jobs, jobId);
+    if (!job) return;
+    const plan = materialPlanOf(job, false);
+    if (plan.length === 0) return;
+    const by = byId(users, job.technicianId ?? '')?.name ?? 'Technician';
+    materialLogs.push({ jobId, uses: build(job, plan), status, savedAt: at(ago), savedByName: by, ...(status === 'confirmed' ? { confirmedAt: at(ago), confirmedByName: by } : {}), reopened: [], isDemo: true });
+  };
+  make('j-7', 'confirmed', 5, (job, plan) => plan.map((l) => rowFor(job, l)));
+  make('j-2', 'confirmed', 3, (job, plan) =>
+    plan.map((l) => {
+      if (l.category === 'door_operator') return rowFor(job, l, { usedQty: 0, leftoverQty: 1, leftoverAction: 'return_to_supplier', identifiers: [], deviation: { kind: 'defective_replaced', reason: 'Motor seized on first power-up; returned to the supplier.' } });
+      if (l.category === 'controller') return rowFor(job, l, { usedQty: 0, leftoverQty: 1, leftoverAction: 'return_to_pool', identifiers: [], deviation: { kind: 'wrong_part_supplied', reason: 'Wrong phase rating for this drive; kept aside for a compatible job.' } });
+      if (l.category === 'ropes') return rowFor(job, l, { identifiers: [{ legible: false, note: 'Tag rubbed off on the reel.' }] });
+      return rowFor(job, l);
+    }),
+  );
+  make('j-5', 'confirmed', 40, (job, plan) => plan.map((l) => (l.category === 'door_operator' ? rowFor(job, l, { usedQty: 0, leftoverQty: 1, leftoverAction: 'scrap', identifiers: [], deviation: { kind: 'defective_replaced', reason: 'Limit switch failed bench test; replaced from the supplier’s spare.' } }) : rowFor(job, l))));
+  // What replaced a part that was not used was bought locally the same day, so the lift still has one of everything.
+  const bought = (jobId: string, category: string) => {
+    const log = materialLogs.find((x) => x.jobId === jobId);
+    const replaced = log?.uses.find((u) => u.category === category && u.lineItemId && u.usedQty === 0);
+    if (!log || !replaced?.lineItemId) return;
+    materialUseCounter += 1;
+    log.uses.push({ id: `mu-seed-${materialUseCounter}`, source: 'local_purchase', category, description: `${replaced.description} (local purchase)`, plannedQty: 0, usedQty: 1, leftoverQty: 0, deviation: { kind: 'substitute', reason: 'Bought locally the same day so the job was not held up.', replacesLineItemId: replaced.lineItemId }, identifiers: [{ serial: `LP-${jobId.toUpperCase()}-${category.slice(0, 3).toUpperCase()}`, legible: true }], unitCost: category === 'controller' ? 42_000 : 18_500 });
+  };
+  bought('j-2', 'door_operator');
+  bought('j-2', 'controller');
+  bought('j-5', 'door_operator');
+  // j-1 is under way: a part of it written down, not yet confirmed.
+  make('j-1', 'draft', 0.2, (job, plan) => plan.filter((l) => l.category === 'traction_machine').map((l) => rowFor(job, l)));
+}
+
+function materialActor(jobId: string, userId: string): { job: Job; user: User; role: 'lead' | 'assistant' | null } {
+  ensureMaterialSeeds();
+  const user = byId(users, userId);
+  const job = byId(jobs, jobId);
+  if (!user) throw new RepositoryError('forbidden');
+  if (!job) throw new RepositoryError('not_found');
+  if (user.role === 'admin') return { job, user, role: null };
+  if (user.role !== 'technician' || !isOnJob(job, userId)) throw new RepositoryError('forbidden');
+  return { job, user, role: roleOf(job, userId) };
+}
+
+const materialStarted = (job: Job) => job.status === 'in_progress' || job.status === 'qc_pending' || job.status === 'handover_pending' || job.status === 'completed' || (job.status === 'on_hold' && !!job.startedAt);
+
+/** Leftovers other jobs marked as reusable, nearest first: what could be used here instead of ordering again. */
+function materialPoolOf(forJob: Job | null): MaterialPoolItem[] {
+  const out: MaterialPoolItem[] = [];
+  for (const log of materialLogs) {
+    if (log.status !== 'confirmed' || (forJob && log.jobId === forJob.id)) continue;
+    const from = byId(jobs, log.jobId);
+    if (!from) continue;
+    for (const u of log.uses) {
+      if (u.leftoverAction !== 'return_to_pool' || u.leftoverQty <= 0) continue;
+      out.push({ jobId: from.id, jobCode: from.code, siteName: from.siteName, category: u.category, description: u.description, quantity: u.leftoverQty, distanceKm: forJob ? Math.round(haversineKm(forJob.location, from.location) * 10) / 10 : null, at: log.confirmedAt ?? log.savedAt });
+    }
+  }
+  return out.sort((a, b) => (a.distanceKm ?? 0) - (b.distanceKm ?? 0) || b.at.localeCompare(a.at));
+}
+
+function materialLogViewOf(job: Job, userId: string): MaterialLogView {
+  const user = byId(users, userId);
+  const isAdmin = user?.role === 'admin';
+  const role = isAdmin ? null : roleOf(job, userId);
+  const log = materialLogs.find((l) => l.jobId === job.id);
+  const planned = materialPlanOf(job, !!isAdmin);
+  const status: MaterialLogView['status'] = log ? log.status : 'none';
+  const lockedReason: MaterialLogView['lockedReason'] = isAdmin ? 'admin' : role !== 'lead' ? 'assistant' : status === 'confirmed' ? 'confirmed' : !materialStarted(job) ? 'not_started' : null;
+  const priceOf = (id: string) => planned.find((p) => p.id === id)?.unitPrice ?? 0;
+  const uses = log?.uses ?? [];
+  const plannedCost = planned.reduce((sum, p) => sum + p.quantity * (p.unitPrice ?? 0), 0);
+  const leftover = leftoverValue(uses, priceOf);
+  const extras = extrasCost(uses);
+  const usedPlanned = uses.filter((u) => u.lineItemId).reduce((sum, u) => sum + u.usedQty * priceOf(u.lineItemId as string), 0);
+  return {
+    job: { id: job.id, code: job.code, siteName: job.siteName, status: job.status, role },
+    planned,
+    uses: uses.map((u) => ({ ...u, identifiers: u.identifiers.map((i) => ({ ...i })), ...(u.deviation ? { deviation: { ...u.deviation } } : {}) })),
+    status,
+    savedAt: log?.savedAt ?? null,
+    savedByName: log?.savedByName ?? null,
+    confirmedAt: log?.confirmedAt ?? null,
+    confirmedByName: log?.confirmedByName ?? null,
+    reopened: (log?.reopened ?? []).map((r) => ({ ...r })),
+    canEdit: lockedReason === null,
+    lockedReason,
+    canReopen: !!isAdmin && status === 'confirmed',
+    pool: isAdmin ? materialPoolOf(job) : materialPoolOf(job),
+    costs: isAdmin ? { planned: plannedCost, asInstalled: usedPlanned + extras, leftoverValue: leftover, extras } : null,
+  };
+}
+
+/** Supplier-fault deviations on confirmed logs within the window, per supplier: the input to that supplier's quality picture. */
+function materialPatternsOf(now: number): MaterialSupplierPattern[] {
+  const since = now - MATERIAL_PATTERN.days * 86_400_000;
+  const by = new Map<string, { deviations: number; jobs: Set<string>; lastAt: string; kinds: Map<MaterialDeviationKind, number> }>();
+  for (const log of materialLogs) {
+    if (log.status !== 'confirmed') continue;
+    const when = log.confirmedAt ?? log.savedAt;
+    if (new Date(when).getTime() < since) continue;
+    for (const u of log.uses) {
+      if (!u.lineItemId || !u.supplierId || !u.deviation || !isSupplierFault(u.deviation.kind)) continue;
+      const cur = by.get(u.supplierId) ?? { deviations: 0, jobs: new Set<string>(), lastAt: when, kinds: new Map<MaterialDeviationKind, number>() };
+      cur.deviations += 1;
+      cur.jobs.add(log.jobId);
+      if (when > cur.lastAt) cur.lastAt = when;
+      cur.kinds.set(u.deviation.kind, (cur.kinds.get(u.deviation.kind) ?? 0) + 1);
+      by.set(u.supplierId, cur);
+    }
+  }
+  return [...by.entries()]
+    .map(([supplierId, v]): MaterialSupplierPattern => ({ supplierId, supplierName: byId(suppliers, supplierId)?.name ?? supplierId, deviations: v.deviations, jobs: v.jobs.size, lastAt: v.lastAt, kinds: [...v.kinds.entries()].map(([kind, count]) => ({ kind, count })), needsReview: v.deviations >= MATERIAL_PATTERN.deviations && v.jobs.size >= MATERIAL_PATTERN.jobs }))
+    .sort((a, b) => b.deviations - a.deviations);
+}
+
+/** One alert per supplier whose parts keep being replaced, pointing at that supplier's scorecard; it clears itself when the pattern ages out. */
+function syncMaterialDeviations(automated: boolean, now: number): void {
+  ensureMaterialSeeds();
+  const at = new Date(now).toISOString();
+  const live = new Set<string>();
+  for (const p of materialPatternsOf(now)) {
+    if (!p.needsReview) continue;
+    const key = `matdev:${p.supplierId}`;
+    live.add(key);
+    if (alerts.some((a) => a.relatedId === key && a.status !== 'resolved')) continue;
+    raiseAlert({ titleKey: 'materialLog.alert.pattern', context: `${p.supplierName}: ${p.deviations} parts replaced on ${p.jobs} jobs in ${MATERIAL_PATTERN.days} days`, severity: 'medium', category: 'supplier', relatedId: key, sourceRoute: `/scorecard?supplierId=${p.supplierId}` });
+    if (automated) logAutomatedAction({ sourceKey: 'materials.supplier_pattern', triggeringCondition: `${p.supplierName}'s parts were replaced ${p.deviations} times across ${p.jobs} jobs`, actionTaken: 'Raised an alert pointing at the supplier’s scorecard', affectedRecordId: p.supplierId, affectedRecordType: 'other', subjectLabel: p.supplierName });
+  }
+  for (const a of alerts) if (a.relatedId?.startsWith('matdev:') && a.status !== 'resolved' && !live.has(a.relatedId)) patchInPlace(alerts, a.id, { status: 'resolved', resolvedAt: at, resolvedBy: 'system', resolutionNote: 'No longer a pattern.' });
 }
 
 /* ============================== Installation SOP (123) */
@@ -11771,6 +11960,125 @@ export const memoryRepository: Repository = {
       if (unmetDependencies(def as InstallSopStepDef, job.steps).length > 0) throw new RepositoryError('depends_on');
       const updated = patchInPlace(jobs, job.id, { steps: withCurrent(job.steps, sopVersionOf(job).steps, stepId) });
       return installationSopViewOf(updated, technicianId);
+    }),
+
+  /* --------------------------------- As-installed material log (128) */
+  getMaterialLog: (jobId, userId) =>
+    simulateRead((): MaterialLogView => {
+      const { job } = materialActor(jobId, userId);
+      return materialLogViewOf(job, userId);
+    }),
+
+  saveMaterialLog: (jobId, input, technicianId) =>
+    simulateWrite((): MaterialLogView => {
+      const { job, user, role } = materialActor(jobId, technicianId);
+      if (user.role === 'admin') throw new RepositoryError('forbidden');
+      // Only the lead writes it: an assistant sees it, and answers for their own steps elsewhere.
+      if (role !== 'lead') throw new RepositoryError('not_lead');
+      if (!materialStarted(job)) throw new RepositoryError('not_started');
+      const existing = materialLogs.find((l) => l.jobId === job.id);
+      if (existing?.status === 'confirmed') throw new RepositoryError('invalid_state');
+      const now = Date.now();
+      const at = input.capturedAt ? new Date(input.capturedAt).getTime() : now;
+      if (Number.isNaN(at)) throw new RepositoryError('captured_invalid');
+      if (at > now + 60_000) throw new RepositoryError('captured_in_future');
+      const plan = materialPlanOf(job, false);
+      const seenLines = new Set<string>();
+      const uses: JobMaterialUse[] = input.uses.map((raw) => {
+        const line = raw.lineItemId ? plan.find((p) => p.id === raw.lineItemId) : undefined;
+        if (raw.lineItemId && !line) throw new RepositoryError('unknown_line');
+        if (raw.lineItemId) {
+          if (seenLines.has(raw.lineItemId)) throw new RepositoryError('duplicate_line');
+          seenLines.add(raw.lineItemId);
+        }
+        materialUseCounter += 1;
+        const clean: JobMaterialUse = {
+          id: raw.id && !raw.id.startsWith('mu-seed-') ? raw.id : `mu-${materialUseCounter}`,
+          source: line ? 'delivered' : raw.source,
+          ...(line ? { lineItemId: line.id, poCode: line.poCode, ...(line.supplierId ? { supplierId: line.supplierId } : {}) } : {}),
+          // A planned row is the plan's own, never the phone's copy of it.
+          category: line ? line.category : raw.category.trim(),
+          description: line ? line.description : raw.description.trim(),
+          plannedQty: line ? line.quantity : 0,
+          usedQty: raw.usedQty,
+          leftoverQty: raw.leftoverQty,
+          ...(raw.leftoverQty > 0 && raw.leftoverAction ? { leftoverAction: raw.leftoverAction } : {}),
+          ...(raw.deviation ? { deviation: { kind: raw.deviation.kind, reason: raw.deviation.reason.trim(), ...(raw.deviation.replacesLineItemId ? { replacesLineItemId: raw.deviation.replacesLineItemId } : {}) } } : {}),
+          identifiers: raw.identifiers.map((i) => ({ legible: i.legible, ...(i.serial?.trim() ? { serial: i.serial.trim() } : {}), ...(i.batch?.trim() ? { batch: i.batch.trim() } : {}), ...(i.note?.trim() ? { note: i.note.trim() } : {}) })),
+          ...(line && line.state !== 'on_site' ? { deliveryUnconfirmed: true } : {}),
+          ...(raw.unitCost !== undefined && raw.unitCost >= 0 ? { unitCost: raw.unitCost } : {}),
+        };
+        return clean;
+      });
+      // A used row whose deviation is left over from an earlier edit (used in full) is not a deviation: drop it so the record stays honest.
+      for (const u of uses) if (u.lineItemId && u.deviation && u.usedQty + u.leftoverQty === u.plannedQty && u.usedQty > 0 && u.leftoverQty === 0 && !u.deviation.reason.trim()) delete u.deviation;
+      const problems = logProblems(uses, plan.map((p) => p.id), input.confirm);
+      if (problems.length > 0) throw new RepositoryError(problems[0].problem);
+      const savedAt = new Date(at).toISOString();
+      if (existing) {
+        existing.uses = uses;
+        existing.savedAt = savedAt;
+        existing.savedByName = user.name;
+        if (input.confirm) {
+          existing.status = 'confirmed';
+          existing.confirmedAt = savedAt;
+          existing.confirmedByName = user.name;
+        }
+      } else {
+        materialLogs.push({ jobId: job.id, uses, status: input.confirm ? 'confirmed' : 'draft', savedAt, savedByName: user.name, ...(input.confirm ? { confirmedAt: savedAt, confirmedByName: user.name } : {}), reopened: [], isDemo: true });
+      }
+      if (input.confirm) syncMaterialDeviations(false, now);
+      return materialLogViewOf(job, technicianId);
+    }),
+
+  reopenMaterialLog: (jobId, reason, adminId) =>
+    simulateWrite((): MaterialLogView => {
+      adminOnly(adminId);
+      const { job, user } = materialActor(jobId, adminId);
+      const log = materialLogs.find((l) => l.jobId === job.id);
+      if (!log || log.status !== 'confirmed') throw new RepositoryError('invalid_state');
+      if (reason.trim().length < REASON_MIN) throw new RepositoryError('reason_required');
+      log.status = 'draft';
+      delete log.confirmedAt;
+      delete log.confirmedByName;
+      log.reopened.push({ at: new Date().toISOString(), byName: user.name, reason: reason.trim() });
+      syncMaterialDeviations(false, Date.now());
+      return materialLogViewOf(job, adminId);
+    }),
+
+  getMaterialBoard: (adminId) =>
+    simulateRead((): MaterialBoardView => {
+      adminOnly(adminId);
+      ensureMaterialSeeds();
+      const now = Date.now();
+      const rows = jobs
+        .filter((j) => materialStarted(j) || materialLogs.some((l) => l.jobId === j.id))
+        .map((j): MaterialBoardRow => {
+          const log = materialLogs.find((l) => l.jobId === j.id);
+          const uses = log?.uses ?? [];
+          return { jobId: j.id, jobCode: j.code, siteName: j.siteName, status: j.status, logStatus: log ? log.status : 'none', deviations: uses.filter((u) => u.deviation).length, substitutions: uses.filter((u) => u.deviation?.kind === 'substitute').length, leftovers: uses.reduce((sum, u) => sum + u.leftoverQty, 0), savedAt: log?.savedAt ?? null };
+        })
+        .sort((a, b) => (a.logStatus === 'confirmed' ? 1 : 0) - (b.logStatus === 'confirmed' ? 1 : 0) || a.jobCode.localeCompare(b.jobCode));
+      return {
+        rows,
+        patterns: materialPatternsOf(now),
+        pool: materialPoolOf(null),
+        totals: { jobs: rows.length, confirmed: rows.filter((r) => r.logStatus === 'confirmed').length, waiting: rows.filter((r) => r.logStatus !== 'confirmed').length, deviations: rows.reduce((sum, r) => sum + r.deviations, 0) },
+      };
+    }),
+
+  getAsInstalledParts: (jobId, userId) =>
+    simulateRead((): AsInstalledView => {
+      const { job } = materialActor(jobId, userId);
+      const log = materialLogs.find((l) => l.jobId === job.id);
+      if (!log || log.status !== 'confirmed') return { jobId: job.id, confirmedAt: null, parts: [] };
+      return {
+        jobId: job.id,
+        confirmedAt: log.confirmedAt ?? null,
+        parts: log.uses
+          .filter((u) => u.usedQty > 0)
+          .map((u): AsInstalledPart => ({ category: u.category, description: u.description, quantity: u.usedQty, source: u.source, poCode: u.poCode ?? null, supplierId: u.supplierId ?? null, identifiers: u.identifiers.map((i) => ({ ...i })), substituted: u.deviation?.kind === 'substitute' })),
+      };
     }),
 
   /* --------------------------------- Issue / blocker reports (127) */

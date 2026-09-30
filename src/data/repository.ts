@@ -1,5 +1,7 @@
 import type {
   AdvanceRecovery,
+  JobMaterialUse,
+  MaterialDeviationKind,
   InstallSopPhase,
   JobEvidence,
   JobEvidenceException,
@@ -1650,6 +1652,108 @@ export interface JobIssueView {
   canReopen: boolean;
   /** Only on this phone so far. */
   local?: boolean;
+}
+
+/* ------------------------------------ As-installed material log (128) */
+
+/** One line of the bill of materials the job was planned with: the deal's order lines, as they stand on the delivery records. */
+export interface MaterialPlanLine {
+  id: string;
+  poCode: string;
+  supplierId: string | null;
+  supplierName: string | null;
+  category: string;
+  description: string;
+  quantity: number;
+  state: JobMaterialState;
+  /** What the line was ordered at. Admin only: a technician never sees prices. */
+  unitPrice: number | null;
+}
+
+/** A leftover another job marked as reusable, which could be used here instead of ordering again. Not tracked as stock: it is only a pointer. */
+export interface MaterialPoolItem {
+  jobId: string;
+  jobCode: string;
+  siteName: string;
+  category: string;
+  description: string;
+  quantity: number;
+  distanceKm: number | null;
+  at: string;
+}
+
+export interface MaterialLogView {
+  job: { id: string; code: string; siteName: string; status: Job['status']; role: 'lead' | 'assistant' | null };
+  planned: MaterialPlanLine[];
+  uses: JobMaterialUse[];
+  status: 'none' | 'draft' | 'confirmed';
+  savedAt: string | null;
+  savedByName: string | null;
+  confirmedAt: string | null;
+  confirmedByName: string | null;
+  reopened: { at: string; byName: string; reason: string }[];
+  /** The lead can write it while the job has been started and it is not confirmed. */
+  canEdit: boolean;
+  /** Why it cannot be edited right now, when it cannot. */
+  lockedReason: 'assistant' | 'admin' | 'confirmed' | 'not_started' | null;
+  canReopen: boolean;
+  pool: MaterialPoolItem[];
+  /** Admin only. */
+  costs: { planned: number; asInstalled: number; leftoverValue: number; extras: number } | null;
+}
+
+export interface MaterialLogInput {
+  uses: JobMaterialUse[];
+  confirm: boolean;
+  /** When it was actually done, for a log written without signal. */
+  capturedAt?: string;
+}
+
+export interface MaterialSupplierPattern {
+  supplierId: string;
+  supplierName: string;
+  deviations: number;
+  jobs: number;
+  lastAt: string;
+  kinds: { kind: MaterialDeviationKind; count: number }[];
+  needsReview: boolean;
+}
+
+export interface MaterialBoardRow {
+  jobId: string;
+  jobCode: string;
+  siteName: string;
+  status: Job['status'];
+  logStatus: 'none' | 'draft' | 'confirmed';
+  deviations: number;
+  substitutions: number;
+  leftovers: number;
+  savedAt: string | null;
+}
+
+export interface MaterialBoardView {
+  rows: MaterialBoardRow[];
+  patterns: MaterialSupplierPattern[];
+  pool: MaterialPoolItem[];
+  totals: { jobs: number; confirmed: number; waiting: number; deviations: number };
+}
+
+/** What is physically in a customer's lift, for the warranty record. */
+export interface AsInstalledPart {
+  category: string;
+  description: string;
+  quantity: number;
+  source: JobMaterialUse['source'];
+  poCode: string | null;
+  supplierId: string | null;
+  identifiers: JobMaterialUse['identifiers'];
+  substituted: boolean;
+}
+
+export interface AsInstalledView {
+  jobId: string;
+  confirmedAt: string | null;
+  parts: AsInstalledPart[];
 }
 
 export interface JobIssuesView {
@@ -4230,6 +4334,17 @@ export interface Repository {
   pingSiteLocation(technicianId: string, point: GeoPoint, at?: string): Promise<void>;
   /** Picks which step to do next, when the site does not allow the suggested order. Only steps whose prerequisites are done. */
   focusSopStep(jobId: string, stepId: string, technicianId: string): Promise<InstallationSopView>;
+
+  /* As-installed material log (128) */
+  getMaterialLog(jobId: string, userId: string): Promise<MaterialLogView>;
+  /** The lead writes what was actually used. `confirm` locks it once every planned part is accounted for. */
+  saveMaterialLog(jobId: string, input: MaterialLogInput, technicianId: string): Promise<MaterialLogView>;
+  /** Admin only: a confirmed log needs correcting. It goes back to draft and the reopening, with its reason, is kept. */
+  reopenMaterialLog(jobId: string, reason: string, adminId: string): Promise<MaterialLogView>;
+  /** Admin only: which jobs have logged what was used, and which suppliers' parts keep being replaced. */
+  getMaterialBoard(adminId: string): Promise<MaterialBoardView>;
+  /** What is installed at this job, for the warranty and AMC record. Only a confirmed log counts. */
+  getAsInstalledParts(jobId: string, userId: string): Promise<AsInstalledView>;
 
   /* Issue / blocker reports (127) */
   getJobIssues(jobId: string, userId: string): Promise<JobIssuesView>;
