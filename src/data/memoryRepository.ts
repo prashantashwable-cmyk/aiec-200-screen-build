@@ -172,6 +172,11 @@ import type {
   PaymentEvidence,
   SupplierPaymentQueue,
   SupplierPaymentSchedule,
+  AdvanceItemView,
+  AdvanceRecoveryView,
+  AdvanceRetentionBoard,
+  ReleaseBatchResult,
+  RetentionItemView,
   DisputeEffect,
   DisputeTargets,
   SupplierDisputeBoard,
@@ -280,6 +285,7 @@ import type {
   SupplierPaymentQuery,
   SupplierGstCheck,
   GstPeriodHandover,
+  AdvanceRecovery,
   SupplierDispute,
   SupplierDisputeDecision,
   SupplierDisputeDecisionRecord,
@@ -441,6 +447,8 @@ import { INVOICE_MIN_ITEMS, explainsInvoicePrice, gateOf, matchLine, overallOf }
 import type { GateLine, InvoiceGate, InvoiceMatchStatus } from '@/features/suppliers/invoiceMatch';
 import { ACK_EXPECTED_AFTER, DEVIATION_REASON_MIN, deviationIncreasesRisk, HANDOVER_AFTER_START, chainAnomalies, chainKinds, checkDeviation, firedAtOf, splitOf } from '@/features/suppliers/paymentChain';
 import type { ChainNodeFacts, ChainNodeKind, ChainNodeState } from '@/features/suppliers/paymentChain';
+import { RECOVERY_REASON_MIN, batchSkipReason, readAdvance, readRetention } from '@/features/suppliers/exposure';
+import type { RetentionHold } from '@/features/suppliers/exposure';
 import { NOTE_MIN, POSITION_MIN, REOPEN_WINDOW, canPartial, decisionProblem, dueAtOf, maxAmountOf, slaOf } from '@/features/suppliers/disputes';
 import { CHECK_STALE_AFTER, ZERO_SPLIT, addSplit, creditStatus, gstOn, handoverDueAt, periodOf, recentPeriods, shiftPeriod, splitTax, supplierRisk, supplyType } from '@/features/tax/gst';
 import type { CreditStatus, SupplierRisk, SupplierRiskKind } from '@/features/tax/gst';
@@ -599,7 +607,7 @@ const delayCases: DeliveryDelayCase[] = [...seedDeliveryDelayCases];
 let delayCounter = 100;
 
 /** 100: the root of how AIEC pays suppliers. */
-let paymentTermsConfig: SupplierPaymentTermsConfig = { tiers: { ...DEFAULT_TIER_SETTINGS } };
+let paymentTermsConfig: SupplierPaymentTermsConfig = { tiers: { ...DEFAULT_TIER_SETTINGS }, autoReleaseRetention: false };
 const supplierTermsHistory = [...seedSupplierTermsHistory];
 const supplierRetentions = [...seedSupplierRetentions];
 let paymentTermsCounter = 100;
@@ -2116,6 +2124,10 @@ function commitmentSources(now: number): CommitmentSources {
         resolvedAt: i.rejectedAt ?? i.events.filter((e) => e.kind === 'adjustment_accepted').map((e) => e.at).sort().pop(),
       })),
     supplierDisputes,
+    advanceRecoveries,
+    retentionsReady: retentionItemsOf(now)
+      .filter((r) => r.bulkOk && r.job?.completedAt)
+      .map((r) => ({ retentionId: r.id, poCode: r.poCode, supplierName: r.supplierName, amount: r.amount, readyAt: r.job!.completedAt! })),
     gstPeriods: gstPeriodsOwed(now),
     gstStatusChecks: gstStatusChecksOwed(),
     pausedDealIds: new Set(paymentReminderPauses.filter((p) => p.paused).map((p) => p.dealId)),
@@ -2335,6 +2347,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   syncInvoiceMismatches(now);
   syncGstCompliance(now);
   syncSupplierDisputes(now);
+  syncAdvanceExposure(now);
   advanceShipments(now);
   // 105: a delivery running late is noticed, and one that caught up is cleared, without anyone looking.
   syncDelayCases(now);
@@ -4710,6 +4723,133 @@ function syncGstCompliance(now: number): void {
   }
 }
 
+/* ============================== Advance payment & retention (118) */
+
+const advanceRecoveries: AdvanceRecovery[] = [];
+let recoveryCounter = 0;
+const ADVANCE_ALERT = 'advanceExposure.alert.exposure';
+
+const recoveryEvents = (r: AdvanceRecovery, kind: AdvanceRecovery['events'][number]['kind'], byName: string, extra: { amount?: number; note?: string } = {}) => [
+  ...r.events,
+  { id: `${r.id}-e${r.events.length + 1}`, kind, at: new Date().toISOString(), byName, amount: extra.amount, note: extra.note?.trim() || undefined },
+];
+
+function recoveryViewOf(r: AdvanceRecovery): AdvanceRecoveryView {
+  return { id: r.id, code: r.code, status: r.status, amount: r.amount, recoveredAmount: r.recoveredAmount, writtenOffAmount: r.writtenOffAmount, reason: r.reason, startedByName: r.startedByName, startedAt: r.startedAt, events: r.events };
+}
+
+/** Advances paid and not yet backed by a delivery: money out before the goods came. */
+function advanceItemsOf(now: number): AdvanceItemView[] {
+  const out: AdvanceItemView[] = [];
+  for (const p of supplierPayments) {
+    if (p.part !== 'upfront' || p.status !== 'executed') continue;
+    const po = byId(supplierPurchaseOrders, p.poId);
+    if (!po || paymentDeliveredAt(po)) continue;
+    const recovery = advanceRecoveries.find((r) => r.paymentId === p.id);
+    // A recovery that has been closed (money back, or written off) is settled: it lives on in Payment History.
+    if (recovery && recovery.status !== 'open') continue;
+    const entry = historyEntryOf(p);
+    if (entry.netAmount <= 0) continue;
+    const reading = readAdvance({ delivered: false, promisedAt: promisedDeliveryOf(po) ?? null, dealGone: isOrphanedPo(po), recoveryOpen: !!recovery }, now);
+    const paidAt = p.executedAt ?? p.approvedAt ?? p.triggeredAt;
+    out.push({
+      id: p.id,
+      code: p.code,
+      poId: po.id,
+      poCode: po.code,
+      supplierId: p.supplierId,
+      supplierName: byId(suppliers, p.supplierId)?.name ?? '',
+      siteName: shipmentSite(po.dealId)?.siteName ?? '',
+      outstanding: entry.netAmount,
+      paidAmount: p.amount,
+      paidAt,
+      ageDays: Math.max(0, Math.floor((now - new Date(paidAt).getTime()) / 86_400_000)),
+      promisedAt: promisedDeliveryOf(po) ?? null,
+      daysPastPromise: reading.daysPastPromise,
+      state: reading.state,
+      recommendRecovery: reading.recommendRecovery,
+      stage: poStageOf(po),
+      recovery: recovery ? recoveryViewOf(recovery) : null,
+    });
+  }
+  return out.sort((a, b) => Number(b.recommendRecovery) - Number(a.recommendRecovery) || b.daysPastPromise - a.daysPastPromise || b.ageDays - a.ageDays);
+}
+
+function retentionItemsOf(now: number): RetentionItemView[] {
+  return supplierRetentions
+    .filter((r) => r.status === 'held' || r.status === 'paused')
+    .map((r): RetentionItemView => {
+      const po = byId(supplierPurchaseOrders, r.poId);
+      const reading = readRetention(r.status, r.heldAt, jobs.filter((j) => j.dealId === r.dealId));
+      const rating = supplierOrderRatings.find((x) => x.poId === r.poId);
+      const holds: RetentionHold[] = [];
+      if (r.status === 'paused' || rating?.defects.some((d) => d.attribution === 'supplier')) holds.push('defect');
+      if (openReportsOnPo(r.poId).length > 0) holds.push('open_report');
+      if (openDisputesOnPo(r.poId).length > 0) holds.push('open_dispute');
+      const age = Math.max(0, Math.floor((now - new Date(r.heldAt).getTime()) / 86_400_000));
+      return {
+        id: r.id,
+        poId: r.poId,
+        poCode: po?.code ?? r.poId,
+        supplierId: r.supplierId,
+        supplierName: byId(suppliers, r.supplierId)?.name ?? '',
+        siteName: po ? (shipmentSite(po.dealId)?.siteName ?? reading.job?.siteName ?? '') : (reading.job?.siteName ?? ''),
+        amount: r.amount,
+        pct: r.pct,
+        heldAt: r.heldAt,
+        ageDays: age,
+        status: r.status,
+        readiness: reading.readiness,
+        progress: reading.progress,
+        job: reading.job,
+        holds,
+        bulkOk: batchSkipReason(r.status, reading.readiness, holds) === null,
+        reviewDue: now - new Date(r.heldAt).getTime() >= RETENTION_REVIEW_AFTER && reading.readiness !== 'ready',
+      };
+    })
+    .sort((a, b) => Number(b.bulkOk) - Number(a.bulkOk) || b.ageDays - a.ageDays);
+}
+
+/** An advance that is late, stalled or for a deal that is gone is a financial risk Admin must see on the alerts board. Idempotent. */
+function syncAdvanceExposure(now: number): void {
+  const at = new Date(now).toISOString();
+  const items = advanceItemsOf(now);
+  for (const a of items) {
+    const open = alerts.find((x) => x.relatedId === a.id && x.titleKey === ADVANCE_ALERT && x.status !== 'resolved');
+    const risky = a.state === 'late' || a.state === 'stalled' || a.state === 'deal_gone';
+    if (risky && !open) {
+      raiseAlert({
+        titleKey: ADVANCE_ALERT,
+        context: `${a.supplierName} · ${a.poCode} · ${formatINR(a.outstanding)} out for ${a.ageDays} days`,
+        severity: a.state === 'late' ? 'medium' : 'high',
+        category: 'payment',
+        relatedId: a.id,
+        sourceRoute: `/advance-retention?advance=${a.id}`,
+      });
+      logAutomatedAction({
+        sourceKey: 'advance.exposure',
+        triggeringCondition: `The advance ${a.code} is still out with no delivery`,
+        actionTaken: 'Raised an alert so the exposure is seen',
+        affectedRecordId: a.id,
+        affectedRecordType: 'purchase_order',
+        subjectLabel: a.poCode,
+      });
+    } else if (!risky && open) {
+      patchInPlace(alerts, open.id, { status: 'resolved', resolvedAt: at, resolvedBy: 'system', resolutionNote: 'The advance is no longer exposed.' });
+    }
+  }
+  // An alert for an advance that has since been delivered or closed goes too.
+  for (const open of alerts.filter((x) => x.titleKey === ADVANCE_ALERT && x.status !== 'resolved')) {
+    if (!items.some((i) => i.id === open.relatedId)) patchInPlace(alerts, open.id, { status: 'resolved', resolvedAt: at, resolvedBy: 'system', resolutionNote: 'The advance is settled.' });
+  }
+}
+
+function advanceRecoveryOrThrow(id: string): AdvanceRecovery {
+  const r = byId(advanceRecoveries, id);
+  if (!r) throw new RepositoryError('not_found');
+  return r;
+}
+
 /* ============================== Supplier dispute resolution (117) */
 
 const supplierDisputes: SupplierDispute[] = seedSupplierDisputes.map((d) => ({ ...d, decisions: d.decisions.map((x) => ({ ...x })), events: [...d.events], processFlag: d.processFlag ? { ...d.processFlag } : undefined }));
@@ -5580,7 +5720,9 @@ function settleRetentions(now: number): void {
     const action = retentionAction(r, jobs.filter((j) => j.dealId === r.dealId), rating);
     if (action.kind === 'none') continue;
     // A part still in question on this order (108) keeps its retention held: the supplier is not paid over an open fault.
-    if (action.kind === 'release' && openReportsOnPo(r.poId).length > 0) continue;
+    if (action.kind === 'release' && (openReportsOnPo(r.poId).length > 0 || openDisputesOnPo(r.poId).length > 0)) continue;
+    // Unless Admin turned automatic release on, a retention that is ready comes up for release (118) and stays held until then.
+    if (action.kind === 'release' && !paymentTermsConfig.autoReleaseRetention) continue;
     const po = byId(supplierPurchaseOrders, r.poId);
     const at = new Date(now).toISOString();
     if (action.kind === 'release') {
@@ -9114,6 +9256,148 @@ export const memoryRepository: Repository = {
       return { notified: true };
     }),
 
+  /* --------------------------------------------- Advance payment & retention (118) */
+  getAdvanceRetentionBoard: (byUserId) =>
+    simulateRead((): AdvanceRetentionBoard => {
+      adminOnly(byUserId);
+      const now = Date.now();
+      syncSupplierPayments(now);
+      executeSupplierPayments(now);
+      settleRetentions(now);
+      syncAdvanceExposure(now);
+      const advances = advanceItemsOf(now);
+      const retentions = retentionItemsOf(now);
+      return {
+        advances,
+        retentions,
+        autoRelease: !!paymentTermsConfig.autoReleaseRetention,
+        totals: {
+          advanceOut: advances.reduce((n, a) => n + a.outstanding, 0),
+          advanceAtRisk: advances.filter((a) => a.state === 'stalled' || a.state === 'deal_gone' || a.state === 'late').reduce((n, a) => n + a.outstanding, 0),
+          retentionHeld: retentions.reduce((n, r) => n + r.amount, 0),
+          retentionReady: retentions.filter((r) => r.bulkOk).reduce((n, r) => n + r.amount, 0),
+        },
+      };
+    }),
+
+  setAutoReleaseRetention: (on, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      paymentTermsConfig = { ...paymentTermsConfig, autoReleaseRetention: on, updatedBy: actor.name, updatedAt: new Date().toISOString() };
+      settleRetentions(Date.now());
+      return !!paymentTermsConfig.autoReleaseRetention;
+    }),
+
+  releaseRetentionsBatch: (retentionIds, byUserId) =>
+    simulateWrite((): ReleaseBatchResult => {
+      const actor = adminOnly(byUserId);
+      const now = Date.now();
+      const items = retentionItemsOf(now);
+      const result: ReleaseBatchResult = { released: [], skipped: [] };
+      for (const id of [...new Set(retentionIds)]) {
+        const item = items.find((x) => x.id === id);
+        if (!item) {
+          result.skipped.push({ id, reason: byId(supplierRetentions, id) ? 'not_held' : 'not_found' });
+          continue;
+        }
+        const skip = batchSkipReason(item.status, item.readiness, item.holds);
+        if (skip) {
+          result.skipped.push({ id, reason: skip });
+          continue;
+        }
+        patchInPlace(supplierRetentions, id, { status: 'released', decidedAt: new Date(now).toISOString(), decidedBy: actor.name, decisionReason: 'Released in a batch after QC and handover' });
+        result.released.push(id);
+      }
+      syncSupplierPayments(now);
+      syncCommitments(now);
+      return result;
+    }),
+
+  startAdvanceRecovery: (paymentId, reason, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const item = advanceItemsOf(Date.now()).find((a) => a.id === paymentId);
+      const p = byId(supplierPayments, paymentId);
+      if (!item || !p) throw new RepositoryError('not_found');
+      if (item.recovery) throw new RepositoryError('already_open');
+      if (reason.trim().length < RECOVERY_REASON_MIN) throw new RepositoryError('note_required');
+      recoveryCounter += 1;
+      const at = new Date().toISOString();
+      const created: AdvanceRecovery = {
+        id: `ar-new-${recoveryCounter}`,
+        code: `AIEC-AR-${7000 + recoveryCounter}`,
+        paymentId,
+        poId: p.poId,
+        supplierId: p.supplierId,
+        amount: item.outstanding,
+        reason: reason.trim(),
+        status: 'open',
+        startedByName: actor.name,
+        startedAt: at,
+        recoveredAmount: 0,
+        writtenOffAmount: 0,
+        events: [],
+        isDemo: true,
+      };
+      created.events = [{ id: `${created.id}-e1`, kind: 'started', at, byName: actor.name, amount: item.outstanding, note: created.reason }];
+      advanceRecoveries.push(created);
+      const po = byId(supplierPurchaseOrders, p.poId);
+      const supplier = byId(suppliers, p.supplierId);
+      if (po && supplier && supplierUserFor(supplier)) {
+        pushSupplierMessage(ensureSupplierThread(supplier.id, po.id), {
+          author: 'aiec',
+          authorName: actor.name,
+          authorUserId: actor.id,
+          body: `Recovery ${created.code}: we paid an advance of ${formatINR(item.outstanding)} on ${po.code} and the order has not been delivered. ${created.reason} Please return the advance or tell us the delivery date.`,
+          channel: 'in_app',
+          at,
+          expectsReply: true,
+          poRef: po.id,
+        });
+      }
+      syncAdvanceExposure(Date.now());
+      syncCommitments(Date.now());
+      return recoveryViewOf(created);
+    }),
+
+  recordAdvanceRecovered: (recoveryId, amount, note, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const r = advanceRecoveryOrThrow(recoveryId);
+      if (r.status !== 'open') throw new RepositoryError('invalid_state');
+      const p = byId(supplierPayments, r.paymentId);
+      if (!p) throw new RepositoryError('not_found');
+      const outstanding = historyEntryOf(p).netAmount;
+      if (!Number.isFinite(amount) || !(amount > 0)) throw new RepositoryError('invalid_amount');
+      if (amount > outstanding) throw new RepositoryError('exceeds_payment');
+      // What comes back is a credit beside the advance, so Payment History shows the money leaving and returning.
+      pushPaymentAdjustment(p, 'credit', amount, `Advance recovery ${r.code}: ${note?.trim() || 'money returned by the supplier'}`, actor);
+      const closes = amount >= outstanding;
+      patchInPlace(advanceRecoveries, r.id, {
+        recoveredAmount: r.recoveredAmount + amount,
+        status: closes ? 'recovered' : 'open',
+        closedAt: closes ? new Date().toISOString() : undefined,
+        events: recoveryEvents(r, 'recovered', actor.name, { amount, note }),
+      });
+      syncAdvanceExposure(Date.now());
+      syncCommitments(Date.now());
+      return recoveryViewOf(byId(advanceRecoveries, r.id)!);
+    }),
+
+  writeOffAdvance: (recoveryId, note, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const r = advanceRecoveryOrThrow(recoveryId);
+      if (r.status !== 'open') throw new RepositoryError('invalid_state');
+      if (note.trim().length < RECOVERY_REASON_MIN) throw new RepositoryError('note_required');
+      const p = byId(supplierPayments, r.paymentId);
+      const remaining = p ? historyEntryOf(p).netAmount : 0;
+      patchInPlace(advanceRecoveries, r.id, { status: 'written_off', writtenOffAmount: remaining, closedAt: new Date().toISOString(), events: recoveryEvents(r, 'written_off', actor.name, { amount: remaining, note }) });
+      syncAdvanceExposure(Date.now());
+      syncCommitments(Date.now());
+      return recoveryViewOf(byId(advanceRecoveries, r.id)!);
+    }),
+
   /* --------------------------------------------- Supplier dispute resolution (117) */
   getSupplierDisputeBoard: (byUserId) =>
     simulateRead((): SupplierDisputeBoard => {
@@ -10575,7 +10859,7 @@ export const memoryRepository: Repository = {
       if (checkSettings(settings).length > 0) throw new RepositoryError('invalid_input');
       if (reason.trim().length < 10) throw new RepositoryError('reason_required');
       const at = new Date().toISOString();
-      paymentTermsConfig = { tiers: { ...paymentTermsConfig.tiers, [tier]: { ...settings } }, updatedBy: actor.name, updatedAt: at };
+      paymentTermsConfig = { ...paymentTermsConfig, tiers: { ...paymentTermsConfig.tiers, [tier]: { ...settings } }, updatedBy: actor.name, updatedAt: at };
       recordTermsChange({ kind: 'tier_defaults', toTier: tier, settings, reason: reason.trim(), scoreAtChange: null, ratedOrdersAtChange: 0, by: actor.name, at });
       return paymentTermsConfig;
     }),

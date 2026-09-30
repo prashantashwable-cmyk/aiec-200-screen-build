@@ -7,6 +7,7 @@ import type {
   DeliverySchedule,
   ShipmentLeg,
   SupplierMessage,
+  AdvanceRecovery,
   SupplierDispute,
   SupplierRetention,
   SupplierThread,
@@ -41,6 +42,7 @@ import { windowEndsAt } from '@/features/logistics/deliverySlots';
 import type { InvoiceGate } from '@/features/suppliers/invoiceMatch';
 import { CHECK_STALE_AFTER, handoverDueAt } from '@/features/tax/gst';
 import { PROCESS_REVIEW_TARGET, dueAtOf } from '@/features/suppliers/disputes';
+import { RECOVERY_CHASE_EVERY, RELEASE_DUE_AFTER } from '@/features/suppliers/exposure';
 import { MANUAL_UPDATE_EVERY } from '@/features/logistics/shipmentTracking';
 
 /**
@@ -96,6 +98,10 @@ export interface CommitmentSources {
   invoiceMismatches: { invoiceId: string; poId: string; supplierId: string; invoiceNumber: string; notifiedAt: string; stillMismatched: boolean; resolvedAt?: string }[];
   /** Supplier payment disputes (117). */
   supplierDisputes: SupplierDispute[];
+  /** Advances being recovered (118). */
+  advanceRecoveries: AdvanceRecovery[];
+  /** Retentions whose installation has cleared QC and handover, with nothing open on the order, and that are still held (118). */
+  retentionsReady: { retentionId: string; poCode: string; supplierName: string; amount: number; readyAt: string }[];
   /** The last closed months with tax activity, and whether each was handed to the accountant (116). */
   gstPeriods: { period: string; handedOver: boolean; handedOverAt?: string }[];
   /** Trading suppliers with a GSTIN, and when their GST standing was last looked at (116). */
@@ -1111,6 +1117,60 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
             oversightRoute: `/supplier-payments?payment=${p.id}`,
           };
         });
+    },
+  },
+  {
+    // Chasing back an advance for goods that never came is never left to age (118): a recovery that goes quiet is chased.
+    kind: 'advance_recovery_followup',
+    nudgeBefore: days(1),
+    escalateAfter: days(2),
+    escalates: true,
+    raisesAlert: true,
+    alertCategory: 'payment',
+    collect(src) {
+      const admin = adminId(src);
+      return src.advanceRecoveries.map((r) => {
+        const supplier = src.suppliers.find((x) => x.id === r.supplierId);
+        const po = src.purchaseOrders.find((x) => x.id === r.poId);
+        const last = r.events[r.events.length - 1]?.at ?? r.startedAt;
+        return {
+          ...base('advance_recovery_followup', 'advance_recovery', r.id),
+          ownerUserId: admin,
+          titleKey: 'work.title.advance_recovery_followup',
+          titleParams: { supplier: supplier?.name ?? '', code: po?.code ?? '' },
+          amount: r.amount - r.recoveredAmount,
+          dueAt: plus(last, RECOVERY_CHASE_EVERY),
+          state: r.status === 'open' ? ('open' as const) : ('done' as const),
+          paused: false,
+          completedAt: r.closedAt,
+          actionRoute: `/advance-retention?advance=${r.paymentId}`,
+          oversightRoute: `/advance-retention?advance=${r.paymentId}`,
+        };
+      });
+    },
+  },
+  {
+    // A retention whose installation has cleared QC and been handed over is Admin's to release: money held back is not kept a day longer than it has to be (118).
+    kind: 'retention_release_ready',
+    nudgeBefore: days(1),
+    escalateAfter: days(3),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'payment',
+    collect(src) {
+      const admin = adminId(src);
+      return src.retentionsReady.map((r) => ({
+        ...base('retention_release_ready', 'supplier_retention', r.retentionId),
+        ownerUserId: admin,
+        titleKey: 'work.title.retention_release_ready',
+        titleParams: { supplier: r.supplierName, code: r.poCode },
+        amount: r.amount,
+        dueAt: plus(r.readyAt, RELEASE_DUE_AFTER),
+        state: 'open' as const,
+        paused: false,
+        actionRoute: '/advance-retention?tab=retentions',
+        oversightRoute: '/advance-retention?tab=retentions',
+      }));
     },
   },
   {

@@ -979,6 +979,32 @@ export interface SupplierInvoice {
   isDemo: boolean;
 }
 
+/* ------------------------------------ Advance recovery (118) */
+
+export type AdvanceRecoveryEventKind = 'started' | 'recovered' | 'written_off';
+
+/** AIEC asking a supplier to return an advance for goods that never came. The advance itself is never edited: what comes back
+ *  is a credit beside the payment (115), so the ledger shows both. */
+export interface AdvanceRecovery {
+  id: string;
+  code: string;
+  /** The executed `upfront` payment being recovered. */
+  paymentId: string;
+  poId: string;
+  supplierId: string;
+  /** The advance's net amount when recovery began. */
+  amount: number;
+  reason: string;
+  status: 'open' | 'recovered' | 'written_off';
+  startedByName: string;
+  startedAt: string;
+  recoveredAmount: number;
+  writtenOffAmount: number;
+  closedAt?: string;
+  events: { id: string; kind: AdvanceRecoveryEventKind; at: string; byName: string; amount?: number; note?: string }[];
+  isDemo: boolean;
+}
+
 /* ------------------------------------ Supplier dispute resolution (117) */
 
 /** What a supplier is disputing: an amount they were paid (or are still owed), when a held retention is released,
@@ -1591,6 +1617,8 @@ export interface SupplierPaymentTermsOverride {
  *  here — they belong to each supplier's agreement (098). */
 export interface SupplierPaymentTermsConfig {
   tiers: Record<SupplierTrustTier, SupplierPaymentTermSettings>;
+  /** Release a retention by itself when its installation is handed over. Off by default: a held amount stays held until Admin releases it (118). */
+  autoReleaseRetention?: boolean;
   updatedBy?: string;
   updatedAt?: string;
 }
@@ -2833,6 +2861,8 @@ export type CommitmentKind =
   | 'partner_feed_restore'
   | 'supplier_payment_approve'
   | 'supplier_payment_hold_review'
+  | 'advance_recovery_followup'
+  | 'retention_release_ready'
   | 'supplier_dispute_resolve'
   | 'supplier_dispute_process_review'
   | 'gst_period_handover'
@@ -2869,6 +2899,8 @@ export type CommitmentSubjectType =
   | 'supplier_invoice'
   | 'gst_period'
   | 'supplier_dispute'
+  | 'advance_recovery'
+  | 'supplier_retention'
   | 'supplier_gst';
 
 /**

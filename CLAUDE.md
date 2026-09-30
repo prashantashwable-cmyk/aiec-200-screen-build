@@ -110,7 +110,23 @@ the module's section to `BUILD_README.md`.
 - **Module 11 Material Logistics & Delivery is done, including its checkpoint** (`101`–`110`, see
   BUILD_README's Module 11 section). Admin has a "Logistics" nav tab; every delivery screen declares
   `tab: 'logistics'` for Admin.
-- **Module 12 Supplier Payment Processing in progress:** `111`–`117` built. **Next: `118`**.
+- **Module 12 Supplier Payment Processing in progress:** `111`–`118` built. **Next: `119`**.
+  118 facts:
+  - `@/features/suppliers/exposure` is the pure logic (`readAdvance`, `readRetention`, `batchSkipReason`, `RECOVERY_AFTER` 14 days,
+    `RECOVERY_CHASE_EVERY` 7 days). Nothing is stored about readiness: a retention is `ready` / `installing` / `awaiting_qc` /
+    `rework` / `no_installation` / `released` / `withheld` read from the deal's Job status and steps each time. An advance is
+    `on_track` / `late` / `stalled` / `deal_gone` / `recovering`, read from the order and the deal.
+  - **Retention release is now manual by default** (`paymentTermsConfig.autoReleaseRetention`, default off, toggled on 118).
+    `settleRetentions` (100) only auto-releases when it is on, and never over an open 108 report or 117 dispute. When off, a
+    retention that has reached handover comes up on 118 and raises the `retention_release_ready` commitment. 100's hint text
+    was reworded to match.
+  - Bulk release (`releaseRetentionsBatch`) skips, with a reason, anything held, paused, in rework or not ready; it never
+    releases what a person should look at. Single Release/Withhold takes a reason, kept in the record.
+  - Advance recovery (`AdvanceRecovery`, `startAdvanceRecovery`, `recordAdvanceRecovered`, `writeOffAdvance`): money coming back
+    is recorded as a 115 `credit` adjustment beside the original payment, never by editing it. `advance_recovery_followup`
+    commitment chases every 7 days; `syncAdvanceExposure` raises the `advanceExposure.alert.exposure` alert.
+  - The link to the installation record is the job code only; a full installation screen comes with a later module.
+  - `/advance-retention` is Admin only, reached from 091's hub.
   117 facts:
   - `SupplierDispute` (memoryRepository `supplierDisputes`) keeps the supplier's own words (`position`, `claimedAmount`, `threatensHalt`),
     append-only `decisions` and `events`, and `round` (1, +1 each time the supplier contests a decision; `roundStartedAt` restarts the

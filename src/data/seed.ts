@@ -963,6 +963,25 @@ export const seedJobs: Job[] = [
   { id: 'j-3', code: 'AIEC-J-3103', dealId: 'dl-1', technicianId: 'u-tech-3', status: 'materials_pending', siteName: 'Shree Ram Heights — Wing B', address: 'Phase 2, Hinjawadi', location: { lat: 18.592, lng: 73.7401 }, scheduledFor: daysAhead(3), steps: installSteps(1), isDemo: true },
   { id: 'j-4', code: 'AIEC-J-3104', dealId: 'dl-2', technicianId: 'u-tech-1', status: 'scheduled', siteName: 'Kulkarni Signature — Tower 2', address: 'Kharadi Bypass', location: { lat: 18.5522, lng: 73.9481 }, scheduledFor: daysAhead(8), steps: installSteps(0), isDemo: true },
   { id: 'j-5', code: 'AIEC-J-3105', dealId: 'dl-1', technicianId: 'u-tech-2', status: 'completed', siteName: 'Shree Ram Heights — Service Lift', address: 'Phase 2, Hinjawadi', location: { lat: 18.5908, lng: 73.7378 }, scheduledFor: daysAgo(56), startedAt: daysAgo(56), completedAt: daysAgo(38), steps: installSteps(10), isDemo: true },
+  // Older installations whose suppliers' retentions are still held (118). j-7 has cleared QC and been handed over; j-8 failed QC and is in rework.
+  { id: 'j-7', code: 'AIEC-J-3107', dealId: 'dl-h2', technicianId: 'u-tech-1', status: 'completed', siteName: 'Balaji Residency', address: 'Baner Road', location: { lat: 18.559, lng: 73.7868 }, scheduledFor: daysAgo(16), startedAt: daysAgo(16), completedAt: daysAgo(5), steps: installSteps(10), isDemo: true },
+  {
+    id: 'j-8',
+    code: 'AIEC-J-3108',
+    dealId: 'dl-h3',
+    technicianId: 'u-tech-3',
+    status: 'on_hold',
+    siteName: 'Om Sai Apartments',
+    address: 'Karve Nagar',
+    location: { lat: 18.4967, lng: 73.8146 },
+    scheduledFor: daysAgo(12),
+    startedAt: daysAgo(12),
+    holdReason: 'QC failed: the safety gear test was out of tolerance. Rework is booked.',
+    heldBy: 'Quality lead',
+    heldAt: daysAgo(3),
+    steps: installSteps(8).map((st, i) => (i === 8 ? { ...st, status: 'blocked' as const } : st)),
+    isDemo: true,
+  },
   { id: 'j-6', code: 'AIEC-J-3106', dealId: 'dl-2', technicianId: 'u-tech-3', status: 'on_hold', siteName: 'Kulkarni Signature — Basement', address: 'Kharadi Bypass', location: { lat: 18.5509, lng: 73.9462 }, scheduledFor: daysAgo(4), startedAt: daysAgo(4), steps: installSteps(3), isDemo: true },
 ];
 
@@ -1308,7 +1327,7 @@ export const seedHistoricalPurchaseOrders: SupplierPurchaseOrder[] = [
   // supplier delayed on controllers this month, which is what 106 reads as a market pattern, not one supplier.
   fulfilledPo('spo-205', 'AIEC-PO-8205', 'dl-1', 'sp-3', 'Suresh Konark', 14, [1, 3], [['controller', 'Microprocessor lift controller (service lift)', 96_000]], 16),
   // Ordered for a deal that was lost while the parts were being made: 106 asks what to do with them.
-  fulfilledPo('spo-206', 'AIEC-PO-8206', 'dl-8', 'sp-2', 'Meenal Sanghvi', 22, [1, 2, 10], [['guide_rails', 'T-section guide rail set', 37_500]], 25),
+  fulfilledPo('spo-206', 'AIEC-PO-8206', 'dl-8', 'sp-2', 'Meenal Sanghvi', 22, [1, 2, 10], [['guide_rails', 'T-section guide rail set', 37_500]], 18),
   // Wing B's order for Shree Ram Heights, on the road today in three parts (102).
   fulfilledPo('spo-204', 'AIEC-PO-8204', 'dl-1', 'sp-1', 'Anil Mehta', 13.2, [0.5, 1, 10, 1.5], [
     ['traction_machine', 'Geared/gearless traction machine unit', 210_000],
@@ -1949,6 +1968,9 @@ export const seedSupplierPayments: SupplierPayment[] = [
   paidSupplierPayment(10, 'spo-h5', 'sp-3', 'dl-h3', 'balance', 'after_delivery', 30_000, 49, 48),
   paidSupplierPayment(11, 'spo-h6', 'sp-3', 'dl-h3', 'upfront', 'on_acknowledge', 17_600, 44, 43),
   paidSupplierPayment(12, 'spo-h6', 'sp-3', 'dl-h3', 'balance', 'after_delivery', 66_000, 28, 27),
+  // Advances already out on orders that have not been delivered (118): Konark's is on track, Sanghvi's is for a deal since lost.
+  paidSupplierPayment(13, 'spo-205', 'sp-3', 'dl-1', 'upfront', 'on_acknowledge', 19_200, 13, 12),
+  paidSupplierPayment(14, 'spo-206', 'sp-2', 'dl-8', 'upfront', 'on_acknowledge', 7_500, 21, 20),
 ];
 
 /** A one-off split agreed by phone for Sanghvi's cabin order: 30% up front against a 5% retention, where their

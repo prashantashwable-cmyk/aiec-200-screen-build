@@ -1,4 +1,6 @@
 import type {
+  AdvanceRecovery,
+  JobStatus,
   AlertSeverity,
   SupplierDispute,
   SupplierDisputeKind,
@@ -139,6 +141,7 @@ import type { SlotDay } from '@/features/logistics/deliverySlots';
 import type { ArrivalWindow, CapacityWeek, ReadinessStatus } from '@/features/logistics/transit';
 import type { SopVersionStatus } from '@/features/logistics/deliverySop';
 import type { HoldFlagKind, PaymentFlag } from '@/features/suppliers/supplierPayments';
+import type { AdvanceState, BatchSkip, RetentionHold, RetentionReadiness } from '@/features/suppliers/exposure';
 import type { CreditStatus, SupplierRiskKind, SupplyType, TaxSplit } from '@/features/tax/gst';
 import type { OutflowTotals, ScheduleState } from '@/features/suppliers/paymentSchedule';
 import type { InvoiceGate, InvoiceMatchStatus, LineVerdict, MatchIssue } from '@/features/suppliers/invoiceMatch';
@@ -1146,6 +1149,78 @@ export interface AdvanceResolutionInput {
   replacementEta?: string;
   creditAmount?: number;
   note?: string;
+}
+
+/* ---------------------------------- Advance payment & retention (118) */
+
+export interface AdvanceItemView {
+  /** The advance payment. */
+  id: string;
+  code: string;
+  poId: string;
+  poCode: string;
+  supplierId: string;
+  supplierName: string;
+  siteName: string;
+  /** What is still out: the advance less anything recovered. */
+  outstanding: number;
+  paidAmount: number;
+  paidAt: string;
+  ageDays: number;
+  promisedAt: string | null;
+  daysPastPromise: number;
+  state: AdvanceState;
+  recommendRecovery: boolean;
+  /** How far the order has got, as its fulfilment stage. */
+  stage: PoFulfilmentStage;
+  recovery: AdvanceRecoveryView | null;
+}
+
+export interface AdvanceRecoveryView {
+  id: string;
+  code: string;
+  status: 'open' | 'recovered' | 'written_off';
+  amount: number;
+  recoveredAmount: number;
+  writtenOffAmount: number;
+  reason: string;
+  startedByName: string;
+  startedAt: string;
+  events: AdvanceRecovery['events'];
+}
+
+export interface RetentionItemView {
+  id: string;
+  poId: string;
+  poCode: string;
+  supplierId: string;
+  supplierName: string;
+  siteName: string;
+  amount: number;
+  pct: number;
+  heldAt: string;
+  ageDays: number;
+  status: SupplierRetentionStatus;
+  readiness: RetentionReadiness;
+  progress: number;
+  job: { code: string; siteName: string; status: JobStatus; stepsDone: number; stepsTotal: number; holdReason: string | null; completedAt: string | null } | null;
+  holds: RetentionHold[];
+  /** Held, ready and with nothing open on the order: it can go in a batch. */
+  bulkOk: boolean;
+  /** Held this long with no handover: Admin is asked to look at it. */
+  reviewDue: boolean;
+}
+
+export interface AdvanceRetentionBoard {
+  advances: AdvanceItemView[];
+  retentions: RetentionItemView[];
+  autoRelease: boolean;
+  totals: { advanceOut: number; advanceAtRisk: number; retentionHeld: number; retentionReady: number };
+}
+
+export interface ReleaseBatchResult {
+  released: string[];
+  skipped: { id: string; reason: BatchSkip }[];
 }
 
 /* ---------------------------------- Supplier dispute resolution (117) */
@@ -3376,6 +3451,18 @@ export interface Repository {
   completeDeliveryChecklist(checklistId: string, input: CompleteChecklistInput, byUserId: string): Promise<CompleteChecklistResult>;
   /** Abandons an unfinished checklist started by mistake. */
   cancelDeliveryChecklist(checklistId: string, byUserId: string): Promise<void>;
+
+  /* Advance payment & retention (118) — the non-routine exposures: money out early and money held back */
+  getAdvanceRetentionBoard(byUserId: string): Promise<AdvanceRetentionBoard>;
+  /** Releases retentions that are ready and clear. Anything with an open report, dispute or defect, or not yet through QC, is skipped
+   *  and named, never released quietly. */
+  releaseRetentionsBatch(retentionIds: string[], byUserId: string): Promise<ReleaseBatchResult>;
+  setAutoReleaseRetention(on: boolean, byUserId: string): Promise<boolean>;
+  /** Formal recovery of an advance for goods that did not come. Tells the supplier in the order's thread. */
+  startAdvanceRecovery(paymentId: string, reason: string, byUserId: string): Promise<AdvanceRecoveryView>;
+  /** Money came back: recorded as a credit beside the advance in Payment History. */
+  recordAdvanceRecovered(recoveryId: string, amount: number, note: string | undefined, byUserId: string): Promise<AdvanceRecoveryView>;
+  writeOffAdvance(recoveryId: string, note: string, byUserId: string): Promise<AdvanceRecoveryView>;
 
   /* Supplier dispute resolution (117) — supplier-raised payment disputes, decided with real downstream corrections */
   getSupplierDisputeBoard(byUserId: string): Promise<SupplierDisputeBoard>;

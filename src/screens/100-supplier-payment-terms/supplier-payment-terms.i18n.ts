@@ -39,7 +39,7 @@ const translations: ScreenTranslations = {
       },
       retention: {
         heading: 'Retention held',
-        hint: 'Held back from each delivered order and released automatically when that installation is handed over. A supplier defect on the order pauses it for your decision.',
+        hint: 'Held back from each delivered order. When that installation is handed over it comes up for release on the Advance & Retention screen, or releases by itself if you turn that on there. A supplier defect on the order pauses it for your decision.',
         empty: 'Nothing held back yet',
         emptyBody: 'Retention appears here once an order with retention terms is delivered.',
         status: {
@@ -48,7 +48,7 @@ const translations: ScreenTranslations = {
           released: 'Released',
           withheld: 'Withheld',
         },
-        heldLine: 'Since {{date}}. Releases automatically at installation handover.',
+        heldLine: 'Since {{date}}. Comes up for release at installation handover.',
         heldOverdue: 'Held since {{date}} with no handover yet. Review whether to release it.',
         pausedLine: 'A defect blamed on the supplier was logged on this order. Release it or withhold it against the defect.',
         releasedAuto: 'Released automatically at handover on {{date}}',
@@ -158,7 +158,7 @@ const translations: ScreenTranslations = {
       },
       retention: {
         heading: 'रोका गया रिटेंशन',
-        hint: 'हर डिलीवर हुए ऑर्डर से रोका जाता है और उस इंस्टॉलेशन के हैंडओवर पर अपने-आप जारी हो जाता है। ऑर्डर पर सप्लायर की खराबी हो तो यह आपके फ़ैसले के लिए रुक जाता है।',
+        hint: 'हर डिलीवर हुए ऑर्डर से रोका जाता है। उस इंस्टॉलेशन के हैंडओवर पर यह "अग्रिम और रिटेंशन" स्क्रीन पर जारी करने के लिए आता है, या वहाँ चालू करने पर अपने-आप जारी हो जाता है। ऑर्डर पर सप्लायर की खराबी हो तो यह आपके फ़ैसले के लिए रुक जाता है।',
         empty: 'अभी तक कुछ नहीं रोका गया',
         emptyBody: 'रिटेंशन शर्तों वाला ऑर्डर डिलीवर होने पर रिटेंशन यहाँ दिखेगा।',
         status: {
@@ -167,7 +167,7 @@ const translations: ScreenTranslations = {
           released: 'जारी किया गया',
           withheld: 'रोक लिया गया',
         },
-        heldLine: '{{date}} से। इंस्टॉलेशन हैंडओवर पर अपने-आप जारी होगा।',
+        heldLine: '{{date}} से। इंस्टॉलेशन हैंडओवर पर जारी करने के लिए आएगा।',
         heldOverdue: '{{date}} से रोका गया और अभी तक हैंडओवर नहीं हुआ। जाँचें कि इसे जारी करना है या नहीं।',
         pausedLine: 'इस ऑर्डर पर सप्लायर की ज़िम्मेदारी वाली खराबी दर्ज हुई है। इसे जारी करें या खराबी के बदले रोक लें।',
         releasedAuto: '{{date}} को हैंडओवर पर अपने-आप जारी हुआ',
@@ -277,7 +277,7 @@ const translations: ScreenTranslations = {
       },
       retention: {
         heading: 'राखून ठेवलेलं रिटेन्शन',
-        hint: 'प्रत्येक डिलिव्हर झालेल्या ऑर्डरमधून राखून ठेवलं जातं आणि त्या इन्स्टॉलेशनच्या हँडओव्हरवर आपोआप दिलं जातं. ऑर्डरवर पुरवठादाराचा दोष असेल तर ते तुमच्या निर्णयासाठी थांबतं.',
+        hint: 'प्रत्येक डिलिव्हर झालेल्या ऑर्डरमधून रोखलं जातं. त्या इन्स्टॉलेशनचं हस्तांतर झालं की ते "आगाऊ आणि रिटेन्शन" स्क्रीनवर मुक्त करण्यासाठी येतं, किंवा तिथे सुरू केल्यास आपोआप मुक्त होतं. ऑर्डरवर पुरवठादाराचा दोष असेल तर ते तुमच्या निर्णयासाठी थांबतं.',
         empty: 'अजून काहीही राखून ठेवलेलं नाही',
         emptyBody: 'रिटेन्शन अटी असलेली ऑर्डर डिलिव्हर झाल्यावर रिटेन्शन इथे दिसेल.',
         status: {
@@ -286,7 +286,7 @@ const translations: ScreenTranslations = {
           released: 'दिलं',
           withheld: 'रोखलं',
         },
-        heldLine: '{{date}} पासून. इन्स्टॉलेशन हँडओव्हरवर आपोआप दिलं जाईल.',
+        heldLine: '{{date}} पासून. इन्स्टॉलेशन हँडओव्हरवर मुक्त करण्यासाठी येईल.',
         heldOverdue: '{{date}} पासून राखून ठेवलं आहे आणि अजून हँडओव्हर झालेलं नाही. ते द्यायचं का ते तपासा.',
         pausedLine: 'या ऑर्डरवर पुरवठादाराच्या जबाबदारीचा दोष नोंदवला आहे. ते द्या किंवा दोषाच्या बदल्यात रोखा.',
         releasedAuto: '{{date}} रोजी हँडओव्हरवर आपोआप दिलं',
