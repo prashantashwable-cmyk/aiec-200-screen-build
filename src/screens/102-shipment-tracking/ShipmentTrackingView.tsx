@@ -98,9 +98,16 @@ export function ShipmentTrackingView() {
       subtitle={t(subtitle)}
       action={
         s.canDispatch ? (
-          <Button size="sm" icon={<Truck size={16} />} onClick={() => s.openDispatch()}>
-            {t(K.dispatch.open)}
-          </Button>
+          <div className="row gap-2 wrap">
+            <Button size="sm" icon={<Truck size={16} />} onClick={() => s.openDispatch()}>
+              {t(K.dispatch.open)}
+            </Button>
+            {s.isAdmin && (
+              <Button size="sm" variant="secondary" onClick={() => navigate('/delivery-partners?tab=book')}>
+                {t(K.dispatch.bookCarrier)}
+              </Button>
+            )}
+          </div>
         ) : undefined
       }
     />
@@ -355,6 +362,7 @@ function Details({ leg, t, lang, isCustomer, isAdmin, canCheck, navigate }: { le
         </section>
         <dl className="stack gap-2 t-sm">
           {!isCustomer && leg.supplierName && <Row label={t(K.detail.supplier)} value={leg.supplierName} />}
+          {!isCustomer && leg.partnerName && <Row label={t(K.detail.carrier)} value={leg.partnerName} />}
           {!isCustomer && leg.vehicleLabel && <Row label={t(K.detail.vehicle)} value={leg.vehicleLabel} />}
           {!isCustomer && leg.driverName && <Row label={t(K.detail.driver)} value={leg.driverName} />}
           <Row label={t(K.detail.from)} value={leg.origin.name} hide={isCustomer} />

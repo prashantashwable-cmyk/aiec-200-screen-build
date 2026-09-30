@@ -275,6 +275,7 @@ const common: ScreenTranslations = {
         shipment_status_update: 'Update where the {{code}} shipment has got to',
         delivery_confirmation_sign: 'Sign the delivery confirmation for {{code}} at {{site}}',
         delivery_delay_action: '{{code}} for {{site}} is late. Tell the customer and say why',
+        partner_feed_restore: '{{partner}}’s live tracking is down. Get it fixed; their deliveries are on milestones meanwhile',
         discrepancy_report_review: 'Decide whose fault report {{code}} at {{site}} is, and get the parts put right',
         orphaned_po_decision: 'Decide what to do with {{code}} from {{supplier}}: its deal was cancelled',
         shipment_status_update_proxy: '{{supplier}} hasn’t updated the {{code}} shipment. Ask them where it is',
@@ -318,6 +319,10 @@ const common: ScreenTranslations = {
         },
         discrepancy: {
           routed: 'Sent damaged-parts report {{label}}, with photos, to the supplier',
+        },
+        partner: {
+          feed_fallback: 'Moved a delivery of {{label}} to milestone updates while their live tracking is down',
+          feed_restored: 'Returned a delivery of {{label}} to live tracking: their feed is back',
         },
         retention: {
           released: 'Released the retention on {{label}} at installation handover',
@@ -606,6 +611,7 @@ const common: ScreenTranslations = {
         shipment_status_update: '{{code}} की खेप कहाँ पहुँची, यह अपडेट करें',
         delivery_confirmation_sign: '{{site}} पर {{code}} की डिलीवरी कन्फ़र्मेशन पर दस्तख़त करें',
         delivery_delay_action: '{{site}} के लिए {{code}} देर से है। ग्राहक को बताएँ और कारण दर्ज करें',
+        partner_feed_restore: '{{partner}} की लाइव ट्रैकिंग बंद है। इसे ठीक करवाएँ; तब तक उनकी डिलीवरी सिर्फ़ पड़ावों से चल रही हैं',
         discrepancy_report_review: '{{site}} की रिपोर्ट {{code}} में गलती किसकी है तय करें और पार्ट्स ठीक करवाएँ',
         orphaned_po_decision: '{{supplier}} से {{code}} का क्या करना है तय करें: उसकी डील रद्द हो गई',
         shipment_status_update_proxy: '{{supplier}} ने {{code}} की खेप अपडेट नहीं की। उनसे पूछें कि वह कहाँ है',
@@ -649,6 +655,10 @@ const common: ScreenTranslations = {
         },
         discrepancy: {
           routed: 'खराब पार्ट्सची रिपोर्ट {{label}} फ़ोटो के साथ सप्लायर को भेजी',
+        },
+        partner: {
+          feed_fallback: '{{label}} की एक डिलीवरी को पड़ाव-अपडेट पर किया, क्योंकि उनकी लाइव ट्रैकिंग बंद है',
+          feed_restored: '{{label}} की एक डिलीवरी फिर लाइव ट्रैकिंग पर लौटी: उनका फ़ीड वापस आ गया',
         },
         retention: {
           released: 'इंस्टॉलेशन हैंडओवर पर {{label}} का रिटेंशन जारी किया',
@@ -937,6 +947,7 @@ const common: ScreenTranslations = {
         shipment_status_update: '{{code}} ची खेप कुठवर पोहोचली ते अपडेट करा',
         delivery_confirmation_sign: '{{site}} येथील {{code}} च्या डिलिव्हरी कन्फर्मेशनवर सही करा',
         delivery_delay_action: '{{site}} साठीची {{code}} उशिरा आहे. ग्राहकाला कळवा आणि कारण नोंदवा',
+        partner_feed_restore: '{{partner}} चं लाइव्ह ट्रॅकिंग बंद आहे. ते दुरुस्त करून घ्या; तोपर्यंत त्यांच्या डिलिव्हऱ्या फक्त टप्प्यांवर चालतात',
         discrepancy_report_review: '{{site}} येथील अहवाल {{code}} मध्ये चूक कोणाची ते ठरवा आणि पार्ट्स दुरुस्त करून घ्या',
         orphaned_po_decision: '{{supplier}} कडील {{code}} चं काय करायचं ते ठरवा: त्याची डील रद्द झाली',
         shipment_status_update_proxy: '{{supplier}} ने {{code}} ची खेप अपडेट केलेली नाही. ती कुठे आहे ते त्यांना विचारा',
@@ -980,6 +991,10 @@ const common: ScreenTranslations = {
         },
         discrepancy: {
           routed: 'खराब पार्ट्सचा अहवाल {{label}} फोटोंसह पुरवठादाराला पाठवला',
+        },
+        partner: {
+          feed_fallback: '{{label}} ची एक डिलिव्हरी टप्प्यांच्या अपडेटवर आणली, कारण त्यांचं लाइव्ह ट्रॅकिंग बंद आहे',
+          feed_restored: '{{label}} ची एक डिलिव्हरी पुन्हा लाइव्ह ट्रॅकिंगवर आली: त्यांचा फीड परत आला',
         },
         retention: {
           released: 'इन्स्टॉलेशन हँडओव्हरवर {{label}} चं रिटेन्शन दिलं',

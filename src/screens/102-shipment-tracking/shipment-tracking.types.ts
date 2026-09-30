@@ -89,6 +89,7 @@ export const SHIPMENT_TRACKING_KEYS = {
   },
   detail: {
     supplier: 'shipmentTracking.detail.supplier',
+    carrier: 'shipmentTracking.detail.carrier',
     vehicle: 'shipmentTracking.detail.vehicle',
     driver: 'shipmentTracking.detail.driver',
     callDriver: 'shipmentTracking.detail.callDriver',
@@ -119,6 +120,7 @@ export const SHIPMENT_TRACKING_KEYS = {
   },
   dispatch: {
     open: 'shipmentTracking.dispatch.open',
+    bookCarrier: 'shipmentTracking.dispatch.bookCarrier',
     title: 'shipmentTracking.dispatch.title',
     intro: 'shipmentTracking.dispatch.intro',
     po: 'shipmentTracking.dispatch.po',

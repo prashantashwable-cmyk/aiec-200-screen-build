@@ -107,9 +107,36 @@ the module's section to `BUILD_README.md`.
   (dl-1) was seeded one day short of the reminder cadence's own exhaustion threshold, so no real
   payment could ever reach 089's escalation queue while also belonging to a deal with an active
   Job — moved from 6 to 10 days overdue (and the stale `al-2` alert text updated to match).
-- **Module 11 in progress:** `101`–`108` built. **Next: `109`**. At its checkpoint (after 110),
+- **Module 11 in progress:** `101`–`109` built. **Next: `110`**. At its checkpoint (after 110),
   add an Admin logistics entry point: 101 and 102 are reachable for Admin only from 091's hub and
   095's header (and 101's/102's own PO links).
+  109 facts:
+  - `DeliveryPartner` is a different role from a `Supplier`: a third-party carrier AIEC books when the
+    supplier doesn't deliver itself (`serviceAreas` = cities, `liveTrackingSupported`, `feedStatus`
+    `connected` / `outage`, `rateCardRef` plus priced `lanes`, `status` active / paused, append-only
+    `events`). Performance is never stored. `@/features/logistics/partnerPerformance` is the one place
+    it is read: a carrier is held to **their own `etaAt` at dispatch** (`carriedOnTime`, 60 min grace),
+    over the last 20 trips, and shows "Not rated yet" (neutral score 0.5) until `MIN_RATED_TRIPS` (5).
+    Trips come from `PartnerTripRecord` (history before app tracking) plus arrived `ShipmentLeg`s with a
+    `partnerId`. A trip 105 tagged `external_event` is left out of the carrier's record.
+  - `latenessOf` is the supplier-vs-carrier split, exact and additive: arrival − promise =
+    (`etaAt` − promise, the supplier's late hand-over) + (arrival − `etaAt`, the carrier's slow transit).
+    Responsibility is `partner` / `supplier` / `shared` / `external`. **097, 105 and Module 12 should read
+    this rather than re-derive whose fault a late delivery was.**
+  - `bookDeliveryPartner` (Admin) makes a `ShipmentLeg` with `partnerId`, `freightCost` (the lane's
+    rate when on the card) and `bookedByName`, through `movePoLinesSync`. It refuses a carrier that
+    doesn't serve the site's city (`area_not_served`) or is paused; the booking sheet only offers
+    eligible ones (`unavailableFor`, `laneFor`), listing the rest with the reason. A partner leg is
+    `live_gps` only when the carrier supports live tracking and its feed is up, else `manual`.
+  - Outage: `setPartnerFeed` marks `feedStatus`; `syncPartnerFeeds` (heartbeat, idempotent) sets
+    `feedLostAt` + `feedLostReason: 'partner_outage'` on every in-flight live leg of that carrier so
+    102 shows "last seen" and milestones, and clears it when the feed returns. Raises the
+    `deliveryPartners.alert.feedDown` alert; commitment `partner_feed_restore` (Admin, 24 h).
+  - The `shipment_status_update` commitment for a partner leg belongs to Admin (never the supplier); a
+    supplier can no longer update a leg a carrier is carrying. 102 shows the carrier to Admin/tech, and
+    has a "Book a carrier" button.
+  - `/delivery-partners` is Admin only (`?tab=partners|book|delays`, `?partner=`); reached from 091's hub
+    and 102. 109 owns the shared `deliveryPartners.responsibility.*` labels.
   108 facts:
   - `DeliveryDiscrepancyReport` (created by 103's `syncDiscrepancyReport`, one per checklist) is now
     owned here: `status` `open` / `withdrawn` / `resolved`, `resolution` `reported` →

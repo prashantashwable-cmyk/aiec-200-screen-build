@@ -27,6 +27,7 @@ import type {
   DeliveryConfirmation,
   DeliveryDelayCase,
   DeliveryDiscrepancyReport,
+  DeliveryPartner,
 } from '@/data/types';
 import { remainingBalance } from '@/features/payments/aging';
 import { days, hours, minutes } from '@/features/sla/clock';
@@ -82,6 +83,7 @@ export interface CommitmentSources {
   deliveryChecklists: DeliveryChecklist[];
   delayCases: DeliveryDelayCase[];
   discrepancyReports: DeliveryDiscrepancyReport[];
+  deliveryPartners: DeliveryPartner[];
   /** Deals where someone paused payment reminders by hand (083). */
   pausedDealIds: Set<string>;
 }
@@ -1002,6 +1004,32 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
     },
   },
   {
+    // A carrier whose live tracking is down leaves every delivery of theirs on milestones only (109).
+    // Admin owns getting it fixed; the deliveries carry on meanwhile, so it is a day, not an emergency.
+    kind: 'partner_feed_restore',
+    nudgeBefore: hours(4),
+    escalateAfter: hours(12),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'supplier',
+    collect(src) {
+      const admin = adminId(src);
+      return src.deliveryPartners
+        .filter((p) => p.feedStatus === 'outage' && p.feedBrokenSince)
+        .map((p) => ({
+          ...base('partner_feed_restore', 'delivery_partner', `${p.id}:${p.feedBrokenSince}`),
+          ownerUserId: admin,
+          titleKey: 'work.title.partner_feed_restore',
+          titleParams: { partner: p.name },
+          dueAt: plus(p.feedBrokenSince!, hours(24)),
+          state: 'open' as const,
+          paused: false,
+          actionRoute: `/delivery-partners?partner=${p.id}`,
+          oversightRoute: `/delivery-partners?partner=${p.id}`,
+        }));
+    },
+  },
+  {
     // Where a vehicle with no live feed is, is only what its supplier says.
     // Until it arrives, the supplier owes an update every few hours — and a
     // live vehicle whose feed dropped falls back to the same promise.
@@ -1019,14 +1047,16 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
         if (!needsWords) continue;
         const po = src.purchaseOrders.find((p) => p.id === leg.poId);
         const supplier = src.suppliers.find((s) => s.id === leg.supplierId);
-        const portalUser = supplierUser(src, leg.supplierId);
+        // A carrier booked by AIEC has no login: Admin asks them, so the supplier is never chased for a truck that is not theirs.
+        const partner = leg.partnerId ? src.deliveryPartners.find((p) => p.id === leg.partnerId) : undefined;
+        const portalUser = partner ? undefined : supplierUser(src, leg.supplierId);
         const arrived = leg.milestones.find((e) => e.milestone === 'arrived');
         const lastWord = leg.milestones.filter((e) => e.source === 'manual').map((e) => e.at).sort().pop() ?? leg.feedLostAt ?? leg.dispatchedAt;
         out.push({
           ...base('shipment_status_update', 'shipment', leg.id),
           ownerUserId: portalUser?.id ?? admin,
           titleKey: portalUser ? 'work.title.shipment_status_update' : 'work.title.shipment_status_update_proxy',
-          titleParams: { code: po?.code ?? '', supplier: supplier?.name ?? '' },
+          titleParams: { code: po?.code ?? '', supplier: partner?.name ?? supplier?.name ?? '' },
           dueAt: plus(lastWord, MANUAL_UPDATE_EVERY),
           state: arrived ? 'done' : 'open',
           paused: false,

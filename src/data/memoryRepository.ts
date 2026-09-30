@@ -59,6 +59,8 @@ import {
   seedSiteReadiness,
   seedDeliverySchedules,
   seedShipmentLegs,
+  seedDeliveryPartners,
+  seedPartnerTrips,
   seedDeliverySops,
   seedDeliveryDelayCases,
   installSteps,
@@ -145,6 +147,14 @@ import type {
   DeliverySopBoard,
   SopTemplateView,
   DiscrepancyReportView,
+  BookablePo,
+  DelayAnalysis,
+  LateDeliveryView,
+  PartnerBoard,
+  PartnerInput,
+  PartnerOption,
+  PartnerRow,
+  PartnerTripView,
   ReportItemView,
   TransitBoard,
   TransitLine,
@@ -207,6 +217,10 @@ import type {
   SupplierMessage,
   SupplierMessageChannel,
   ReportEvent,
+  DeliveryPartner,
+  DeliveryPartnerLane,
+  PartnerEvent,
+  PartnerTripRecord,
   SupplierMessageAuthor,
   SupplierThread,
   SupplierPaymentTermsConfig,
@@ -351,6 +365,8 @@ import {
 import { compareDelays, etaMovedSince, judgeDelay } from '@/features/logistics/delay';
 import { capacityWeeks, categoryPatterns, readinessStatus, weekStartOf, windowOf } from '@/features/logistics/transit';
 import type { ReadinessStatus } from '@/features/logistics/transit';
+import { carriedOnTime, laneFor, latenessOf, serves, statsFor, tripOfRecord, trackingModeOf, unavailableFor } from '@/features/logistics/partnerPerformance';
+import type { Responsibility, TripFacts } from '@/features/logistics/partnerPerformance';
 import type { DelayFacts } from '@/features/logistics/delay';
 import {
   FEED_LOST_ALERT_AFTER,
@@ -1977,6 +1993,7 @@ function commitmentSources(now: number): CommitmentSources {
     deliveryChecklists,
     delayCases,
     discrepancyReports,
+    deliveryPartners,
     pausedDealIds: new Set(paymentReminderPauses.filter((p) => p.paused).map((p) => p.dealId)),
   };
 }
@@ -2162,6 +2179,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   autoDraftDuePurchaseOrders();
   detectProductionStalls(now);
   settleRetentions(now);
+  syncPartnerFeeds(now);
   advanceShipments(now);
   // 105: a delivery running late is noticed, and one that caught up is cleared, without anyone looking.
   syncDelayCases(now);
@@ -2781,7 +2799,7 @@ function shipmentViewOf(leg: ShipmentLeg, viewer: ShipmentViewer, now: number): 
   const booked = schedule?.status === 'scheduled' && schedule.date && schedule.window ? { date: schedule.date, window: schedule.window } : null;
   const etaDay = dateKey(new Date(leg.etaAt));
   const isAdmin = viewer.actor.role === 'admin';
-  const canUpdate = !snap.arrived && (leg.source === 'manual' || snap.feed === 'lost') && (isAdmin || (viewer.actor.role === 'supplier' && viewer.supplierId === leg.supplierId));
+  const canUpdate = !snap.arrived && (leg.source === 'manual' || snap.feed === 'lost') && (isAdmin || (viewer.actor.role === 'supplier' && viewer.supplierId === leg.supplierId && !leg.partnerId));
   return {
     legId: leg.id,
     poId: leg.poId,
@@ -2795,6 +2813,8 @@ function shipmentViewOf(leg: ShipmentLeg, viewer: ShipmentViewer, now: number): 
     legCount: siblings.length,
     supplierId: isCustomer ? null : leg.supplierId,
     supplierName: isCustomer ? null : (supplier?.name ?? null),
+    partnerId: isCustomer ? null : (leg.partnerId ?? null),
+    partnerName: isCustomer ? null : (leg.partnerId ? (byId(deliveryPartners, leg.partnerId)?.name ?? null) : null),
     vehicleLabel: isCustomer ? null : leg.vehicleLabel,
     driverName: isCustomer ? null : leg.driverName,
     driverPhone: isCustomer ? null : (leg.driverPhone ?? null),
@@ -3477,6 +3497,231 @@ function reportViewOf(r: DeliveryDiscrepancyReport, actor: User, now: number): D
     canEditDetails: r.status === 'open',
   };
   void now;
+}
+
+/* ============================================ Delivery partners (109) */
+
+const deliveryPartners: DeliveryPartner[] = seedDeliveryPartners.map((p) => ({ ...p, lanes: [...p.lanes], events: [...p.events] }));
+const partnerTripRecords: PartnerTripRecord[] = [...seedPartnerTrips];
+let partnerCounter = 100;
+let partnerEventCounter = 100;
+let partnerLaneCounter = 100;
+
+const PARTNER_HISTORY_DAYS = 180;
+
+const partnerOrThrow = (partnerId: string): DeliveryPartner => {
+  const partner = byId(deliveryPartners, partnerId);
+  if (!partner) throw new RepositoryError('not_found');
+  return partner;
+};
+
+function partnerEvents(p: DeliveryPartner, kind: PartnerEvent['kind'], byName: string, note?: string): PartnerEvent[] {
+  partnerEventCounter += 1;
+  return [...p.events, { id: `dpe-new-${partnerEventCounter}`, kind, at: new Date().toISOString(), byName, note: note?.trim() || undefined }];
+}
+
+const cityOfDeal = (dealId: string): string => resolveLead(byId(deals, dealId)?.leadId ?? '')?.city ?? '';
+
+/** Every finished trip a partner has made: what they did before AIEC tracked it, and what they have delivered since. */
+function partnerTrips(partnerId: string): { facts: TripFacts; laneLabel: string }[] {
+  const past = partnerTripRecords.filter((r) => r.partnerId === partnerId).map((r) => ({ facts: tripOfRecord(r), laneLabel: r.laneLabel }));
+  const since = shipmentLegs
+    .filter((l) => l.partnerId === partnerId)
+    .flatMap((l) => {
+      const arrived = l.milestones.find((m) => m.milestone === 'arrived');
+      if (!arrived) return [];
+      const po = byId(supplierPurchaseOrders, l.poId);
+      const facts: TripFacts = {
+        id: l.id,
+        partnerId,
+        poCode: po?.code ?? l.poId,
+        siteName: shipmentSite(l.dealId)?.siteName ?? '',
+        promisedAt: (po && promisedDeliveryOf(po)) || l.etaAt,
+        dispatchedAt: l.dispatchedAt,
+        etaAt: l.etaAt,
+        arrivedAt: arrived.at,
+        origin: 'leg',
+        // A delay Admin has put down to an event outside anyone's control is nobody's fault.
+        externalEvent: delayCases.some((c) => c.poId === l.poId && c.rootCause === 'external_event'),
+      };
+      return [{ facts, laneLabel: `${byId(suppliers, l.supplierId)?.city ?? ''} → ${cityOfDeal(l.dealId)}` }];
+    });
+  return [...past, ...since];
+}
+
+function partnerRowOf(p: DeliveryPartner, now: number): PartnerRow {
+  const trips = partnerTrips(p.id);
+  const stats = statsFor(trips.map((t) => t.facts));
+  const views: PartnerTripView[] = [...trips]
+    .sort((a, b) => (a.facts.arrivedAt < b.facts.arrivedAt ? 1 : -1))
+    .slice(0, 10)
+    .map(({ facts, laneLabel }) => {
+      const late = latenessOf(facts);
+      return {
+        id: facts.id,
+        poCode: facts.poCode,
+        siteName: facts.siteName,
+        laneLabel,
+        arrivedAt: facts.arrivedAt,
+        lateMin: Math.max(0, Math.round((new Date(facts.arrivedAt).getTime() - new Date(facts.etaAt).getTime()) / 60_000)),
+        onTime: carriedOnTime(facts),
+        responsibility: late.responsibility,
+        supplierMin: late.supplierMin,
+        partnerMin: late.partnerMin,
+      };
+    });
+  const inFlight = shipmentLegs
+    .filter((l) => l.partnerId === p.id && !l.milestones.some((m) => m.milestone === 'arrived'))
+    .map((l) => ({
+      legId: l.id,
+      poCode: byId(supplierPurchaseOrders, l.poId)?.code ?? l.poId,
+      siteName: shipmentSite(l.dealId)?.siteName ?? '',
+      feed: legSnapshotOf(l, routeOfLeg(l), now).feed,
+    }));
+  return {
+    id: p.id,
+    name: p.name,
+    contactName: p.contactName,
+    phone: p.phone,
+    email: p.email ?? null,
+    serviceAreas: p.serviceAreas,
+    liveTrackingSupported: p.liveTrackingSupported,
+    feedStatus: p.feedStatus,
+    feedBrokenSince: p.feedBrokenSince ?? null,
+    trackingMode: trackingModeOf(p),
+    status: p.status,
+    rateCardRef: p.rateCardRef,
+    rateCardEffectiveFrom: p.rateCardEffectiveFrom,
+    lanes: p.lanes,
+    stats,
+    trips: views,
+    inFlight,
+    events: [...p.events].sort((a, b) => (a.at < b.at ? 1 : -1)),
+    createdAt: p.createdAt,
+  };
+}
+
+/** Whose fault each late delivery was, over the last half year: the carrier's own transit, or the supplier handing over too late. */
+function partnerDelayAnalysis(now: number): DelayAnalysis {
+  const since = now - PARTNER_HISTORY_DAYS * 86_400_000;
+  const late: LateDeliveryView[] = [];
+  const totals: Record<Responsibility, number> = { partner: 0, supplier: 0, shared: 0, external: 0 };
+  let deliveries = 0;
+  for (const partner of deliveryPartners) {
+    for (const { facts } of partnerTrips(partner.id)) {
+      if (new Date(facts.arrivedAt).getTime() < since) continue;
+      deliveries += 1;
+      const l = latenessOf(facts);
+      if (!l.responsibility) continue;
+      totals[l.responsibility] += 1;
+      late.push({ id: facts.id, partnerId: partner.id, partnerName: partner.name, poCode: facts.poCode, siteName: facts.siteName, arrivedAt: facts.arrivedAt, lateMin: l.lateMin, supplierMin: l.supplierMin, partnerMin: l.partnerMin, responsibility: l.responsibility });
+    }
+  }
+  return { late: late.sort((a, b) => (a.arrivedAt < b.arrivedAt ? 1 : -1)), totals, deliveries };
+}
+
+/** Sent orders with lines ready to go and not yet on a vehicle, with the carriers that can and cannot take them. */
+function bookablePos(): BookablePo[] {
+  const onALeg = new Set(shipmentLegs.flatMap((l) => l.lineItemIds));
+  const out: BookablePo[] = [];
+  for (const po of supplierPurchaseOrders) {
+    if (po.status !== 'sent' || !po.supplierId) continue;
+    // Parts for a deal that was lost or cancelled are not going anywhere (106).
+    const dealStatus = byId(deals, po.dealId)?.status;
+    if (dealStatus === 'lost' || dealStatus === 'cancelled') continue;
+    const lines = (po.lineItems ?? []).filter((l) => lineStageOf(po, l) === 'ready_to_ship' && !onALeg.has(l.id));
+    if (lines.length === 0) continue;
+    const supplier = byId(suppliers, po.supplierId);
+    const site = shipmentSite(po.dealId);
+    if (!supplier || !site) continue;
+    const siteCity = cityOfDeal(po.dealId);
+    const originCity = supplier.city ?? '';
+    const eligible: PartnerOption[] = [];
+    const unavailable: BookablePo['unavailable'] = [];
+    for (const partner of deliveryPartners) {
+      const why = unavailableFor(partner, siteCity);
+      if (why) {
+        unavailable.push({ partnerId: partner.id, name: partner.name, reason: why });
+        continue;
+      }
+      const lane = laneFor(partner, originCity, siteCity);
+      eligible.push({
+        partnerId: partner.id,
+        name: partner.name,
+        trackingMode: trackingModeOf(partner),
+        ratePerTrip: lane?.ratePerTrip ?? null,
+        distanceKm: lane?.distanceKm ?? null,
+        transitDays: lane?.transitDays ?? null,
+        stats: statsFor(partnerTrips(partner.id).map((t) => t.facts)),
+      });
+    }
+    // The proven first (a newcomer counts as neutral), the cheaper among equals, a lane with no price last.
+    eligible.sort((a, b) => b.stats.score - a.stats.score || (a.ratePerTrip ?? Infinity) - (b.ratePerTrip ?? Infinity));
+    out.push({ poId: po.id, poCode: po.code, supplierName: supplier.name, siteName: site.siteName, siteCity, originCity, lines: lines.map((l) => ({ id: l.id, description: l.description })), eligible, unavailable });
+  }
+  return out;
+}
+
+/** The one place a carrier's broken live integration becomes something a delivery can live with: in-flight live
+ *  legs fall back to milestones together and return together when it is fixed. Idempotent; the heartbeat runs it. */
+function syncPartnerFeeds(now: number): void {
+  const at = new Date(now).toISOString();
+  for (const partner of deliveryPartners) {
+    const inFlight = shipmentLegs.filter((l) => l.partnerId === partner.id && !l.milestones.some((m) => m.milestone === 'arrived'));
+    const openAlert = alerts.find((a) => a.relatedId === partner.id && a.titleKey === 'deliveryPartners.alert.feedDown' && a.status !== 'resolved');
+    if (partner.feedStatus === 'outage') {
+      const affected = inFlight.filter((l) => l.source === 'live_gps' && !l.feedLostAt);
+      for (const leg of affected) {
+        const brokenAt = partner.feedBrokenSince && partner.feedBrokenSince > leg.dispatchedAt ? partner.feedBrokenSince : at;
+        patchInPlace(shipmentLegs, leg.id, { feedLostAt: brokenAt, feedLostReason: 'partner_outage' });
+        logAutomatedAction({
+          sourceKey: 'partner.feed_fallback',
+          triggeringCondition: `${partner.name}'s live tracking is down`,
+          actionTaken: `Moved ${byId(supplierPurchaseOrders, leg.poId)?.code ?? leg.poId} to milestone updates until it is back`,
+          affectedRecordId: leg.id,
+          affectedRecordType: 'purchase_order',
+          subjectLabel: partner.name,
+        });
+      }
+      if (inFlight.some((l) => l.source === 'live_gps') && !openAlert) {
+        raiseAlert({
+          titleKey: 'deliveryPartners.alert.feedDown',
+          context: `${partner.name} · ${inFlight.length}`,
+          severity: 'medium',
+          category: 'supplier',
+          relatedId: partner.id,
+          sourceRoute: `/delivery-partners?partner=${partner.id}`,
+        });
+      }
+    } else {
+      for (const leg of inFlight.filter((l) => l.feedLostReason === 'partner_outage')) {
+        patchInPlace(shipmentLegs, leg.id, { feedLostAt: undefined, feedLostReason: undefined });
+        logAutomatedAction({
+          sourceKey: 'partner.feed_restored',
+          triggeringCondition: `${partner.name}'s live tracking is back`,
+          actionTaken: `Returned ${byId(supplierPurchaseOrders, leg.poId)?.code ?? leg.poId} to live tracking`,
+          affectedRecordId: leg.id,
+          affectedRecordType: 'purchase_order',
+          subjectLabel: partner.name,
+        });
+      }
+    }
+    if (partner.feedStatus === 'connected' && openAlert) {
+      patchInPlace(alerts, openAlert.id, { status: 'resolved', resolvedAt: at, resolvedBy: 'system', resolutionNote: 'Their live tracking is back.' });
+    }
+  }
+}
+
+function validatePartnerInput(input: PartnerInput): PartnerInput {
+  const name = input.name.trim();
+  const contactName = input.contactName.trim();
+  const phone = input.phone.replace(/[\s-]/g, '');
+  const areas = [...new Set(input.serviceAreas.map((a) => a.trim()).filter(Boolean))];
+  if (name.length < 3 || contactName.length < 2) throw new RepositoryError('invalid_input');
+  if (!/^\+?\d{10,13}$/.test(phone)) throw new RepositoryError('invalid_phone');
+  if (areas.length === 0) throw new RepositoryError('area_required');
+  if (input.rateCardRef.trim().length < 2) throw new RepositoryError('rate_card_required');
+  return { ...input, name, contactName, phone, serviceAreas: areas, rateCardRef: input.rateCardRef.trim(), email: input.email?.trim() || undefined };
 }
 
 /* ============================================ Delivery SOP (107) */
@@ -6922,7 +7167,7 @@ export const memoryRepository: Repository = {
       const leg = byId(shipmentLegs, legId);
       if (!leg || !legVisibleTo(leg, viewer)) throw new RepositoryError('not_found');
       const isAdmin = viewer.actor.role === 'admin';
-      if (!isAdmin && !(viewer.actor.role === 'supplier' && viewer.supplierId === leg.supplierId)) throw new RepositoryError('forbidden');
+      if (!isAdmin && !(viewer.actor.role === 'supplier' && viewer.supplierId === leg.supplierId && !leg.partnerId)) throw new RepositoryError('forbidden');
       const now = Date.now();
       const snap = legSnapshotOf(leg, routeOfLeg(leg), now);
       // A live feed is the truth while it works; only a manual leg, or one whose feed has dropped, is updated by hand.
@@ -7356,6 +7601,192 @@ export const memoryRepository: Repository = {
       patchInPlace(conversations, conversation.id, { lastMessageAt: at });
       patchInPlace(discrepancyReports, r.id, { customerNotifiedAt: at, events: reportEvent(r, 'customer_told', actor.name) });
       return { notified: true };
+    }),
+
+  /* --------------------------------------------- Delivery partners (109) */
+  getPartnerBoard: (byUserId) =>
+    simulateRead((): PartnerBoard => {
+      adminOnly(byUserId);
+      const now = Date.now();
+      syncPartnerFeeds(now);
+      const cities = new Set<string>();
+      for (const p of deliveryPartners) p.serviceAreas.forEach((a) => cities.add(a));
+      for (const sp of suppliers) if (sp.city) cities.add(sp.city);
+      for (const lead of leads) if (lead.city) cities.add(lead.city);
+      return {
+        partners: deliveryPartners.map((p) => partnerRowOf(p, now)).sort((a, b) => Number(a.status === 'paused') - Number(b.status === 'paused') || b.stats.score - a.stats.score),
+        bookable: bookablePos(),
+        analysis: partnerDelayAnalysis(now),
+        knownCities: [...cities].sort(),
+      };
+    }),
+
+  createDeliveryPartner: (input, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const v = validatePartnerInput(input);
+      if (deliveryPartners.some((p) => p.name.toLowerCase() === v.name.toLowerCase())) throw new RepositoryError('duplicate');
+      partnerCounter += 1;
+      const at = new Date().toISOString();
+      const partner: DeliveryPartner = {
+        id: `dp-new-${partnerCounter}`,
+        name: v.name,
+        contactName: v.contactName,
+        phone: v.phone,
+        email: v.email,
+        serviceAreas: v.serviceAreas,
+        liveTrackingSupported: v.liveTrackingSupported,
+        feedStatus: 'connected',
+        rateCardRef: v.rateCardRef,
+        rateCardEffectiveFrom: at,
+        lanes: [],
+        status: 'active',
+        events: [],
+        createdAt: at,
+        isDemo: true,
+      };
+      // A newcomer starts with no rating at all: neutral, neither blocked nor flattered.
+      partner.events = partnerEvents(partner, 'onboarded', actor.name, 'New carrier. Rated only once they have delivered a few loads.');
+      deliveryPartners.push(partner);
+      return partnerRowOf(partner, Date.now());
+    }),
+
+  updateDeliveryPartner: (partnerId, input, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const partner = partnerOrThrow(partnerId);
+      const v = validatePartnerInput(input);
+      if (deliveryPartners.some((p) => p.id !== partner.id && p.name.toLowerCase() === v.name.toLowerCase())) throw new RepositoryError('duplicate');
+      // Withdrawing live tracking while a live delivery is in flight would strand its pin.
+      if (!v.liveTrackingSupported && partner.liveTrackingSupported && shipmentLegs.some((l) => l.partnerId === partner.id && l.source === 'live_gps' && !l.milestones.some((m) => m.milestone === 'arrived'))) throw new RepositoryError('live_in_flight');
+      const changedRate = v.rateCardRef !== partner.rateCardRef;
+      const updated = patchInPlace(deliveryPartners, partner.id, {
+        name: v.name,
+        contactName: v.contactName,
+        phone: v.phone,
+        email: v.email,
+        serviceAreas: v.serviceAreas,
+        liveTrackingSupported: v.liveTrackingSupported,
+        rateCardRef: v.rateCardRef,
+        rateCardEffectiveFrom: changedRate ? new Date().toISOString() : partner.rateCardEffectiveFrom,
+        feedStatus: v.liveTrackingSupported ? partner.feedStatus : 'connected',
+        feedBrokenSince: v.liveTrackingSupported ? partner.feedBrokenSince : undefined,
+        events: partnerEvents(partner, 'details', actor.name),
+      });
+      syncPartnerFeeds(Date.now());
+      return partnerRowOf(updated, Date.now());
+    }),
+
+  addPartnerLane: (partnerId, input, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const partner = partnerOrThrow(partnerId);
+      const origin = input.originCity.trim();
+      const destination = input.destinationCity.trim();
+      if (origin.length < 2 || destination.length < 2 || !(input.distanceKm > 0) || !(input.ratePerTrip > 0) || !(input.transitDays >= 1)) throw new RepositoryError('invalid_input');
+      // A lane is served, or it is not on the card.
+      if (!serves(partner, destination)) throw new RepositoryError('area_not_served');
+      const same = (l: DeliveryPartnerLane) => l.originCity.toLowerCase() === origin.toLowerCase() && l.destinationCity.toLowerCase() === destination.toLowerCase();
+      partnerLaneCounter += 1;
+      const lane: DeliveryPartnerLane = { id: `dpl-new-${partnerLaneCounter}`, originCity: origin, destinationCity: destination, distanceKm: Math.round(input.distanceKm), ratePerTrip: Math.round(input.ratePerTrip), transitDays: Math.round(input.transitDays) };
+      // Re-quoting a lane replaces its price: the card never holds two for one route.
+      const updated = patchInPlace(deliveryPartners, partner.id, {
+        lanes: [...partner.lanes.filter((l) => !same(l)), lane],
+        events: partnerEvents(partner, 'lane_added', actor.name, `${origin} → ${destination}: ₹${lane.ratePerTrip.toLocaleString('en-IN')}`),
+      });
+      return partnerRowOf(updated, Date.now());
+    }),
+
+  setPartnerStatus: (partnerId, status, note, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const partner = partnerOrThrow(partnerId);
+      if (partner.status === status) throw new RepositoryError('invalid_state');
+      if (status === 'paused' && note.trim().length < 4) throw new RepositoryError('note_required');
+      const updated = patchInPlace(deliveryPartners, partner.id, { status, events: partnerEvents(partner, status === 'paused' ? 'paused' : 'resumed', actor.name, note) });
+      return partnerRowOf(updated, Date.now());
+    }),
+
+  setPartnerFeed: (partnerId, feed, note, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const partner = partnerOrThrow(partnerId);
+      if (!partner.liveTrackingSupported) throw new RepositoryError('no_live_feed');
+      if (partner.feedStatus === feed) throw new RepositoryError('invalid_state');
+      if (feed === 'outage' && note.trim().length < 4) throw new RepositoryError('note_required');
+      const now = Date.now();
+      patchInPlace(deliveryPartners, partner.id, {
+        feedStatus: feed,
+        feedBrokenSince: feed === 'outage' ? new Date(now).toISOString() : undefined,
+        events: partnerEvents(partner, feed === 'outage' ? 'feed_outage' : 'feed_restored', actor.name, note),
+      });
+      syncPartnerFeeds(now);
+      syncCommitments(now);
+      return partnerRowOf(byId(deliveryPartners, partner.id)!, now);
+    }),
+
+  bookDeliveryPartner: (poId, input, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const po = deliveryPoOrThrow(poId);
+      const partner = partnerOrThrow(input.partnerId);
+      const supplier = byId(suppliers, po.supplierId!)!;
+      const site = shipmentSite(po.dealId);
+      if (!site) throw new RepositoryError('no_destination');
+      const siteCity = cityOfDeal(po.dealId);
+      // The booking only ever offers a carrier that serves the site, and the repository holds the same line.
+      const why = unavailableFor(partner, siteCity);
+      if (why === 'paused') throw new RepositoryError('partner_paused');
+      if (why === 'area') throw new RepositoryError('area_not_served');
+      if (input.vehicleLabel.trim().length < 2 || input.driverName.trim().length < 2) throw new RepositoryError('invalid_input');
+      const onALeg = new Set(shipmentLegs.flatMap((l) => l.lineItemIds));
+      const lines = (po.lineItems ?? []).filter((l) => input.lineIds.includes(l.id));
+      if (lines.length === 0 || lines.length !== input.lineIds.length || lines.some((l) => lineStageOf(po, l) !== 'ready_to_ship' || onALeg.has(l.id))) throw new RepositoryError('invalid_state');
+      const now = Date.now();
+      const mode = trackingModeOf(partner);
+      const source: ShipmentLeg['source'] = mode === 'live' ? 'live_gps' : 'manual';
+      const origin = originFor(supplier.city);
+      const lane = laneFor(partner, supplier.city ?? '', siteCity);
+      movePoLinesSync(po.id, lines.map((l) => l.id), 'shipped', actor, `Booked with ${partner.name}`);
+      shipmentCounter += 1;
+      const at = new Date(now).toISOString();
+      const leg: ShipmentLeg = {
+        id: `shp-new-${shipmentCounter}`,
+        poId: po.id,
+        dealId: po.dealId,
+        supplierId: supplier.id,
+        lineItemIds: lines.map((l) => l.id),
+        vehicleLabel: input.vehicleLabel.trim(),
+        driverName: input.driverName.trim(),
+        driverPhone: input.driverPhone?.trim() || undefined,
+        source,
+        origin: { name: `${supplier.name}, ${origin.name}`, lat: origin.lat, lng: origin.lng },
+        dispatchedAt: at,
+        etaAt: estimateEtaAt(origin, site, now),
+        partnerId: partner.id,
+        freightCost: lane?.ratePerTrip,
+        bookedByName: actor.name,
+        milestones: [{ milestone: 'dispatched', at, source: source === 'live_gps' ? 'gps' : 'manual', byName: source === 'manual' ? actor.name : undefined, note: mode === 'fallback' ? `${partner.name}'s live tracking is down, so milestones only.` : undefined }],
+        isDemo: true,
+      };
+      shipmentLegs.push(leg);
+      patchInPlace(deliveryPartners, partner.id, { events: partnerEvents(partner, 'booked', actor.name, `${po.code} to ${site.siteName}`) });
+      // Tell the supplier who is coming, when it can be read in the app.
+      if (supplierUserFor(supplier)) {
+        pushSupplierMessage(ensureSupplierThread(supplier.id, po.id), {
+          author: 'aiec',
+          authorName: actor.name,
+          authorUserId: actor.id,
+          body: `${partner.name} will collect ${lines.map((l) => l.description).join(', ')} for ${site.siteName} (${leg.vehicleLabel}, driver ${leg.driverName}). Please have it ready to load.`,
+          channel: 'in_app',
+          at,
+          expectsReply: false,
+          poRef: po.id,
+        });
+      }
+      notifyCustomerOfMilestone(leg.id, 'dispatched');
+      syncCommitments(now);
+      return { legId: leg.id, trackingMode: mode, freightCost: lane?.ratePerTrip ?? null };
     }),
 
   /* --------------------------------------------- Delivery SOP (107) */

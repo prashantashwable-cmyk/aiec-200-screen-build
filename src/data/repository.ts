@@ -94,6 +94,8 @@ import type {
   DeliverySopStep,
   DeliverySopVersion,
   DeliveryDiscrepancyReport,
+  DeliveryPartnerLane,
+  PartnerEvent,
   PurchaseOrderOrphanResolution,
   DeliveryReceiver,
   DeliverySchedule,
@@ -121,6 +123,7 @@ import type {
 import type { SlotDay } from '@/features/logistics/deliverySlots';
 import type { ArrivalWindow, CapacityWeek, ReadinessStatus } from '@/features/logistics/transit';
 import type { SopVersionStatus } from '@/features/logistics/deliverySop';
+import type { PartnerStats, PartnerUnavailable, Responsibility, TrackingMode } from '@/features/logistics/partnerPerformance';
 
 /**
  * The data contract every screen codes against.
@@ -909,6 +912,9 @@ export interface ShipmentView {
   legCount: number;
   supplierId: string | null;
   supplierName: string | null;
+  /** The third-party carrier booked for it (109); never shown to the customer. */
+  partnerId: string | null;
+  partnerName: string | null;
   vehicleLabel: string | null;
   driverName: string | null;
   driverPhone: string | null;
@@ -1119,6 +1125,131 @@ export interface AdvanceResolutionInput {
   replacementEta?: string;
   creditAmount?: number;
   note?: string;
+}
+
+/* ---------------------------------- Delivery partner management (109) */
+
+export interface PartnerTripView {
+  id: string;
+  poCode: string;
+  siteName: string;
+  laneLabel: string;
+  arrivedAt: string;
+  /** Minutes after the carrier's own estimate (0 when on time). */
+  lateMin: number;
+  onTime: boolean;
+  /** Late for the customer, and whose it was. Null when it made the promise. */
+  responsibility: Responsibility | null;
+  supplierMin: number;
+  partnerMin: number;
+}
+
+export interface PartnerRow {
+  id: string;
+  name: string;
+  contactName: string;
+  phone: string;
+  email: string | null;
+  serviceAreas: string[];
+  liveTrackingSupported: boolean;
+  feedStatus: 'connected' | 'outage';
+  feedBrokenSince: string | null;
+  trackingMode: TrackingMode;
+  status: 'active' | 'paused';
+  rateCardRef: string;
+  rateCardEffectiveFrom: string;
+  lanes: DeliveryPartnerLane[];
+  stats: PartnerStats;
+  /** Newest first. */
+  trips: PartnerTripView[];
+  inFlight: { legId: string; poCode: string; siteName: string; feed: 'live' | 'lost' | 'manual' }[];
+  events: PartnerEvent[];
+  createdAt: string;
+}
+
+export interface PartnerOption {
+  partnerId: string;
+  name: string;
+  trackingMode: TrackingMode;
+  ratePerTrip: number | null;
+  distanceKm: number | null;
+  transitDays: number | null;
+  stats: PartnerStats;
+}
+
+export interface BookablePo {
+  poId: string;
+  poCode: string;
+  supplierName: string;
+  siteName: string;
+  siteCity: string;
+  originCity: string;
+  lines: { id: string; description: string }[];
+  /** Only carriers that can be booked for this site. */
+  eligible: PartnerOption[];
+  /** Carriers that cannot, and why, so Admin sees it is a rule and not an oversight. */
+  unavailable: { partnerId: string; name: string; reason: PartnerUnavailable }[];
+}
+
+export interface LateDeliveryView {
+  id: string;
+  partnerId: string;
+  partnerName: string;
+  poCode: string;
+  siteName: string;
+  arrivedAt: string;
+  lateMin: number;
+  supplierMin: number;
+  partnerMin: number;
+  responsibility: Responsibility;
+}
+
+export interface DelayAnalysis {
+  /** Deliveries that reached the customer after what was promised, over the last 180 days. */
+  late: LateDeliveryView[];
+  totals: Record<Responsibility, number>;
+  /** How many deliveries in all, so a count is read against the whole. */
+  deliveries: number;
+}
+
+export interface PartnerBoard {
+  partners: PartnerRow[];
+  bookable: BookablePo[];
+  analysis: DelayAnalysis;
+  /** Cities already served or supplied from, for choosing a service area without typos. */
+  knownCities: string[];
+}
+
+export interface PartnerInput {
+  name: string;
+  contactName: string;
+  phone: string;
+  email?: string;
+  serviceAreas: string[];
+  liveTrackingSupported: boolean;
+  rateCardRef: string;
+}
+
+export interface PartnerLaneInput {
+  originCity: string;
+  destinationCity: string;
+  distanceKm: number;
+  ratePerTrip: number;
+  transitDays: number;
+}
+
+export interface BookPartnerInput {
+  partnerId: string;
+  lineIds: string[];
+  vehicleLabel: string;
+  driverName: string;
+  driverPhone?: string;
+}
+
+export interface BookPartnerResult {
+  legId: string;
+  trackingMode: TrackingMode;
+  freightCost: number | null;
 }
 
 /* ---------------------------------- Delivery SOP checklist (107) */
@@ -2434,6 +2565,18 @@ export interface Repository {
   completeDeliveryChecklist(checklistId: string, input: CompleteChecklistInput, byUserId: string): Promise<CompleteChecklistResult>;
   /** Abandons an unfinished checklist started by mistake. */
   cancelDeliveryChecklist(checklistId: string, byUserId: string): Promise<void>;
+
+  /* Delivery partners (109) — third-party carriers, judged by their own promise */
+  getPartnerBoard(byUserId: string): Promise<PartnerBoard>;
+  createDeliveryPartner(input: PartnerInput, byUserId: string): Promise<PartnerRow>;
+  updateDeliveryPartner(partnerId: string, input: PartnerInput, byUserId: string): Promise<PartnerRow>;
+  addPartnerLane(partnerId: string, input: PartnerLaneInput, byUserId: string): Promise<PartnerRow>;
+  /** Paused carriers are not offered for new bookings; what is already on the road carries on. */
+  setPartnerStatus(partnerId: string, status: 'active' | 'paused', note: string, byUserId: string): Promise<PartnerRow>;
+  /** Their live feed broke (or is back). In-flight deliveries fall back to milestones together, and return together. */
+  setPartnerFeed(partnerId: string, feed: 'outage' | 'connected', note: string, byUserId: string): Promise<PartnerRow>;
+  /** Books a carrier for lines that are ready to ship. Refused for a carrier that does not serve the site. */
+  bookDeliveryPartner(poId: string, input: BookPartnerInput, byUserId: string): Promise<BookPartnerResult>;
 
   /* Damaged / missing parts (108) — one report, three consequences */
   getDiscrepancyReports(byUserId: string): Promise<DiscrepancyReportView[]>;

@@ -61,6 +61,8 @@ import type {
   DeliverySopStep,
   DeliverySopTemplate,
   ShipmentLeg,
+  DeliveryPartner,
+  PartnerTripRecord,
   ShipmentMilestone,
   ShipmentMilestoneEvent,
   DeliverySchedule,
@@ -1705,6 +1707,108 @@ export const seedShipmentLegs: ShipmentLeg[] = [
     source: 'live_gps', origin: MUMBAI_DOCK, dispatchedAt: minutesAgo(120), etaAt: at(90 * MINUTE), feedLostAt: minutesAgo(50),
     milestones: [gps('dispatched', 120), gps('in_transit', 110)], isDemo: true,
   },
+];
+
+
+/* ------------------------------------------------ Delivery partners (109) */
+
+const lane = (id: string, originCity: string, destinationCity: string, distanceKm: number, ratePerTrip: number, transitDays: number) => ({ id, originCity, destinationCity, distanceKm, ratePerTrip, transitDays });
+const partnerEvent = (id: string, kind: DeliveryPartner['events'][number]['kind'], daysBack: number, note?: string) => ({ id, kind, at: daysAgo(daysBack), byName: 'Prashant Vasant Wable', note });
+
+/** Five carriers: one proven and live, one manual-only and middling, one whose live feed is down right
+ *  now, one brand new with no history, and one paused for poor delivery. */
+export const seedDeliveryPartners: DeliveryPartner[] = [
+  {
+    id: 'dp-1', name: 'Swift Freight Lines', contactName: 'Nitin Deshpande', phone: '9822400111', email: 'dispatch@swiftfreight.example',
+    serviceAreas: ['Pune', 'Pimpri-Chinchwad', 'Mumbai', 'Thane', 'Nashik'], liveTrackingSupported: true, feedStatus: 'connected',
+    rateCardRef: 'SFL-RC-2026-03', rateCardEffectiveFrom: daysAgo(150),
+    lanes: [lane('dpl-1', 'Mumbai', 'Pune', 150, 18_500, 1), lane('dpl-2', 'Mumbai', 'Pimpri-Chinchwad', 165, 19_500, 1), lane('dpl-3', 'Nashik', 'Pune', 210, 24_000, 1), lane('dpl-4', 'Pune', 'Pune', 25, 6_500, 1), lane('dpl-5', 'Mumbai', 'Thane', 30, 7_000, 1)],
+    status: 'active', events: [partnerEvent('dpe-1', 'onboarded', 420, 'Onboarded on the Pune–Mumbai corridor.')], createdAt: daysAgo(420), isDemo: true,
+  },
+  {
+    id: 'dp-2', name: 'Sahyadri Roadways', contactName: 'Vilas Jagtap', phone: '9890233445',
+    serviceAreas: ['Pune', 'Pimpri-Chinchwad', 'Satara', 'Kolhapur'], liveTrackingSupported: false, feedStatus: 'connected',
+    rateCardRef: 'SR-2026-Q1', rateCardEffectiveFrom: daysAgo(210),
+    lanes: [lane('dpl-6', 'Pune', 'Pune', 25, 5_500, 1), lane('dpl-7', 'Pune', 'Satara', 110, 12_000, 1), lane('dpl-8', 'Mumbai', 'Pune', 150, 15_800, 2)],
+    status: 'active', events: [partnerEvent('dpe-2', 'onboarded', 380, 'Cheapest local carrier; phone updates only.')], createdAt: daysAgo(380), isDemo: true,
+  },
+  {
+    id: 'dp-3', name: 'Gujarat Express Cargo', contactName: 'Hiren Patel', phone: '9925011223',
+    serviceAreas: ['Ahmedabad', 'Surat', 'Mumbai', 'Pune'], liveTrackingSupported: true, feedStatus: 'outage', feedBrokenSince: hoursAgo(3),
+    rateCardRef: 'GEC-RC-24-B', rateCardEffectiveFrom: daysAgo(300),
+    lanes: [lane('dpl-9', 'Ahmedabad', 'Pune', 660, 52_000, 2), lane('dpl-10', 'Ahmedabad', 'Mumbai', 530, 44_000, 2), lane('dpl-11', 'Mumbai', 'Surat', 280, 26_000, 1)],
+    status: 'active', events: [partnerEvent('dpe-3', 'onboarded', 300), { id: 'dpe-4', kind: 'feed_outage', at: hoursAgo(3), byName: 'Prashant Vasant Wable', note: 'Their tracking API returns errors since morning; carrier has been told.' }], createdAt: daysAgo(300), isDemo: true,
+  },
+  {
+    id: 'dp-4', name: 'Nashik Carriers', contactName: 'Sagar Gaikwad', phone: '9765098877',
+    serviceAreas: ['Nashik', 'Pune', 'Pimpri-Chinchwad'], liveTrackingSupported: true, feedStatus: 'connected',
+    rateCardRef: 'NC-2026-09', rateCardEffectiveFrom: daysAgo(30),
+    lanes: [lane('dpl-12', 'Nashik', 'Pune', 210, 21_500, 1), lane('dpl-13', 'Nashik', 'Pimpri-Chinchwad', 225, 22_500, 1)],
+    status: 'active', events: [partnerEvent('dpe-5', 'onboarded', 30, 'New carrier. Starting with a neutral rating until they have delivered a few loads.')], createdAt: daysAgo(30), isDemo: true,
+  },
+  {
+    id: 'dp-5', name: 'Deccan Movers', contactName: 'Prakash Shinde', phone: '9850677788',
+    serviceAreas: ['Pune', 'Pimpri-Chinchwad'], liveTrackingSupported: false, feedStatus: 'connected',
+    rateCardRef: 'DM-2025-11', rateCardEffectiveFrom: daysAgo(280),
+    lanes: [lane('dpl-14', 'Pune', 'Pune', 25, 5_000, 1), lane('dpl-15', 'Pune', 'Pimpri-Chinchwad', 20, 5_000, 1)],
+    status: 'paused', events: [partnerEvent('dpe-6', 'onboarded', 340), partnerEvent('dpe-7', 'paused', 40, 'Four late loads in a month. Paused until they can commit to times.')], createdAt: daysAgo(340), isDemo: true,
+  },
+];
+
+/** `slackH`: how long before the promise the carrier's estimate fell (negative: the estimate already
+ *  missed the promise, so the goods left the supplier too late). `lateMin`: minutes after the carrier's own estimate. */
+const tripRec = (id: string, partnerId: string, poCode: string, siteName: string, laneLabel: string, daysBack: number, plannedH: number, slackH: number, lateMin: number, externalEvent = false): PartnerTripRecord => {
+  const dispatched = NOW - daysBack * DAY;
+  const eta = dispatched + plannedH * HOUR;
+  return { id, partnerId, poCode, siteName, laneLabel, promisedAt: new Date(eta + slackH * HOUR).toISOString(), dispatchedAt: new Date(dispatched).toISOString(), etaAt: new Date(eta).toISOString(), arrivedAt: new Date(eta + lateMin * MINUTE).toISOString(), ...(externalEvent ? { externalEvent: true } : {}), isDemo: true };
+};
+
+export const seedPartnerTrips: PartnerTripRecord[] = [
+  // Swift: 14 trips, two slow ones of their own, one that missed the customer's date only because the supplier handed over late.
+  tripRec('pt-1', 'dp-1', 'AIEC-PO-7901', 'Shree Ram Heights', 'Mumbai → Pune', 170, 6, 20, 10),
+  tripRec('pt-2', 'dp-1', 'AIEC-PO-7905', 'Kulkarni Signature', 'Mumbai → Pune', 160, 6, 18, -15),
+  tripRec('pt-3', 'dp-1', 'AIEC-PO-7910', 'Skyline Corporate Park', 'Nashik → Pune', 150, 7, 12, 25),
+  tripRec('pt-4', 'dp-1', 'AIEC-PO-7914', 'Pinnacle Aurum', 'Mumbai → Pune', 140, 6, 30, 5),
+  tripRec('pt-5', 'dp-1', 'AIEC-PO-7920', 'Shree Ram Heights', 'Mumbai → Pune', 128, 6, 2, 190),
+  tripRec('pt-6', 'dp-1', 'AIEC-PO-7924', 'Kulkarni Signature', 'Pune → Pune', 118, 2, 24, 0),
+  tripRec('pt-7', 'dp-1', 'AIEC-PO-7931', 'Green Valley Homes', 'Mumbai → Pimpri-Chinchwad', 104, 7, 22, 35),
+  tripRec('pt-8', 'dp-1', 'AIEC-PO-7936', 'Skyline Corporate Park', 'Mumbai → Pune', 92, 6, -5, 20),
+  tripRec('pt-9', 'dp-1', 'AIEC-PO-7942', 'Pinnacle Aurum', 'Nashik → Pune', 80, 7, 1, 260),
+  tripRec('pt-10', 'dp-1', 'AIEC-PO-7950', 'Shree Ram Heights', 'Mumbai → Pune', 66, 6, 26, 12),
+  tripRec('pt-11', 'dp-1', 'AIEC-PO-7955', 'Green Valley Homes', 'Mumbai → Pimpri-Chinchwad', 52, 7, 18, -20),
+  tripRec('pt-12', 'dp-1', 'AIEC-PO-7961', 'Kulkarni Signature', 'Pune → Pune', 38, 2, 10, 0),
+  tripRec('pt-13', 'dp-1', 'AIEC-PO-7967', 'Skyline Corporate Park', 'Mumbai → Pune', 24, 6, 20, 30),
+  tripRec('pt-14', 'dp-1', 'AIEC-PO-7973', 'Pinnacle Aurum', 'Mumbai → Pune', 12, 6, 15, 15),
+  // Sahyadri: 9 trips, a third of them well over their own estimate.
+  tripRec('pt-15', 'dp-2', 'AIEC-PO-7903', 'Green Valley Homes', 'Pune → Pune', 176, 3, 20, 20),
+  tripRec('pt-16', 'dp-2', 'AIEC-PO-7908', 'Shree Ram Heights', 'Pune → Satara', 150, 5, 1, 300),
+  tripRec('pt-17', 'dp-2', 'AIEC-PO-7916', 'Kulkarni Signature', 'Pune → Pune', 132, 3, 12, 10),
+  tripRec('pt-18', 'dp-2', 'AIEC-PO-7927', 'Skyline Corporate Park', 'Mumbai → Pune', 108, 9, 24, 40),
+  tripRec('pt-19', 'dp-2', 'AIEC-PO-7938', 'Pinnacle Aurum', 'Pune → Pune', 84, 3, 1, 180),
+  tripRec('pt-20', 'dp-2', 'AIEC-PO-7946', 'Green Valley Homes', 'Pune → Pune', 60, 3, 20, 25),
+  tripRec('pt-21', 'dp-2', 'AIEC-PO-7957', 'Shree Ram Heights', 'Mumbai → Pune', 42, 9, -3, 50),
+  tripRec('pt-22', 'dp-2', 'AIEC-PO-7964', 'Kulkarni Signature', 'Pune → Pune', 26, 3, 2, 420),
+  tripRec('pt-23', 'dp-2', 'AIEC-PO-7970', 'Skyline Corporate Park', 'Pune → Pune', 10, 3, 18, 15),
+  // Gujarat Express: 8 trips, reliable — but their live feed is down right now.
+  tripRec('pt-24', 'dp-3', 'AIEC-PO-7911', 'Rathi Towers', 'Ahmedabad → Pune', 140, 30, 24, 40),
+  tripRec('pt-25', 'dp-3', 'AIEC-PO-7919', 'Rathi Towers', 'Ahmedabad → Mumbai', 122, 24, 20, 10),
+  tripRec('pt-26', 'dp-3', 'AIEC-PO-7928', 'Pinnacle Aurum', 'Ahmedabad → Pune', 104, 30, 30, 55),
+  tripRec('pt-27', 'dp-3', 'AIEC-PO-7935', 'Skyline Corporate Park', 'Ahmedabad → Pune', 86, 30, 18, 20),
+  tripRec('pt-28', 'dp-3', 'AIEC-PO-7944', 'Kulkarni Signature', 'Mumbai → Surat', 70, 12, 20, 5),
+  tripRec('pt-29', 'dp-3', 'AIEC-PO-7953', 'Pinnacle Aurum', 'Ahmedabad → Pune', 50, 30, 3, 330, true),
+  tripRec('pt-30', 'dp-3', 'AIEC-PO-7962', 'Green Valley Homes', 'Ahmedabad → Mumbai', 34, 24, 22, 30),
+  tripRec('pt-31', 'dp-3', 'AIEC-PO-7971', 'Skyline Corporate Park', 'Ahmedabad → Pune', 18, 30, 16, 45),
+  // Nashik Carriers: two trips only, not enough to rate.
+  tripRec('pt-32', 'dp-4', 'AIEC-PO-7966', 'Green Valley Homes', 'Nashik → Pune', 22, 7, 20, 10),
+  tripRec('pt-33', 'dp-4', 'AIEC-PO-7972', 'Kulkarni Signature', 'Nashik → Pimpri-Chinchwad', 9, 7, 18, 35),
+  // Deccan Movers (paused): 7 trips, over half late.
+  tripRec('pt-34', 'dp-5', 'AIEC-PO-7909', 'Shree Ram Heights', 'Pune → Pune', 200, 3, 1, 240),
+  tripRec('pt-35', 'dp-5', 'AIEC-PO-7917', 'Pinnacle Aurum', 'Pune → Pune', 176, 3, 20, 30),
+  tripRec('pt-36', 'dp-5', 'AIEC-PO-7926', 'Kulkarni Signature', 'Pune → Pimpri-Chinchwad', 150, 3, 2, 360),
+  tripRec('pt-37', 'dp-5', 'AIEC-PO-7934', 'Green Valley Homes', 'Pune → Pune', 120, 3, 16, 25),
+  tripRec('pt-38', 'dp-5', 'AIEC-PO-7945', 'Skyline Corporate Park', 'Pune → Pune', 92, 3, 20, 200),
+  tripRec('pt-39', 'dp-5', 'AIEC-PO-7952', 'Shree Ram Heights', 'Pune → Pune', 70, 3, -2, 280),
+  tripRec('pt-40', 'dp-5', 'AIEC-PO-7960', 'Pinnacle Aurum', 'Pune → Pimpri-Chinchwad', 54, 3, 14, 15),
 ];
 
 /* ------------------------------------------ Supplier payment terms (100) */

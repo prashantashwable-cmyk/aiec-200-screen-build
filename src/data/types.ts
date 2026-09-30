@@ -905,7 +905,83 @@ export interface ShipmentLeg {
   /** A live feed that stopped reporting. The vehicle's position is frozen
    *  here and shown honestly as last known. */
   feedLostAt?: string;
+  /** Why the feed is lost. `partner_outage`: the carrier's own integration broke (109), so every
+   *  in-flight live leg of theirs falls back to milestones together, and comes back together. */
+  feedLostReason?: 'partner_outage';
+  /** The third-party carrier booked for this leg (109), when the supplier isn't delivering itself. */
+  partnerId?: string;
+  /** The rate card's price for this lane at booking, when the lane was on the card. */
+  freightCost?: number;
+  bookedByName?: string;
   milestones: ShipmentMilestoneEvent[];
+  isDemo: boolean;
+}
+
+/* ------------------------------------ Delivery partners (109) */
+
+/** One priced lane on a partner's rate card. */
+export interface DeliveryPartnerLane {
+  id: string;
+  /** Where the goods leave from (a supplier's city). */
+  originCity: string;
+  /** A city the partner delivers to. */
+  destinationCity: string;
+  distanceKm: number;
+  ratePerTrip: number;
+  transitDays: number;
+}
+
+export type PartnerEventKind = 'onboarded' | 'details' | 'lane_added' | 'paused' | 'resumed' | 'feed_outage' | 'feed_restored' | 'booked';
+
+export interface PartnerEvent {
+  id: string;
+  kind: PartnerEventKind;
+  at: string;
+  byName: string;
+  note?: string;
+}
+
+/** A third-party logistics partner: a different role from a supplier, an asset-light
+ *  relationship AIEC orchestrates rather than owns. Performance is never stored, it is
+ *  read off the trips they have actually made. */
+export interface DeliveryPartner {
+  id: string;
+  name: string;
+  contactName: string;
+  phone: string;
+  email?: string;
+  /** Cities the partner delivers to. Booking offers only partners that serve the site's. */
+  serviceAreas: string[];
+  /** Whether their integration can give a live pin at all. */
+  liveTrackingSupported: boolean;
+  /** `outage` while their live feed is broken; in-flight deliveries fall back to milestones. */
+  feedStatus: 'connected' | 'outage';
+  feedBrokenSince?: string;
+  rateCardRef: string;
+  rateCardEffectiveFrom: string;
+  lanes: DeliveryPartnerLane[];
+  status: 'active' | 'paused';
+  events: PartnerEvent[];
+  createdAt: string;
+  isDemo: boolean;
+}
+
+/** A completed carrier trip from before AIEC tracked it in-app: enough to judge them by. A trip
+ *  since booked in-app is read from its own ShipmentLeg. */
+export interface PartnerTripRecord {
+  id: string;
+  partnerId: string;
+  poCode: string;
+  siteName: string;
+  laneLabel: string;
+  /** What the supplier had promised the customer for this delivery. */
+  promisedAt: string;
+  dispatchedAt: string;
+  /** The partner's own estimate at dispatch. */
+  etaAt: string;
+  arrivedAt: string;
+  /** The delay was an event outside anyone's control (a flood, a strike): not held against them. */
+  externalEvent?: boolean;
   isDemo: boolean;
 }
 
@@ -2467,6 +2543,7 @@ export type CommitmentKind =
   | 'shipment_status_update'
   | 'delivery_confirmation_sign'
   | 'discrepancy_report_review'
+  | 'partner_feed_restore'
   | 'delivery_delay_action'
   | 'orphaned_po_decision'
   | 'discrepancy_report_review'
@@ -2491,7 +2568,8 @@ export type CommitmentSubjectType =
   | 'supplier_thread'
   | 'supplier_retention'
   | 'delivery'
-  | 'shipment';
+  | 'shipment'
+  | 'delivery_partner';
 
 /**
  * 0 nothing sent yet · 1 owner nudged before due · 2 owner told it's overdue

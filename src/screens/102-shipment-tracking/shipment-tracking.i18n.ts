@@ -66,6 +66,7 @@ const translations: ScreenTranslations = {
       },
       detail: {
         supplier: 'Supplier',
+        carrier: 'Carrier',
         vehicle: 'Vehicle',
         driver: 'Driver',
         callDriver: 'Call driver',
@@ -96,6 +97,7 @@ const translations: ScreenTranslations = {
       },
       dispatch: {
         open: 'Dispatch',
+        bookCarrier: 'Book a carrier',
         title: 'Dispatch a shipment',
         intro: 'Put the ready parts on a vehicle. They move to shipped and the customer is told.',
         po: 'Order',
@@ -190,6 +192,7 @@ const translations: ScreenTranslations = {
       },
       detail: {
         supplier: 'सप्लायर',
+        carrier: 'ट्रांसपोर्टर',
         vehicle: 'गाड़ी',
         driver: 'ड्राइवर',
         callDriver: 'ड्राइवर को फ़ोन करें',
@@ -220,6 +223,7 @@ const translations: ScreenTranslations = {
       },
       dispatch: {
         open: 'रवाना करें',
+        bookCarrier: 'ट्रांसपोर्टर बुक करें',
         title: 'शिपमेंट रवाना करें',
         intro: 'तैयार पार्ट्स को गाड़ी में डालें। वे भेजे गए में चले जाएँगे और ग्राहक को बताया जाएगा।',
         po: 'ऑर्डर',
@@ -314,6 +318,7 @@ const translations: ScreenTranslations = {
       },
       detail: {
         supplier: 'पुरवठादार',
+        carrier: 'वाहतूकदार',
         vehicle: 'गाडी',
         driver: 'ड्रायव्हर',
         callDriver: 'ड्रायव्हरला फोन करा',
@@ -344,6 +349,7 @@ const translations: ScreenTranslations = {
       },
       dispatch: {
         open: 'रवाना करा',
+        bookCarrier: 'वाहतूकदार बुक करा',
         title: 'शिपमेंट रवाना करा',
         intro: 'तयार पार्ट्स गाडीत ठेवा. ते पाठवलेले मध्ये जातात आणि ग्राहकाला कळवलं जातं.',
         po: 'ऑर्डर',
