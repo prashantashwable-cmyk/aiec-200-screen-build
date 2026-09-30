@@ -1,6 +1,7 @@
 import type { ItemState, SignOffProblem } from '@/features/qc/mechanical';
 import type { ElecSignOffProblem, ElecState } from '@/features/qc/electrical';
 import type { DisputeDecision, SnagProblem, SnagSeverity } from '@/features/qc/snags';
+import type { DocBasis, DocBlock, DocState, HandoverDocKind, HandoverProblem, ReadinessProblem as HandoverReadinessProblem } from '@/features/qc/handover';
 import type { PartStatus, ReworkProblem, Urgency } from '@/features/qc/rework';
 import type { GuidanceProblem, ReadinessProblem, ReissueProblem, StandardsProblem } from '@/features/qc/compliance';
 import type { BusyReason, EligibilityProblem, Involvement, SlotOffer } from '@/features/qc/inspectors';
@@ -15,6 +16,7 @@ import type {
   QcMechItemId,
   QcVerdict,
   ReworkRequest,
+  HandoverReadiness,
   SnagEvent,
   InspectorUnavailability,
   QcAssignment,
@@ -1725,6 +1727,41 @@ export interface QcElecInput {
   clientId?: string;
   capturedAt?: string;
 }
+
+/* ------------------------------------ Final handover checklist (137) */
+
+export interface HandoverDocView {
+  kind: HandoverDocKind;
+  state: DocState;
+  blockedBy: DocBlock | null;
+  /** What it describes now, and what it was confirmed against. */
+  current: DocBasis | null;
+  confirmedAt: string | null;
+  confirmedByName: string | null;
+  issues: { id: string; text: string; raisedByName: string; at: string; resolvedAt: string | null; resolvedByName: string | null; resolution: string | null }[];
+  corrections: { id: string; note: string; byName: string; at: string }[];
+}
+
+export interface HandoverChecklistView {
+  job: { id: string; code: string; siteName: string; address: string; status: Job['status'] };
+  viewer: 'admin' | 'inspector';
+  checks: { mechanical: { at: string; byName: string } | null; electrical: { at: string; byName: string } | null };
+  snags: { open: number; safetyCritical: number; functional: number; cosmetic: number; pendingVerification: number; disputed: number; resolved: number; waived: number };
+  certificate: { code: string; version: number; issuedAt: string; historic: boolean } | null;
+  docs: HandoverDocView[];
+  adminReview: NonNullable<HandoverReadiness['adminReview']> | null;
+  readiness: { ready: boolean; problems: HandoverReadinessProblem[] };
+  /** `confirmed` once Ready for Handover was said and the gate is still clear; `reopened` if something has come up since. */
+  status: 'blocked' | 'ready' | 'confirmed' | 'reopened';
+  confirmed: { at: string; byName: string } | null;
+  history: { at: string; byName: string }[];
+  canConfirm: boolean;
+  canEditDocs: boolean;
+  canRequestReview: boolean;
+  canCompleteReview: boolean;
+}
+
+export type HandoverError = HandoverProblem;
 
 /* ------------------------------------ Rework assignment (136) */
 
@@ -4908,6 +4945,21 @@ export interface Repository {
   pingSiteLocation(technicianId: string, point: GeoPoint, at?: string): Promise<void>;
   /** Picks which step to do next, when the site does not allow the suggested order. Only steps whose prerequisites are done. */
   focusSopStep(jobId: string, stepId: string, technicianId: string): Promise<InstallationSopView>;
+
+  /* Final handover checklist (137) */
+  getHandoverChecklist(jobId: string, userId: string): Promise<HandoverChecklistView>;
+  /** Says the document was checked against what the customer actually has now. */
+  confirmHandoverDocument(jobId: string, kind: HandoverDocKind, userId: string): Promise<HandoverChecklistView>;
+  /** A real problem in the documentation package: it blocks handover-readiness until it is resolved. */
+  flagHandoverDocIssue(jobId: string, kind: HandoverDocKind, text: string, userId: string): Promise<HandoverChecklistView>;
+  resolveHandoverDocIssue(jobId: string, issueId: string, resolution: string, userId: string): Promise<HandoverChecklistView>;
+  /** A genuinely trivial paperwork fix (a typo) made at the gate: kept on the record, and the document stays ready. */
+  correctHandoverDocument(jobId: string, kind: HandoverDocKind, note: string, userId: string): Promise<HandoverChecklistView>;
+  /** Admin only: an extra personal review for a job that warrants one. It has to be completed before handover. */
+  requestHandoverAdminReview(jobId: string, reason: string, adminId: string): Promise<HandoverChecklistView>;
+  completeHandoverAdminReview(jobId: string, note: string, adminId: string): Promise<HandoverChecklistView>;
+  /** The one event that unlocks the customer walkthrough. The job moves to `handover_pending`. */
+  confirmReadyForHandover(jobId: string, userId: string): Promise<HandoverChecklistView>;
 
   /* Rework assignment (136) */
   getRework(snagId: string, userId: string): Promise<ReworkView>;

@@ -257,6 +257,7 @@ function JobScreen({ s, d, t }: { s: QcState; d: QcJobDetail; t: T }) {
                     <Button size="sm" variant="secondary" icon={<ClipboardText size={16} aria-hidden="true" />} onClick={() => s.goto(`/qc-electrical/${d.job.id}`)} data-open="electrical">{t('qcElec.title')}</Button>
                     <Button size="sm" variant="secondary" icon={<ClipboardText size={16} aria-hidden="true" />} onClick={() => s.goto(`/compliance/${d.job.id}`)} data-open="compliance">{t('compliance.title')}</Button>
                     <Button size="sm" variant="secondary" icon={<ClipboardText size={16} aria-hidden="true" />} onClick={() => s.goto(`/snags/${d.job.id}`)} data-open="snags">{t('snagList.title')}</Button>
+                    <Button size="sm" variant="secondary" icon={<ClipboardText size={16} aria-hidden="true" />} onClick={() => s.goto(`/handover-checklist/${d.job.id}`)} data-open="handover">{t('handover.title')}</Button>
                   </div>
                 )}
                 {admin && (a.status === 'assigned' || a.status === 'scheduled') && (

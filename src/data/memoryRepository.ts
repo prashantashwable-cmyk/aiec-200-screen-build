@@ -218,6 +218,8 @@ import type {
   QcMechAttemptView,
   ComplianceCertificateView,
   ComplianceView,
+  HandoverChecklistView,
+  HandoverDocView,
   ReworkPartOption,
   ReworkPartView,
   ReworkRoundView,
@@ -420,6 +422,7 @@ import type {
   CertificatePackage,
   ComplianceCertificate,
   SnagEvent,
+  HandoverReadiness,
   ReworkRound,
   StateInspectionGuidance,
   JobStep,
@@ -598,6 +601,8 @@ import { capturedAtProblem, completionProblem, isDone, missingSlots, naProblem, 
 import type { SpecFacts } from '@/features/technician/installSop';
 import { ASSIGN_DUE, DISPUTE_DECIDE_DUE, REWORK_DUE, REVERIFY_DUE, blocksHandover as sgBlocks, decisionProblem as sgDecisionProblem, disputeProblem as sgDisputeProblem, isChecklistSnag as sgIsChecklist, isOpen as sgIsOpen, linkProblem as sgLinkProblem, raiseProblem as sgRaiseProblem, regradeProblem as sgRegradeProblem, severityOfSource as sgSeverityOfSource, severityRank as sgRank, verifyProblem as sgVerifyProblem, waiveProblem as sgWaiveProblem } from '@/features/qc/snags';
 import type { DisputeDecision, SnagSeverity } from '@/features/qc/snags';
+import { CORRECTION_MIN as HO_CORRECTION_MIN, DOC_KINDS as HO_DOC_KINDS, REVIEW_NOTE_MIN as HO_REVIEW_NOTE_MIN, REVIEW_REASON_MIN as HO_REVIEW_REASON_MIN, blockOf as hoBlockOf, correctionProblem as hoCorrectionProblem, docStateOf as hoDocState, issueProblem as hoIssueProblem, readinessOf as hoReadiness } from '@/features/qc/handover';
+import type { DocBasis as HoDocBasis, HandoverDocKind } from '@/features/qc/handover';
 import { completeProblem as rwCompleteProblem, escalateProblem as rwEscalateProblem, handBackProblem as rwHandBackProblem, partProblem as rwPartProblem, partStatusOf as rwPartStatus, reassignProblem as rwReassignProblem, urgencyOf as rwUrgency } from '@/features/qc/rework';
 import { guidanceProblem, primaryOf as certPrimaryOf, readinessOf as certReadiness, reissueProblem as certReissueProblem, standardFor as certStandardFor, standardsProblem as certStandardsProblem } from '@/features/qc/compliance';
 import { ELEC_ITEMS, defOf as elecDef, attemptProblem as elecAttemptProblem, signOffProblem as elecSignOffProblem, stateOf as elecStateOf, suggestVerdict as elecSuggest } from '@/features/qc/electrical';
@@ -2277,6 +2282,8 @@ function commitmentSources(now: number): CommitmentSources {
     qcWaiting: qcWaitingJobs(),
     qcCertificateWaiting: qcCertificateWaiting(),
     snags: (ensureSnagSeeds(), reworkRequests),
+    handoverWaiting: handoverSignals().waiting,
+    handoverReviews: handoverSignals().reviews,
     qcMechChecks,
     qcFindings,
     deliveryChecklists,
@@ -7134,6 +7141,117 @@ function reworkPartOptions(): ReworkPartOption[] {
     }
   }
   return out.sort((a, b) => a.category.localeCompare(b.category) || a.unitPrice - b.unitPrice);
+}
+
+/* ============================== Final handover checklist (137) */
+
+const handoverRecords: HandoverReadiness[] = [];
+const handoverRecordOf = (jobId: string): HandoverReadiness => {
+  let r = handoverRecords.find((x) => x.jobId === jobId);
+  if (!r) {
+    r = { jobId, docs: {}, issues: [], corrections: [], confirmations: [], isDemo: true };
+    handoverRecords.push(r);
+  }
+  return r;
+};
+
+/** What the customer's package is now: the accepted configuration, the as-installed parts log and the AMC pricing in force. */
+function handoverBasisOf(job: Job): HoDocBasis | null {
+  const spec = lockedSpecOf(byId(deals, job.dealId)?.leadId ?? '');
+  if (!spec) return null;
+  ensureMaterialSeeds();
+  const log = materialLogs.find((l) => l.jobId === job.id && l.status === 'confirmed');
+  return { quotationCode: spec.quotationCode, version: spec.version, finishTier: spec.finishTier, driveType: spec.driveType, materialsConfirmedAt: log?.confirmedAt ?? null, pricingUpdatedAt: pricingConfig.updatedAt };
+}
+
+function handoverGateOf(job: Job) {
+  ensureSnagSeeds();
+  const rec = handoverRecordOf(job.id);
+  const basis = handoverBasisOf(job);
+  const mech = mechCheckOf(job.id).signedOff;
+  const elec = elecCheckOf(job.id).signedOff;
+  const cert = currentCertOf(job.id);
+  const mine = reworkRequests.filter((r) => r.jobId === job.id);
+  const open = mine.filter((r) => sgIsOpen(r.status));
+  const docs: HandoverDocView[] = HO_DOC_KINDS.map((kind) => {
+    const confirmed = rec.docs[kind] ?? null;
+    const block = hoBlockOf(kind, { hasSpec: !!basis, materialsConfirmed: !!basis?.materialsConfirmedAt, amcTiers: pricingConfig.amcTiers.length });
+    const issues = rec.issues.filter((i) => i.kind === kind);
+    const state = basis ? hoDocState({ block, confirmed, openIssue: issues.some((i) => !i.resolvedAt), now: basis, kind }) : 'blocked';
+    return {
+      kind,
+      state,
+      blockedBy: block,
+      current: basis,
+      confirmedAt: confirmed?.confirmedAt ?? null,
+      confirmedByName: confirmed?.confirmedByName ?? null,
+      issues: issues.map((i) => ({ id: i.id, text: i.text, raisedByName: i.raisedByName, at: i.at, resolvedAt: i.resolvedAt ?? null, resolvedByName: i.resolvedByName ?? null, resolution: i.resolution ?? null })),
+      corrections: rec.corrections.filter((c) => c.kind === kind).map((c) => ({ id: c.id, note: c.note, byName: c.byName, at: c.at })),
+    };
+  });
+  const reviewOpen = !!rec.adminReview && !rec.adminReview.completedAt;
+  const problems = hoReadiness({ checksSigned: !!mech && !!elec, openSnags: open.length, certificateIssued: !!cert && !cert.historic, docStates: docs.map((d) => d.state), reviewOpen });
+  const last = rec.confirmations[rec.confirmations.length - 1];
+  // Jobs that finished before this gate existed have nothing to confirm: they are simply past it.
+  const legacy = (job.status === 'handover_pending' || job.status === 'completed') && rec.confirmations.length === 0;
+  // A confirmation only stands while nothing has come up since: a new snag, a documentation issue, a reissued certificate or an added review
+  // needs a fresh Ready for Handover, even if it has already been put right.
+  const cameUp = last ? [...mine.map((r) => r.raisedAt), ...rec.issues.map((i) => i.at), rec.adminReview?.addedAt, cert?.issuedAt].some((t) => !!t && t > last.at) : false;
+  const status: HandoverChecklistView['status'] = legacy ? 'confirmed' : last && problems.length === 0 && !cameUp && job.status !== 'qc_pending' ? 'confirmed' : last ? 'reopened' : problems.length === 0 ? 'ready' : 'blocked';
+  // The time everything became clear, for the commitment: the latest thing that had to be done.
+  const stamps = [cert?.issuedAt, mech?.at, elec?.at, rec.adminReview?.completedAt, ...Object.values(rec.docs).map((d) => d?.confirmedAt), ...rec.issues.map((i) => i.resolvedAt), ...mine.map((r) => r.verifiedAt ?? r.waiver?.at)].filter((x): x is string => !!x).sort();
+  return { rec, basis, mech, elec, cert, mine, open, docs, reviewOpen, problems, last, legacy, status, clearAt: stamps[stamps.length - 1] ?? null };
+}
+
+function handoverViewOf(job: Job, viewer: 'admin' | 'inspector'): HandoverChecklistView {
+  const g = handoverGateOf(job);
+  const count = (sv: string) => g.open.filter((r) => r.severity === sv).length;
+  return {
+    job: { id: job.id, code: job.code, siteName: job.siteName, address: job.address, status: job.status },
+    viewer,
+    checks: { mechanical: g.mech ? { at: g.mech.at, byName: g.mech.byName } : null, electrical: g.elec ? { at: g.elec.at, byName: g.elec.byName } : null },
+    snags: { open: g.open.length, safetyCritical: count('safety_critical'), functional: count('functional'), cosmetic: count('cosmetic'), pendingVerification: g.open.filter((r) => r.status === 'ready_for_retest').length, disputed: g.open.filter((r) => r.status === 'disputed').length, resolved: g.mine.filter((r) => r.status === 'verified' || r.status === 'withdrawn').length, waived: g.mine.filter((r) => r.status === 'waived').length },
+    certificate: g.cert ? { code: g.cert.code, version: g.cert.version, issuedAt: g.cert.issuedAt, historic: !!g.cert.historic } : null,
+    docs: g.docs,
+    adminReview: g.rec.adminReview ? { ...g.rec.adminReview } : null,
+    readiness: { ready: g.problems.length === 0, problems: g.problems },
+    status: g.status,
+    confirmed: g.last && g.status === 'confirmed' ? { at: g.last.at, byName: g.last.byName } : null,
+    history: g.rec.confirmations.map((c) => ({ at: c.at, byName: c.byName })),
+    canConfirm: g.problems.length === 0 && (job.status === 'qc_pending' || g.status === 'reopened') && !g.legacy,
+    canEditDocs: job.status === 'qc_pending' || job.status === 'handover_pending',
+    canRequestReview: viewer === 'admin' && !g.rec.adminReview && !g.last && job.status === 'qc_pending',
+    canCompleteReview: viewer === 'admin' && g.reviewOpen,
+  };
+}
+
+function handoverActor(jobId: string, userId: string): { job: Job; user: User; viewer: 'admin' | 'inspector'; assignment: QcAssignment | undefined } {
+  const a = mechActor(jobId, userId);
+  if (a.viewer === 'lead') throw new RepositoryError('forbidden');
+  return { job: a.job, user: a.user, viewer: a.viewer, assignment: a.assignment };
+}
+
+/** The structural unlock for the customer walkthrough (138): Ready for Handover was said and nothing has come up since, or the job was past the gate before it existed. */
+const handoverUnlocked = (jobId: string): boolean => {
+  const job = byId(jobs, jobId);
+  if (!job) return false;
+  const g = handoverGateOf(job);
+  return g.status === 'confirmed';
+};
+
+/** Jobs whose gate is clear but not yet confirmed, and admin reviews waiting: what the commitments read. */
+function handoverSignals(): { waiting: { jobId: string; readyAt: string; ownerId: string | null; confirmed: boolean }[]; reviews: { jobId: string; addedAt: string; reason: string; done: boolean; doneAt?: string }[] } {
+  ensureComplianceSeeds();
+  const waiting: { jobId: string; readyAt: string; ownerId: string | null; confirmed: boolean }[] = [];
+  const reviews: { jobId: string; addedAt: string; reason: string; done: boolean; doneAt?: string }[] = [];
+  for (const job of jobs) {
+    if (job.status !== 'qc_pending' && job.status !== 'handover_pending') continue;
+    const g = handoverGateOf(job);
+    if (g.legacy) continue;
+    if (g.problems.length === 0 || g.last) waiting.push({ jobId: job.id, readyAt: g.clearAt ?? new Date().toISOString(), ownerId: qcOf(job.id)?.inspectorId ?? null, confirmed: g.status === 'confirmed' });
+    if (g.rec.adminReview) reviews.push({ jobId: job.id, addedAt: g.rec.adminReview.addedAt, reason: g.rec.adminReview.reason, done: !!g.rec.adminReview.completedAt, ...(g.rec.adminReview.completedAt ? { doneAt: g.rec.adminReview.completedAt } : {}) });
+  }
+  return { waiting, reviews };
 }
 
 /* ============================== Installation SOP (123) */
@@ -13331,6 +13449,108 @@ export const memoryRepository: Repository = {
       if (problem) throw new RepositoryError(problem);
       check.signedOff = { at: new Date().toISOString(), byUserId: user.id, byName: user.name };
       return elecViewOf(job, viewer, assignment);
+    }),
+
+  /* --------------------------------- Final handover checklist (137) */
+  getHandoverChecklist: (jobId, userId) =>
+    simulateRead((): HandoverChecklistView => {
+      const { job, viewer } = handoverActor(jobId, userId);
+      return handoverViewOf(job, viewer);
+    }),
+
+  confirmHandoverDocument: (jobId, kind, userId) =>
+    simulateWrite((): HandoverChecklistView => {
+      const { job, user, viewer } = handoverActor(jobId, userId);
+      if (job.status !== 'qc_pending' && job.status !== 'handover_pending') throw new RepositoryError('invalid_state');
+      const g = handoverGateOf(job);
+      const doc = g.docs.find((d) => d.kind === kind);
+      if (!doc || !g.basis) throw new RepositoryError('not_found');
+      if (doc.state === 'blocked') throw new RepositoryError('blocked_doc');
+      if (doc.state === 'issue') throw new RepositoryError('invalid_state');
+      g.rec.docs[kind] = { basis: { ...g.basis }, confirmedAt: new Date().toISOString(), confirmedByName: user.name };
+      return handoverViewOf(job, viewer);
+    }),
+
+  flagHandoverDocIssue: (jobId, kind, text, userId) =>
+    simulateWrite((): HandoverChecklistView => {
+      const { job, user, viewer } = handoverActor(jobId, userId);
+      const problem = hoIssueProblem(text);
+      if (problem) throw new RepositoryError(problem);
+      const rec = handoverRecordOf(job.id);
+      snagCounter += 1;
+      rec.issues.push({ id: `hdi-${snagCounter}`, kind, text: text.trim(), raisedByName: user.name, at: new Date().toISOString() });
+      return handoverViewOf(job, viewer);
+    }),
+
+  resolveHandoverDocIssue: (jobId, issueId, resolution, userId) =>
+    simulateWrite((): HandoverChecklistView => {
+      const { job, user, viewer } = handoverActor(jobId, userId);
+      const rec = handoverRecordOf(job.id);
+      const issue = rec.issues.find((i) => i.id === issueId);
+      if (!issue) throw new RepositoryError('not_found');
+      if (issue.resolvedAt) throw new RepositoryError('invalid_state');
+      const problem = hoIssueProblem(resolution);
+      if (problem) throw new RepositoryError(problem);
+      Object.assign(issue, { resolvedAt: new Date().toISOString(), resolvedByName: user.name, resolution: resolution.trim() });
+      // A document that had a real problem is checked again: it is never ready just because the flag was cleared.
+      delete rec.docs[issue.kind];
+      return handoverViewOf(job, viewer);
+    }),
+
+  correctHandoverDocument: (jobId, kind, note, userId) =>
+    simulateWrite((): HandoverChecklistView => {
+      const { job, user, viewer } = handoverActor(jobId, userId);
+      const g = handoverGateOf(job);
+      const doc = g.docs.find((d) => d.kind === kind);
+      if (!doc || !g.basis) throw new RepositoryError('not_found');
+      const problem = hoCorrectionProblem({ note, state: doc.state });
+      if (problem) throw new RepositoryError(problem);
+      const at = new Date().toISOString();
+      snagCounter += 1;
+      g.rec.corrections.push({ id: `hdc-${snagCounter}`, kind, note: note.trim(), byName: user.name, at });
+      g.rec.docs[kind] = { basis: { ...g.basis }, confirmedAt: at, confirmedByName: user.name };
+      return handoverViewOf(job, viewer);
+    }),
+
+  requestHandoverAdminReview: (jobId, reason, adminId) =>
+    simulateWrite((): HandoverChecklistView => {
+      const { job, user, viewer } = handoverActor(jobId, adminId);
+      if (viewer !== 'admin') throw new RepositoryError('forbidden');
+      const rec = handoverRecordOf(job.id);
+      if (rec.adminReview || rec.confirmations.length > 0 || job.status !== 'qc_pending') throw new RepositoryError('invalid_state');
+      if (reason.trim().length < HO_REVIEW_REASON_MIN) throw new RepositoryError('review_reason_required');
+      rec.adminReview = { reason: reason.trim(), addedByName: user.name, addedAt: new Date().toISOString() };
+      return handoverViewOf(job, viewer);
+    }),
+
+  completeHandoverAdminReview: (jobId, note, adminId) =>
+    simulateWrite((): HandoverChecklistView => {
+      const { job, user, viewer } = handoverActor(jobId, adminId);
+      if (viewer !== 'admin') throw new RepositoryError('forbidden');
+      const rec = handoverRecordOf(job.id);
+      if (!rec.adminReview) throw new RepositoryError('no_review');
+      if (rec.adminReview.completedAt) throw new RepositoryError('invalid_state');
+      if (note.trim().length < HO_REVIEW_NOTE_MIN) throw new RepositoryError('review_note_required');
+      Object.assign(rec.adminReview, { completedAt: new Date().toISOString(), completedByName: user.name, note: note.trim() });
+      return handoverViewOf(job, viewer);
+    }),
+
+  confirmReadyForHandover: (jobId, userId) =>
+    simulateWrite((): HandoverChecklistView => {
+      const { job, user, viewer, assignment } = handoverActor(jobId, userId);
+      const g = handoverGateOf(job);
+      if (g.legacy || g.status === 'confirmed') throw new RepositoryError('already_confirmed');
+      if (g.problems.length > 0) throw new RepositoryError('not_ready');
+      if (job.status !== 'qc_pending' && job.status !== 'handover_pending') throw new RepositoryError('invalid_state');
+      const at = new Date().toISOString();
+      g.rec.confirmations.push({ at, byUserId: user.id, byName: user.name });
+      // This is what unlocks the walkthrough: the job moves to handover, and the quality check is over.
+      patchInPlace(jobs, job.id, { status: 'handover_pending' as const });
+      if (assignment && qcActive(assignment)) {
+        assignment.status = 'completed';
+        assignment.events.push(qcEvent('scheduled', user.name, 'Quality check complete: ready for handover'));
+      }
+      return handoverViewOf(byId(jobs, job.id) as Job, viewer);
     }),
 
   /* --------------------------------- Rework assignment (136) */

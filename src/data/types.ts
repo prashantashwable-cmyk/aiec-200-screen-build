@@ -2598,6 +2598,24 @@ export interface QcElecCheck {
   isDemo: boolean;
 }
 
+/* ------------------------------------ Final handover checklist (137) */
+
+/** The documentation package's checks and the final gate's own record, one per job. What the gate says is read from the snag list and the
+ *  compliance certificate each time; only what a person confirms or flags here is stored. */
+export interface HandoverReadiness {
+  jobId: string;
+  /** A document a person checked, and what it was checked against. */
+  docs: Partial<Record<'warranty_terms' | 'amc_options' | 'user_manual', { basis: { quotationCode: string; version: number; finishTier: string; driveType: string; materialsConfirmedAt: string | null; pricingUpdatedAt: string | null }; confirmedAt: string; confirmedByName: string }>>;
+  issues: { id: string; kind: 'warranty_terms' | 'amc_options' | 'user_manual'; text: string; raisedByName: string; at: string; resolvedAt?: string; resolvedByName?: string; resolution?: string }[];
+  /** Very small paperwork fixes made at the gate (a typo), each kept. */
+  corrections: { id: string; kind: 'warranty_terms' | 'amc_options' | 'user_manual'; note: string; byName: string; at: string }[];
+  /** Admin's own final look, added when a job warrants it. The standard case never needs one. */
+  adminReview?: { reason: string; addedByName: string; addedAt: string; completedAt?: string; completedByName?: string; note?: string };
+  /** Every time Ready for Handover was said. The last one stands while the gate stays clear. */
+  confirmations: { at: string; byUserId: string; byName: string }[];
+  isDemo: boolean;
+}
+
 /* ------------------------------------ Compliance certification (134) */
 
 export type ComplianceStandardId = 'IS_14665' | 'IS_15259' | 'IS_14671' | 'other';
@@ -3694,6 +3712,8 @@ export type CommitmentKind =
   | 'snag_reverify'
   | 'snag_dispute_decide'
   | 'snag_part_order'
+  | 'handover_confirm'
+  | 'handover_admin_review'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'

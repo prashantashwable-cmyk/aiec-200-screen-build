@@ -116,6 +116,10 @@ export interface CommitmentSources {
   qcCertificateWaiting: { jobId: string; readyAt: string; issued: boolean }[];
   /** Every defect / snag, open or closed (135). */
   snags: ReworkRequest[];
+  /** Jobs whose final handover gate is clear, and whether Ready for Handover has been said (137). */
+  handoverWaiting: { jobId: string; readyAt: string; ownerId: string | null; confirmed: boolean }[];
+  /** Admin's optional final reviews (137). */
+  handoverReviews: { jobId: string; addedAt: string; reason: string; done: boolean; doneAt?: string }[];
   /** Mechanical quality-check attempts and the differences from the install record the inspector raised (132). */
   qcMechChecks: QcMechCheck[];
   qcFindings: QcFinding[];
@@ -1414,6 +1418,59 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
           };
         }),
       );
+    },
+  },
+  {
+    // Everything is in place, so someone says Ready for Handover (137) within a day: the customer's walkthrough waits for it.
+    kind: 'handover_confirm',
+    nudgeBefore: hours(4),
+    escalateAfter: hours(12),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'quality',
+    collect(src) {
+      const admin = adminId(src);
+      return src.handoverWaiting.map((w) => {
+        const job = src.jobs.find((j) => j.id === w.jobId);
+        return {
+          ...base('handover_confirm', 'job', w.jobId),
+          ownerUserId: w.ownerId ?? admin,
+          titleKey: 'work.title.handover_confirm',
+          titleParams: { code: job?.code ?? '', site: job?.siteName ?? '' },
+          dueAt: plus(w.readyAt, hours(24)),
+          state: w.confirmed ? ('done' as const) : ('open' as const),
+          paused: false,
+          actionRoute: `/handover-checklist/${w.jobId}`,
+          oversightRoute: `/handover-checklist/${w.jobId}`,
+        };
+      });
+    },
+  },
+  {
+    // An extra review Admin asked of themself before a particular handover (137).
+    kind: 'handover_admin_review',
+    nudgeBefore: hours(4),
+    escalateAfter: hours(12),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'quality',
+    collect(src) {
+      const admin = adminId(src);
+      return src.handoverReviews.map((r) => {
+        const job = src.jobs.find((j) => j.id === r.jobId);
+        return {
+          ...base('handover_admin_review', 'job', r.jobId),
+          ownerUserId: admin,
+          titleKey: 'work.title.handover_admin_review',
+          titleParams: { code: job?.code ?? '', site: job?.siteName ?? '' },
+          dueAt: plus(r.addedAt, hours(24)),
+          state: r.done ? ('done' as const) : ('open' as const),
+          paused: false,
+          completedAt: r.doneAt,
+          actionRoute: `/handover-checklist/${r.jobId}`,
+          oversightRoute: `/handover-checklist/${r.jobId}`,
+        };
+      });
     },
   },
   {
