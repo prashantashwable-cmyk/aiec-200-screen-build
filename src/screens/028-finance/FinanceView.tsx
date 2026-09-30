@@ -86,6 +86,11 @@ export function FinanceView() {
             large
           />
         </Card>
+        {s.inTransit && (
+          <Card>
+            <StatTile label={t(K.card.inTransit)} value={<span className="num">{formatINRCompact(s.inTransit.value)}</span>} caption={t(K.card.inTransitNote)} large />
+          </Card>
+        )}
       </div>
 
       {summary.skewedByOutlier && (

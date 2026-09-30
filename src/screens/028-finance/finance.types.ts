@@ -43,6 +43,8 @@ export const FINANCE_KEYS = {
     cashOut: 'finance.card.cashOut',
     netPosition: 'finance.card.netPosition',
     totalReceivable: 'finance.card.totalReceivable',
+    inTransit: 'finance.card.inTransit',
+    inTransitNote: 'finance.card.inTransitNote',
   },
   outlierNote: 'finance.outlierNote',
   medianNote: 'finance.medianNote',

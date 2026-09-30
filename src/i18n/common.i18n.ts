@@ -275,6 +275,7 @@ const common: ScreenTranslations = {
         shipment_status_update: 'Update where the {{code}} shipment has got to',
         delivery_confirmation_sign: 'Sign the delivery confirmation for {{code}} at {{site}}',
         delivery_delay_action: '{{code}} for {{site}} is late. Tell the customer and say why',
+        orphaned_po_decision: 'Decide what to do with {{code}} from {{supplier}}: its deal was cancelled',
         shipment_status_update_proxy: '{{supplier}} hasn’t updated the {{code}} shipment. Ask them where it is',
         alert_acknowledge: 'Acknowledge alert {{code}}: {{context}}',
         follow_up_task: 'Follow-up: {{title}}',
@@ -307,6 +308,7 @@ const common: ScreenTranslations = {
           job_ready: 'Every part is on site, so installation job {{label}} is now scheduled',
           payment_due: 'Made payment {{label}} due, because the delivery of the parts was signed for',
           delay_opened: 'Opened a delay case for {{label}}',
+          po_redirected: 'Redirected {{label}} to another deal, because its own deal was cancelled',
           delay_recovered: 'Closed the delay case for {{label}}: it is back on track',
         },
         shipment: {
@@ -600,6 +602,7 @@ const common: ScreenTranslations = {
         shipment_status_update: '{{code}} की खेप कहाँ पहुँची, यह अपडेट करें',
         delivery_confirmation_sign: '{{site}} पर {{code}} की डिलीवरी कन्फ़र्मेशन पर दस्तख़त करें',
         delivery_delay_action: '{{site}} के लिए {{code}} देर से है। ग्राहक को बताएँ और कारण दर्ज करें',
+        orphaned_po_decision: '{{supplier}} से {{code}} का क्या करना है तय करें: उसकी डील रद्द हो गई',
         shipment_status_update_proxy: '{{supplier}} ने {{code}} की खेप अपडेट नहीं की। उनसे पूछें कि वह कहाँ है',
         alert_acknowledge: 'अलर्ट {{code}} स्वीकार करें: {{context}}',
         follow_up_task: 'फ़ॉलो-अप: {{title}}',
@@ -632,6 +635,7 @@ const common: ScreenTranslations = {
           job_ready: 'सारे पार्ट्स साइट पर हैं, इसलिए इंस्टॉलेशन जॉब {{label}} अब शेड्यूल हो गई',
           payment_due: 'पेमेंट {{label}} देय कर दिया, क्योंकि पार्ट्स की डिलीवरी पर दस्तख़त हो गए',
           delay_opened: '{{label}} के लिए देरी का केस खोला',
+          po_redirected: '{{label}} को दूसरी डील पर भेजा, क्योंकि उसकी अपनी डील रद्द हो गई थी',
           delay_recovered: '{{label}} का देरी का केस बंद किया: वह फिर पटरी पर है',
         },
         shipment: {
@@ -925,6 +929,7 @@ const common: ScreenTranslations = {
         shipment_status_update: '{{code}} ची खेप कुठवर पोहोचली ते अपडेट करा',
         delivery_confirmation_sign: '{{site}} येथील {{code}} च्या डिलिव्हरी कन्फर्मेशनवर सही करा',
         delivery_delay_action: '{{site}} साठीची {{code}} उशिरा आहे. ग्राहकाला कळवा आणि कारण नोंदवा',
+        orphaned_po_decision: '{{supplier}} कडील {{code}} चं काय करायचं ते ठरवा: त्याची डील रद्द झाली',
         shipment_status_update_proxy: '{{supplier}} ने {{code}} ची खेप अपडेट केलेली नाही. ती कुठे आहे ते त्यांना विचारा',
         alert_acknowledge: 'अलर्ट {{code}} स्वीकारा: {{context}}',
         follow_up_task: 'पाठपुरावा: {{title}}',
@@ -957,6 +962,7 @@ const common: ScreenTranslations = {
           job_ready: 'सर्व पार्ट्स साइटवर आहेत, म्हणून इन्स्टॉलेशन जॉब {{label}} आता शेड्यूल झाली',
           payment_due: 'पेमेंट {{label}} देय केलं, कारण पार्ट्सच्या डिलिव्हरीवर सही झाली',
           delay_opened: '{{label}} साठी विलंबाचं केस उघडलं',
+          po_redirected: '{{label}} दुसऱ्या डीलकडे वळवली, कारण तिची स्वतःची डील रद्द झाली होती',
           delay_recovered: '{{label}} चं विलंबाचं केस बंद केलं: ते पुन्हा मार्गावर आहे',
         },
         shipment: {

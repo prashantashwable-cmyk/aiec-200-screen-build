@@ -132,6 +132,14 @@ export interface CommitmentRule {
 const iso = (ms: number) => new Date(ms).toISOString();
 const plus = (at: string, ms: number) => iso(new Date(at).getTime() + ms);
 
+/** Parts ordered for a deal that was later lost or cancelled (106): nobody is waiting for
+ *  them any more, so nobody is chased about delivery. What to do with them is its own decision. */
+function isOrphaned(src: CommitmentSources, po: SupplierPurchaseOrder): boolean {
+  const deal = src.deals.find((d) => d.id === po.dealId);
+  // A deal with no record at all is history from before deals were kept here, not a cancellation.
+  return !!deal && (deal.status === 'lost' || deal.status === 'cancelled');
+}
+
 function adminId(src: CommitmentSources): string {
   return src.users.find((u) => u.role === 'admin' && u.status === 'active')?.id ?? 'u-admin-1';
 }
@@ -379,7 +387,7 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
       const admin = adminId(src);
       const out: Obligation[] = [];
       for (const po of src.purchaseOrders) {
-        if (po.status !== 'sent' || !po.sentAt || !po.lineItems?.length) continue;
+        if (po.status !== 'sent' || !po.sentAt || !po.lineItems?.length || isOrphaned(src, po)) continue;
         const stage = poStageOf(po);
         if (stage === 'sent') continue; // po_acknowledge covers this stage
         const supplier = src.suppliers.find((s) => s.id === po.supplierId);
@@ -415,7 +423,7 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
     collect(src) {
       const admin = adminId(src);
       return src.purchaseOrders
-        .filter((po) => po.status === 'sent' && po.sentAt)
+        .filter((po) => po.status === 'sent' && po.sentAt && !isOrphaned(src, po))
         .map((po) => ({
           ...base('po_delivery_date', 'purchase_order', po.id),
           ownerUserId: admin,
@@ -439,7 +447,7 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
     collect(src) {
       const admin = adminId(src);
       return src.purchaseOrders
-        .filter((po) => po.status === 'sent' && promisedDeliveryOf(po))
+        .filter((po) => po.status === 'sent' && promisedDeliveryOf(po) && !isOrphaned(src, po))
         .map((po) => ({
           ...base('po_delivery', 'purchase_order', po.id),
           ownerUserId: admin,
@@ -799,7 +807,7 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
       const admin = adminId(src);
       const out: Obligation[] = [];
       for (const po of src.purchaseOrders) {
-        if (po.status !== 'sent' || !po.sentAt || !po.supplierId) continue;
+        if (po.status !== 'sent' || !po.sentAt || !po.supplierId || isOrphaned(src, po)) continue;
         const schedule = src.deliverySchedules.find((s) => s.poId === po.id);
         const booked = schedule?.status === 'scheduled';
         const failedAt = schedule?.status === 'attempt_failed' ? [...schedule.events].reverse().find((e) => e.kind === 'attempt_failed')?.at : undefined;
@@ -852,6 +860,37 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
           completedAt: po.receivedAt,
           actionRoute: `/delivery-checklist?poId=${po.id}`,
           oversightRoute: `/deliveries?poId=${po.id}`,
+        });
+      }
+      return out;
+    },
+  },
+  {
+    // Parts already ordered for a deal that then fell through (106). Someone has to decide
+    // where they go, or back they go, before the supplier finishes and ships them.
+    kind: 'orphaned_po_decision',
+    nudgeBefore: hours(12),
+    escalateAfter: days(1),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'supplier',
+    collect(src) {
+      const admin = adminId(src);
+      const out: Obligation[] = [];
+      for (const po of src.purchaseOrders) {
+        if (po.status !== 'sent' || !po.lineItems?.length || !isOrphaned(src, po)) continue;
+        const deal = src.deals.find((d) => d.id === po.dealId);
+        out.push({
+          ...base('orphaned_po_decision', 'purchase_order', po.id),
+          ownerUserId: admin,
+          titleKey: 'work.title.orphaned_po_decision',
+          titleParams: { code: po.code, supplier: src.suppliers.find((sp) => sp.id === po.supplierId)?.name ?? '' },
+          dueAt: plus(deal?.closedAt ?? po.sentAt ?? new Date(src.now).toISOString(), days(2)),
+          state: po.orphanResolution || po.receivedAt ? ('done' as const) : ('open' as const),
+          paused: false,
+          completedAt: po.orphanResolution?.decidedAt,
+          actionRoute: '/stock-in-transit?tab=attention',
+          oversightRoute: '/stock-in-transit?tab=attention',
         });
       }
       return out;

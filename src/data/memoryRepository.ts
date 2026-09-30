@@ -141,6 +141,11 @@ import type {
   DeliveryConfirmationView,
   DelayBoard,
   DelayRow,
+  TransitBoard,
+  TransitLine,
+  TransitTotals,
+  CapacityDealRow,
+  OrphanRow,
   NotifyDelayResult,
   DeliveryChecklistView,
   CheckItemInput,
@@ -332,6 +337,8 @@ import {
   WINDOW_HOURS,
 } from '@/features/logistics/deliverySlots';
 import { compareDelays, etaMovedSince, judgeDelay } from '@/features/logistics/delay';
+import { capacityWeeks, categoryPatterns, readinessStatus, weekStartOf, windowOf } from '@/features/logistics/transit';
+import type { ReadinessStatus } from '@/features/logistics/transit';
 import type { DelayFacts } from '@/features/logistics/delay';
 import {
   FEED_LOST_ALERT_AFTER,
@@ -3108,7 +3115,7 @@ const looksLikeSignature = (dataUrl: string) => /^data:image\/png;base64,[A-Za-z
 
 /** A late-running delivery, judged live from what we are held to and what the tracker says. */
 function delayFactsOf(po: SupplierPurchaseOrder, now: number): DelayFacts | null {
-  if (po.status !== 'sent' || po.receivedAt || !po.supplierId) return null;
+  if (po.status !== 'sent' || po.receivedAt || !po.supplierId || isOrphanedPo(po)) return null;
   const supplier = byId(suppliers, po.supplierId) ?? undefined;
   const estimate = assessDelay(po, supplier, supplierPurchaseOrders, now);
   const schedule = scheduleOfPo(po.id);
@@ -3290,6 +3297,140 @@ function delayRowOf(c: DeliveryDelayCase, now: number): DelayRow {
     customerPreview: message.body,
     threadId: thread?.id ?? null,
   };
+}
+
+/* ================================================== Stock in transit (106) */
+
+/** Parts ordered for a deal that was lost or cancelled (or is gone) after the order went out. */
+function poDealState(po: SupplierPurchaseOrder): 'live' | 'lost' | 'cancelled' {
+  // A deal with no record at all is history from before deals were kept here, not a cancellation.
+  const deal = byId(deals, po.dealId);
+  return deal?.status === 'lost' ? 'lost' : deal?.status === 'cancelled' ? 'cancelled' : 'live';
+}
+const isOrphanedPo = (po: SupplierPurchaseOrder) => po.status === 'sent' && poDealState(po) !== 'live';
+
+/** When one part is expected on site: its vehicle's ETA once it is on the road, otherwise the order's
+ *  stage-by-stage estimate, otherwise the date promised. */
+function lineArrival(po: SupplierPurchaseOrder, line: PurchaseOrderLineItem, now: number): { at: string; source: TransitLine['arrivalSource']; vehicle: string | null } {
+  if (lineStageOf(po, line) === 'shipped') {
+    const leg = shipmentLegs.find((l) => l.poId === po.id && l.lineItemIds.includes(line.id) && !legSnapshotOf(l, routeOfLeg(l), now).arrived);
+    if (leg) return { at: leg.etaAt, source: 'tracker', vehicle: leg.vehicleLabel };
+  }
+  const supplier = po.supplierId ? byId(suppliers, po.supplierId) : undefined;
+  const estimate = assessDelay(po, supplier ?? undefined, supplierPurchaseOrders, now);
+  if (estimate.projectedDelivery) return { at: estimate.projectedDelivery, source: 'estimate', vehicle: null };
+  return { at: promisedDeliveryOf(po) ?? new Date(now).toISOString(), source: 'promised', vehicle: null };
+}
+
+function transitLinesOf(now: number): TransitLine[] {
+  const out: TransitLine[] = [];
+  for (const po of supplierPurchaseOrders) {
+    if (po.status !== 'sent' || po.receivedAt || !po.supplierId || isOrphanedPo(po)) continue;
+    const deal = byId(deals, po.dealId);
+    const lead = deal ? resolveLead(deal.leadId) : null;
+    const facts = delayFactsOf(po, now);
+    const severity = facts ? judgeDelay(facts, now).severity : null;
+    for (const line of po.lineItems ?? []) {
+      const stage = lineStageOf(po, line);
+      if (stage === 'delivered') continue;
+      const arrival = lineArrival(po, line, now);
+      out.push({
+        key: `${po.id}:${line.id}`,
+        poId: po.id,
+        poCode: po.code,
+        dealId: po.dealId,
+        siteName: lead?.siteName ?? deal?.code ?? po.dealId,
+        customerName: lead?.contactName ?? '',
+        supplierId: po.supplierId,
+        supplierName: byId(suppliers, po.supplierId)?.name ?? '',
+        lineId: line.id,
+        description: line.description,
+        category: line.category,
+        quantity: line.quantity,
+        value: line.agreedUnitPrice * line.quantity,
+        stage,
+        onTheRoad: stage === 'shipped',
+        arrivalAt: arrival.at,
+        arrivalSource: arrival.source,
+        weekStart: weekStartOf(arrival.at),
+        window: windowOf(arrival.at, now),
+        delaySeverity: severity,
+        vehicleLabel: arrival.vehicle,
+      });
+    }
+  }
+  return out.sort((a, b) => (a.arrivalAt < b.arrivalAt ? -1 : 1));
+}
+
+function transitTotalsOf(lines: TransitLine[]): TransitTotals {
+  return {
+    value: lines.reduce((sum, l) => sum + l.value, 0),
+    onTheRoadValue: lines.filter((l) => l.onTheRoad).reduce((sum, l) => sum + l.value, 0),
+    notShippedValue: lines.filter((l) => !l.onTheRoad).reduce((sum, l) => sum + l.value, 0),
+    atRiskValue: lines.filter((l) => l.delaySeverity).reduce((sum, l) => sum + l.value, 0),
+    lineCount: lines.length,
+    orderCount: new Set(lines.map((l) => l.poId)).size,
+    dealCount: new Set(lines.map((l) => l.dealId)).size,
+  };
+}
+
+/** For each deal with parts still to arrive or an installation waiting on them: when it can really start. */
+function capacityDeals(lines: TransitLine[], now: number): CapacityDealRow[] {
+  const dealIds = new Set<string>(lines.map((l) => l.dealId));
+  for (const job of jobs) {
+    if (!job.startedAt && (job.status === 'materials_pending' || job.status === 'scheduled') && supplierPurchaseOrders.some((p) => p.dealId === job.dealId && p.status === 'sent')) dealIds.add(job.dealId);
+  }
+  const rows: CapacityDealRow[] = [];
+  for (const dealId of dealIds) {
+    const deal = byId(deals, dealId);
+    if (!deal || deal.status !== 'won') continue;
+    const remaining = lines.filter((l) => l.dealId === dealId);
+    // Something still unordered: nothing can be promised yet.
+    const unordered = supplierPurchaseOrders.some((p) => p.dealId === dealId && (p.lineItems ?? []).length > 0 && p.status !== 'sent');
+    const readyBy = remaining.length ? remaining.map((l) => l.arrivalAt).sort().pop()! : null;
+    const job = pendingJobFor(dealId);
+    const installStart = job && !job.startedAt ? job.scheduledFor : null;
+    const lead = resolveLead(deal.leadId);
+    rows.push({
+      dealId,
+      siteName: lead?.siteName ?? deal.code,
+      customerName: lead?.contactName ?? '',
+      readyBy,
+      confidence: remaining.length === 0 ? 'confirmed' : remaining.every((l) => l.arrivalSource === 'tracker') ? 'tracker' : 'estimate',
+      installStart,
+      installCode: job && !job.startedAt ? job.code : null,
+      status: readinessStatus(readyBy, installStart, unordered, now),
+      partCount: remaining.length,
+    });
+  }
+  // Conflicts first: an installation booked before its parts is the thing to fix.
+  const rank: Record<ReadinessStatus, number> = { conflict: 0, unordered: 1, no_job: 2, on_track: 3, ready: 4 };
+  return rows.sort((a, b) => rank[a.status] - rank[b.status] || ((a.readyBy ?? '') < (b.readyBy ?? '') ? -1 : 1));
+}
+
+function orphanRows(): OrphanRow[] {
+  return supplierPurchaseOrders
+    .filter((po) => isOrphanedPo(po) && !po.receivedAt)
+    .map((po): OrphanRow => {
+      const deal = byId(deals, po.dealId);
+      const state = poDealState(po) as 'lost' | 'cancelled';
+      const supplier = po.supplierId ? byId(suppliers, po.supplierId) : null;
+      return {
+        poId: po.id,
+        poCode: po.code,
+        dealId: po.dealId,
+        dealCode: deal?.code ?? po.dealId,
+        dealStatus: state,
+        siteName: deal ? (resolveLead(deal.leadId)?.siteName ?? deal.code) : po.dealId,
+        supplierName: supplier?.name ?? '',
+        supplierHasLogin: !!supplier && !!supplierUserFor(supplier),
+        value: (po.lineItems ?? []).reduce((sum, l) => sum + l.agreedUnitPrice * l.quantity, 0),
+        stage: poStageOf(po),
+        lineSummary: (po.lineItems ?? []).map((l) => l.description).join(', '),
+        resolution: po.orphanResolution ?? null,
+      };
+    })
+    .sort((a, b) => Number(!!a.resolution) - Number(!!b.resolution));
 }
 
 /* ============================================ Delivery scheduling (101) */
@@ -6837,6 +6978,92 @@ export const memoryRepository: Repository = {
       if (materialsComplete) anchorMaterialPayments(confirmation.dealId, signedAt);
       syncCommitments(now);
       return confirmationViewOf(signed, actor);
+    }),
+
+  /* --------------------------------------------- Stock in transit (106) */
+  getTransitBoard: (byUserId) =>
+    simulateRead((): TransitBoard => {
+      adminOnly(byUserId);
+      const now = Date.now();
+      const lines = transitLinesOf(now);
+      // Delayed lines, across whoever is making them: one supplier late is the scorecard's job,
+      // several suppliers late on the same part is the market's.
+      const delayed = lines.filter((l) => l.delaySeverity).map((l) => ({ category: l.category, supplierId: l.supplierId, supplierName: l.supplierName, poId: l.poId, value: l.value }));
+      const recent = now - 30 * 86_400_000;
+      for (const c of delayCases) {
+        if (c.status === 'open' || !c.recoveredAt || new Date(c.recoveredAt).getTime() < recent) continue;
+        const po = byId(supplierPurchaseOrders, c.poId);
+        for (const line of po?.lineItems ?? []) delayed.push({ category: line.category, supplierId: c.supplierId, supplierName: byId(suppliers, c.supplierId)?.name ?? '', poId: c.poId, value: 0 });
+      }
+      const capDeals = capacityDeals(lines, now);
+      return {
+        lines,
+        totals: transitTotalsOf(lines),
+        insights: categoryPatterns(delayed),
+        capacity: {
+          weeks: capacityWeeks(capDeals.map((d) => ({ dealId: d.dealId, readyBy: d.readyBy, confidence: d.confidence, installStart: d.installStart, status: d.status })), now),
+          deals: capDeals,
+        },
+        orphans: orphanRows(),
+        redirectTargets: deals.filter((d) => d.status === 'won').map((d) => ({ dealId: d.id, code: d.code, siteName: resolveLead(d.leadId)?.siteName ?? d.code })),
+      };
+    }),
+
+  getInTransitTotals: (byUserId) =>
+    simulateRead((): TransitTotals => {
+      adminOnly(byUserId);
+      return transitTotalsOf(transitLinesOf(Date.now()));
+    }),
+
+  resolveOrphanedPo: (poId, input, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const po = byId(supplierPurchaseOrders, poId);
+      if (!po || !isOrphanedPo(po)) throw new RepositoryError('not_found');
+      if (po.orphanResolution || po.receivedAt) throw new RepositoryError('invalid_state');
+      const at = new Date().toISOString();
+      const supplier = po.supplierId ? byId(suppliers, po.supplierId) : null;
+      if (input.kind === 'redirect') {
+        const target = input.toDealId ? byId(deals, input.toDealId) : undefined;
+        // Only to a deal that is live: parts must not be re-attached to another cancelled one.
+        if (!target || target.status !== 'won' || target.id === po.dealId) throw new RepositoryError('invalid_input');
+        const from = po.dealId;
+        patchInPlace(supplierPurchaseOrders, po.id, { dealId: target.id, orphanResolution: { kind: 'redirect', toDealId: target.id, note: input.note?.trim() || undefined, decidedByName: actor.name, decidedAt: at } });
+        // Everything that followed the parts to the old site follows them to the new one.
+        for (const leg of shipmentLegs.filter((l) => l.poId === po.id)) patchInPlace(shipmentLegs, leg.id, { dealId: target.id });
+        for (const sch of deliverySchedules.filter((s) => s.poId === po.id)) patchInPlace(deliverySchedules, sch.id, { dealId: target.id, jobId: undefined });
+        for (const c of delayCases.filter((x) => x.poId === po.id)) patchInPlace(delayCases, c.id, { dealId: target.id });
+        logAutomatedAction({
+          sourceKey: 'delivery.po_redirected',
+          triggeringCondition: `${po.code} was ordered for ${from}, which is no longer a live deal`,
+          actionTaken: `Redirected it to ${target.code}`,
+          affectedRecordId: po.id,
+          affectedRecordType: 'purchase_order',
+          subjectLabel: po.code,
+        });
+        syncCommitments(Date.now());
+        return { threadId: null };
+      }
+      if ((input.note ?? '').trim().length < 4) throw new RepositoryError('invalid_input');
+      let threadId: string | null = null;
+      // Told to the supplier in the order's own conversation, when they have somewhere to read it.
+      if (supplier && supplierUserFor(supplier)) {
+        const thread = ensureSupplierThread(supplier.id, po.id);
+        pushSupplierMessage(thread, {
+          author: 'aiec',
+          authorName: actor.name,
+          authorUserId: actor.id,
+          body: `The customer deal for ${po.code} has been cancelled. Please stop work and arrange to take the parts back. ${input.note!.trim()}`,
+          channel: 'in_app',
+          at,
+          expectsReply: true,
+          poRef: po.id,
+        });
+        threadId = thread.id;
+      }
+      patchInPlace(supplierPurchaseOrders, po.id, { orphanResolution: { kind: 'return', note: input.note!.trim(), decidedByName: actor.name, decidedAt: at } });
+      syncCommitments(Date.now());
+      return { threadId };
     }),
 
   /* ------------------------------ Delivery delay escalation (105) */

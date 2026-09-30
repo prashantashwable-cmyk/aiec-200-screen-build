@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useData } from '@/data/DataProvider';
+import { useSession } from '@/session/SessionProvider';
+import type { TransitTotals } from '@/data/repository';
 import type { Payment } from '@/data/types';
 import { bucketFor, computeCashIn, computeTotalReceivable, isOutstanding, OUTLIER_MULTIPLE, remainingBalance } from '@/features/payments/aging';
 import type { AgingBucket, AgingGroup, FinanceStatus, FinanceSummary, UpcomingOutflow } from './finance.types';
@@ -9,6 +11,8 @@ type WindowId = '7' | '30';
 interface FinanceState {
   status: FinanceStatus;
   summary: FinanceSummary | null;
+  /** Context only: money committed to suppliers for parts not yet delivered (106). */
+  inTransit: TransitTotals | null;
   agingGroups: AgingGroup[];
   upcoming: UpcomingOutflow[];
   window: WindowId;
@@ -36,17 +40,21 @@ export function useFinance(): FinanceState {
   const [status, setStatus] = useState<FinanceStatus>('loading');
   const [payments, setPayments] = useState<Payment[]>([]);
   const [window, setWindow] = useState<WindowId>('30');
+  const { user } = useSession();
+  const [inTransit, setInTransit] = useState<TransitTotals | null>(null);
 
   const reload = useCallback(async () => {
     setStatus('loading');
     try {
       const list = await repository.listPayments();
       setPayments(list);
+      // Context, never a reason to fail the overview.
+      if (user) setInTransit(await repository.getInTransitTotals(user.id).catch(() => null));
       setStatus('ready');
     } catch {
       setStatus('error');
     }
-  }, [repository]);
+  }, [repository, user]);
 
   useEffect(() => {
     void reload();
@@ -112,5 +120,5 @@ export function useFinance(): FinanceState {
     };
   }, [status, payments, outstanding]);
 
-  return { status, summary, agingGroups, upcoming, window, setWindow, reload };
+  return { status, summary, inTransit, agingGroups, upcoming, window, setWindow, reload };
 }

@@ -89,6 +89,7 @@ import type {
   DeliveryChecklist,
   DeliveryConfirmation,
   DeliveryDiscrepancyReport,
+  PurchaseOrderOrphanResolution,
   DeliveryReceiver,
   DeliverySchedule,
   DeliveryWindow,
@@ -113,6 +114,7 @@ import type {
   WorkNotification,
 } from './types';
 import type { SlotDay } from '@/features/logistics/deliverySlots';
+import type { ArrivalWindow, CapacityWeek, ReadinessStatus } from '@/features/logistics/transit';
 
 /**
  * The data contract every screen codes against.
@@ -1030,6 +1032,98 @@ export interface CompleteChecklistResult {
   jobReady: boolean;
   /** The signable confirmation (104) this checklist produced. */
   confirmationId: string;
+}
+
+/* -------------------------------------- Stock in transit (106) */
+
+/** One part, ordered for one customer's site, not yet delivered there. */
+export interface TransitLine {
+  key: string;
+  poId: string;
+  poCode: string;
+  dealId: string;
+  siteName: string;
+  customerName: string;
+  supplierId: string;
+  supplierName: string;
+  lineId: string;
+  description: string;
+  category: string;
+  quantity: number;
+  value: number;
+  stage: PoFulfilmentStage;
+  /** Shipped: physically on a vehicle. Otherwise still being made or waiting to go. */
+  onTheRoad: boolean;
+  arrivalAt: string;
+  arrivalSource: 'tracker' | 'estimate' | 'promised';
+  weekStart: string;
+  window: ArrivalWindow;
+  /** The order's live delay read (105). */
+  delaySeverity: DelaySeverity | null;
+  vehicleLabel: string | null;
+}
+
+export interface TransitTotals {
+  value: number;
+  onTheRoadValue: number;
+  notShippedValue: number;
+  /** Value on orders that are late or trending late. */
+  atRiskValue: number;
+  lineCount: number;
+  orderCount: number;
+  dealCount: number;
+}
+
+/** A category delayed at several suppliers at once: a market signal, not a supplier's fault. */
+export interface TransitInsight {
+  category: string;
+  suppliers: { id: string; name: string }[];
+  orderCount: number;
+  value: number;
+}
+
+export interface CapacityDealRow {
+  dealId: string;
+  siteName: string;
+  customerName: string;
+  readyBy: string | null;
+  confidence: 'confirmed' | 'tracker' | 'estimate';
+  installStart: string | null;
+  installCode: string | null;
+  status: ReadinessStatus;
+  partCount: number;
+}
+
+/** Parts ordered for a deal that then fell through. */
+export interface OrphanRow {
+  poId: string;
+  poCode: string;
+  dealId: string;
+  dealCode: string;
+  dealStatus: 'lost' | 'cancelled';
+  siteName: string;
+  supplierName: string;
+  supplierHasLogin: boolean;
+  value: number;
+  stage: PoFulfilmentStage;
+  lineSummary: string;
+  resolution: PurchaseOrderOrphanResolution | null;
+}
+
+export interface TransitBoard {
+  lines: TransitLine[];
+  totals: TransitTotals;
+  insights: TransitInsight[];
+  capacity: { weeks: CapacityWeek[]; deals: CapacityDealRow[] };
+  orphans: OrphanRow[];
+  /** Won deals an orphaned order could be redirected to. */
+  redirectTargets: { dealId: string; code: string; siteName: string }[];
+}
+
+export interface ResolveOrphanInput {
+  kind: 'redirect' | 'return';
+  toDealId?: string;
+  note?: string;
 }
 
 /* -------------------------------- Delivery delay escalation (105) */
@@ -2220,6 +2314,13 @@ export interface Repository {
   completeDeliveryChecklist(checklistId: string, input: CompleteChecklistInput, byUserId: string): Promise<CompleteChecklistResult>;
   /** Abandons an unfinished checklist started by mistake. */
   cancelDeliveryChecklist(checklistId: string, byUserId: string): Promise<void>;
+
+  /* Stock in transit (106) — parts on their way to a specific site, never a warehouse */
+  getTransitBoard(byUserId: string): Promise<TransitBoard>;
+  /** The headline only, for a screen that wants the number as context (028). */
+  getInTransitTotals(byUserId: string): Promise<TransitTotals>;
+  /** What to do with parts ordered for a deal that was cancelled. */
+  resolveOrphanedPo(poId: string, input: ResolveOrphanInput, byUserId: string): Promise<{ threadId: string | null }>;
 
   /* Delivery delay escalation (105) — surfaced before the customer has to ask */
   getDelayBoard(byUserId: string): Promise<DelayBoard>;

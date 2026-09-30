@@ -1289,6 +1289,11 @@ export const seedHistoricalPurchaseOrders: SupplierPurchaseOrder[] = [
   dl2Vertex,
   // Another AIEC order's controller, built in the same Vertex run as dl-2's.
   fulfilledPo('spo-203', 'AIEC-PO-8203', 'dl-h4', 'sp-1', 'Anil Mehta', 7, [0.5, 0.5], [['controller', 'Microprocessor lift controller', 95_000]], 30),
+  // Konark's controller for Wing B's service lift, still in production and slipping: the second
+  // supplier delayed on controllers this month, which is what 106 reads as a market pattern, not one supplier.
+  fulfilledPo('spo-205', 'AIEC-PO-8205', 'dl-1', 'sp-3', 'Suresh Konark', 14, [1, 3], [['controller', 'Microprocessor lift controller (service lift)', 96_000]], 16),
+  // Ordered for a deal that was lost while the parts were being made: 106 asks what to do with them.
+  fulfilledPo('spo-206', 'AIEC-PO-8206', 'dl-8', 'sp-2', 'Meenal Sanghvi', 22, [1, 2, 10], [['guide_rails', 'T-section guide rail set', 37_500]], 25),
   // Wing B's order for Shree Ram Heights, on the road today in three parts (102).
   fulfilledPo('spo-204', 'AIEC-PO-8204', 'dl-1', 'sp-1', 'Anil Mehta', 13.2, [0.5, 1, 10, 1.5], [
     ['traction_machine', 'Geared/gearless traction machine unit', 210_000],

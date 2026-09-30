@@ -107,9 +107,30 @@ the module's section to `BUILD_README.md`.
   (dl-1) was seeded one day short of the reminder cadence's own exhaustion threshold, so no real
   payment could ever reach 089's escalation queue while also belonging to a deal with an active
   Job — moved from 6 to 10 days overdue (and the stale `al-2` alert text updated to match).
-- **Module 11 in progress:** `101`–`105` built. **Next: `106`**. At its checkpoint (after 110),
+- **Module 11 in progress:** `101`–`106` built. **Next: `107`**. At its checkpoint (after 110),
   add an Admin logistics entry point: 101 and 102 are reachable for Admin only from 091's hub and
   095's header (and 101's/102's own PO links).
+  106 facts:
+  - "In transit" is only ever parts on a sent PO, not yet delivered, for a specific deal (AIEC keeps no
+    warehouse). `transitLinesOf` builds one `TransitLine` per undelivered PO line: value is
+    `agreedUnitPrice × quantity`; arrival is the vehicle's tracker ETA once shipped, else 095's stage
+    estimate, else the promise (`arrivalSource` says which). `@/features/logistics/transit` holds the
+    pure maths (`weekStartOf`, `windowOf`, `categoryPatterns`, `capacityWeeks`, `readinessStatus`).
+  - Macro insight: `categoryPatterns` fires when one component category is late/trending late at 2+
+    different suppliers (open delays plus cases recovered in the last 30 days). That is a supply-market
+    signal, so its advice is to reset customers' expectations for the part, not to manage one supplier.
+  - Capacity: a deal is ready when every remaining line is expected on site. `readinessStatus` compares
+    that with the deal's pending job start: `conflict` means an installation is booked before its parts
+    arrive; `unordered` means a PO for the deal hasn't been sent, so no date can be promised. Module 12
+    installation scheduling should read this rather than book blind.
+  - Orphans: a sent PO whose deal exists and is `lost`/`cancelled` (a deal with no record is old
+    history, not orphaned). `resolveOrphanedPo` either redirects (repoints the PO, its legs, bookings and
+    delay cases to a live won deal) or marks it for return (tells a supplier with a login in the order
+    thread). Commitment `orphaned_po_decision`. Orphans are excluded from in-transit totals, delay cases
+    and the po_delivery / po_delivery_date / po_status_update / delivery_schedule commitments.
+  - 028 (Finance) shows "In transit to sites" as context only, via `getInTransitTotals`.
+  - `/stock-in-transit` is Admin only (`?tab=attention`), reached from 091's hub and the orphan
+    commitment.
   105 facts:
   - `@/features/logistics/delay` (`judgeDelay`, `compareDelays`) is the one judgement of a late
     delivery, computed on read from `DelayFacts` built by `delayFactsOf`. It is held to the booked

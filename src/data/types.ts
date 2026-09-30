@@ -593,6 +593,16 @@ export interface PoStatusEvent {
   checklistId?: string;
 }
 
+/** What Admin decided to do with parts ordered for a deal that was later cancelled (106). */
+export interface PurchaseOrderOrphanResolution {
+  kind: 'redirect' | 'return';
+  /** The deal the parts were redirected to. */
+  toDealId?: string;
+  note?: string;
+  decidedByName: string;
+  decidedAt: string;
+}
+
 /** A minimal record that a supplier PO was kicked off by a deal closure —
  *  now also screen 092's own real purchase-order record once `lineItems`
  *  is populated. Whether it currently *needs* approval (any line's
@@ -635,6 +645,8 @@ export interface SupplierPurchaseOrder {
   agreementTerms?: PurchaseOrderAgreementSnapshot;
   /** The payment terms it was sent under (100). */
   paymentTerms?: PurchaseOrderPaymentSnapshot;
+  /** Set when its deal was cancelled after the order was placed, and Admin decided what to do (106). */
+  orphanResolution?: PurchaseOrderOrphanResolution;
   isDemo: boolean;
 }
 
@@ -2355,6 +2367,7 @@ export type CommitmentKind =
   | 'shipment_status_update'
   | 'delivery_confirmation_sign'
   | 'delivery_delay_action'
+  | 'orphaned_po_decision'
   | 'alert_acknowledge'
   | 'follow_up_task'
   | 'lead_revisit';
