@@ -2395,6 +2395,33 @@ export interface Job {
   holdReason?: string;
   heldBy?: string;
   heldAt?: string;
+  /** Everyone on the job when it is more than one person's. `technicianId` is the lead; the crew names the others and the steps each
+   *  is responsible for, so an assistant sees their own part of the job and not the lead's whole view (121). Unset means the lead alone. */
+  crew?: JobCrewMember[];
+  isDemo: boolean;
+}
+
+export interface JobCrewMember {
+  userId: string;
+  role: 'lead' | 'assistant';
+  /** The job steps this person owns. Empty for the lead, who answers for all of them. */
+  stepIds: string[];
+}
+
+/** Someone in the field pressed SOS. It is sent after a short window in which it can be cancelled, and the attempt is kept either way:
+ *  a safety audit reads the cancelled ones too (019). Sending does not depend on the phone staying open. */
+export interface FieldSosAttempt {
+  id: string;
+  userId: string;
+  startedAt: string;
+  /** Until this moment the person can cancel. At it, the alert is raised. */
+  sendsAt: string;
+  status: 'pending' | 'sent' | 'cancelled';
+  cancelledAt?: string;
+  alertId?: string;
+  location?: GeoPoint;
+  /** The job they were on, when they had one open that day. */
+  jobId?: string;
   isDemo: boolean;
 }
 

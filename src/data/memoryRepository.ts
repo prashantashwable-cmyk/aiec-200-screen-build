@@ -199,6 +199,9 @@ import type {
   BookablePo,
   DeliveryAnalytics,
   BankSideView,
+  FieldSosView,
+  TechnicianHome,
+  TechnicianJobView,
   LedgerSideView,
   ReconBoard,
   ReconExceptionView,
@@ -303,6 +306,7 @@ import type {
   GstPeriodHandover,
   AdvanceRecovery,
   BankFeed,
+  FieldSosAttempt,
   BankTransaction,
   ReconException,
   ReconciliationRun,
@@ -471,6 +475,8 @@ import type { ChainNodeFacts, ChainNodeKind, ChainNodeState } from '@/features/s
 import { RECOVERY_REASON_MIN, batchSkipReason, readAdvance, readRetention } from '@/features/suppliers/exposure';
 import type { RetentionHold } from '@/features/suppliers/exposure';
 import { DISPUTE_TARGET, NOTE_MIN, POSITION_MIN, REOPEN_WINDOW, canPartial, decisionProblem, dueAtOf, maxAmountOf, slaOf } from '@/features/suppliers/disputes';
+import { SOS_CANCEL_WINDOW_MS, SOS_SAME_INCIDENT } from '@/features/safety/sos';
+import { SOS_FOLLOW, actionOf, bucketOf, clashesOf, dayKey, isActiveJob, isOnJob, ownStepIds, peopleOn, roleOf, sameMonth } from '@/features/technician/jobs';
 import { RUN_HOUR, WINDOW as RECON_WINDOW, latestSlot, nextSlot, reasonsFor, reconcile, reconcileProblem, runStatusOf, severityOf } from '@/features/finance/reconciliation';
 import type { BankLine, LedgerLine } from '@/features/finance/reconciliation';
 import { NOTE_LABEL_MIN, PAYMENT_TARGET, PAYMENT_TARGET_DAYS, alertingReasons, allocateByLines, average, daysToPay, endOfMonth, fleetRate, heldAt, isRatedSupplier, median, oneDecimal, oneOrderExplains, ratePct, reviewReasons, spikeOf, withinTarget } from '@/features/suppliers/paymentAnalytics';
@@ -2375,6 +2381,8 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   syncSupplierDisputes(now);
   syncSupplierReviewFlags(now);
   syncReconciliation(now);
+  sendDueSos(now);
+  syncTechnicianClashes(now);
   syncAdvanceExposure(now);
   advanceShipments(now);
   // 105: a delivery running late is noticed, and one that caught up is cleared, without anyone looking.
@@ -5022,6 +5030,119 @@ function disputeMessage(d: SupplierDispute, author: 'aiec' | 'supplier', authorN
 }
 
 const DECISION_WORDS: Record<SupplierDisputeDecision, string> = { uphold: 'AIEC has upheld the original', supplier_favor: 'AIEC has decided in your favour', partial: 'AIEC has adjusted in part' };
+
+/** One technician's row on 024's leaderboard. Everything that shows a technician's quality reads this, so the number they see on
+ *  their own home is the one Admin is judging them on. */
+function technicianScoreOf(u: User): TechnicianScore {
+  const own = jobs.filter((j) => j.technicianId === u.id);
+  const done = own.filter((j) => j.status === 'completed');
+  return {
+    userId: u.id,
+    name: u.name,
+    jobsCompleted: done.length,
+    onTimeRate: done.length ? 0.8 + (u.id.charCodeAt(u.id.length - 1) % 3) * 0.06 : 0,
+    qcPassRate: 0.85 + (u.id.charCodeAt(u.id.length - 1) % 4) * 0.035,
+    avgDaysPerJob: 16 + (u.id.charCodeAt(u.id.length - 1) % 5),
+    rating: u.rating ?? 0,
+  };
+}
+
+/* ============================== Technician home (121) */
+
+const fieldSosAttempts: FieldSosAttempt[] = [];
+let fieldSosCounter = 0;
+const SOS_ALERT = 'alerts.type.fieldSos';
+const CLASH_ALERT = 'alerts.type.scheduleClash';
+
+/** An SOS whose window has closed is sent, by whoever's clock reaches it first: the phone that pressed it need not stay open. */
+function sendDueSos(now: number): void {
+  for (const a of fieldSosAttempts) {
+    if (a.status !== 'pending' || new Date(a.sendsAt).getTime() > now) continue;
+    const who = byId(users, a.userId);
+    const job = a.jobId ? byId(jobs, a.jobId) : null;
+    const alert = raiseAlert({
+      titleKey: SOS_ALERT,
+      context: `${who?.name ?? ''} · ${job ? `${job.code} · ${job.siteName}` : (who?.city ?? '')}`,
+      severity: 'critical',
+      category: 'safety',
+      relatedId: a.id,
+      sourceRoute: '/admin/escalations',
+      location: a.location,
+    });
+    patchInPlace(fieldSosAttempts, a.id, { status: 'sent', alertId: alert.id });
+    logAutomatedAction({
+      sourceKey: 'field_sos.sent',
+      triggeringCondition: `${who?.name ?? 'A field worker'} pressed SOS and did not cancel within the window`,
+      actionTaken: 'Raised a critical safety alert for Admin, with the location it was pressed at',
+      affectedRecordId: alert.id,
+      affectedRecordType: 'alert',
+      subjectLabel: who?.name ?? '',
+    });
+  }
+}
+
+/** Two jobs booked for the same day for one technician is a scheduling mistake, not something the technician can fix: Admin is told
+ *  once per technician and day, and it clears itself when the bookings are apart again. */
+function syncTechnicianClashes(now: number): void {
+  const at = new Date(now).toISOString();
+  const live = new Set<string>();
+  for (const u of users) {
+    if (u.role !== 'technician') continue;
+    for (const c of clashesOf(jobs.filter((j) => isOnJob(j, u.id)))) {
+      const key = `clash:${u.id}:${c.date}`;
+      live.add(key);
+      if (alerts.some((a) => a.relatedId === key && a.titleKey === CLASH_ALERT && a.status !== 'resolved')) continue;
+      raiseAlert({ titleKey: CLASH_ALERT, context: `${u.name} · ${c.jobIds.map((id) => byId(jobs, id)?.code ?? id).join(' + ')} · ${c.date}`, severity: 'medium', category: 'staffing', relatedId: key, sourceRoute: '/admin/routes' });
+      logAutomatedAction({
+        sourceKey: 'technician.schedule_clash',
+        triggeringCondition: `${u.name} is booked on two jobs on ${c.date}`,
+        actionTaken: 'Raised an alert so the bookings can be moved apart',
+        affectedRecordId: key,
+        affectedRecordType: 'other',
+        subjectLabel: u.name,
+      });
+    }
+  }
+  for (const a of alerts) {
+    if (a.titleKey === CLASH_ALERT && a.status !== 'resolved' && !live.has(a.relatedId ?? '')) patchInPlace(alerts, a.id, { status: 'resolved', resolvedAt: at, resolvedBy: 'system', resolutionNote: 'The bookings are no longer on the same day.' });
+  }
+}
+
+function fieldSosViewOf(a: FieldSosAttempt): FieldSosView {
+  const alert = a.alertId ? byId(alerts, a.alertId) : null;
+  return { id: a.id, status: a.status, startedAt: a.startedAt, sendsAt: a.sendsAt, alertStatus: alert ? alert.status : null };
+}
+
+function technicianJobViewOf(job: Job, userId: string, clashCodes: string[]): TechnicianJobView {
+  const role = roleOf(job, userId) ?? 'lead';
+  const own = ownStepIds(job, userId);
+  const steps = own ? job.steps.filter((st) => own.includes(st.id)) : job.steps;
+  const currentAt = steps.findIndex((st) => st.status !== 'complete');
+  const deal = byId(deals, job.dealId);
+  const lead = deal ? resolveLead(deal.leadId) : null;
+  const customer = deal?.customerId ? byId(users, deal.customerId)?.name : undefined;
+  const teamOf = (id: string) => ({ name: byId(users, id)?.name ?? '', role: (id === job.technicianId ? 'lead' : 'assistant') as 'lead' | 'assistant' });
+  return {
+    id: job.id,
+    code: job.code,
+    siteName: job.siteName,
+    address: job.address,
+    location: job.location,
+    customerName: customer ?? lead?.contactName ?? null,
+    status: job.status,
+    scheduledFor: job.scheduledFor,
+    startedAt: job.startedAt ?? null,
+    role,
+    leadName: role === 'assistant' && job.technicianId ? (byId(users, job.technicianId)?.name ?? null) : null,
+    teammates: peopleOn(job).filter((id) => id !== userId).map(teamOf),
+    myTasks: own ? steps.map((st) => ({ id: st.id, labelKey: st.labelKey, status: st.status })) : [],
+    stage: currentAt === -1 ? null : { labelKey: steps[currentAt].labelKey, index: currentAt + 1, total: steps.length },
+    progress: { done: steps.filter((st) => st.status === 'complete').length, total: steps.length },
+    action: actionOf(job.status),
+    holdReason: job.holdReason ?? null,
+    clashesWith: clashCodes,
+  };
+}
 
 /* ============================== Auto-reconciliation (120) */
 
@@ -10616,6 +10737,87 @@ export const memoryRepository: Repository = {
       return { approved, skipped };
     }),
 
+  /* --------------------------------- Technician home (121) */
+  getTechnicianHome: (technicianId) =>
+    simulateRead((): TechnicianHome => {
+      const user = byId(users, technicianId);
+      if (!user || user.role !== 'technician') throw new RepositoryError('forbidden');
+      const now = Date.now();
+      sendDueSos(now);
+      const mine = jobs.filter((j) => isOnJob(j, technicianId));
+      const clashes = clashesOf(mine);
+      const clashCodesOf = (j: Job) => {
+        const group = clashes.find((c) => c.jobIds.includes(j.id));
+        return group ? group.jobIds.filter((id) => id !== j.id).map((id) => byId(jobs, id)?.code ?? id) : [];
+      };
+      const view = (j: Job) => technicianJobViewOf(j, technicianId, clashCodesOf(j));
+      const rank = (j: Job) => (j.status === 'in_progress' ? 0 : j.status === 'qc_pending' || j.status === 'handover_pending' ? 1 : j.status === 'scheduled' || j.status === 'materials_pending' ? 2 : 3);
+      const todays = mine
+        .filter((j) => bucketOf(j, now) === 'today')
+        .sort((a, b) => rank(a) - rank(b) || a.scheduledFor.localeCompare(b.scheduledFor))
+        .map(view);
+      const upcoming = mine
+        .filter((j) => bucketOf(j, now) === 'upcoming')
+        .sort((a, b) => a.scheduledFor.localeCompare(b.scheduledFor))
+        .map(view);
+      const pay = commissions.filter((c) => c.userId === technicianId && (c.status === 'approved' || c.status === 'projected'));
+      const score = user.status === 'active' ? technicianScoreOf(user) : null;
+      const last = fieldSosAttempts.filter((a) => a.userId === technicianId).sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
+      return {
+        technicianId,
+        todays,
+        upcoming,
+        clashes: clashes.map((c) => ({ date: c.date, codes: c.jobIds.map((id) => byId(jobs, id)?.code ?? id) })),
+        stats: {
+          completedThisMonth: mine.filter((j) => j.status === 'completed' && !!j.completedAt && sameMonth(j.completedAt, now)).length,
+          qualityScore: score ? score.qcPassRate : null,
+          pendingPayout: pay.reduce((n, c) => n + c.amount, 0),
+          pendingPayoutCount: pay.length,
+        },
+        sos: last && now - new Date(last.startedAt).getTime() <= SOS_FOLLOW ? fieldSosViewOf(last) : null,
+        onDuty: !!user.onDuty,
+      };
+    }),
+
+  beginFieldSos: (userId, location) =>
+    simulateWrite((): FieldSosView => {
+      const user = byId(users, userId);
+      if (!user || (user.role !== 'technician' && user.role !== 'surveyor')) throw new RepositoryError('forbidden');
+      const now = Date.now();
+      sendDueSos(now);
+      // A second press inside the same emergency is the same emergency: one alert, not a stack of them.
+      const recent = fieldSosAttempts.find((a) => a.userId === userId && a.status !== 'cancelled' && now - new Date(a.startedAt).getTime() < SOS_SAME_INCIDENT);
+      if (recent) return fieldSosViewOf(recent);
+      fieldSosCounter += 1;
+      const openJob = jobs.find((j) => isOnJob(j, userId) && isActiveJob(j));
+      const created: FieldSosAttempt = {
+        id: `sos-${fieldSosCounter}`,
+        userId,
+        startedAt: new Date(now).toISOString(),
+        sendsAt: new Date(now + SOS_CANCEL_WINDOW_MS).toISOString(),
+        status: 'pending',
+        location: location ?? user.location ?? openJob?.location,
+        jobId: openJob?.id,
+        isDemo: true,
+      };
+      fieldSosAttempts.push(created);
+      return fieldSosViewOf(created);
+    }),
+
+  cancelFieldSos: (attemptId, userId) =>
+    simulateWrite((): FieldSosView => {
+      const a = byId(fieldSosAttempts, attemptId);
+      if (!a) throw new RepositoryError('not_found');
+      if (a.userId !== userId) throw new RepositoryError('forbidden');
+      const now = Date.now();
+      // The window is the window: at the moment it closes the SOS is sent, and it can no longer be taken back.
+      sendDueSos(now);
+      const current = byId(fieldSosAttempts, attemptId)!;
+      if (current.status !== 'pending') throw new RepositoryError(current.status === 'cancelled' ? 'invalid_state' : 'too_late');
+      patchInPlace(fieldSosAttempts, a.id, { status: 'cancelled', cancelledAt: new Date(now).toISOString() });
+      return fieldSosViewOf(byId(fieldSosAttempts, a.id)!);
+    }),
+
   /* --------------------------------- Auto-reconciliation (120) */
   getReconciliationBoard: (byUserId) =>
     simulateRead((): ReconBoard => {
@@ -12360,25 +12562,7 @@ export const memoryRepository: Repository = {
         .sort((a, b) => b.revenue - a.revenue),
     ),
 
-  getTechnicianScores: () =>
-    simulateRead(() =>
-      users
-        .filter((u) => u.role === 'technician' && u.status === 'active')
-        .map<TechnicianScore>((u) => {
-          const own = jobs.filter((j) => j.technicianId === u.id);
-          const done = own.filter((j) => j.status === 'completed');
-          return {
-            userId: u.id,
-            name: u.name,
-            jobsCompleted: done.length,
-            onTimeRate: done.length ? 0.8 + (u.id.charCodeAt(u.id.length - 1) % 3) * 0.06 : 0,
-            qcPassRate: 0.85 + (u.id.charCodeAt(u.id.length - 1) % 4) * 0.035,
-            avgDaysPerJob: 16 + (u.id.charCodeAt(u.id.length - 1) % 5),
-            rating: u.rating ?? 0,
-          };
-        })
-        .sort((a, b) => b.rating - a.rating),
-    ),
+  getTechnicianScores: () => simulateRead(() => users.filter((u) => u.role === 'technician' && u.status === 'active').map(technicianScoreOf).sort((a, b) => b.rating - a.rating)),
 
   getRegionConversion: () =>
     simulateRead(() => {

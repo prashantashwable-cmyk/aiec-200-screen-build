@@ -14,6 +14,7 @@ const translations: ScreenTranslations = {
         leadQualified: 'Lead reached a qualified stage',
         siteVisitVerified: 'Site visit verified',
         monthlyBonus: 'Monthly performance bonus',
+        installationCompleted: 'Installation completed and handed over',
       },
     },
     commissionTracker: {
@@ -60,6 +61,7 @@ const translations: ScreenTranslations = {
         leadQualified: 'लीड योग्य चरण तक पहुँचा',
         siteVisitVerified: 'साइट विज़िट सत्यापित',
         monthlyBonus: 'मासिक प्रदर्शन बोनस',
+        installationCompleted: 'इंस्टॉलेशन पूरा हुआ और सौंपा गया',
       },
     },
     commissionTracker: {
@@ -106,6 +108,7 @@ const translations: ScreenTranslations = {
         leadQualified: 'लीड पात्र टप्प्यावर पोहोचला',
         siteVisitVerified: 'साइट भेट पडताळली',
         monthlyBonus: 'मासिक कामगिरी बोनस',
+        installationCompleted: 'इन्स्टॉलेशन पूर्ण झालं आणि सुपूर्द केलं',
       },
     },
     commissionTracker: {

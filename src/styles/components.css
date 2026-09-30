@@ -677,6 +677,8 @@ select.ds-input {
   overflow: hidden;
 }
 .ds-progress__fill {
+  /* An inline span ignores width and height, so the bar never filled. */
+  display: block;
   height: 100%;
   background: var(--color-accent-primary);
   border-radius: var(--radius-pill);

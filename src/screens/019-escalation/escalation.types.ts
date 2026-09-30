@@ -25,8 +25,8 @@ export const CLUSTER_WINDOW_MS = 30 * 60 * 1000;
 /** No acknowledgement within this window escalates to a backup channel. */
 export const ACK_DEADLINE_MS = 10 * 60 * 1000;
 
-/** A field SOS can be cancelled within this window before the admin is alerted. */
-export const SOS_CANCEL_WINDOW_S = 10;
+/** A field SOS can be cancelled within this window before the admin is alerted. One number, shared with the button that sends it. */
+export { SOS_CANCEL_WINDOW_S } from '@/features/safety/sos';
 
 export const ESCALATION_KEYS = {
   title: 'escalation.title',

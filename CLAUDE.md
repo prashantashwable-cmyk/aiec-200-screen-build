@@ -94,7 +94,7 @@ the module's section to `BUILD_README.md`.
 
 ## Current status (as of 2026-09-28)
 
-- Modules 1–12 (`001`–`120`) are built. Modules 5–12 are checkpoint-verified.
+- Modules 1–12 (`001`–`120`) are built. Modules 5–12 are checkpoint-verified. Module 13 (`121`–`130`) is in progress.
 - **Module 9 Payments & Financing is done**, including its checkpoint (all 10 screens clicked
   through as both Admin and Customer, 4 earlier-module screens spot-checked, nothing regressed —
   see `BUILD_README.md`'s Module 9 section for the full writeup, including the shared aging
@@ -110,6 +110,29 @@ the module's section to `BUILD_README.md`.
 - **Module 11 Material Logistics & Delivery is done, including its checkpoint** (`101`–`110`, see
   BUILD_README's Module 11 section). Admin has a "Logistics" nav tab; every delivery screen declares
   `tab: 'logistics'` for Admin.
+- **Module 13 Installation & Technician in progress:** `121` built. **Next: `122`** (Job Detail; 121's Start/Continue button already
+  opens `/technician/jobs/:id`, and the technician nav's "Jobs" tab still points at `/technician` until 122 gives it its own path).
+  121 facts:
+  - `getTechnicianHome(id)` reads the same `Job` records delivery scheduling (101) creates; there is no technician calendar.
+    `@/features/technician/jobs` is the pure logic (`bucketOf`: an active job is always "today", an unstarted one by its booked day, then
+    "upcoming" for 14 days; `roleOf`, `ownStepIds`, `actionOf`, `clashesOf`). A job is `technicianId` (the lead) plus an optional `crew`
+    (`JobCrewMember`: userId, `lead` | `assistant`, `stepIds`); an assistant's view is their own steps and who leads, never the lead's
+    whole job. **Later job screens (122–130) should read `roleOf`/`ownStepIds` so an assistant only ever acts on their own steps.**
+  - Two unstarted jobs booked the same day for one person are a clash: shown on the home, and one `staffing` alert per technician and
+    day (`alerts.type.scheduleClash`, heartbeat `syncTechnicianClashes`, resolves itself). Seed j-9 is the demo clash (with j-4).
+  - Quality score is 024's own number: `technicianScoreOf` (memoryRepository) is the one row both the leaderboard and the home read
+    (`qcPassRate`); a technician not yet on the board shows "Not rated yet". Pending payout is the technician's `CommissionEntry`
+    rows (`approved` | `projected`; reason `commission.reason.installationCompleted`, owned by 038's i18n), the same ledger surveyors use.
+  - **Field SOS** is shared, `@/features/safety` (`SosButton`, `SosStatus`, `sos.ts`) with the `sos.*` common namespace. One tap starts
+    `FieldSosAttempt` (`beginFieldSos`); it is sent as a critical `safety` alert (`alerts.type.fieldSos`, `sourceRoute`
+    `/admin/escalations`, location = last known position or the job's site) when the 10-second window (`SOS_CANCEL_WINDOW_S`, the number
+    019 tells Admin) closes, by whoever's clock gets there first (`sendDueSos`: the read, or the heartbeat), so it does not depend on
+    the phone staying open. Cancelling inside the window is kept as a cancelled attempt (the safety log); a second press within 10
+    minutes is the same incident. The button is fixed above the tab bar. Surveyor home (031) had no SOS despite the spec's wording:
+    `SosButton` can drop straight into it (`beginFieldSos` accepts surveyors) when that screen is next touched.
+  - Design-system fix found here: `.ds-progress__fill` was an inline span, so `ProgressBar` never filled anywhere it was used
+    (118, 119 shares, 121); it is `display: block` now.
+  - `/technician` is Technician only (real technician logins land here; the `ModulePendingScreen` route was removed).
 - **Module 12 Supplier Payment Processing is done, including its checkpoint** (`111`–`120`, see BUILD_README's Module 12 section). Admin has a "Supplier pay" nav tab; 111–119 declare `tab: 'supplierPay'` (120 sits under Analytics). **Next: Module 13, `121`.**
   120 facts:
   - Reconciliation compares a stored bank statement (`BankTransaction`, memoryRepository `bankTransactions`, seeded sample) with

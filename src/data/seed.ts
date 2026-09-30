@@ -959,9 +959,9 @@ export const installSteps = (completedCount: number): Job['steps'] => {
 };
 
 export const seedJobs: Job[] = [
-  { id: 'j-1', code: 'AIEC-J-3101', dealId: 'dl-1', technicianId: 'u-tech-1', status: 'in_progress', siteName: 'Shree Ram Heights', address: 'Phase 2, Hinjawadi', location: { lat: 18.5913, lng: 73.7389 }, scheduledFor: daysAgo(21), startedAt: daysAgo(21), steps: installSteps(7), isDemo: true },
+  { id: 'j-1', code: 'AIEC-J-3101', dealId: 'dl-1', technicianId: 'u-tech-1', status: 'in_progress', siteName: 'Shree Ram Heights', address: 'Phase 2, Hinjawadi', location: { lat: 18.5913, lng: 73.7389 }, scheduledFor: daysAgo(21), startedAt: daysAgo(21), steps: installSteps(7), crew: [{ userId: 'u-tech-1', role: 'lead', stepIds: [] }, { userId: 'u-tech-2', role: 'assistant', stepIds: ['s6', 's7'] }], isDemo: true },
   { id: 'j-2', code: 'AIEC-J-3102', dealId: 'dl-2', technicianId: 'u-tech-2', status: 'qc_pending', siteName: 'Kulkarni Signature', address: 'Kharadi Bypass', location: { lat: 18.5515, lng: 73.947 }, scheduledFor: daysAgo(28), startedAt: daysAgo(28), steps: installSteps(9), isDemo: true },
-  { id: 'j-3', code: 'AIEC-J-3103', dealId: 'dl-1', technicianId: 'u-tech-3', status: 'materials_pending', siteName: 'Shree Ram Heights — Wing B', address: 'Phase 2, Hinjawadi', location: { lat: 18.592, lng: 73.7401 }, scheduledFor: daysAhead(3), steps: installSteps(1), isDemo: true },
+  { id: 'j-3', code: 'AIEC-J-3103', dealId: 'dl-1', technicianId: 'u-tech-3', status: 'materials_pending', siteName: 'Shree Ram Heights — Wing B', address: 'Phase 2, Hinjawadi', location: { lat: 18.592, lng: 73.7401 }, scheduledFor: daysAhead(3), steps: installSteps(1), crew: [{ userId: 'u-tech-3', role: 'lead', stepIds: [] }, { userId: 'u-tech-1', role: 'assistant', stepIds: ['s3'] }], isDemo: true },
   { id: 'j-4', code: 'AIEC-J-3104', dealId: 'dl-2', technicianId: 'u-tech-1', status: 'scheduled', siteName: 'Kulkarni Signature — Tower 2', address: 'Kharadi Bypass', location: { lat: 18.5522, lng: 73.9481 }, scheduledFor: daysAhead(8), steps: installSteps(0), isDemo: true },
   { id: 'j-5', code: 'AIEC-J-3105', dealId: 'dl-1', technicianId: 'u-tech-2', status: 'completed', siteName: 'Shree Ram Heights — Service Lift', address: 'Phase 2, Hinjawadi', location: { lat: 18.5908, lng: 73.7378 }, scheduledFor: daysAgo(56), startedAt: daysAgo(56), completedAt: daysAgo(38), steps: installSteps(10), isDemo: true },
   // Older installations whose suppliers' retentions are still held (118). j-7 has cleared QC and been handed over; j-8 failed QC and is in rework.
@@ -983,6 +983,8 @@ export const seedJobs: Job[] = [
     steps: installSteps(8).map((st, i) => (i === 8 ? { ...st, status: 'blocked' as const } : st)),
     isDemo: true,
   },
+  // Booked for the same day as j-4 by the same technician: two sites on one morning is a scheduling conflict 121 shows instead of a dual schedule.
+  { id: 'j-9', code: 'AIEC-J-3109', dealId: 'dl-1', technicianId: 'u-tech-1', status: 'scheduled', siteName: 'Shree Ram Heights — Wing C', address: 'Phase 2, Hinjawadi', location: { lat: 18.5925, lng: 73.7412 }, scheduledFor: daysAhead(8), steps: installSteps(0), isDemo: true },
   { id: 'j-6', code: 'AIEC-J-3106', dealId: 'dl-2', technicianId: 'u-tech-3', status: 'on_hold', siteName: 'Kulkarni Signature — Basement', address: 'Kharadi Bypass', location: { lat: 18.5509, lng: 73.9462 }, scheduledFor: daysAgo(4), startedAt: daysAgo(4), steps: installSteps(3), isDemo: true },
 ];
 
@@ -2785,6 +2787,10 @@ export const seedRoutePlans: RoutePlan[] = [
 /* -------------------------------------------------------------- Commission */
 
 export const seedCommissions: CommissionEntry[] = [
+  // A technician's payout for a finished installation (121): Santosh's last job was handed over five days ago and waits for the next run.
+  { id: 'c-t1', userId: 'u-tech-1', dealId: 'dl-h2', reasonKey: 'commission.reason.installationCompleted', amount: 14_000, status: 'approved', earnedAt: daysAgo(5), isDemo: true },
+  { id: 'c-t2', userId: 'u-tech-1', dealId: 'dl-h1', reasonKey: 'commission.reason.installationCompleted', amount: 11_500, status: 'paid', earnedAt: daysAgo(45), paidAt: daysAgo(38), isDemo: true },
+  { id: 'c-t3', userId: 'u-tech-2', dealId: 'dl-1', reasonKey: 'commission.reason.installationCompleted', amount: 9_000, status: 'paid', earnedAt: daysAgo(38), paidAt: daysAgo(31), isDemo: true },
   { id: 'c-1', userId: 'u-srv-1', leadId: 'l-1', dealId: 'dl-1', reasonKey: 'commission.reason.leadConverted', amount: 39_600, status: 'paid', earnedAt: daysAgo(48), paidAt: daysAgo(41), isDemo: true },
   { id: 'c-2', userId: 'u-srv-1', leadId: 'l-1', reasonKey: 'commission.reason.siteVisitVerified', amount: 500, status: 'paid', earnedAt: daysAgo(70), paidAt: daysAgo(63), isDemo: true },
   { id: 'c-3', userId: 'u-srv-2', leadId: 'l-2', dealId: 'dl-2', reasonKey: 'commission.reason.leadConverted', amount: 28_200, status: 'paid', earnedAt: daysAgo(33), paidAt: daysAgo(26), isDemo: true },

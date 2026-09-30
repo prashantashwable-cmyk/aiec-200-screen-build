@@ -48,6 +48,7 @@ import type {
   GeoZone,
   Invoice,
   Job,
+  GeoPoint,
   Language,
   Lead,
   LeadImportBatch,
@@ -1226,6 +1227,67 @@ export interface AdvanceRetentionBoard {
 export interface ReleaseBatchResult {
   released: string[];
   skipped: { id: string; reason: BatchSkip }[];
+}
+
+/* ---------------------------------- Technician home (121) */
+
+export type TechnicianJobActionView = 'start' | 'continue' | 'waiting_materials' | 'on_hold' | 'review';
+
+export interface TechnicianJobTask {
+  id: string;
+  labelKey: string;
+  status: Job['steps'][number]['status'];
+}
+
+/** One job as one technician sees it: the lead sees all of it, an assistant sees their own part and who leads. */
+export interface TechnicianJobView {
+  id: string;
+  code: string;
+  siteName: string;
+  address: string;
+  location: GeoPoint;
+  customerName: string | null;
+  status: Job['status'];
+  scheduledFor: string;
+  startedAt: string | null;
+  role: 'lead' | 'assistant';
+  leadName: string | null;
+  /** Everyone else on the job, so a shared job never reads as a solo one. */
+  teammates: { name: string; role: 'lead' | 'assistant' }[];
+  /** An assistant's own steps. Empty for the lead, who answers for the whole job. */
+  myTasks: TechnicianJobTask[];
+  /** The step in hand: the whole job's for a lead, this person's own for an assistant. Null when nothing is left. */
+  stage: { labelKey: string; index: number; total: number } | null;
+  progress: { done: number; total: number };
+  action: TechnicianJobActionView;
+  holdReason: string | null;
+  /** Codes of other jobs booked for the same day for this person. */
+  clashesWith: string[];
+}
+
+export interface FieldSosView {
+  id: string;
+  status: 'pending' | 'sent' | 'cancelled';
+  startedAt: string;
+  sendsAt: string;
+  /** What has happened to the alert since, once it was sent. */
+  alertStatus: 'open' | 'acknowledged' | 'resolved' | null;
+}
+
+export interface TechnicianHome {
+  technicianId: string;
+  todays: TechnicianJobView[];
+  upcoming: TechnicianJobView[];
+  clashes: { date: string; codes: string[] }[];
+  stats: {
+    completedThisMonth: number;
+    /** The QC pass rate (0..1) 024's leaderboard shows for this person, so the number is the one Admin judges. Null until they are on the board. */
+    qualityScore: number | null;
+    pendingPayout: number;
+    pendingPayoutCount: number;
+  };
+  sos: FieldSosView | null;
+  onDuty: boolean;
 }
 
 /* ---------------------------------- Auto-reconciliation (120) */
@@ -3728,6 +3790,12 @@ export interface Repository {
   /** Money came back: recorded as a credit beside the advance in Payment History. */
   recordAdvanceRecovered(recoveryId: string, amount: number, note: string | undefined, byUserId: string): Promise<AdvanceRecoveryView>;
   writeOffAdvance(recoveryId: string, note: string, byUserId: string): Promise<AdvanceRecoveryView>;
+
+  /* Technician home (121) — the day's jobs read from the same job records delivery scheduling creates */
+  getTechnicianHome(technicianId: string): Promise<TechnicianHome>;
+  /** Starts the SOS window. It is sent by itself when the window closes unless cancelled first, and every attempt is kept. */
+  beginFieldSos(userId: string, location?: GeoPoint): Promise<FieldSosView>;
+  cancelFieldSos(attemptId: string, userId: string): Promise<FieldSosView>;
 
   /* Auto-reconciliation (120) — the bank's statement against the app's own records of money in and out */
   getReconciliationBoard(byUserId: string): Promise<ReconBoard>;
