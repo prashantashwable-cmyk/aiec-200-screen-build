@@ -2953,6 +2953,28 @@ export const seedLeadTimeline: LeadTimelineEvent[] = seedLeads.flatMap((lead) =>
   return events.sort((a, b) => a.at.localeCompare(b.at));
 });
 
+/** What surveyors and sales wrote about the sites of the three won deals, dated, because a note about site access can be true in
+ *  March and false by June. The 58-day-old gate note has been overtaken by the 9-day-old one (122 shows both, with their ages). */
+const siteNote = (n: number, leadId: string, byUserId: string, daysBack: number, detail: string, topic: NonNullable<LeadTimelineEvent['topic']>): LeadTimelineEvent => ({
+  id: `tl-site-${n}`,
+  leadId,
+  kind: 'note_added',
+  actorName: nameOf(byUserId),
+  at: daysAgo(daysBack),
+  detail,
+  topic,
+});
+
+export const seedSiteNotes: LeadTimelineEvent[] = [
+  siteNote(1, 'l-1', 'u-srv-1', 58, 'Only the rear gate on the Phase 2 lane is open for material vehicles. The front gate is blocked by the boundary wall work.', 'access'),
+  siteNote(2, 'l-1', 'u-srv-1', 40, 'Site contact for the lift shaft is Mr. Patil, the supervisor. Rajesh Sir prefers WhatsApp in Marathi.', 'contact'),
+  siteNote(3, 'l-1', 'u-srv-1', 30, 'The level 3 shaft has an open edge. Put the barricade back every time before leaving.', 'safety'),
+  siteNote(4, 'l-1', 'u-srv-1', 9, 'The boundary wall work is finished and the front gate is open again. Security wants a vehicle pass one day ahead.', 'access'),
+  siteNote(5, 'l-2', 'u-srv-2', 33, 'Basement ramp is narrow: parts longer than 2.2 m must come in through the loading bay on the east side.', 'access'),
+  siteNote(6, 'l-2', 'u-srv-2', 20, 'Meera Madam is on site only after 11 am. Call before arriving.', 'contact'),
+  siteNote(7, 'l-15', 'u-srv-1', 12, 'Tech Park allows heavy deliveries only between 6 am and 9 am. Site pass in the name of the technician.', 'access'),
+];
+
 /* ---------------------------------------------------- CRM: follow-up tasks */
 
 export const seedFollowUpTasks: FollowUpTask[] = [
@@ -3466,6 +3488,50 @@ export const seedQuotationTemplates: QuotationTemplate[] = [
   },
 ];
 
+type WonSpec = Pick<Quotation, 'driveType' | 'capacityPersons' | 'capacityKg' | 'stopsCount' | 'travelHeightM' | 'finishTier'>;
+
+/** A quotation the customer accepted for a deal that is now won. The breakdown is derived from the deal's own price and margin so it
+ *  sums exactly to what was quoted. */
+const wonQuotation = (id: string, code: string, leadId: string, finalPrice: number, marginAmount: number, acceptedDaysAgo: number, spec: WonSpec): Quotation => {
+  const gstAmount = Math.round(finalPrice - finalPrice / 1.18);
+  const body = finalPrice - gstAmount - marginAmount;
+  const equipment = Math.round(body * 0.82);
+  const civil = Math.round(body * 0.08);
+  const labour = Math.round(body * 0.08);
+  return {
+    id,
+    code,
+    leadId,
+    version: 1,
+    status: 'accepted',
+    ...spec,
+    customConfiguration: false,
+    needsSpecializedReview: spec.stopsCount >= 20,
+    cost: {
+      equipmentCost: equipment,
+      civilWorkEstimate: civil,
+      installationLaborCost: labour,
+      transportCost: body - equipment - civil - labour,
+      perFloorCostDelta: spec.stopsCount * 6_000,
+      gstPercent: 18,
+      gstAmount,
+      marginPct: Math.round((marginAmount / (finalPrice - gstAmount)) * 100),
+      marginAmount,
+      finalPrice,
+    },
+    validityDate: daysAhead(45),
+    viewedAt: daysAgo(acceptedDaysAgo + 3),
+    acceptedAt: daysAgo(acceptedDaysAgo),
+    deliveryChannels: ['email'],
+    sentAt: daysAgo(acceptedDaysAgo + 4),
+    deliveryResults: [{ channel: 'email', status: 'delivered', at: daysAgo(acceptedDaysAgo + 4) }],
+    createdBy: 'Prashant Vasant Wable',
+    createdAt: daysAgo(acceptedDaysAgo + 5),
+    isDemo: true,
+  };
+};
+
+
 export const seedQuotations: Quotation[] = [
   // l-4 (Pinnacle Aurum) — sent and viewed, awaiting the customer's decision.
   {
@@ -3775,6 +3841,10 @@ export const seedQuotations: Quotation[] = [
     createdAt: daysAgo(2),
     isDemo: true,
   },
+  // The locked configurations of the three won deals (122): what was sold and contracted, which is all an installation reads.
+  wonQuotation('q-9', 'AIEC-Q-1009', 'l-1', 2_780_000, 528_000, 50, { driveType: 'gearless_traction', capacityPersons: 8, capacityKg: 544, stopsCount: 12, travelHeightM: 36.3, finishTier: 'standard' }),
+  wonQuotation('q-10', 'AIEC-Q-1010', 'l-2', 1_950_000, 357_000, 38, { driveType: 'mrl', capacityPersons: 6, capacityKg: 408, stopsCount: 8, travelHeightM: 24.5, finishTier: 'standard' }),
+  wonQuotation('q-11', 'AIEC-Q-1011', 'l-15', 8_800_000, 1_512_000, 3, { driveType: 'gearless_traction', capacityPersons: 20, capacityKg: 1360, stopsCount: 18, travelHeightM: 55.8, finishTier: 'premium' }),
 ];
 
 export const seedDiscountRequests: DiscountRequest[] = [

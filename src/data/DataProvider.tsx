@@ -18,6 +18,9 @@ export function DataProvider({
   repository?: Repository;
 }) {
   const value = useMemo(() => repository, [repository]);
+  // In development only, the repository is reachable from the browser console and from browser tests, so a change that would come
+  // from another person's screen (a revised quotation, a delivery arriving) can be made while a screen is open.
+  if (import.meta.env.DEV) (window as unknown as { __aiecRepo?: Repository }).__aiecRepo = value;
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }
 

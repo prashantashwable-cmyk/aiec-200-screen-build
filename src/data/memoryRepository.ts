@@ -64,6 +64,7 @@ import {
   seedSupplierPaymentAdjustments,
   seedSupplierGstChecks,
   seedBankTransactions,
+  seedSiteNotes,
   seedSupplierDisputes,
   seedSupplierInvoices,
   seedPaymentDeviations,
@@ -200,6 +201,11 @@ import type {
   DeliveryAnalytics,
   BankSideView,
   FieldSosView,
+  JobMaterialView,
+  JobNoteView,
+  JobSpecView,
+  JobTeamMember,
+  TechnicianJobDetail,
   TechnicianHome,
   TechnicianJobView,
   LedgerSideView,
@@ -412,7 +418,7 @@ import { computeTotalReceivable, daysOverdue, isOutstanding, receivedAmountOf, r
 import { isSupplierEligibleForPO } from '@/features/suppliers/eligibility';
 import { buildAlert, findOpenAlertFor } from '@/features/attention/raiseAlert';
 import { isReceived, kindsOf, problemWith, progressOf, verdictOf } from '@/features/logistics/deliveryChecklist';
-import { canMoveTo, impactLevel, isClosedResolution } from '@/features/logistics/discrepancy';
+import { canMoveTo, heldLineIds, impactLevel, isClosedResolution } from '@/features/logistics/discrepancy';
 import { checkSteps, MASTER_CATEGORY, resolveSopSteps, statusOf, versionInForce as sopVersionInForce } from '@/features/logistics/deliverySop';
 import { KNOWN_PART_CATEGORIES } from '@/features/suppliers/catalogRules';
 import type { AttentionAlertInput } from '@/features/attention/raiseAlert';
@@ -563,7 +569,7 @@ const routePlans = [...seedRoutePlans];
 const commissions = [...seedCommissions];
 const automations = [...seedAutomations];
 const siteVisits = [...seedSiteVisits];
-const leadTimeline = [...seedLeadTimeline];
+const leadTimeline = [...seedLeadTimeline, ...seedSiteNotes];
 const followUpTasks = [...seedFollowUpTasks];
 const duplicatePairs = [...seedDuplicatePairs];
 const importBatches = [...seedImportBatches];
@@ -5111,6 +5117,63 @@ function syncTechnicianClashes(now: number): void {
 function fieldSosViewOf(a: FieldSosAttempt): FieldSosView {
   const alert = a.alertId ? byId(alerts, a.alertId) : null;
   return { id: a.id, status: a.status, startedAt: a.startedAt, sendsAt: a.sendsAt, alertStatus: alert ? alert.status : null };
+}
+
+const SPEC_FIELDS = ['driveType', 'capacityPersons', 'capacityKg', 'stopsCount', 'travelHeightM', 'finishTier'] as const;
+
+/** The configuration that was sold: the deal's accepted quotation, latest version, and no other source. A technician installs
+ *  exactly this, so a survey estimate or an earlier draft can never stand in for it. */
+function lockedSpecOf(leadId: string): JobSpecView | null {
+  // The accepted version. While a change is being drafted the accepted one is marked superseded but is still what is contracted, so the
+  // newest version that was ever accepted stands until its replacement is accepted.
+  const everAccepted = quotations.filter((q) => q.leadId === leadId && !!q.acceptedAt);
+  const accepted = everAccepted.filter((q) => q.status === 'accepted').sort((a, b) => b.version - a.version)[0] ?? everAccepted.sort((a, b) => b.version - a.version)[0];
+  if (!accepted) return null;
+  const before = accepted.supersedesQuotationId ? byId(quotations, accepted.supersedesQuotationId) : undefined;
+  return {
+    quotationId: accepted.id,
+    quotationCode: accepted.code,
+    version: accepted.version,
+    acceptedAt: accepted.acceptedAt ?? accepted.createdAt,
+    driveType: accepted.driveType,
+    capacityPersons: accepted.capacityPersons,
+    capacityKg: accepted.capacityKg,
+    stopsCount: accepted.stopsCount,
+    travelHeightM: accepted.travelHeightM,
+    finishTier: accepted.finishTier,
+    customConfiguration: accepted.customConfiguration,
+    overrideNote: accepted.specOverrideNote ?? null,
+    revision: before ? { fromVersion: before.version, changed: SPEC_FIELDS.filter((f) => before[f] !== accepted[f]) } : null,
+  };
+}
+
+/** What has actually reached the site for a deal, read from the delivery records: a part is "on site" only once the delivery check
+ *  accepted it and the receiving was signed, so a technician never turns up expecting parts the system does not know arrived. */
+function jobMaterialsOf(dealId: string): TechnicianJobDetail['materials'] {
+  const pos = supplierPurchaseOrders.filter((po) => po.dealId === dealId && po.status === 'sent' && (po.lineItems ?? []).length > 0);
+  const lines: JobMaterialView[] = [];
+  for (const po of pos) {
+    const held = heldLineIds(discrepancyReports, po.id);
+    const hasChecks = deliveryChecklists.some((c) => c.poId === po.id);
+    const unsigned = deliveryConfirmations.some((c) => c.poId === po.id && c.status !== 'signed');
+    for (const line of po.lineItems ?? []) {
+      const stage = lineStageOf(po, line);
+      const leg = shipmentLegs.find((l) => l.poId === po.id && l.lineItemIds.includes(line.id) && !l.milestones.some((m) => m.milestone === 'arrived'));
+      let state: JobMaterialView['state'];
+      let expectedAt: string | null = null;
+      if (held.includes(line.id)) state = 'issue';
+      else if (stage === 'delivered') state = hasChecks && unsigned ? 'awaiting_signature' : 'on_site';
+      else if (stage === 'shipped') {
+        state = 'in_transit';
+        expectedAt = leg?.etaAt ?? promisedDeliveryOf(po);
+      } else {
+        state = 'preparing';
+        expectedAt = promisedDeliveryOf(po);
+      }
+      lines.push({ id: line.id, poCode: po.code, category: line.category, description: line.description, quantity: line.quantity, state, expectedAt });
+    }
+  }
+  return { lines, onSite: lines.filter((l) => l.state === 'on_site').length, total: lines.length, noOrders: pos.length === 0, materialsConfirmedAt: materialsConfirmedAt(dealId) };
 }
 
 function technicianJobViewOf(job: Job, userId: string, clashCodes: string[]): TechnicianJobView {
@@ -10776,6 +10839,69 @@ export const memoryRepository: Repository = {
         },
         sos: last && now - new Date(last.startedAt).getTime() <= SOS_FOLLOW ? fieldSosViewOf(last) : null,
         onDuty: !!user.onDuty,
+      };
+    }),
+
+  getTechnicianJob: (jobId, technicianId) =>
+    simulateRead((): TechnicianJobDetail => {
+      const user = byId(users, technicianId);
+      const job = byId(jobs, jobId);
+      if (!user || user.role !== 'technician') throw new RepositoryError('forbidden');
+      if (!job) throw new RepositoryError('not_found');
+      // A technician sees the jobs they are on and no one else's.
+      if (!isOnJob(job, technicianId)) throw new RepositoryError('forbidden');
+      const deal = byId(deals, job.dealId);
+      const lead = deal ? resolveLead(deal.leadId) : null;
+      const customerUser = deal?.customerId ? byId(users, deal.customerId) : undefined;
+      const clashes = clashesOf(jobs.filter((j) => isOnJob(j, technicianId)));
+      const group = clashes.find((c) => c.jobIds.includes(job.id));
+      const notesOf = (leadId: string): JobNoteView[] => {
+        const own = leadTimeline
+          .filter((e) => e.leadId === leadId && e.kind === 'note_added' && !!e.detail)
+          .map<JobNoteView>((e) => ({ id: e.id, source: 'survey', topic: e.topic ?? 'other', text: e.detail as string, at: e.at, byName: e.actorName }));
+        const terms = deal ? dealTermsRecords.find((t) => t.dealId === deal.id) : undefined;
+        const fromTerms: JobNoteView[] = [];
+        if (terms?.specialTermsNotes.trim()) fromTerms.push({ id: `${terms.id}-notes`, source: 'terms', topic: 'other', text: terms.specialTermsNotes, at: terms.updatedAt, byName: 'AIEC' });
+        for (const a of terms?.amendments ?? []) fromTerms.push({ id: a.id, source: 'terms', topic: 'other', text: a.note, at: a.amendedAt, byName: a.amendedBy });
+        return [...own, ...fromTerms].sort((a, b) => b.at.localeCompare(a.at));
+      };
+      const notes = lead ? notesOf(lead.id) : [];
+      // A customer with earlier installations: contact preferences and site access can sensibly carry over, but only as notes to check.
+      const earlier = deal?.customerId
+        ? jobs.filter((j) => j.id !== job.id && byId(deals, j.dealId)?.customerId === deal.customerId && j.scheduledFor < job.scheduledFor).sort((a, b) => a.scheduledFor.localeCompare(b.scheduledFor))
+        : [];
+      const spec = lead?.spec;
+      return {
+        job: technicianJobViewOf(job, technicianId, group ? group.jobIds.filter((id) => id !== job.id).map((id) => byId(jobs, id)?.code ?? id) : []),
+        customer: {
+          name: customerUser?.name ?? lead?.contactName ?? null,
+          company: lead?.builderName ?? null,
+          phone: lead?.contactPhone ?? customerUser?.phone ?? null,
+          email: lead?.contactEmail ?? customerUser?.email ?? null,
+          preferredLanguage: lead?.preferredLanguage ?? customerUser?.preferredLanguage ?? null,
+        },
+        site: {
+          name: job.siteName,
+          address: job.address,
+          city: lead?.city ?? null,
+          pincode: lead?.pincode ?? null,
+          location: job.location,
+          shaft: spec ? { widthMm: spec.shaftWidthMm ?? null, depthMm: spec.shaftDepthMm ?? null, pitMm: spec.pitDepthMm ?? null, headroomMm: spec.headroomMm ?? null, floors: spec.floors, machineRoom: spec.machineRoom } : null,
+        },
+        spec: lead ? lockedSpecOf(lead.id) : null,
+        materials: jobMaterialsOf(job.dealId),
+        team: peopleOn(job).map<JobTeamMember>((id) => {
+          const u = byId(users, id);
+          const member = (job.crew ?? []).find((c) => c.userId === id);
+          return { userId: id, name: u?.name ?? '', role: id === job.technicianId ? 'lead' : 'assistant', phone: u?.phone ?? '', stepCount: id === job.technicianId ? 0 : (member?.stepIds.length ?? 0), isYou: id === technicianId };
+        }),
+        notes,
+        repeat: earlier.length
+          ? {
+              earlierJobs: earlier.map((j) => ({ code: j.code, siteName: j.siteName, status: j.status, at: j.completedAt ?? j.startedAt ?? j.scheduledFor })),
+              carried: notes.filter((n) => n.topic === 'access' || n.topic === 'contact'),
+            }
+          : null,
       };
     }),
 

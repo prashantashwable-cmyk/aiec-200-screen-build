@@ -234,6 +234,8 @@ export interface LeadTimelineEvent {
   detail?: string;
   fromValue?: string;
   toValue?: string;
+  /** What a `note_added` note is about, so the person installing can find what matters to them (121/122). */
+  topic?: 'access' | 'contact' | 'safety' | 'other';
 }
 
 /* ------------------------------------------------------ CRM: follow-ups */

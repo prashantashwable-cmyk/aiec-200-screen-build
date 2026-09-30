@@ -110,8 +110,29 @@ the module's section to `BUILD_README.md`.
 - **Module 11 Material Logistics & Delivery is done, including its checkpoint** (`101`–`110`, see
   BUILD_README's Module 11 section). Admin has a "Logistics" nav tab; every delivery screen declares
   `tab: 'logistics'` for Admin.
-- **Module 13 Installation & Technician in progress:** `121` built. **Next: `122`** (Job Detail; 121's Start/Continue button already
-  opens `/technician/jobs/:id`, and the technician nav's "Jobs" tab still points at `/technician` until 122 gives it its own path).
+- **Module 13 Installation & Technician in progress:** `121`–`122` built. **Next: `123`** (Installation SOP Checklist; 122's primary button
+  already opens `/technician/jobs/:jobId/sop` and 121's Start/Continue opens `/technician/jobs/:jobId`).
+  122 facts:
+  - `getTechnicianJob(jobId, technicianId)` is read-mostly and only for a job the technician is on (`isOnJob`, else `forbidden`; unknown is
+    `not_found`; the screen shows one "not one of your jobs" state for both). Everything is derived on read.
+  - **The configuration is the deal's accepted quotation and nothing else** (`lockedSpecOf`: the newest version with an `acceptedAt`; while
+    a change is being drafted the accepted one, marked superseded, still stands until its replacement is accepted). `revision` says what moved
+    from the version it replaced. If it changes while the screen is open, the poll (20 s) puts a banner in front of the technician with the
+    field-by-field diff (`specDiff`) to acknowledge; the new spec is what the screen shows, the banner is what they must read. **123's SOP
+    should read the same `lockedSpecOf`, not the survey.** Seeds: accepted quotations `q-9`/`q-10`/`q-11` for the three won leads.
+  - Materials (`jobMaterialsOf`) read the delivery records, never a flag: a line is `on_site` only when its PO line is `delivered` and no
+    delivery confirmation is still awaiting a signature (a historic order with no checklist counts as delivered), `awaiting_signature`,
+    `in_transit` (leg ETA) or `preparing` (promise), or `issue` when a 108 report holds the line (`heldLineIds`). 104's `materialsConfirmedAt`
+    is shown when all parts are confirmed. **123 should treat `materialsReceived` as satisfied by that signed confirmation.**
+  - Notes are dated `LeadTimelineEvent`s of kind `note_added` (new optional `topic`: access / contact / safety / other) plus the deal terms'
+    special notes and amendments, newest first; more than `NOTE_STALE_DAYS` (30) old is flagged "check it still applies". Seeds `seedSiteNotes`
+    (an outdated gate note and its newer replacement on Shree Ram Heights).
+  - Repeat customer: other jobs for the same `customerId` scheduled earlier, with the access and contact notes offered as "carried over, check
+    first"; nothing is assumed identical. Team: lead plus `crew`, with each assistant's step count and a tap-to-call.
+  - Map preview is `MapCanvas`; "Navigate" hands the coordinates to the phone's own maps (`navigateUrl`). The button into the SOP is disabled,
+    with the reason, while a job waits for parts or is on hold. Adds `__aiecRepo` on `window` in development only, so browser tests can make a
+    change another person's screen would (a revised quotation, a delivery) while a screen is open.
+  - `/technician/jobs/:jobId` is Technician only, tab `jobs`; the nav's "Jobs" tab still points at `/technician`.
   121 facts:
   - `getTechnicianHome(id)` reads the same `Job` records delivery scheduling (101) creates; there is no technician calendar.
     `@/features/technician/jobs` is the pure logic (`bucketOf`: an active job is always "today", an unstarted one by its booked day, then

@@ -41,6 +41,7 @@ import type {
   DiscountRequest,
   DiscountRequestStatus,
   DriveType,
+  FinishTier,
   DuplicatePair,
   FinancingPartnerRate,
   FollowUpTask,
@@ -1288,6 +1289,77 @@ export interface TechnicianHome {
   };
   sos: FieldSosView | null;
   onDuty: boolean;
+}
+
+/* ---------------------------------- Technician job detail (122) */
+
+/** The configuration that was sold and contracted: the deal's accepted quotation, and nothing else. */
+export interface JobSpecView {
+  quotationId: string;
+  quotationCode: string;
+  version: number;
+  acceptedAt: string;
+  driveType: DriveType;
+  capacityPersons: number;
+  capacityKg: number;
+  stopsCount: number;
+  travelHeightM: number;
+  finishTier: FinishTier;
+  customConfiguration: boolean;
+  overrideNote: string | null;
+  /** Set when this version replaced an earlier one: what moved, so nobody installs the old spec from memory. */
+  revision: { fromVersion: number; changed: ('driveType' | 'capacityPersons' | 'capacityKg' | 'stopsCount' | 'travelHeightM' | 'finishTier')[] } | null;
+}
+
+export type JobMaterialState = 'on_site' | 'awaiting_signature' | 'in_transit' | 'preparing' | 'issue';
+
+export interface JobMaterialView {
+  id: string;
+  poCode: string;
+  category: string;
+  description: string;
+  quantity: number;
+  state: JobMaterialState;
+  /** When it is expected, for what is not on site yet. */
+  expectedAt: string | null;
+}
+
+export interface JobNoteView {
+  id: string;
+  source: 'survey' | 'sales' | 'terms';
+  topic: 'access' | 'contact' | 'safety' | 'other';
+  text: string;
+  at: string;
+  byName: string;
+}
+
+export interface JobTeamMember {
+  userId: string;
+  name: string;
+  role: 'lead' | 'assistant';
+  phone: string;
+  /** The steps they own. Zero for the lead, who answers for the whole job. */
+  stepCount: number;
+  isYou: boolean;
+}
+
+export interface TechnicianJobDetail {
+  job: TechnicianJobView;
+  customer: { name: string | null; company: string | null; phone: string | null; email: string | null; preferredLanguage: Language | null };
+  site: {
+    name: string;
+    address: string;
+    city: string | null;
+    pincode: string | null;
+    location: GeoPoint;
+    shaft: { widthMm: number | null; depthMm: number | null; pitMm: number | null; headroomMm: number | null; floors: number | null; machineRoom: string | null } | null;
+  };
+  spec: JobSpecView | null;
+  materials: { lines: JobMaterialView[]; onSite: number; total: number; noOrders: boolean; materialsConfirmedAt: string | null };
+  team: JobTeamMember[];
+  notes: JobNoteView[];
+  /** A customer who has had AIEC installations before: what may sensibly carry over, always to be checked, never assumed. */
+  repeat: { earlierJobs: { code: string; siteName: string; status: Job['status']; at: string }[]; carried: JobNoteView[] } | null;
 }
 
 /* ---------------------------------- Auto-reconciliation (120) */
@@ -3796,6 +3868,9 @@ export interface Repository {
   /** Starts the SOS window. It is sent by itself when the window closes unless cancelled first, and every attempt is kept. */
   beginFieldSos(userId: string, location?: GeoPoint): Promise<FieldSosView>;
   cancelFieldSos(attemptId: string, userId: string): Promise<FieldSosView>;
+
+  /* Technician job detail (122) — context for one installation, read-mostly */
+  getTechnicianJob(jobId: string, technicianId: string): Promise<TechnicianJobDetail>;
 
   /* Auto-reconciliation (120) — the bank's statement against the app's own records of money in and out */
   getReconciliationBoard(byUserId: string): Promise<ReconBoard>;
