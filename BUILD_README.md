@@ -1031,3 +1031,79 @@ Fixes made at the checkpoint:
 - **A mistranslated alert.** 118's advance-exposure alert used a title key that no translation carried.
 - **A blind spot in the totals.** 120's "matched" figure read 0 while the bank was down; it now shows the last real
   comparison, beside a hero that says nothing was compared.
+
+## Module 13 — Installation & Technician (`121`–`130`, checkpoint-verified)
+
+The person on site is the most important role in the product, so this module is built phone-first and
+offline-tolerant: whatever a technician does in a basement with no signal is kept on the phone with the time it
+was really done, shown at once, and sent when there is signal, and it never blocks physical progress. The job
+(`Job` and its `steps`) stays the one working record every other screen reads; each screen adds a view or a
+small record beside it rather than a second copy.
+
+| # | Screen | What it owns |
+|---|---|---|
+| 121 | Technician Home | Today / upcoming / done, schedule clashes, quality score, pending payout, field SOS |
+| 122 | Job Detail & Site Info | The accepted configuration (and a banner when it changes), materials actually on site, dated notes, repeat customer, team |
+| 123 | Installation SOP Checklist | The versioned procedure, order-flexible steps with dependencies, evidence gates, materials via the signed delivery |
+| 124 | Photo/Video Evidence Capture | Camera and file capture, a quality check, offline queue, videos held in memory only |
+| 125 | Site Check-in / Check-out | Location-verified arrival, accuracy-aware confidence, leave reasons, forgotten check-outs |
+| 126 | Safety & Compliance Checklist | Load and safety-gear style checks with fail–fix–retest, holds, disagreements, Admin override with a named engineer |
+| 127 | Issue / Blocker Reporting | Minor / blocking / safety, pauses the job, patterns that point at the procedure itself |
+| 128 | Material Usage Logging | The as-installed record against the bill of materials, serial/batch numbers, leftovers, supplier pattern |
+| 129 | Installation Progress Timeline | Seven-milestone rail for customer, technician and Admin; an expected date that moves with real pace |
+| 130 | Team Coordination | Roles, chat, handoff notes, the lead's sign-off and temporary delegation, disagreements up to Admin |
+
+**Shared vocabulary worth knowing before building on this module**
+
+- **Offline is a first-class state.** Each screen keeps a small per-user localStorage record (`aiec.sopQueue`,
+  `aiec.siteQueue`, `aiec.safetyQueue`, `aiec.issueQueue`, `aiec.materialDraft`, `aiec.teamOutbox`) and a pure overlay
+  (`applyQueue`-style) that shows what has not synced yet. Every item carries `capturedAt`; the repository refuses a
+  time in the future or before the job was booked, and a refusal is reported, never lost. Photos are scaled to 1280px
+  before queueing; videos are held in memory only in this build.
+- **The lead has one definition.** `roleOf` / `leadIdsOf` (`@/features/technician/jobs`) decide who may act as lead, and
+  honour a temporary `JobLeadDelegation` everywhere at once. An assistant only ever acts on their own `crew.stepIds`.
+- **Derived on read, never stored:** the timeline and its expected date (129), what the customer may see, who is on
+  site, the as-installed parts (128's `getAsInstalledParts`), the safety-check state, the pattern flags. What is stored is
+  what a person said or did, append-only where it matters (site visits, safety attempts, issue events, team log, reopenings).
+- **The configuration is the accepted quotation** (`lockedSpecOf`), the parts on site are the signed delivery
+  records, and the procedure step a job pins is `Job.sopVersion`. New work reads those, never the survey or a flag.
+- **Admin hears through Alerts and commitments.** Field SOS, a safety concern, a blocking issue, a repeated SOP gap, a
+  supplier whose parts keep being replaced, and a team that cannot agree all call `raiseAlert`; the dated obligations
+  (`material_log_confirm`, `handoff_acknowledge`, `lead_signoff`, `job_issue_resolve`, `safety_review`, …) are rows in
+  `commitmentRules.ts`.
+- **Multi-person jobs go to quality check by the lead's word** (`Job.leadSignOff`), after the safety checklist and
+  Admin's evidence exceptions have cleared. A one-person job still moves on its last step.
+
+**Placeholder business decisions to confirm (flagged in code and on screen where they show)**
+
+- 125: `MIN_TYPICAL_JOBS` 2 (typical time on site), `STALE_AFTER` 14 h (a forgotten check-in), the radius constants copied
+  across 017 / 032 / 035 / `presence.ts`.
+- 126: `MAX_FAILS` 3 before a check needs Admin; the example Maharashtra state item; clause-level references to
+  IS 14665 and the National Building Code are left to AIEC's qualified engineer (the app cites them only generically).
+- 127: pattern thresholds (3 reports on 2 jobs in 90 days), resolve targets (24 h blocking, 4 h safety).
+- 128: supplier pattern (3 supplier-fault deviations on 2 jobs in 90 days); a 48-hour window to confirm a materials log.
+- 129: `DEFAULT_PLANNED_DAYS` 12 until two finished jobs exist; a day or more later than first planned counts as a slip.
+- 130: authority can be handed over for at most 30 days; a handoff note is acknowledged within 12 hours.
+
+**Honest limits.** Location, camera and video are real browser APIs but nothing is uploaded (photos are data URLs
+for the session, videos memory-only). Several jobs on one deal share the deal's order lines, so a 128 material log
+is per job against the deal's bill of materials until jobs are tied to specific purchase orders. Surveyor home (031) does
+not yet carry the SOS button (`SosButton` can drop straight in). There is no Admin editor for the installation SOP
+(107's counterpart) yet. 014 shows only a technician's first non-completed job. The Admin material board (128) and
+the field-issue board (127) have no nav entry yet; they are reached from the job screens, alerts and commitments.
+
+**Module 13 checkpoint (passed):**
+
+- Clicked through all ten screens as the lead technician at 390px (in Marathi, the seeded preference), and again at 1440px;
+  as the assistant technician; as Admin (014, 127, 128, 129, 130 plus 021, 043, 091, 099, 111 from earlier modules); and as
+  the customer (129, 102, 104): no page or console errors, no raw translation keys, no horizontal overflow.
+- Exercised the paths each spec names: an offline confirmation and an offline chat message sent later with their own time;
+  a delegation giving a crew member lead authority for material logging and step assignment; an assistant finishing the
+  last step leaving the job waiting for the lead (and the lead commitment appearing); a blocking report moving the
+  customer's expected date at once with a plain cause and no report text; a customer of another deal refused; Admin hiding the
+  customer timeline with a reason; a team disagreement filed as a real report and alert.
+
+Fixes made at the checkpoint:
+
+- **123's header** overflowed at 390px once three more job links were added; the row now wraps and gains a Team link.
+- **Job links.** 122's action grid, 123's header and 014 now reach materials, timeline and team for a job.

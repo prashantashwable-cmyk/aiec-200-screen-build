@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Camera, CheckCircle, CloudArrowUp, Flag, Images, ShieldCheck, Package, PauseCircle, ShieldWarning, VideoCamera, Warning, WifiSlash } from '@phosphor-icons/react';
+import { UsersThree, ArrowLeft, Camera, CheckCircle, CloudArrowUp, Flag, Images, ShieldCheck, Package, PauseCircle, ShieldWarning, VideoCamera, Warning, WifiSlash } from '@phosphor-icons/react';
 import { ActionBar, AscensionLine, Badge, Button, Card, EmptyState, ErrorState, Field, LoadingState, ProgressBar, Screen, ScreenHeader, Sheet, TextArea, formatDate, formatDateTime } from '@/design-system';
 import type { AscensionStep } from '@/design-system';
 import type { SopSlotView, SopStepView } from '@/data/repository';
@@ -91,7 +91,7 @@ export function InstallationSopChecklistView() {
         title={t(K.title)}
         subtitle={`${v.job.siteName} · ${v.job.code}`}
         action={
-          <div className="row gap-2">
+          <div className="row gap-2 wrap" style={{ justifyContent: 'center' }}>
             <Button size="sm" variant="ghost" onClick={() => navigate(evidencePath(v.job.id))} icon={<Images size={16} aria-hidden="true" />}>
               {t(K.photo.gallery)}
             </Button>
@@ -103,6 +103,9 @@ export function InstallationSopChecklistView() {
             </Button>
             <Button size="sm" variant="ghost" onClick={() => navigate(`/material-usage/${v.job.id}`)} icon={<Package size={16} aria-hidden="true" />}>
               {t('materialLog.title')}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => navigate(`/job-team/${v.job.id}`)} icon={<UsersThree size={16} aria-hidden="true" />}>
+              {t('jobTeam.title')}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => navigate(jobPath(v.job.id))} aria-label={t(K.back)}>
               <ArrowLeft size={16} aria-hidden="true" /> {t(K.back)}
