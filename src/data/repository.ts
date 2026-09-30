@@ -1,5 +1,12 @@
+import type { BusyReason, EligibilityProblem, Involvement, SlotOffer } from '@/features/qc/inspectors';
 import type {
   AdvanceRecovery,
+  InspectorUnavailability,
+  QcAssignment,
+  QcAssignmentEvent,
+  QcAssignmentStatus,
+  QcVisitPreference,
+  QcWindow,
   JobLeadDelegation,
   JobTeamEvent,
   JobMaterialUse,
@@ -1654,6 +1661,102 @@ export interface JobIssueView {
   canReopen: boolean;
   /** Only on this phone so far. */
   local?: boolean;
+}
+
+/* ------------------------------------ QC inspector assignment (131) */
+
+export interface QcCandidateView {
+  userId: string;
+  name: string;
+  phone: string | null;
+  /** Skill tags as onboarding (006) names them. */
+  skills: string[];
+  eligible: boolean;
+  problems: EligibilityProblem[];
+  missing: string[];
+  involvement: Involvement[];
+  qcThisWeek: number;
+  installJobs: number;
+  distanceKm: number | null;
+  /** For each time the customer asked for: whether they can take it, or why not. */
+  onPreferred: { date: string; window: QcWindow; busy: BusyReason | null }[];
+}
+
+export interface QcAssignmentView {
+  id: string;
+  jobId: string;
+  inspectorId: string;
+  inspectorName: string;
+  mode: 'inspector' | 'admin_exception';
+  exceptionGaps: string[];
+  exceptionNote: string | null;
+  status: QcAssignmentStatus;
+  scheduledDate: string | null;
+  window: QcWindow | null;
+  customerAgreed: boolean;
+  conflict: NonNullable<QcAssignment['conflict']> | null;
+  assignedAt: string;
+  assignedByName: string;
+  notifiedAt: string | null;
+  previous: QcAssignment['previous'];
+  events: QcAssignmentEvent[];
+}
+
+export interface QcReadinessView {
+  ready: boolean;
+  jobStatus: Job['status'];
+  installationOpen: number;
+  safetyOpen: number;
+  awaitingLead: boolean;
+  onHold: boolean;
+  readyAt: string | null;
+}
+
+/** What is already on file about a finished installation: the inspector starts with all of it. */
+export interface QcBriefingView {
+  steps: { id: string; labelKey: string; status: JobStep['status']; completedAt: string | null; completedByName: string | null; notApplicable: boolean; safetyCritical: boolean; evidence: { id: string; slotId: string; kind: 'photo' | 'video'; previewUrl: string; capturedAt: string; byName: string }[] }[];
+  safety: { open: number; total: number };
+  issues: { code: string; category: IssueCategory; severity: IssueSeverity; status: 'open' | 'resolved' }[];
+  materials: { status: 'none' | 'draft' | 'confirmed'; parts: { description: string; quantity: number; source: string; identifiers: { value: string | null; legible: boolean }[] ; substituted: boolean }[] };
+  team: { name: string; role: 'lead' | 'assistant' }[];
+  site: { address: string; location: GeoPoint };
+}
+
+export interface QcJobDetail {
+  job: { id: string; code: string; siteName: string; address: string; status: Job['status']; scheduledFor: string };
+  viewer: 'admin' | 'inspector' | 'other';
+  readiness: QcReadinessView;
+  assignment: QcAssignmentView | null;
+  preference: QcVisitPreference | null;
+  candidates: QcCandidateView[];
+  /** Nobody independent and qualified exists: Admin doing it themself, on the record, is the way forward. */
+  exceptionAdvised: boolean;
+  suggestions: SlotOffer[];
+  briefing: QcBriefingView | null;
+  /** The viewer's own days off (an inspector viewing their assignment). */
+  myUnavailable: InspectorUnavailability[];
+  canAssign: boolean;
+  canSchedule: boolean;
+}
+
+export interface QcBoardRow {
+  jobId: string;
+  code: string;
+  siteName: string;
+  jobStatus: Job['status'];
+  ready: boolean;
+  readyAt: string | null;
+  waitingHours: number | null;
+  problems: ('installation_open' | 'safety_open' | 'awaiting_lead' | 'on_hold' | 'not_finished')[];
+  assignment: { inspectorName: string; mode: 'inspector' | 'admin_exception'; status: QcAssignmentStatus; scheduledDate: string | null; window: QcWindow | null; conflict: boolean } | null;
+  preference: boolean;
+}
+
+export interface QcBoardView {
+  rows: QcBoardRow[];
+  inspectors: { userId: string; name: string; eligibleInGeneral: boolean; qcThisWeek: number; unavailable: InspectorUnavailability[] }[];
+  totals: { ready: number; unassigned: number; scheduled: number; conflicts: number };
+  viewer: 'admin' | 'inspector';
 }
 
 /* ------------------------------------ Technician team coordination (130) */
@@ -4519,6 +4622,24 @@ export interface Repository {
   pingSiteLocation(technicianId: string, point: GeoPoint, at?: string): Promise<void>;
   /** Picks which step to do next, when the site does not allow the suggested order. Only steps whose prerequisites are done. */
   focusSopStep(jobId: string, stepId: string, technicianId: string): Promise<InstallationSopView>;
+
+  /* QC inspector assignment (131) */
+  getQcBoard(userId: string): Promise<QcBoardView>;
+  getQcJob(jobId: string, userId: string): Promise<QcJobDetail>;
+  /** Admin only. A person short of a skill tag can be named only as a documented exception; someone who took part in the installation never can. */
+  assignQcInspector(jobId: string, input: { inspectorId: string; exceptionNote?: string }, adminId: string): Promise<QcJobDetail>;
+  /** Admin only: no independent, qualified inspector is available, so Admin does the check, and says why. */
+  assignAdminAsInspector(jobId: string, reason: string, adminId: string): Promise<QcJobDetail>;
+  reassignQcInspector(jobId: string, input: { inspectorId: string; reason: string; exceptionNote?: string }, adminId: string): Promise<QcJobDetail>;
+  /** Admin only: when the customer would like the visit, from the conversation. */
+  recordQcPreference(jobId: string, input: { dates: string[]; window: QcWindow | 'any'; note?: string }, adminId: string): Promise<QcJobDetail>;
+  scheduleQcVisit(jobId: string, input: { date: string; window: QcWindow; customerAgreed: boolean }, adminId: string): Promise<QcJobDetail>;
+  /** The assigned inspector says they took part in the installation. It goes to Admin for a decision. */
+  reportQcConflict(jobId: string, note: string, inspectorId: string): Promise<QcJobDetail>;
+  /** Admin only: accepts the concern with a reason, or it is settled by reassigning. */
+  clearQcConflict(jobId: string, note: string, adminId: string): Promise<QcJobDetail>;
+  setInspectorUnavailable(input: { userId?: string; date: string; window: QcWindow | 'all'; reason: string }, byId: string): Promise<InspectorUnavailability[]>;
+  clearInspectorUnavailable(id: string, byId: string): Promise<InspectorUnavailability[]>;
 
   /* Technician team coordination (130) */
   getJobTeam(jobId: string, userId: string): Promise<JobTeamView>;

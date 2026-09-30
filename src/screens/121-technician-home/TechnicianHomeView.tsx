@@ -274,6 +274,17 @@ export function TechnicianHomeView() {
             </Card>
           </div>
 
+          {s.qcOpen > 0 && (
+            <Card flush className="mb-4">
+              <ListRow
+                title={t("qcAssignment.board.mine")}
+                subtitle={t("qcAssignment.board.mineBody")}
+                trailing={<Badge tone="accent">{s.qcOpen}</Badge>}
+                onClick={() => navigate("/qc-assignments")}
+              />
+            </Card>
+          )}
+
           <h2 className="t-lg mb-2">{t(K.upcoming.heading)}</h2>
           {h.upcoming.length === 0 ? (
             <Card body={t(K.upcoming.empty)} />

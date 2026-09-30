@@ -2568,6 +2568,68 @@ export interface PreInspectionSummary {
   isDemo: boolean;
 }
 
+/* ------------------------------------ QC inspector assignment (131) */
+
+export type QcAssignmentStatus = 'assigned' | 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
+export type QcWindow = 'morning' | 'afternoon';
+
+export type QcEventKind = 'assigned' | 'exception_assigned' | 'reassigned' | 'preference_recorded' | 'scheduled' | 'rescheduled' | 'conflict_flagged' | 'conflict_cleared' | 'cancelled';
+/** Append-only: who was named, why, what was agreed with the customer, and every independence concern that was raised. */
+export interface QcAssignmentEvent {
+  id: string;
+  at: string;
+  kind: QcEventKind;
+  byName: string;
+  note?: string;
+}
+
+/** The person who checks a finished installation, independent of the people who did it. Admin may hold the role as a documented exception. */
+export interface QcAssignment {
+  id: string;
+  jobId: string;
+  inspectorId: string;
+  inspectorName: string;
+  /** `admin_exception`: no independent, qualified inspector was available, so Admin (or someone Admin named despite a gap) does it, and says why. */
+  mode: 'inspector' | 'admin_exception';
+  /** What the person lacks that made this an exception (a skill tag, or being Admin), kept for the record. */
+  exceptionGaps?: string[];
+  exceptionNote?: string;
+  status: QcAssignmentStatus;
+  /** The site's calendar day (`yyyy-mm-dd`) and half-day of the visit once agreed. */
+  scheduledDate?: string;
+  window?: QcWindow;
+  /** Admin recorded that the customer agreed to this time (or that it is one they asked for). */
+  customerAgreedAt?: string;
+  /** An independence concern: they were part of the installation, or said so themselves. Admin decides. */
+  conflict?: { kind: 'was_on_installation' | 'self_reported'; involvement: string[]; note?: string; flaggedAt: string; byName: string; clearedAt?: string; clearedNote?: string; clearedByName?: string };
+  assignedAt: string;
+  assignedByName: string;
+  notifiedAt?: string;
+  previous: { inspectorId: string; inspectorName: string; until: string; reason: string }[];
+  events: QcAssignmentEvent[];
+  isDemo: boolean;
+}
+
+/** A day (or half-day) an inspector cannot take a visit. Set by them or by Admin. */
+export interface InspectorUnavailability {
+  id: string;
+  userId: string;
+  date: string;
+  window: QcWindow | 'all';
+  reason: string;
+  setByName: string;
+  at: string;
+}
+
+/** When the customer would like the quality-check visit, as Admin recorded it from the conversation. */
+export interface QcVisitPreference {
+  dates: string[];
+  window: QcWindow | 'any';
+  note?: string;
+  recordedByName: string;
+  at: string;
+}
+
 /* ------------------------------------ As-installed material log (128) */
 
 /** Where a part that was used came from. `stock` is the technician's own general stock (a small common fastener): accountable
@@ -2759,6 +2821,8 @@ export interface Job {
   /** On a job with more than one person, the lead says the whole checklist is done before it goes to quality check (130). */
   leadSignOff?: { at: string; byUserId: string; byName: string };
   teamLog?: JobTeamEvent[];
+  /** When the customer would like the quality-check visit (131). */
+  qcPreference?: QcVisitPreference;
   isDemo: boolean;
 }
 
@@ -3395,6 +3459,9 @@ export type CommitmentKind =
   | 'job_issue_resolve'
   | 'material_log_confirm'
   | 'handoff_acknowledge'
+  | 'qc_assign'
+  | 'qc_schedule'
+  | 'qc_visit'
   | 'lead_signoff'
   | 'discrepancy_report_review'
   | 'partner_feed_restore'
@@ -3420,6 +3487,7 @@ export type CommitmentKind =
 export type CommitmentSubjectType =
   | 'material_log'
   | 'handoff'
+  | 'qc_assignment'
   | 'job_issue'
   | 'safety_test'
   | 'site_checkin'

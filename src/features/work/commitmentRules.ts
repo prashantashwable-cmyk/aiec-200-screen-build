@@ -34,6 +34,7 @@ import type {
   JobIssue,
   JobMaterialLog,
   JobHandoffNote,
+  QcAssignment,
   DeliveryDelayCase,
   DeliveryDiscrepancyReport,
   DeliveryPartner,
@@ -105,6 +106,9 @@ export interface CommitmentSources {
   handoffNotes: (JobHandoffNote & { ownerId: string | null })[];
   /** Jobs with everything done and more than one person on them, waiting for the lead to sign off (130). */
   leadSignOffs: { jobId: string; ownerId: string; doneAt: string }[];
+  /** Quality-check assignments (131), and the jobs waiting for one. */
+  qcAssignments: QcAssignment[];
+  qcWaiting: { jobId: string; readyAt: string; assigned: boolean }[];
   deliveryChecklists: DeliveryChecklist[];
   delayCases: DeliveryDelayCase[];
   discrepancyReports: DeliveryDiscrepancyReport[];
@@ -1109,6 +1113,89 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
             completedAt: i.resolution?.at,
             actionRoute: `/job-issues/${i.jobId}?issue=${i.id}`,
             oversightRoute: `/job-issues/${i.jobId}?issue=${i.id}`,
+          };
+        });
+    },
+  },
+  {
+    // A finished installation waits for someone independent to check it (131): naming the inspector is Admin's, within a day of it being ready.
+    kind: 'qc_assign',
+    nudgeBefore: hours(4),
+    escalateAfter: hours(12),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'quality',
+    collect(src) {
+      const admin = adminId(src);
+      return src.qcWaiting.map((w) => {
+        const job = src.jobs.find((j) => j.id === w.jobId);
+        return {
+          ...base('qc_assign', 'job', w.jobId),
+          ownerUserId: admin,
+          titleKey: 'work.title.qc_assign',
+          titleParams: { code: job?.code ?? '', site: job?.siteName ?? '' },
+          dueAt: plus(w.readyAt, hours(24)),
+          state: w.assigned ? ('done' as const) : ('open' as const),
+          paused: false,
+          actionRoute: `/qc-assignments/${w.jobId}`,
+          oversightRoute: `/qc-assignments/${w.jobId}`,
+        };
+      });
+    },
+  },
+  {
+    // An inspector named but no time agreed with the customer: booking the visit is Admin's, within two days of naming them.
+    kind: 'qc_schedule',
+    nudgeBefore: hours(6),
+    escalateAfter: hours(24),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'quality',
+    collect(src) {
+      const admin = adminId(src);
+      return src.qcAssignments
+        .filter((a) => a.status !== 'cancelled' && a.status !== 'completed' && a.inspectorId !== admin)
+        .map((a) => {
+          const job = src.jobs.find((j) => j.id === a.jobId);
+          return {
+            ...base('qc_schedule', 'qc_assignment', a.id),
+            ownerUserId: admin,
+            titleKey: 'work.title.qc_schedule',
+            titleParams: { code: job?.code ?? '', name: a.inspectorName },
+            dueAt: plus(a.assignedAt, hours(48)),
+            state: a.scheduledDate || a.status === 'in_progress' ? ('done' as const) : ('open' as const),
+            paused: false,
+            actionRoute: `/qc-assignments/${a.jobId}`,
+            oversightRoute: `/qc-assignments/${a.jobId}`,
+          };
+        });
+    },
+  },
+  {
+    // The inspector's own promise: the visit, at the time agreed (131). It is what lands in their inbox when they are named.
+    kind: 'qc_visit',
+    nudgeBefore: hours(12),
+    escalateAfter: hours(6),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'quality',
+    collect(src) {
+      return src.qcAssignments
+        .filter((a) => a.status !== 'cancelled')
+        .map((a) => {
+          const job = src.jobs.find((j) => j.id === a.jobId);
+          const end = a.scheduledDate ? new Date(`${a.scheduledDate}T00:00:00`).getTime() + (a.window === 'afternoon' ? 18 : 13) * 3_600_000 : new Date(a.assignedAt).getTime() + days(5);
+          return {
+            ...base('qc_visit', 'qc_assignment', a.id),
+            ownerUserId: a.inspectorId,
+            titleKey: a.scheduledDate ? 'work.title.qc_visit' : 'work.title.qc_visit_unscheduled',
+            titleParams: { code: job?.code ?? '', site: job?.siteName ?? '', date: a.scheduledDate ?? '' },
+            dueAt: new Date(end).toISOString(),
+            state: a.status === 'in_progress' || a.status === 'completed' ? ('done' as const) : ('open' as const),
+            paused: false,
+            completedAt: a.status === 'completed' ? a.events[a.events.length - 1]?.at : undefined,
+            actionRoute: `/qc-assignments/${a.jobId}`,
+            oversightRoute: `/qc-assignments/${a.jobId}`,
           };
         });
     },

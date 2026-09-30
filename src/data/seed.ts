@@ -301,7 +301,7 @@ export const seedUsers: User[] = [
     onDuty: true,
     location: { lat: 18.559, lng: 73.7868 },
     lastSeenAt: minutesAgo(22),
-    skills: ['traction', 'hydraulic', 'controller'],
+    skills: ['traction', 'hydraulic', 'controller', 'safety_rescue'],
   },
   {
     id: 'u-tech-3',
@@ -320,6 +320,29 @@ export const seedUsers: User[] = [
     location: { lat: 18.642, lng: 73.7997 },
     lastSeenAt: hoursAgo(9),
     skills: ['mrl_install', 'wiring'],
+  },
+  {
+    // A dedicated quality-check inspector (131): holds the mechanical, electrical and rescue tags, and is on no installation crew.
+    id: 'u-tech-5',
+    role: 'technician',
+    reportsTo: 'u-admin-1',
+    name: 'Anand Deshpande',
+    phone: '9822033005',
+    status: 'active',
+    preferredLanguage: 'en',
+    themePreference: 'light',
+    isDemo: true,
+    city: 'Pune',
+    joinedAt: daysAgo(400),
+    rating: 4.7,
+    onDuty: true,
+    location: { lat: 18.5204, lng: 73.8567 },
+    lastSeenAt: minutesAgo(40),
+    skills: ['mechanical', 'electrical', 'safety_rescue'],
+    documents: [
+      { id: 'd20', kind: 'certificate', label: 'Lift inspector course', status: 'verified', uploadedAt: daysAgo(380) },
+      { id: 'd21', kind: 'licence', label: 'Electrical supervisor licence', status: 'verified', uploadedAt: daysAgo(380) },
+    ],
   },
   {
     id: 'u-tech-4',

@@ -214,6 +214,13 @@ import type {
   MaterialLogView,
   InstallTimelineView,
   JobTeamView,
+  QcAssignmentView,
+  QcBoardRow,
+  QcBoardView,
+  QcCandidateView,
+  QcJobDetail,
+  QcReadinessView,
+  QcBriefingView,
   TeamHandoffView,
   TeamMemberView,
   TeamMessageView,
@@ -366,6 +373,12 @@ import type {
   JobMaterialLog,
   InstallSopPhase,
   JobCrewMember,
+  InspectorUnavailability,
+  QcAssignment,
+  QcAssignmentEvent,
+  QcEventKind,
+  QcVisitPreference,
+  QcWindow,
   JobHandoffNote,
   JobLeadDelegation,
   JobTeamEvent,
@@ -554,6 +567,8 @@ import { DISPUTE_TARGET, NOTE_MIN, POSITION_MIN, REOPEN_WINDOW, canPartial, deci
 import { SOS_CANCEL_WINDOW_MS, SOS_SAME_INCIDENT } from '@/features/safety/sos';
 import { capturedAtProblem, completionProblem, isDone, missingSlots, naProblem, qcReadiness, slotsFor, stepApplies, suggestedNext, unmetDependencies, versionInForce as installVersionInForce } from '@/features/technician/installSop';
 import type { SpecFacts } from '@/features/technician/installSop';
+import { WINDOWS, busyBecause, dayKeyOf as qcDay, eligibilityOf, involvementOf, isWorkingDay, matchesPreference, missingQcSkills, normalizeSkills, schedulingProblem, suggestSlots } from '@/features/qc/inspectors';
+import type { BusyFacts, InvolvementFacts } from '@/features/qc/inspectors';
 import { PHASES, REASON_OF, estimateOf, freshnessOf, plannedDuration, stageExpectedAt } from '@/features/technician/timeline';
 import type { Estimate, PlannedDuration } from '@/features/technician/timeline';
 import { REASON_MIN, extrasCost, identifierKind, isSupplierFault, leftoverValue, logProblems } from '@/features/technician/materials';
@@ -2223,6 +2238,8 @@ function commitmentSources(now: number): CommitmentSources {
     materialLogs: (ensureMaterialSeeds(), materialLogs),
     handoffNotes: (ensureTeamSeeds(), jobHandoffs).map((h) => ({ ...h, ownerId: handoffOwnerOf(byId(jobs, h.jobId) as Job, h) })),
     leadSignOffs: leadSignOffsWaiting(),
+    qcAssignments: (ensureQcSeeds(), qcAssignments),
+    qcWaiting: qcWaitingJobs(),
     deliveryChecklists,
     delayCases,
     discrepancyReports,
@@ -2478,6 +2495,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   syncIssueAlerts(true, now);
   syncMaterialDeviations(true, now);
   syncTeamAlerts(true, now);
+  syncQcAssignments(true, now);
   syncLeadDelegations(now);
   for (const j of jobs) syncIssueHold(j);
   syncSopHandoff();
@@ -6218,6 +6236,265 @@ function leadSignOffsWaiting(): { jobId: string; ownerId: string; doneAt: string
     const doneAt = j.steps.map((s) => s.completedAt).filter((x): x is string => !!x).sort().pop();
     return doneAt && j.technicianId ? [{ jobId: j.id, ownerId: (leadIdsOf(j).length > 1 ? leadIdsOf(j)[1] : j.technicianId) as string, doneAt }] : [];
   });
+}
+
+/* ============================== QC inspector assignment (131) */
+
+const qcAssignments: QcAssignment[] = [];
+const inspectorOff: InspectorUnavailability[] = [];
+let qcSeeded = false;
+let qcCounter = 100;
+const QC_EXCEPTION_NOTE_MIN = 20;
+const QC_REASON_MIN = 8;
+
+function ensureQcSeeds(): void {
+  if (qcSeeded) return;
+  qcSeeded = true;
+  const anand = byId(users, 'u-tech-5');
+  const ago = (d: number) => new Date(Date.now() - d * 86_400_000);
+  const done = (jobId: string, daysBack: number): void => {
+    const job = byId(jobs, jobId);
+    if (!job || !anand) return;
+    const day = qcDay(ago(daysBack).getTime());
+    qcAssignments.push({ id: `qca-seed-${jobId}`, jobId, inspectorId: anand.id, inspectorName: anand.name, mode: 'inspector', status: 'completed', scheduledDate: day, window: 'morning', customerAgreedAt: ago(daysBack + 2).toISOString(), assignedAt: ago(daysBack + 3).toISOString(), assignedByName: 'Prashant Vasant Wable', notifiedAt: ago(daysBack + 3).toISOString(), previous: [], events: [{ id: `qce-seed-${jobId}`, at: ago(daysBack + 3).toISOString(), kind: 'assigned', byName: 'Prashant Vasant Wable' }], isDemo: true });
+  };
+  done('j-5', 36);
+  done('j-7', 7);
+  // The customer at j-2 would like the visit tomorrow morning, and the one qualified, independent inspector is away that morning.
+  const tomorrow = nextWorkingDayKey(1);
+  const j2 = byId(jobs, 'j-2');
+  if (j2 && anand) {
+    patchInPlace(jobs, j2.id, { qcPreference: { dates: [tomorrow], window: 'morning', note: 'The society office is open only in the mornings.', recordedByName: 'Prashant Vasant Wable', at: new Date().toISOString() } });
+    inspectorOff.push({ id: 'iu-seed-1', userId: anand.id, date: tomorrow, window: 'all', reason: 'Quality check at another society in Nashik', setByName: anand.name, at: new Date().toISOString() });
+  }
+}
+
+function nextWorkingDayKey(minDaysAhead: number): string {
+  let key = qcAddDays(qcDay(Date.now()), minDaysAhead);
+  while (!isWorkingDay(key)) key = qcAddDays(key, 1);
+  return key;
+}
+const qcAddDays = (key: string, n: number) => qcDay(new Date(`${key}T12:00:00`).getTime() + n * 86_400_000);
+
+const qcActive = (a: QcAssignment) => a.status === 'assigned' || a.status === 'scheduled' || a.status === 'in_progress';
+const qcOf = (jobId: string): QcAssignment | undefined => qcAssignments.filter((a) => a.jobId === jobId && a.status !== 'cancelled').sort((a, b) => b.assignedAt.localeCompare(a.assignedAt))[0];
+
+/** When the checklist and its safety checks were finished, which is when the job first waited for a quality check. */
+function qcReadyAtOf(job: Job): string | null {
+  const stamps = [job.leadSignOff?.at, ...job.steps.map((s) => s.completedAt)].filter((x): x is string => !!x).sort();
+  return stamps.length ? stamps[stamps.length - 1] : null;
+}
+
+function qcReadinessOf(job: Job): QcReadinessView {
+  const version = sopVersionOf(job);
+  const spec = sopSpecOf(job);
+  const r = qcReadiness(version.steps, job.steps, spec);
+  const safetyOpen = safetyBlocking(job).length;
+  const beyond = job.status === 'qc_pending' || job.status === 'handover_pending' || job.status === 'completed';
+  return {
+    ready: job.status === 'qc_pending',
+    jobStatus: job.status,
+    installationOpen: beyond ? 0 : r.open.length + r.short.length,
+    safetyOpen: beyond ? 0 : safetyOpen,
+    awaitingLead: !beyond && peopleOn(job).length > 1 && r.ready && !job.leadSignOff,
+    onHold: job.status === 'on_hold',
+    readyAt: beyond ? qcReadyAtOf(job) : null,
+  };
+}
+
+function involvementFactsOf(job: Job): InvolvementFacts {
+  return {
+    leadId: job.technicianId,
+    crewIds: (job.crew ?? []).map((c) => c.userId),
+    checkedInIds: [...new Set(siteCheckIns.filter((v) => v.jobId === job.id).map((v) => v.userId))],
+    finishedByNames: job.steps.map((s) => s.completedByName).filter((x): x is string => !!x),
+    removedNames: (job.teamLog ?? []).filter((e) => e.kind === 'reassigned' && e.subjectName).map((e) => e.subjectName as string),
+  };
+}
+
+function inspectorBusyFacts(userId: string, exceptAssignmentId?: string): BusyFacts {
+  return {
+    visits: qcAssignments.filter((a) => a.inspectorId === userId && qcActive(a) && a.scheduledDate && a.window && a.id !== exceptAssignmentId).map((a) => ({ date: a.scheduledDate as string, window: a.window as QcWindow })),
+    unavailable: inspectorOff.filter((u) => u.userId === userId).map((u) => ({ date: u.date, window: u.window })),
+    installDays: jobs.filter((j) => isOnJob(j, userId) && (j.status === 'scheduled' || j.status === 'materials_pending')).map((j) => qcDay(new Date(j.scheduledFor).getTime())),
+  };
+}
+
+function qcAssignmentViewOf(a: QcAssignment): QcAssignmentView {
+  return {
+    id: a.id,
+    jobId: a.jobId,
+    inspectorId: a.inspectorId,
+    inspectorName: a.inspectorName,
+    mode: a.mode,
+    exceptionGaps: a.exceptionGaps ?? [],
+    exceptionNote: a.exceptionNote ?? null,
+    status: a.status,
+    scheduledDate: a.scheduledDate ?? null,
+    window: a.window ?? null,
+    customerAgreed: !!a.customerAgreedAt,
+    conflict: a.conflict && !a.conflict.clearedAt ? { ...a.conflict, involvement: [...a.conflict.involvement] } : null,
+    assignedAt: a.assignedAt,
+    assignedByName: a.assignedByName,
+    notifiedAt: a.notifiedAt ?? null,
+    previous: a.previous.map((p) => ({ ...p })),
+    events: a.events.map((e) => ({ ...e })),
+  };
+}
+
+function qcCandidatesOf(job: Job, now: number): QcCandidateView[] {
+  const facts = involvementFactsOf(job);
+  const weekAgo = qcDay(now - 7 * 86_400_000);
+  const weekAhead = qcDay(now + 7 * 86_400_000);
+  return users
+    .filter((u) => u.role === 'technician')
+    .map((u): QcCandidateView => {
+      const e = eligibilityOf({ id: u.id, name: u.name, role: u.role, status: u.status, skills: u.skills }, facts);
+      const busy = inspectorBusyFacts(u.id);
+      const pref = job.qcPreference;
+      return {
+        userId: u.id,
+        name: u.name,
+        phone: u.phone,
+        skills: normalizeSkills(u.skills),
+        eligible: e.eligible,
+        problems: e.problems,
+        missing: e.missing,
+        involvement: e.involvement,
+        qcThisWeek: qcAssignments.filter((a) => a.inspectorId === u.id && qcActive(a) && a.scheduledDate && a.scheduledDate >= weekAgo && a.scheduledDate <= weekAhead).length,
+        installJobs: jobs.filter((j) => isOnJob(j, u.id) && j.status !== 'completed').length,
+        distanceKm: u.location ? Math.round(haversineKm(u.location, job.location) * 10) / 10 : null,
+        onPreferred: (pref?.dates ?? []).flatMap((date) => WINDOWS.filter((w) => pref?.window === 'any' || pref?.window === w).map((window) => ({ date, window, busy: busyBecause(busy, date, window) }))),
+      };
+    })
+    .sort((a, b) => Number(b.eligible) - Number(a.eligible) || (a.distanceKm ?? 999) - (b.distanceKm ?? 999));
+}
+
+function qcBriefingOf(job: Job): QcBriefingView {
+  const version = sopVersionOf(job);
+  const spec = sopSpecOf(job);
+  const steps = version.steps.flatMap((def) => {
+    const st = job.steps.find((x) => x.id === def.id);
+    return st && stepApplies(def, spec)
+      ? [{ id: st.id, labelKey: st.labelKey, status: st.status, completedAt: st.completedAt ?? null, completedByName: st.completedByName ?? null, notApplicable: !!st.notApplicable, safetyCritical: def.safetyCritical, evidence: (st.evidence ?? []).map((e) => ({ id: e.id, slotId: e.slotId, kind: e.kind, previewUrl: e.previewUrl, capturedAt: e.capturedAt, byName: e.byName })) }]
+      : [];
+  });
+  const entries = safetyEntriesOf(job);
+  const log = materialLogs.find((l) => l.jobId === job.id);
+  return {
+    steps,
+    safety: { open: safetyBlocking(job).length, total: entries.length },
+    issues: jobIssues.filter((i) => i.jobId === job.id).map((i) => ({ code: i.code, category: i.category, severity: i.severity, status: i.status })),
+    materials: { status: log ? log.status : 'none', parts: (log?.status === 'confirmed' ? log.uses.filter((u) => u.usedQty > 0) : []).map((u) => ({ description: u.description, quantity: u.usedQty, source: u.source, identifiers: u.identifiers.map((i) => ({ value: i.legible ? (i.serial ?? i.batch ?? null) : null, legible: i.legible })), substituted: u.deviation?.kind === 'substitute' })) },
+    team: peopleOn(job).map((id) => ({ name: byId(users, id)?.name ?? id, role: id === job.technicianId ? ('lead' as const) : ('assistant' as const) })),
+    site: { address: job.address, location: job.location },
+  };
+}
+
+function qcJobDetailOf(job: Job, userId: string, now: number): QcJobDetail {
+  const user = byId(users, userId) as User;
+  const isAdmin = user.role === 'admin';
+  const a = qcOf(job.id);
+  const viewer: QcJobDetail['viewer'] = isAdmin ? 'admin' : a && a.inspectorId === userId ? 'inspector' : 'other';
+  const readiness = qcReadinessOf(job);
+  const candidates = isAdmin ? qcCandidatesOf(job, now) : [];
+  const eligible = candidates.filter((c) => c.eligible);
+  const pref = job.qcPreference;
+  const suggestions = isAdmin
+    ? suggestSlots({ today: qcDay(now), now, inspectors: (a && qcActive(a) ? [{ id: a.inspectorId, busy: inspectorBusyFacts(a.inspectorId, a.id) }] : eligible.map((c) => ({ id: c.userId, busy: inspectorBusyFacts(c.userId) }))), preferred: pref ? { dates: pref.dates, window: pref.window } : undefined })
+    : [];
+  const canWork = isAdmin && readiness.ready;
+  return {
+    job: { id: job.id, code: job.code, siteName: job.siteName, address: job.address, status: job.status, scheduledFor: job.scheduledFor },
+    viewer,
+    readiness,
+    assignment: a ? qcAssignmentViewOf(a) : null,
+    preference: pref ? { ...pref, dates: [...pref.dates] } : null,
+    candidates,
+    exceptionAdvised: isAdmin && readiness.ready && !(a && qcActive(a)) && eligible.length === 0,
+    suggestions,
+    briefing: isAdmin || viewer === 'inspector' ? qcBriefingOf(job) : null,
+    myUnavailable: inspectorOff.filter((u) => u.userId === userId).map((u) => ({ ...u })),
+    canAssign: canWork && !(a && qcActive(a)),
+    canSchedule: canWork && !!a && (a.status === 'assigned' || a.status === 'scheduled'),
+  };
+}
+
+function qcActor(jobId: string, userId: string): { job: Job; user: User; isAdmin: boolean } {
+  ensureQcSeeds();
+  const user = byId(users, userId);
+  const job = byId(jobs, jobId);
+  if (!user) throw new RepositoryError('forbidden');
+  if (!job) throw new RepositoryError('not_found');
+  if (user.role === 'admin') return { job, user, isAdmin: true };
+  const a = qcOf(job.id);
+  if (user.role !== 'technician' || !a || a.inspectorId !== userId) throw new RepositoryError('forbidden');
+  return { job, user, isAdmin: false };
+}
+
+const qcEvent = (kind: QcEventKind, byName: string, note?: string): QcAssignmentEvent => {
+  qcCounter += 1;
+  return { id: `qce-${qcCounter}`, at: new Date().toISOString(), kind, byName, ...(note ? { note } : {}) };
+};
+
+/** Tells the inspector, the way every other obligation is told: the visit is a commitment of theirs, and the nudge lands in their inbox. */
+function notifyQcInspector(a: QcAssignment, reason: string): void {
+  const now = Date.now();
+  syncCommitments(now);
+  const c = commitments.find((x) => x.kind === 'qc_visit' && x.subject.id === a.id && x.status === 'open');
+  const owner = byId(users, a.inspectorId);
+  if (!c || !owner) return;
+  notifyWork(owner.id, c, 'nudge', new Date(now).toISOString());
+  a.notifiedAt = new Date(now).toISOString();
+  const job = byId(jobs, a.jobId);
+  logAutomatedAction({ sourceKey: 'qc.inspector_notified', triggeringCondition: reason, actionTaken: `Told ${owner.name} about the quality check, with the job's evidence on file`, affectedRecordId: a.id, affectedRecordType: 'other', subjectLabel: job?.code ?? a.jobId });
+}
+
+/** The concern is checked on every beat, so an inspector who later turns out to have been on the installation is caught, not only one who says so. */
+function syncQcAssignments(automated: boolean, now: number): void {
+  ensureQcSeeds();
+  const at = new Date(now).toISOString();
+  const live = new Set<string>();
+  for (const a of qcAssignments) {
+    if (!qcActive(a)) continue;
+    const job = byId(jobs, a.jobId);
+    if (!job) continue;
+    if (a.mode === 'inspector' && !a.conflict) {
+      const inv = involvementOf(a.inspectorId, a.inspectorName, involvementFactsOf(job));
+      if (inv.length > 0) {
+        a.conflict = { kind: 'was_on_installation', involvement: inv, flaggedAt: at, byName: 'AIEC' };
+        a.events.push(qcEvent('conflict_flagged', 'AIEC', inv.join(', ')));
+        if (automated) logAutomatedAction({ sourceKey: 'qc.independence', triggeringCondition: `${a.inspectorName} was found to have taken part in the installation of ${job.code}`, actionTaken: 'Flagged it so Admin can reconsider the assignment', affectedRecordId: a.id, affectedRecordType: 'other', subjectLabel: job.code });
+      }
+    }
+    if (a.conflict && !a.conflict.clearedAt) {
+      const key = `qcconf:${job.id}`;
+      live.add(key);
+      if (!alerts.some((x) => x.relatedId === key && x.status !== 'resolved')) raiseAlert({ titleKey: 'qcAssignment.alert.conflict', context: `${job.code} · ${job.siteName}: ${a.inspectorName}`, severity: 'medium', category: 'quality', relatedId: key, sourceRoute: `/qc-assignments/${job.id}`, location: job.location });
+    }
+  }
+  for (const al of alerts) if (al.relatedId?.startsWith('qcconf:') && al.status !== 'resolved' && !live.has(al.relatedId)) patchInPlace(alerts, al.id, { status: 'resolved', resolvedAt: at, resolvedBy: 'system', resolutionNote: 'Settled.' });
+}
+
+/** Jobs waiting for a quality check, for the follow-up engine. */
+function qcWaitingJobs(): { jobId: string; readyAt: string; assigned: boolean }[] {
+  return jobs.filter((j) => j.status === 'qc_pending').map((j) => ({ jobId: j.id, readyAt: qcReadyAtOf(j) ?? new Date().toISOString(), assigned: !!qcOf(j.id) }));
+}
+
+function qcRequireReady(job: Job): void {
+  if (job.status !== 'qc_pending') throw new RepositoryError(job.status === 'completed' || job.status === 'handover_pending' ? 'already_checked' : 'not_ready');
+}
+
+/** Whether this person may be named: someone short of a tag only as a documented exception, someone who took part in the installation never. */
+function qcNamable(job: Job, person: User, exceptionNote: string | undefined): { mode: 'inspector' | 'admin_exception'; gaps: string[] } {
+  const e = eligibilityOf({ id: person.id, name: person.name, role: person.role, status: person.status, skills: person.skills }, involvementFactsOf(job));
+  if (e.problems.includes('not_active')) throw new RepositoryError('not_active');
+  if (e.problems.includes('not_independent')) throw new RepositoryError('not_independent');
+  if (e.problems.includes('missing_skill')) {
+    if ((exceptionNote ?? '').trim().length < QC_EXCEPTION_NOTE_MIN) throw new RepositoryError('exception_note_required');
+    return { mode: 'admin_exception', gaps: e.missing };
+  }
+  return { mode: 'inspector', gaps: [] };
 }
 
 /* ============================== Installation SOP (123) */
@@ -12359,6 +12636,227 @@ export const memoryRepository: Repository = {
       if (unmetDependencies(def as InstallSopStepDef, job.steps).length > 0) throw new RepositoryError('depends_on');
       const updated = patchInPlace(jobs, job.id, { steps: withCurrent(job.steps, sopVersionOf(job).steps, stepId) });
       return installationSopViewOf(updated, technicianId);
+    }),
+
+  /* --------------------------------- QC inspector assignment (131) */
+  getQcBoard: (userId) =>
+    simulateRead((): QcBoardView => {
+      ensureQcSeeds();
+      const user = byId(users, userId);
+      if (!user) throw new RepositoryError('forbidden');
+      if (user.role !== 'admin' && user.role !== 'technician') throw new RepositoryError('forbidden');
+      const isAdmin = user.role === 'admin';
+      const now = Date.now();
+      const candidates = jobs.filter((j) => {
+        if (isAdmin) return j.status === 'qc_pending' || j.status === 'in_progress' || j.status === 'on_hold' || !!qcOf(j.id);
+        const a = qcOf(j.id);
+        return !!a && a.inspectorId === userId;
+      });
+      const rows = candidates
+        .map((j): QcBoardRow => {
+          const r = qcReadinessOf(j);
+          const a = qcOf(j.id);
+          const beyond = j.status === 'qc_pending' || j.status === 'handover_pending' || j.status === 'completed';
+          return {
+            jobId: j.id,
+            code: j.code,
+            siteName: j.siteName,
+            jobStatus: j.status,
+            ready: r.ready,
+            readyAt: r.readyAt,
+            waitingHours: r.ready && r.readyAt ? Math.max(0, Math.round((now - new Date(r.readyAt).getTime()) / 3_600_000)) : null,
+            problems: [...(r.installationOpen > 0 ? (['installation_open'] as const) : []), ...(r.safetyOpen > 0 ? (['safety_open'] as const) : []), ...(r.awaitingLead ? (['awaiting_lead'] as const) : []), ...(r.onHold ? (['on_hold'] as const) : []), ...(!beyond && r.installationOpen === 0 && r.safetyOpen === 0 && !r.awaitingLead && !r.onHold ? (['not_finished'] as const) : [])],
+            assignment: a ? { inspectorName: a.inspectorName, mode: a.mode, status: a.status, scheduledDate: a.scheduledDate ?? null, window: a.window ?? null, conflict: !!a.conflict && !a.conflict.clearedAt } : null,
+            preference: !!j.qcPreference,
+          };
+        })
+        .sort((a, b) => Number(b.ready && !b.assignment) - Number(a.ready && !a.assignment) || Number(b.ready) - Number(a.ready) || a.code.localeCompare(b.code));
+      const weekAgo = qcDay(now - 7 * 86_400_000);
+      const weekAhead = qcDay(now + 7 * 86_400_000);
+      return {
+        rows,
+        inspectors: isAdmin
+          ? users
+              .filter((u) => u.role === 'technician' && u.status === 'active' && missingQcSkills(u.skills).length === 0)
+              .map((u) => ({ userId: u.id, name: u.name, eligibleInGeneral: true, qcThisWeek: qcAssignments.filter((a) => a.inspectorId === u.id && qcActive(a) && a.scheduledDate && a.scheduledDate >= weekAgo && a.scheduledDate <= weekAhead).length, unavailable: inspectorOff.filter((o) => o.userId === u.id && o.date >= qcDay(now)).map((o) => ({ ...o })) }))
+          : [],
+        totals: { ready: rows.filter((r) => r.ready).length, unassigned: rows.filter((r) => r.ready && !r.assignment).length, scheduled: rows.filter((r) => r.assignment?.status === 'scheduled').length, conflicts: rows.filter((r) => r.assignment?.conflict).length },
+        viewer: isAdmin ? 'admin' : 'inspector',
+      };
+    }),
+
+  getQcJob: (jobId, userId) =>
+    simulateRead((): QcJobDetail => {
+      const { job } = qcActor(jobId, userId);
+      return qcJobDetailOf(job, userId, Date.now());
+    }),
+
+  assignQcInspector: (jobId, input, adminId) =>
+    simulateWrite((): QcJobDetail => {
+      adminOnly(adminId);
+      const { job, user } = qcActor(jobId, adminId);
+      qcRequireReady(job);
+      const existing = qcOf(job.id);
+      if (existing && qcActive(existing)) throw new RepositoryError('already_assigned');
+      const person = byId(users, input.inspectorId);
+      if (!person || person.role !== 'technician') throw new RepositoryError('unknown_inspector');
+      const { mode, gaps } = qcNamable(job, person, input.exceptionNote);
+      const now = new Date().toISOString();
+      qcCounter += 1;
+      const a: QcAssignment = { id: `qca-${qcCounter}`, jobId: job.id, inspectorId: person.id, inspectorName: person.name, mode, ...(gaps.length ? { exceptionGaps: gaps } : {}), ...(mode === 'admin_exception' ? { exceptionNote: (input.exceptionNote ?? '').trim() } : {}), status: 'assigned', assignedAt: now, assignedByName: user.name, previous: [], events: [qcEvent(mode === 'admin_exception' ? 'exception_assigned' : 'assigned', user.name, mode === 'admin_exception' ? (input.exceptionNote ?? '').trim() : undefined)], isDemo: true };
+      qcAssignments.push(a);
+      notifyQcInspector(a, `${job.code} was assigned to ${person.name} for quality check`);
+      return qcJobDetailOf(job, adminId, Date.now());
+    }),
+
+  assignAdminAsInspector: (jobId, reason, adminId) =>
+    simulateWrite((): QcJobDetail => {
+      adminOnly(adminId);
+      const { job, user } = qcActor(jobId, adminId);
+      qcRequireReady(job);
+      const existing = qcOf(job.id);
+      if (existing && qcActive(existing)) throw new RepositoryError('already_assigned');
+      if (reason.trim().length < QC_EXCEPTION_NOTE_MIN) throw new RepositoryError('exception_note_required');
+      const now = new Date().toISOString();
+      qcCounter += 1;
+      const a: QcAssignment = { id: `qca-${qcCounter}`, jobId: job.id, inspectorId: user.id, inspectorName: user.name, mode: 'admin_exception', exceptionGaps: ['admin_role'], exceptionNote: reason.trim(), status: 'assigned', assignedAt: now, assignedByName: user.name, previous: [], events: [qcEvent('exception_assigned', user.name, reason.trim())], isDemo: true };
+      qcAssignments.push(a);
+      logAutomatedAction({ sourceKey: 'qc.admin_exception', triggeringCondition: `No independent, qualified inspector was named for ${job.code}`, actionTaken: 'Recorded Admin as the quality-check inspector, as a documented exception', affectedRecordId: a.id, affectedRecordType: 'other', subjectLabel: job.code });
+      return qcJobDetailOf(job, adminId, Date.now());
+    }),
+
+  reassignQcInspector: (jobId, input, adminId) =>
+    simulateWrite((): QcJobDetail => {
+      adminOnly(adminId);
+      const { job, user } = qcActor(jobId, adminId);
+      const a = qcOf(job.id);
+      if (!a || (a.status !== 'assigned' && a.status !== 'scheduled')) throw new RepositoryError('invalid_state');
+      qcRequireReady(job);
+      if (input.reason.trim().length < QC_REASON_MIN) throw new RepositoryError('reason_required');
+      if (input.inspectorId === a.inspectorId) throw new RepositoryError('same_inspector');
+      const isSelf = input.inspectorId === adminId;
+      const person = byId(users, input.inspectorId);
+      if (!person || (person.role !== 'technician' && !isSelf)) throw new RepositoryError('unknown_inspector');
+      let mode: QcAssignment['mode'] = 'inspector';
+      let gaps: string[] = [];
+      if (isSelf) {
+        if ((input.exceptionNote ?? '').trim().length < QC_EXCEPTION_NOTE_MIN) throw new RepositoryError('exception_note_required');
+        mode = 'admin_exception';
+        gaps = ['admin_role'];
+      } else ({ mode, gaps } = qcNamable(job, person as User, input.exceptionNote));
+      const keepSlot = !!(a.scheduledDate && a.window) && busyBecause(inspectorBusyFacts(input.inspectorId, a.id), a.scheduledDate, a.window) === null;
+      a.previous.push({ inspectorId: a.inspectorId, inspectorName: a.inspectorName, until: new Date().toISOString(), reason: input.reason.trim() });
+      a.inspectorId = (person as User).id;
+      a.inspectorName = (person as User).name;
+      a.mode = mode;
+      a.exceptionGaps = gaps.length ? gaps : undefined;
+      a.exceptionNote = mode === 'admin_exception' ? (input.exceptionNote ?? '').trim() : undefined;
+      delete a.conflict;
+      a.assignedAt = new Date().toISOString();
+      a.assignedByName = user.name;
+      if (!keepSlot) {
+        delete a.scheduledDate;
+        delete a.window;
+        delete a.customerAgreedAt;
+        a.status = 'assigned';
+      }
+      a.events.push(qcEvent('reassigned', user.name, input.reason.trim()));
+      if (mode === 'inspector') notifyQcInspector(a, `${job.code} was reassigned to ${a.inspectorName}`);
+      syncQcAssignments(false, Date.now());
+      return qcJobDetailOf(job, adminId, Date.now());
+    }),
+
+  recordQcPreference: (jobId, input, adminId) =>
+    simulateWrite((): QcJobDetail => {
+      adminOnly(adminId);
+      const { job, user } = qcActor(jobId, adminId);
+      const today = qcDay(Date.now());
+      const dates = [...new Set(input.dates)].sort();
+      if (dates.length === 0 || dates.length > 5) throw new RepositoryError('dates_invalid');
+      for (const d of dates) if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || d < today || !isWorkingDay(d)) throw new RepositoryError('dates_invalid');
+      const pref: QcVisitPreference = { dates, window: input.window, ...(input.note?.trim() ? { note: input.note.trim() } : {}), recordedByName: user.name, at: new Date().toISOString() };
+      const updated = patchInPlace(jobs, job.id, { qcPreference: pref });
+      const a = qcOf(job.id);
+      if (a) a.events.push(qcEvent('preference_recorded', user.name, dates.join(', ')));
+      return qcJobDetailOf(updated, adminId, Date.now());
+    }),
+
+  scheduleQcVisit: (jobId, input, adminId) =>
+    simulateWrite((): QcJobDetail => {
+      adminOnly(adminId);
+      const { job, user } = qcActor(jobId, adminId);
+      const a = qcOf(job.id);
+      if (!a || (a.status !== 'assigned' && a.status !== 'scheduled')) throw new RepositoryError('invalid_state');
+      qcRequireReady(job);
+      const isAdminInspector = a.inspectorId === adminId;
+      const busy = isAdminInspector ? null : busyBecause(inspectorBusyFacts(a.inspectorId, a.id), input.date, input.window);
+      const pref = job.qcPreference;
+      const problem = schedulingProblem({ date: input.date, window: input.window, today: qcDay(Date.now()), now: Date.now(), busy, matchesPreference: matchesPreference(pref, input.date, input.window), customerAgreed: input.customerAgreed });
+      if (problem) throw new RepositoryError(problem);
+      const wasScheduled = a.status === 'scheduled';
+      a.scheduledDate = input.date;
+      a.window = input.window;
+      a.status = 'scheduled';
+      a.customerAgreedAt = new Date().toISOString();
+      a.events.push(qcEvent(wasScheduled ? 'rescheduled' : 'scheduled', user.name, `${input.date} ${input.window}`));
+      if (!isAdminInspector) notifyQcInspector(a, `The quality check of ${job.code} was ${wasScheduled ? 'moved to' : 'booked for'} ${input.date}`);
+      return qcJobDetailOf(job, adminId, Date.now());
+    }),
+
+  reportQcConflict: (jobId, note, inspectorId) =>
+    simulateWrite((): QcJobDetail => {
+      const { job, user, isAdmin } = qcActor(jobId, inspectorId);
+      if (isAdmin) throw new RepositoryError('forbidden');
+      const a = qcOf(job.id);
+      if (!a || !qcActive(a)) throw new RepositoryError('invalid_state');
+      if (note.trim().length < QC_REASON_MIN) throw new RepositoryError('reason_required');
+      if (a.conflict && !a.conflict.clearedAt) throw new RepositoryError('already_flagged');
+      a.conflict = { kind: 'self_reported', involvement: involvementOf(user.id, user.name, involvementFactsOf(job)), note: note.trim(), flaggedAt: new Date().toISOString(), byName: user.name };
+      a.events.push(qcEvent('conflict_flagged', user.name, note.trim()));
+      syncQcAssignments(false, Date.now());
+      return qcJobDetailOf(job, inspectorId, Date.now());
+    }),
+
+  clearQcConflict: (jobId, note, adminId) =>
+    simulateWrite((): QcJobDetail => {
+      adminOnly(adminId);
+      const { job, user } = qcActor(jobId, adminId);
+      const a = qcOf(job.id);
+      if (!a || !a.conflict || a.conflict.clearedAt) throw new RepositoryError('invalid_state');
+      if (note.trim().length < QC_EXCEPTION_NOTE_MIN) throw new RepositoryError('exception_note_required');
+      a.conflict = { ...a.conflict, clearedAt: new Date().toISOString(), clearedNote: note.trim(), clearedByName: user.name };
+      a.events.push(qcEvent('conflict_cleared', user.name, note.trim()));
+      syncQcAssignments(false, Date.now());
+      return qcJobDetailOf(job, adminId, Date.now());
+    }),
+
+  setInspectorUnavailable: (input, byId_) =>
+    simulateWrite((): InspectorUnavailability[] => {
+      ensureQcSeeds();
+      const by = byId(users, byId_);
+      if (!by) throw new RepositoryError('forbidden');
+      const target = input.userId ?? byId_;
+      if (by.role !== 'admin' && target !== byId_) throw new RepositoryError('forbidden');
+      if (by.role !== 'admin' && by.role !== 'technician') throw new RepositoryError('forbidden');
+      const who = byId(users, target);
+      if (!who || who.role !== 'technician') throw new RepositoryError('unknown_inspector');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date) || input.date < qcDay(Date.now())) throw new RepositoryError('dates_invalid');
+      if (input.reason.trim().length < 3) throw new RepositoryError('reason_required');
+      if (inspectorOff.some((u) => u.userId === target && u.date === input.date && (u.window === 'all' || u.window === input.window))) throw new RepositoryError('already_set');
+      qcCounter += 1;
+      inspectorOff.push({ id: `iu-${qcCounter}`, userId: target, date: input.date, window: input.window, reason: input.reason.trim(), setByName: by.name, at: new Date().toISOString() });
+      return inspectorOff.filter((u) => u.userId === target).map((u) => ({ ...u }));
+    }),
+
+  clearInspectorUnavailable: (id, byId_) =>
+    simulateWrite((): InspectorUnavailability[] => {
+      ensureQcSeeds();
+      const by = byId(users, byId_);
+      const entry = inspectorOff.find((u) => u.id === id);
+      if (!by || !entry) throw new RepositoryError('not_found');
+      if (by.role !== 'admin' && entry.userId !== byId_) throw new RepositoryError('forbidden');
+      inspectorOff.splice(inspectorOff.indexOf(entry), 1);
+      return inspectorOff.filter((u) => u.userId === entry.userId).map((u) => ({ ...u }));
     }),
 
   /* --------------------------------- Technician team coordination (130) */
