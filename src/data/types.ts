@@ -938,7 +938,7 @@ export interface SupplierInvoiceLine {
   adjustment?: InvoiceAdjustmentRef;
 }
 
-export type SupplierInvoiceEventKind = 'submitted' | 'adjustment_accepted' | 'rejected' | 'withdrawn' | 'mismatch_notified';
+export type SupplierInvoiceEventKind = 'submitted' | 'adjustment_accepted' | 'rejected' | 'withdrawn' | 'reinstated' | 'mismatch_notified';
 
 export interface SupplierInvoiceEvent {
   id: string;
@@ -976,6 +976,81 @@ export interface SupplierInvoice {
   /** The supplier was told, and Admin alerted, about a mismatch on this invoice: once, never repeatedly. */
   mismatchNotifiedAt?: string;
   events: SupplierInvoiceEvent[];
+  isDemo: boolean;
+}
+
+/* ------------------------------------ Supplier dispute resolution (117) */
+
+/** What a supplier is disputing: an amount they were paid (or are still owed), when a held retention is released,
+ *  or an invoice AIEC sent back or would not match. */
+export type SupplierDisputeKind = 'amount' | 'retention_timing' | 'invoice';
+export type SupplierDisputeDecision = 'uphold' | 'supplier_favor' | 'partial';
+export type DisputeProcessArea = 'invoice_matching' | 'payment_terms' | 'delivery_sop' | 'other';
+
+export type SupplierDisputeEventKind = 'raised' | 'decided' | 'reopened' | 'process_flagged' | 'process_addressed';
+
+export interface SupplierDisputeEvent {
+  id: string;
+  kind: SupplierDisputeEventKind;
+  at: string;
+  byName: string;
+  note?: string;
+}
+
+/** The real correction a decision made, so it can be traced from the dispute to the payment or invoice it changed. */
+export type DisputeCorrection = 'none' | 'payment_adjustment' | 'payment_amount' | 'retention_released' | 'invoice_accepted';
+
+export interface SupplierDisputeDecisionRecord {
+  id: string;
+  decision: SupplierDisputeDecision;
+  /** The extra money the decision gave the supplier. Zero for upholding. */
+  amount: number;
+  note: string;
+  byName: string;
+  at: string;
+  correction: DisputeCorrection;
+  /** The adjustment, payment, retention or invoice the correction landed on. */
+  correctionRef: string | null;
+}
+
+/** A supplier dispute over a payment. The record keeps the supplier's own words and every decision; what the evidence says
+ *  is read from the order, its invoices and payments each time, never copied here. */
+export interface SupplierDispute {
+  id: string;
+  code: string;
+  supplierId: string;
+  poId: string;
+  kind: SupplierDisputeKind;
+  paymentId?: string;
+  retentionId?: string;
+  invoiceId?: string;
+  /** The supplier's stated position, in their words. */
+  position: string;
+  /** What the supplier says it is owed on top of what it has, when the dispute is about an amount. */
+  claimedAmount: number | null;
+  /** The supplier has said it may stop taking AIEC's orders. */
+  threatensHalt: boolean;
+  raisedByRole: 'supplier' | 'admin';
+  raisedByName: string;
+  raisedAt: string;
+  status: 'open' | 'resolved';
+  /** 1 for the first time round; each time the supplier contests a decision it goes up by one. */
+  round: number;
+  /** When the current round started: the resolution clock runs from here. */
+  roundStartedAt: string;
+  decisions: SupplierDisputeDecisionRecord[];
+  events: SupplierDisputeEvent[];
+  /** The dispute showed a flaw in AIEC's own process rather than the supplier's fault. */
+  processFlag?: {
+    area: DisputeProcessArea;
+    note: string;
+    byName: string;
+    at: string;
+    status: 'open' | 'addressed';
+    addressedNote?: string;
+    addressedBy?: string;
+    addressedAt?: string;
+  };
   isDemo: boolean;
 }
 
@@ -2758,6 +2833,8 @@ export type CommitmentKind =
   | 'partner_feed_restore'
   | 'supplier_payment_approve'
   | 'supplier_payment_hold_review'
+  | 'supplier_dispute_resolve'
+  | 'supplier_dispute_process_review'
   | 'gst_period_handover'
   | 'gst_status_check'
   | 'supplier_invoice_submit'
@@ -2791,6 +2868,7 @@ export type CommitmentSubjectType =
   | 'supplier_payment'
   | 'supplier_invoice'
   | 'gst_period'
+  | 'supplier_dispute'
   | 'supplier_gst';
 
 /**

@@ -63,6 +63,7 @@ import {
   seedSupplierPayments,
   seedSupplierPaymentAdjustments,
   seedSupplierGstChecks,
+  seedSupplierDisputes,
   seedSupplierInvoices,
   seedPaymentDeviations,
   seedDiscrepancyReports,
@@ -171,6 +172,11 @@ import type {
   PaymentEvidence,
   SupplierPaymentQueue,
   SupplierPaymentSchedule,
+  DisputeEffect,
+  DisputeTargets,
+  SupplierDisputeBoard,
+  SupplierDisputeRow,
+  SupplierDisputeView,
   GstComplianceView,
   GstDocument,
   GstRateBucket,
@@ -274,6 +280,12 @@ import type {
   SupplierPaymentQuery,
   SupplierGstCheck,
   GstPeriodHandover,
+  SupplierDispute,
+  SupplierDisputeDecision,
+  SupplierDisputeDecisionRecord,
+  SupplierDisputeEvent,
+  DisputeCorrection,
+  SupplierInvoiceLine,
   SupplierPaymentTrigger,
   PaymentDeviation,
   DeliveryPartner,
@@ -429,6 +441,7 @@ import { INVOICE_MIN_ITEMS, explainsInvoicePrice, gateOf, matchLine, overallOf }
 import type { GateLine, InvoiceGate, InvoiceMatchStatus } from '@/features/suppliers/invoiceMatch';
 import { ACK_EXPECTED_AFTER, DEVIATION_REASON_MIN, deviationIncreasesRisk, HANDOVER_AFTER_START, chainAnomalies, chainKinds, checkDeviation, firedAtOf, splitOf } from '@/features/suppliers/paymentChain';
 import type { ChainNodeFacts, ChainNodeKind, ChainNodeState } from '@/features/suppliers/paymentChain';
+import { NOTE_MIN, POSITION_MIN, REOPEN_WINDOW, canPartial, decisionProblem, dueAtOf, maxAmountOf, slaOf } from '@/features/suppliers/disputes';
 import { CHECK_STALE_AFTER, ZERO_SPLIT, addSplit, creditStatus, gstOn, handoverDueAt, periodOf, recentPeriods, shiftPeriod, splitTax, supplierRisk, supplyType } from '@/features/tax/gst';
 import type { CreditStatus, SupplierRisk, SupplierRiskKind } from '@/features/tax/gst';
 import { outflowTotals, slipDays as slipDaysOf } from '@/features/suppliers/paymentSchedule';
@@ -2102,6 +2115,7 @@ function commitmentSources(now: number): CommitmentSources {
         stillMismatched: i.status === 'open' && evaluateInvoice(i).status === 'mismatch',
         resolvedAt: i.rejectedAt ?? i.events.filter((e) => e.kind === 'adjustment_accepted').map((e) => e.at).sort().pop(),
       })),
+    supplierDisputes,
     gstPeriods: gstPeriodsOwed(now),
     gstStatusChecks: gstStatusChecksOwed(),
     pausedDealIds: new Set(paymentReminderPauses.filter((p) => p.paused).map((p) => p.dealId)),
@@ -2320,6 +2334,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   syncPaymentAnomalies(now);
   syncInvoiceMismatches(now);
   syncGstCompliance(now);
+  syncSupplierDisputes(now);
   advanceShipments(now);
   // 105: a delivery running late is noticed, and one that caught up is cleared, without anyone looking.
   syncDelayCases(now);
@@ -4174,7 +4189,7 @@ function syncSupplierPayments(now: number): void {
       created.events = [{ id: `${created.id}-e1`, kind: 'triggered', at: m.firedAt, byName: 'AIEC Assistant' }];
       // A retention that falls due while a related dispute is still open is held on its own (112): the earlier
       // portions that already released correctly are not touched, and Admin decides when it goes.
-      const disputed = m.part === 'retention' && (openReportsOnPo(po.id).length > 0 || supplierOrderRatings.some((r) => r.poId === po.id && r.dispute?.status === 'open'));
+      const disputed = m.part === 'retention' && (openReportsOnPo(po.id).length > 0 || openDisputesOnPo(po.id).length > 0 || supplierOrderRatings.some((r) => r.poId === po.id && r.dispute?.status === 'open'));
       if (disputed) {
         created.status = 'held';
         created.heldAuto = 'related_dispute';
@@ -4227,6 +4242,7 @@ function paymentFlags(p: SupplierPayment): PaymentFlag[] {
   const gate = p.part === 'balance' && p.origin !== 'override' && po && (p.status === 'pending_approval' || p.status === 'held') ? invoiceGateOfPo(po) : 'ok';
   if (!supplier || !isSupplierEligibleForPO(supplier)) kinds.push('supplier_blocked');
   if (openReportsOnPo(p.poId).length > 0) kinds.push('open_report');
+  if (openDisputesOnPo(p.poId).length > 0) kinds.push('supplier_dispute');
   const dealStatus = byId(deals, p.dealId)?.status;
   if (dealStatus === 'lost' || dealStatus === 'cancelled') kinds.push('orphaned');
   if (supplierOrderRatings.some((r) => r.poId === p.poId && r.dispute?.status === 'open')) kinds.push('rating_dispute');
@@ -4694,6 +4710,151 @@ function syncGstCompliance(now: number): void {
   }
 }
 
+/* ============================== Supplier dispute resolution (117) */
+
+const supplierDisputes: SupplierDispute[] = seedSupplierDisputes.map((d) => ({ ...d, decisions: d.decisions.map((x) => ({ ...x })), events: [...d.events], processFlag: d.processFlag ? { ...d.processFlag } : undefined }));
+let disputeCounter = 6100;
+let disputeEventCounter = 0;
+const DISPUTE_HALT_ALERT = 'supplierDispute.alert.haltThreat';
+
+const openDisputesOnPo = (poId: string) => supplierDisputes.filter((d) => d.status === 'open' && d.poId === poId);
+const disputeEvent = (d: SupplierDispute, kind: SupplierDisputeEvent['kind'], byName: string, note?: string): SupplierDisputeEvent[] => {
+  disputeEventCounter += 1;
+  return [...d.events, { id: `${d.id}-e${d.events.length + 1}-${disputeEventCounter}`, kind, at: new Date().toISOString(), byName, note: note?.trim() || undefined }];
+};
+const given = (d: SupplierDispute) => d.decisions.reduce((n, x) => n + x.amount, 0);
+
+/** A decided dispute the supplier can still contest. */
+const disputeCanReopen = (d: SupplierDispute, now: number): boolean => d.status === 'resolved' && now - new Date(d.decisions[d.decisions.length - 1]?.at ?? d.raisedAt).getTime() <= REOPEN_WINDOW;
+
+function disputeRowOf(d: SupplierDispute, now: number): SupplierDisputeRow {
+  const po = byId(supplierPurchaseOrders, d.poId);
+  const sla = slaOf(d.status, d.roundStartedAt, d.threatensHalt, now);
+  return {
+    id: d.id,
+    code: d.code,
+    supplierId: d.supplierId,
+    supplierName: byId(suppliers, d.supplierId)?.name ?? '',
+    poId: d.poId,
+    poCode: po?.code ?? d.poId,
+    siteName: po ? (shipmentSite(po.dealId)?.siteName ?? '') : '',
+    kind: d.kind,
+    position: d.position,
+    claimedAmount: d.claimedAmount,
+    status: d.status,
+    round: d.round,
+    raisedAt: d.raisedAt,
+    dueAt: dueAtOf(d.roundStartedAt, d.threatensHalt),
+    sla: sla.state,
+    slaSeverity: sla.severity,
+    threatensHalt: d.threatensHalt,
+    lastDecision: d.decisions[d.decisions.length - 1]?.decision ?? null,
+    processFlagOpen: d.processFlag?.status === 'open',
+  };
+}
+
+/** Which real correction a "for the supplier" decision would make on this dispute's target. */
+function disputeEffectOf(d: SupplierDispute): DisputeEffect {
+  if (d.kind === 'retention_timing') return 'retention_release';
+  if (d.kind === 'invoice') return 'invoice_accept';
+  const p = d.paymentId ? byId(supplierPayments, d.paymentId) : undefined;
+  return p && (p.status === 'pending_approval' || p.status === 'held') ? 'payment_amount' : 'payment_adjustment';
+}
+
+function disputeViewOf(d: SupplierDispute, now: number): SupplierDisputeView {
+  const row = disputeRowOf(d, now);
+  const po = byId(supplierPurchaseOrders, d.poId);
+  const supplier = byId(suppliers, d.supplierId);
+  const payment = d.paymentId ? byId(supplierPayments, d.paymentId) : undefined;
+  const retention = d.retentionId ? byId(supplierRetentions, d.retentionId) : undefined;
+  const invoice = d.invoiceId ? byId(supplierInvoices, d.invoiceId) : undefined;
+  const entry = payment ? historyEntryOf(payment) : null;
+  const detail = payment ? historyDetailOf(payment, { supplierId: null }) : null;
+  const rating = po ? supplierOrderRatings.find((r) => r.poId === po.id) : undefined;
+  const others = supplierDisputes.filter((x) => x.supplierId === d.supplierId && x.id !== d.id);
+  const decided = others.filter((x) => x.status === 'resolved');
+  const last = (x: SupplierDispute) => x.decisions[x.decisions.length - 1]?.decision;
+  const facts = { kind: d.kind, claimed: d.claimedAmount, alreadyGiven: given(d) };
+  return {
+    ...row,
+    supplierPosition: d.position,
+    raisedByName: d.raisedByName,
+    raisedByRole: d.raisedByRole,
+    targetLabel: payment ? payment.code : retention ? formatINR(retention.amount) : (invoice?.invoiceNumber ?? ''),
+    evidence: {
+      poTotal: po ? paymentTotalOf(po) : 0,
+      basis: detail?.basis ?? null,
+      payment: payment && entry ? { id: payment.id, code: payment.code, part: payment.part, amount: payment.amount, netAmount: entry.netAmount, status: payment.status, paidAt: payment.executedAt ?? null, bankReference: payment.bankReference ?? null } : null,
+      adjustments: detail?.adjustments ?? [],
+      retention: retention ? { id: retention.id, amount: retention.amount, pct: retention.pct, status: retention.status, heldAt: retention.heldAt, pausedAt: retention.pausedAt ?? null, decidedAt: retention.decidedAt ?? null } : null,
+      invoices: supplierInvoices.filter((i) => i.poId === d.poId && i.status === 'open').map((i) => ({ id: i.id, number: i.invoiceNumber, date: i.invoiceDate, subtotal: i.lines.reduce((n, l) => n + l.quantity * l.unitPrice, 0), status: evaluateInvoice(i).status })),
+      rejectedInvoices: supplierInvoices.filter((i) => i.poId === d.poId && i.status === 'rejected').map((i) => ({ id: i.id, number: i.invoiceNumber, reason: i.rejectedReason ?? null })),
+      openReports: po ? openReportsOnPo(po.id).map((r) => ({ id: r.id, code: r.code, status: r.status })) : [],
+      defects: rating?.defects.length ?? 0,
+      deliveredLines: po ? (po.lineItems ?? []).map((l) => ({ description: l.description, ordered: l.quantity, accepted: acceptedQtyOf(po, l) })) : [],
+    },
+    relationship: {
+      onTimeRate: supplier?.onTimeRate ?? null,
+      qualityScore: supplier?.qualityScore ?? null,
+      ratedOrders: supplierOrderRatings.filter((r) => r.supplierId === d.supplierId).length,
+      agreementState: agreementStateFor(d.supplierId, now).status,
+      tier: supplier?.paymentTier ?? 'new',
+      openOrders: supplierPurchaseOrders.filter((x) => x.supplierId === d.supplierId && x.status === 'sent' && !x.receivedAt).length,
+      orderValue: supplier?.totalOrderValue ?? 0,
+      alternatives: suppliers.filter((x) => x.id !== d.supplierId && x.status === 'active' && x.kycStatus === 'approved' && x.categories.some((c) => supplier?.categories.includes(c))).length,
+      priorDisputes: { total: decided.length, supplierFavor: decided.filter((x) => last(x) === 'supplier_favor').length, partial: decided.filter((x) => last(x) === 'partial').length, upheld: decided.filter((x) => last(x) === 'uphold').length },
+      otherOpenDisputes: others.filter((x) => x.status === 'open').length,
+    },
+    decisions: d.decisions.map((x) => ({ ...x })),
+    events: d.events,
+    processFlag: d.processFlag ?? null,
+    effect: disputeEffectOf(d),
+    alreadyGiven: given(d),
+    maxAmount: maxAmountOf(facts),
+    canPartial: canPartial(d.kind),
+    canReopen: disputeCanReopen(d, now),
+  };
+}
+
+/** A supplier who says it may stop taking orders is a relationship risk Admin must not miss: one alert while it is open. Idempotent. */
+function syncSupplierDisputes(now: number): void {
+  const at = new Date(now).toISOString();
+  for (const d of supplierDisputes) {
+    const open = alerts.find((a) => a.relatedId === d.id && a.titleKey === DISPUTE_HALT_ALERT && a.status !== 'resolved');
+    if (d.status === 'open' && d.threatensHalt && !open) {
+      raiseAlert({
+        titleKey: DISPUTE_HALT_ALERT,
+        context: `${d.code} · ${byId(suppliers, d.supplierId)?.name ?? ''}`,
+        severity: 'high',
+        category: 'supplier',
+        relatedId: d.id,
+        sourceRoute: `/supplier-disputes?dispute=${d.id}`,
+      });
+      logAutomatedAction({
+        sourceKey: 'supplier_dispute.halt_threat',
+        triggeringCondition: `${byId(suppliers, d.supplierId)?.name ?? 'A supplier'} said it may stop taking orders over ${d.code}`,
+        actionTaken: 'Raised an alert so the relationship risk is seen with the dispute',
+        affectedRecordId: d.id,
+        affectedRecordType: 'other',
+        subjectLabel: d.code,
+      });
+    } else if ((d.status === 'resolved' || !d.threatensHalt) && open) {
+      patchInPlace(alerts, open.id, { status: 'resolved', resolvedAt: at, resolvedBy: 'system', resolutionNote: 'The dispute was decided.' });
+    }
+  }
+}
+
+/** Tells the supplier in the order's thread, when they have a login. */
+function disputeMessage(d: SupplierDispute, author: 'aiec' | 'supplier', authorName: string, authorUserId: string | undefined, body: string): void {
+  const supplier = byId(suppliers, d.supplierId);
+  const po = byId(supplierPurchaseOrders, d.poId);
+  if (!supplier || !po) return;
+  if (author === 'aiec' && !supplierUserFor(supplier)) return;
+  pushSupplierMessage(ensureSupplierThread(supplier.id, po.id), { author, authorName, authorUserId, body, channel: 'in_app', at: new Date().toISOString(), expectsReply: false, poRef: po.id });
+}
+
+const DECISION_WORDS: Record<SupplierDisputeDecision, string> = { uphold: 'AIEC has upheld the original', supplier_favor: 'AIEC has decided in your favour', partial: 'AIEC has adjusted in part' };
+
 /* ============================== Supplier payment history (115) */
 
 const supplierPaymentAdjustments: SupplierPaymentAdjustment[] = seedSupplierPaymentAdjustments.map((a) => ({ ...a }));
@@ -4702,6 +4863,29 @@ let paymentAdjustmentCounter = 100;
 let paymentQueryCounter = 0;
 
 const adjustmentDelta = (a: SupplierPaymentAdjustment) => (a.direction === 'credit' ? -a.amount : a.amount);
+
+/** Adds a correction beside an executed payment and tells a supplier with a login in the order's thread. Never edits the payment. */
+function pushPaymentAdjustment(p: SupplierPayment, direction: 'credit' | 'top_up', amount: number, reason: string, actor: User): SupplierPaymentAdjustment {
+  const at = new Date().toISOString();
+  paymentAdjustmentCounter += 1;
+  const created: SupplierPaymentAdjustment = { id: `spadj-new-${paymentAdjustmentCounter}`, paymentId: p.id, direction, amount, reason, byName: actor.name, at, isDemo: true };
+  supplierPaymentAdjustments.push(created);
+  const po = byId(supplierPurchaseOrders, p.poId);
+  const supplier = byId(suppliers, p.supplierId);
+  if (po && supplier && supplierUserFor(supplier)) {
+    pushSupplierMessage(ensureSupplierThread(supplier.id, po.id), {
+      author: 'aiec',
+      authorName: actor.name,
+      authorUserId: actor.id,
+      body: `${direction === 'credit' ? 'Credit' : 'Additional payment'} of ${formatINR(amount)} recorded against payment ${p.code} for ${po.code}: ${reason}`,
+      channel: 'in_app',
+      at,
+      expectsReply: false,
+      poRef: po.id,
+    });
+  }
+  return created;
+}
 
 function historyEntryOf(p: SupplierPayment): PaymentHistoryEntry {
   const po = byId(supplierPurchaseOrders, p.poId);
@@ -4765,6 +4949,8 @@ function historyDetailOf(p: SupplierPayment, viewer: { supplierId: string | null
     events: p.events,
     evidence: paymentEvidence(p),
     approvedByName: p.approvedByName ?? null,
+    disputes: supplierDisputes.filter((d) => d.paymentId === p.id).sort((a, b) => (a.raisedAt < b.raisedAt ? 1 : -1)).map((d) => ({ id: d.id, code: d.code, status: d.status, lastDecision: d.decisions[d.decisions.length - 1]?.decision ?? null, round: d.round, canReopen: disputeCanReopen(d, Date.now()) })),
+    canDispute: !!viewer.supplierId && viewer.supplierId === p.supplierId && !supplierDisputes.some((d) => d.status === 'open' && d.paymentId === p.id),
     canAdjust: !viewer.supplierId,
     canQuery: !!viewer.supplierId && viewer.supplierId === p.supplierId,
   };
@@ -8928,6 +9114,226 @@ export const memoryRepository: Repository = {
       return { notified: true };
     }),
 
+  /* --------------------------------------------- Supplier dispute resolution (117) */
+  getSupplierDisputeBoard: (byUserId) =>
+    simulateRead((): SupplierDisputeBoard => {
+      adminOnly(byUserId);
+      const now = Date.now();
+      syncSupplierDisputes(now);
+      const rows = supplierDisputes.map((d) => disputeRowOf(d, now)).sort((a, b) => {
+        const rank = (r: SupplierDisputeRow) => (r.status === 'resolved' ? 3 : r.sla === 'overdue' ? (r.threatensHalt ? 0 : 1) : r.threatensHalt ? 1 : 2);
+        return rank(a) - rank(b) || (a.status === 'open' ? (a.dueAt < b.dueAt ? -1 : 1) : a.raisedAt < b.raisedAt ? 1 : -1);
+      });
+      const open = rows.filter((r) => r.status === 'open');
+      return {
+        rows,
+        totals: { open: open.length, overdue: open.filter((r) => r.sla === 'overdue').length, halt: open.filter((r) => r.threatensHalt).length, claimedOpen: open.reduce((n, r) => n + (r.claimedAmount ?? 0), 0), resolved: rows.length - open.length },
+      };
+    }),
+
+  getSupplierDispute: (disputeId, byUserId) =>
+    simulateRead((): SupplierDisputeView => {
+      adminOnly(byUserId);
+      const d = byId(supplierDisputes, disputeId);
+      if (!d) throw new RepositoryError('not_found');
+      const now = Date.now();
+      syncSupplierDisputes(now);
+      return disputeViewOf(d, now);
+    }),
+
+  getDisputeTargets: (byUserId) =>
+    simulateRead((): DisputeTargets => {
+      const viewer = threadViewer(byUserId);
+      const mine = (supplierId: string) => !viewer.supplierId || viewer.supplierId === supplierId;
+      const poCode = (poId: string) => byId(supplierPurchaseOrders, poId)?.code ?? poId;
+      const name = (id: string) => byId(suppliers, id)?.name ?? '';
+      return {
+        payments: supplierPayments
+          .filter((p) => mine(p.supplierId) && p.status !== 'approved')
+          .map((p) => ({ id: p.id, code: p.code, poId: p.poId, poCode: poCode(p.poId), supplierId: p.supplierId, supplierName: name(p.supplierId), part: p.part, amount: p.amount, status: p.status })),
+        retentions: supplierRetentions
+          .filter((r) => mine(r.supplierId) && (r.status === 'held' || r.status === 'paused'))
+          .map((r) => ({ id: r.id, poId: r.poId, poCode: poCode(r.poId), supplierId: r.supplierId, supplierName: name(r.supplierId), amount: r.amount, status: r.status })),
+        invoices: supplierInvoices
+          .filter((i) => mine(i.supplierId) && (i.status === 'rejected' || evaluateInvoice(i).status === 'mismatch'))
+          .map((i) => ({ id: i.id, poId: i.poId, poCode: poCode(i.poId), supplierId: i.supplierId, supplierName: name(i.supplierId), number: i.invoiceNumber, status: evaluateInvoice(i).status })),
+      };
+    }),
+
+  raiseSupplierDispute: (input, byUserId) =>
+    simulateWrite(() => {
+      const viewer = threadViewer(byUserId);
+      const po = byId(supplierPurchaseOrders, input.poId);
+      if (!po || !po.supplierId) throw new RepositoryError('not_found');
+      if (viewer.supplierId && viewer.supplierId !== po.supplierId) throw new RepositoryError('forbidden');
+      if (input.position.trim().length < POSITION_MIN) throw new RepositoryError('position_required');
+      if (input.claimedAmount !== undefined && !(input.claimedAmount > 0)) throw new RepositoryError('invalid_amount');
+      // The dispute must be about something real on this order, and it must be the supplier's own.
+      if (input.kind === 'amount') {
+        const p = input.paymentId ? byId(supplierPayments, input.paymentId) : undefined;
+        if (!p || p.poId !== po.id) throw new RepositoryError('target_required');
+        if (input.claimedAmount === undefined) throw new RepositoryError('amount_required');
+      }
+      if (input.kind === 'retention_timing') {
+        const r = input.retentionId ? byId(supplierRetentions, input.retentionId) : undefined;
+        if (!r || r.poId !== po.id || (r.status !== 'held' && r.status !== 'paused')) throw new RepositoryError('target_required');
+      }
+      if (input.kind === 'invoice') {
+        const i = input.invoiceId ? byId(supplierInvoices, input.invoiceId) : undefined;
+        if (!i || i.poId !== po.id) throw new RepositoryError('target_required');
+      }
+      // The same thing disputed twice while the first is still open is the same dispute.
+      const target = input.paymentId ?? input.retentionId ?? input.invoiceId;
+      if (supplierDisputes.some((d) => d.status === 'open' && (d.paymentId ?? d.retentionId ?? d.invoiceId) === target)) throw new RepositoryError('already_open');
+      disputeCounter += 1;
+      const now = new Date().toISOString();
+      const created: SupplierDispute = {
+        id: `sd-new-${disputeCounter}`,
+        code: `AIEC-SD-${disputeCounter}`,
+        supplierId: po.supplierId,
+        poId: po.id,
+        kind: input.kind,
+        paymentId: input.kind === 'amount' ? input.paymentId : undefined,
+        retentionId: input.kind === 'retention_timing' ? input.retentionId : undefined,
+        invoiceId: input.kind === 'invoice' ? input.invoiceId : undefined,
+        position: input.position.trim(),
+        claimedAmount: input.kind === 'amount' ? (input.claimedAmount ?? null) : null,
+        threatensHalt: !!input.threatensHalt,
+        raisedByRole: viewer.supplierId ? 'supplier' : 'admin',
+        raisedByName: viewer.actor.name,
+        raisedAt: now,
+        status: 'open',
+        round: 1,
+        roundStartedAt: now,
+        decisions: [],
+        events: [],
+        isDemo: true,
+      };
+      created.events = [{ id: `${created.id}-e1`, kind: 'raised', at: now, byName: viewer.actor.name, note: created.position }];
+      supplierDisputes.push(created);
+      if (viewer.supplierId) disputeMessage(created, 'supplier', viewer.actor.name, viewer.actor.id, `Dispute ${created.code} raised: ${created.position}`);
+      syncSupplierDisputes(Date.now());
+      syncCommitments(Date.now());
+      return disputeViewOf(created, Date.now());
+    }),
+
+  resolveSupplierDispute: (disputeId, input, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const d = byId(supplierDisputes, disputeId);
+      if (!d) throw new RepositoryError('not_found');
+      if (d.status !== 'open') throw new RepositoryError('invalid_state');
+      const facts = { kind: d.kind, claimed: d.claimedAmount, alreadyGiven: given(d) };
+      const amountIn = input.decision === 'uphold' ? 0 : (input.amount ?? 0);
+      const problem = decisionProblem({ decision: input.decision, amount: amountIn, note: input.note }, facts);
+      if (problem) throw new RepositoryError(problem);
+      const note = input.note.trim();
+      const at = new Date().toISOString();
+      let amount = 0;
+      let correction: DisputeCorrection = 'none';
+      let correctionRef: string | null = null;
+      if (input.decision !== 'uphold') {
+        const reason = `Dispute ${d.code} decided ${input.decision === 'partial' ? 'in part' : 'for the supplier'}: ${note}`;
+        if (d.kind === 'amount') {
+          const p = byId(supplierPayments, d.paymentId ?? '');
+          if (!p) throw new RepositoryError('not_found');
+          amount = input.decision === 'partial' ? amountIn : (maxAmountOf(facts) ?? amountIn);
+          if (p.status === 'executed') {
+            correctionRef = pushPaymentAdjustment(p, 'top_up', amount, reason, actor).id;
+            correction = 'payment_adjustment';
+          } else if (p.status === 'pending_approval' || p.status === 'held') {
+            patchInPlace(supplierPayments, p.id, { amount: p.amount + amount, events: paymentEvents(p, 'amount_changed', actor.name, reason) });
+            correctionRef = p.id;
+            correction = 'payment_amount';
+          } else {
+            // Approved and still inside its reversal window: it has to be taken back before its amount can change.
+            throw new RepositoryError('payment_locked');
+          }
+        } else if (d.kind === 'retention_timing') {
+          const r = byId(supplierRetentions, d.retentionId ?? '');
+          if (!r) throw new RepositoryError('not_found');
+          if (r.status !== 'held' && r.status !== 'paused') throw new RepositoryError('invalid_state');
+          amount = r.amount;
+          patchInPlace(supplierRetentions, r.id, { status: 'released', decidedAt: at, decidedBy: actor.name, decisionReason: reason });
+          correctionRef = r.id;
+          correction = 'retention_released';
+        } else {
+          const inv = byId(supplierInvoices, d.invoiceId ?? '');
+          if (!inv) throw new RepositoryError('not_found');
+          let working = inv;
+          if (inv.status === 'rejected') {
+            working = patchInPlace(supplierInvoices, inv.id, { status: 'open', rejectedReason: undefined, rejectedByName: undefined, rejectedAt: undefined, withdrawnBySupplier: undefined, events: invoiceEvents(inv, 'reinstated', actor.name, reason) });
+          }
+          const evaluated = evaluateInvoice(working);
+          // Only a price difference can be accepted. A quantity that was never delivered is not AIEC's to waive.
+          if (evaluated.lines.some((l) => l.issues.some((i) => i !== 'price_differs'))) {
+            if (inv.status === 'rejected') patchInPlace(supplierInvoices, inv.id, { status: 'rejected', rejectedReason: inv.rejectedReason, rejectedByName: inv.rejectedByName, rejectedAt: inv.rejectedAt, withdrawnBySupplier: inv.withdrawnBySupplier, events: inv.events });
+            throw new RepositoryError('not_actionable');
+          }
+          const ref = (l: SupplierInvoiceLine): InvoiceAdjustmentRef => ({ changeId: `dispute:${d.code}`, toPrice: l.unitPrice, acceptedBy: actor.name, acceptedAt: at, note });
+          patchInPlace(supplierInvoices, working.id, {
+            lines: working.lines.map((l, idx) => (evaluated.lines[idx]?.priceCheck === 'fail' ? { ...l, adjustment: ref(l) } : l)),
+            events: invoiceEvents(byId(supplierInvoices, working.id)!, 'adjustment_accepted', actor.name, reason),
+          });
+          correctionRef = working.id;
+          correction = 'invoice_accepted';
+        }
+      }
+      const record: SupplierDisputeDecisionRecord = { id: `${d.id}-d${d.decisions.length + 1}`, decision: input.decision, amount, note, byName: actor.name, at, correction, correctionRef };
+      patchInPlace(supplierDisputes, d.id, { status: 'resolved', decisions: [...d.decisions, record], events: disputeEvent(d, 'decided', actor.name, note) });
+      const after = byId(supplierDisputes, d.id)!;
+      disputeMessage(after, 'aiec', actor.name, actor.id, `Dispute ${d.code}: ${DECISION_WORDS[input.decision]}${amount > 0 ? ` (${formatINR(amount)})` : ''}. ${note}`);
+      syncSupplierDisputes(Date.now());
+      syncInvoiceMismatches(Date.now());
+      syncCommitments(Date.now());
+      return disputeViewOf(after, Date.now());
+    }),
+
+  reopenSupplierDispute: (disputeId, reason, byUserId) =>
+    simulateWrite(() => {
+      const viewer = threadViewer(byUserId);
+      const d = byId(supplierDisputes, disputeId);
+      if (!d) throw new RepositoryError('not_found');
+      if (viewer.supplierId && viewer.supplierId !== d.supplierId) throw new RepositoryError('not_found');
+      if (d.status !== 'resolved') throw new RepositoryError('invalid_state');
+      const now = Date.now();
+      if (!disputeCanReopen(d, now)) throw new RepositoryError('reopen_window_closed');
+      if (reason.trim().length < NOTE_MIN) throw new RepositoryError('note_required');
+      const at = new Date(now).toISOString();
+      patchInPlace(supplierDisputes, d.id, { status: 'open', round: d.round + 1, roundStartedAt: at, events: disputeEvent(d, 'reopened', viewer.actor.name, reason) });
+      const after = byId(supplierDisputes, d.id)!;
+      if (viewer.supplierId) disputeMessage(after, 'supplier', viewer.actor.name, viewer.actor.id, `Dispute ${d.code} contested (round ${after.round}): ${reason.trim()}`);
+      syncSupplierDisputes(now);
+      syncCommitments(now);
+      return disputeViewOf(after, now);
+    }),
+
+  flagDisputeProcessIssue: (disputeId, input, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const d = byId(supplierDisputes, disputeId);
+      if (!d) throw new RepositoryError('not_found');
+      if (d.processFlag?.status === 'open') throw new RepositoryError('already_open');
+      if (input.note.trim().length < NOTE_MIN) throw new RepositoryError('note_required');
+      const at = new Date().toISOString();
+      patchInPlace(supplierDisputes, d.id, { processFlag: { area: input.area, note: input.note.trim(), byName: actor.name, at, status: 'open' }, events: disputeEvent(d, 'process_flagged', actor.name, input.note) });
+      syncCommitments(Date.now());
+      return disputeViewOf(byId(supplierDisputes, d.id)!, Date.now());
+    }),
+
+  addressDisputeProcessIssue: (disputeId, note, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const d = byId(supplierDisputes, disputeId);
+      if (!d || !d.processFlag) throw new RepositoryError('not_found');
+      if (d.processFlag.status !== 'open') throw new RepositoryError('invalid_state');
+      if (note.trim().length < NOTE_MIN) throw new RepositoryError('note_required');
+      const at = new Date().toISOString();
+      patchInPlace(supplierDisputes, d.id, { processFlag: { ...d.processFlag, status: 'addressed', addressedNote: note.trim(), addressedBy: actor.name, addressedAt: at }, events: disputeEvent(d, 'process_addressed', actor.name, note) });
+      syncCommitments(Date.now());
+      return disputeViewOf(byId(supplierDisputes, d.id)!, Date.now());
+    }),
+
   /* --------------------------------------------- GST compliance (116) */
   getGstCompliance: (period, byUserId) =>
     simulateRead((): GstComplianceView => {
@@ -9025,24 +9431,7 @@ export const memoryRepository: Repository = {
       const entry = historyEntryOf(p);
       // A credit can only give back what the payment still stands at.
       if (input.direction === 'credit' && input.amount > entry.netAmount) throw new RepositoryError('exceeds_payment');
-      const at = new Date().toISOString();
-      paymentAdjustmentCounter += 1;
-      supplierPaymentAdjustments.push({ id: `spadj-new-${paymentAdjustmentCounter}`, paymentId: p.id, direction: input.direction, amount: input.amount, reason: input.reason.trim(), byName: actor.name, at, isDemo: true });
-      const po = byId(supplierPurchaseOrders, p.poId);
-      const supplier = byId(suppliers, p.supplierId);
-      // The supplier sees the correction beside the payment, and is told in the order's thread when they have a login.
-      if (po && supplier && supplierUserFor(supplier)) {
-        pushSupplierMessage(ensureSupplierThread(supplier.id, po.id), {
-          author: 'aiec',
-          authorName: actor.name,
-          authorUserId: actor.id,
-          body: `${input.direction === 'credit' ? 'Credit' : 'Additional payment'} of ${formatINR(input.amount)} recorded against payment ${p.code} for ${po.code}: ${input.reason.trim()}`,
-          channel: 'in_app',
-          at,
-          expectsReply: false,
-          poRef: po.id,
-        });
-      }
+      pushPaymentAdjustment(p, input.direction, input.amount, input.reason.trim(), actor);
       return historyDetailOf(p, { supplierId: null });
     }),
 

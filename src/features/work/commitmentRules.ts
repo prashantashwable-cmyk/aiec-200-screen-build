@@ -7,6 +7,7 @@ import type {
   DeliverySchedule,
   ShipmentLeg,
   SupplierMessage,
+  SupplierDispute,
   SupplierRetention,
   SupplierThread,
   CommitmentKind,
@@ -39,6 +40,7 @@ import { RETENTION_DECISION_WINDOW, RETENTION_REVIEW_AFTER } from '@/features/su
 import { windowEndsAt } from '@/features/logistics/deliverySlots';
 import type { InvoiceGate } from '@/features/suppliers/invoiceMatch';
 import { CHECK_STALE_AFTER, handoverDueAt } from '@/features/tax/gst';
+import { PROCESS_REVIEW_TARGET, dueAtOf } from '@/features/suppliers/disputes';
 import { MANUAL_UPDATE_EVERY } from '@/features/logistics/shipmentTracking';
 
 /**
@@ -92,6 +94,8 @@ export interface CommitmentSources {
   invoiceGates: { poId: string; supplierId: string; deliveredAt: string; gate: InvoiceGate }[];
   /** Invoices that ever failed the three-way match, with whether they still do (113). */
   invoiceMismatches: { invoiceId: string; poId: string; supplierId: string; invoiceNumber: string; notifiedAt: string; stillMismatched: boolean; resolvedAt?: string }[];
+  /** Supplier payment disputes (117). */
+  supplierDisputes: SupplierDispute[];
   /** The last closed months with tax activity, and whether each was handed to the accountant (116). */
   gstPeriods: { period: string; handedOver: boolean; handedOverAt?: string }[];
   /** Trading suppliers with a GSTIN, and when their GST standing was last looked at (116). */
@@ -1107,6 +1111,62 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
             oversightRoute: `/supplier-payments?payment=${p.id}`,
           };
         });
+    },
+  },
+  {
+    // A supplier who disagrees with a payment is owed an answer, and one who says it may stop taking orders is owed it sooner (117).
+    // Each time round is its own obligation, so a decision the supplier contests puts a fresh clock on Admin.
+    kind: 'supplier_dispute_resolve',
+    nudgeBefore: hours(12),
+    escalateAfter: days(1),
+    escalates: true,
+    raisesAlert: true,
+    alertCategory: 'supplier',
+    collect(src) {
+      const admin = adminId(src);
+      return src.supplierDisputes.map((d) => {
+        const supplier = src.suppliers.find((x) => x.id === d.supplierId);
+        const po = src.purchaseOrders.find((x) => x.id === d.poId);
+        return {
+          ...base('supplier_dispute_resolve', 'supplier_dispute', `${d.id}:r${d.round}`),
+          ownerUserId: admin,
+          titleKey: 'work.title.supplier_dispute_resolve',
+          titleParams: { supplier: supplier?.name ?? '', code: po?.code ?? '' },
+          amount: d.claimedAmount ?? undefined,
+          dueAt: dueAtOf(d.roundStartedAt, d.threatensHalt),
+          state: d.status === 'resolved' ? ('done' as const) : ('open' as const),
+          paused: false,
+          completedAt: d.status === 'resolved' ? d.decisions[d.decisions.length - 1]?.at : undefined,
+          actionRoute: `/supplier-disputes?dispute=${d.id}`,
+          oversightRoute: `/supplier-disputes?dispute=${d.id}`,
+        };
+      });
+    },
+  },
+  {
+    // A dispute that showed a flaw in AIEC's own process is only worth something if the process is then fixed (117).
+    kind: 'supplier_dispute_process_review',
+    nudgeBefore: days(2),
+    escalateAfter: days(3),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'supplier',
+    collect(src) {
+      const admin = adminId(src);
+      return src.supplierDisputes
+        .filter((d) => !!d.processFlag)
+        .map((d) => ({
+          ...base('supplier_dispute_process_review', 'supplier_dispute', d.id),
+          ownerUserId: admin,
+          titleKey: 'work.title.supplier_dispute_process_review',
+          titleParams: { code: d.code },
+          dueAt: plus(d.processFlag!.at, PROCESS_REVIEW_TARGET),
+          state: d.processFlag!.status === 'addressed' ? ('done' as const) : ('open' as const),
+          paused: false,
+          completedAt: d.processFlag!.addressedAt,
+          actionRoute: `/supplier-disputes?dispute=${d.id}`,
+          oversightRoute: `/supplier-disputes?dispute=${d.id}`,
+        }));
     },
   },
   {

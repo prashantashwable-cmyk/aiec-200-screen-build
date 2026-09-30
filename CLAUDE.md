@@ -110,7 +110,28 @@ the module's section to `BUILD_README.md`.
 - **Module 11 Material Logistics & Delivery is done, including its checkpoint** (`101`–`110`, see
   BUILD_README's Module 11 section). Admin has a "Logistics" nav tab; every delivery screen declares
   `tab: 'logistics'` for Admin.
-- **Module 12 Supplier Payment Processing in progress:** `111`–`116` built. **Next: `117`**.
+- **Module 12 Supplier Payment Processing in progress:** `111`–`117` built. **Next: `118`**.
+  117 facts:
+  - `SupplierDispute` (memoryRepository `supplierDisputes`) keeps the supplier's own words (`position`, `claimedAmount`, `threatensHalt`),
+    append-only `decisions` and `events`, and `round` (1, +1 each time the supplier contests a decision; `roundStartedAt` restarts the
+    clock). Kinds: `amount` (a payment, `paymentId`), `retention_timing` (`retentionId`), `invoice` (`invoiceId`). The evidence is
+    read on each view (`disputeViewOf`): the PO's terms basis (115), the payment and its adjustments, retention, invoices, open
+    damaged-parts reports and defects (108/097), delivered quantities, and the supplier's scorecard, agreement, tier, open orders and
+    prior disputes as the relationship context.
+  - A decision makes a real correction: `uphold` none; `supplier_favor`/`partial` on a paid payment adds a `top_up`
+    `SupplierPaymentAdjustment` (115: `pushPaymentAdjustment`, the payment is never edited), on an unpaid (pending/held) payment raises
+    its `amount` with an `amount_changed` event (an approved one is `payment_locked`), on a retention releases it, on an invoice
+    reinstates it if sent back and accepts price differences with `adjustment.changeId = 'dispute:<code>'` (quantity problems are
+    `not_actionable`). Rules are pure in `@/features/suppliers/disputes` (`decisionProblem`, `maxAmountOf`, `slaOf`); partial only
+    exists for an amount claim, and total given never exceeds the claim.
+  - SLA: 7 days from raising or re-contesting, 3 when the supplier says it may stop supplying (`DISPUTE_TARGET`/`DISPUTE_HALT_TARGET`,
+    placeholder business decisions). Commitments `supplier_dispute_resolve` (one per round, Admin, escalates to an Alert) and
+    `supplier_dispute_process_review` (14 days after Admin flags a flaw in AIEC's own process: `processFlag` with an area and
+    "addressed" state). `syncSupplierDisputes` keeps one high `supplier` alert per open halt-threat dispute.
+  - An open dispute on an order flags its other supplier payments in 111 (`supplier_dispute`, a `hold` flag) and holds a retention that
+    falls due (`heldAuto: 'related_dispute'`). A supplier raises a dispute on their own payment from 115's detail sheet and may contest a
+    decision within `REOPEN_WINDOW` (30 days); Admin can also log one for a supplier and log that one was contested.
+  - `/supplier-disputes` is Admin only (`?dispute=`), reached from 091's hub and the commitments.
   116 facts:
   - GST is read, never stored as a figure. `gstDocumentsOf` (memoryRepository) turns every customer `Invoice` (087; the consolidated
     `final` invoice and any superseded one are skipped, credit notes subtract) and every open `SupplierInvoice` (113) into a

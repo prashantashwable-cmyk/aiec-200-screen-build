@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { ArrowsClockwise, Coins, DownloadSimple, Question, Receipt } from '@phosphor-icons/react';
+import { ArrowsClockwise, Coins, DownloadSimple, Question, Receipt, Scales } from '@phosphor-icons/react';
 import {
   ActionBar,
   AscensionLine,
@@ -19,6 +19,7 @@ import {
   Sheet,
   StatTile,
   TextArea,
+  Toggle,
   formatDate,
   formatDateTime,
   formatINR,
@@ -199,6 +200,8 @@ export function SupplierPaymentHistoryView() {
       <DetailSheet s={s} t={t} lang={lang} />
       <AdjustSheet s={s} t={t} report={report} />
       <QuerySheet s={s} t={t} report={report} />
+      <DisputeSheet s={s} t={t} report={report} />
+      <ContestSheet s={s} t={t} report={report} />
     </Screen>
   );
 }
@@ -370,6 +373,30 @@ function DetailSheet({ s, t, lang }: { s: SupplierPaymentHistoryState; t: T; lan
             </section>
           )}
 
+          {d.disputes.length > 0 && (
+            <section className="stack gap-2" aria-labelledby="dsp-h">
+              <h3 id="dsp-h" className="t-sm t-semibold">
+                {t(K.detail.disputesHeading)}
+              </h3>
+              {d.disputes.map((x) => (
+                <div key={x.id} className="row between gap-2 wrap" style={{ alignItems: 'center' }}>
+                  <span className="t-sm">
+                    {x.code}
+                    {x.round > 1 ? ` · ${t(K.detail.disputeRound, { count: x.round })}` : ''}
+                  </span>
+                  <span className="row gap-2" style={{ alignItems: 'center' }}>
+                    <Badge tone={x.status === 'open' ? 'warning' : 'neutral'}>{x.status === 'open' ? t(K.detail.disputeOpen) : x.lastDecision ? t(K.detail.disputeDecision[x.lastDecision]) : t(K.detail.disputeDecided)}</Badge>
+                    {d.canQuery && x.canReopen && (
+                      <Button size="sm" variant="ghost" disabled={s.busy} onClick={() => s.openContest(x.id)}>
+                        {t(K.action.contest)}
+                      </Button>
+                    )}
+                  </span>
+                </div>
+              ))}
+            </section>
+          )}
+
           <section className="stack gap-1" aria-labelledby="ev-h">
             <h3 id="ev-h" className="t-sm t-semibold">
               {t(K.detail.evidenceHeading)}
@@ -403,7 +430,7 @@ function DetailSheet({ s, t, lang }: { s: SupplierPaymentHistoryState; t: T; lan
             </Button>
           )}
 
-          {(d.canAdjust || d.canQuery) && (
+          {(d.canAdjust || d.canQuery || d.canDispute) && (
             <ActionBar>
               {d.canAdjust && (
                 <Button variant="secondary" disabled={s.busy} onClick={s.openAdjust}>
@@ -413,6 +440,11 @@ function DetailSheet({ s, t, lang }: { s: SupplierPaymentHistoryState; t: T; lan
               {d.canQuery && (
                 <Button variant="secondary" disabled={s.busy} onClick={s.openQuery}>
                   <Question size={14} aria-hidden="true" /> {t(K.action.query)}
+                </Button>
+              )}
+              {d.canDispute && (
+                <Button variant="secondary" disabled={s.busy} onClick={s.openDispute}>
+                  <Scales size={14} aria-hidden="true" /> {t(K.action.dispute)}
                 </Button>
               )}
             </ActionBar>
@@ -473,6 +505,45 @@ function QuerySheet({ s, t, report }: { s: SupplierPaymentHistoryState; t: T; re
           </Button>
         </div>
       )}
+    </Sheet>
+  );
+}
+
+function DisputeSheet({ s, t, report }: { s: SupplierPaymentHistoryState; t: T; report: Report }) {
+  const d = s.detail;
+  return (
+    <Sheet open={s.disputeOpen && !!d} onClose={() => s.setDisputeOpen(false)} title={t(K.disputeSheet.title)} closeLabel={t(K.action.close)}>
+      {d && (
+        <div className="stack gap-3">
+          <p className="t-sm t-muted">{t(K.disputeSheet.intro, { code: d.code, amount: formatINR(d.netAmount) })}</p>
+          <Field label={t(K.disputeSheet.position)} hint={t(K.disputeSheet.positionHint)} required>
+            {({ id, describedBy }) => <TextArea id={id} aria-describedby={describedBy} rows={4} value={s.position} onChange={(e) => s.setPosition(e.target.value)} />}
+          </Field>
+          <Field label={t(K.disputeSheet.claimed)} hint={t(K.disputeSheet.claimedHint)} required>
+            {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} inputMode="decimal" value={s.claimed} onChange={(e) => s.setClaimed(e.target.value)} />}
+          </Field>
+          <Toggle checked={s.halt} onChange={s.setHalt} label={t(K.disputeSheet.halt)} description={t(K.disputeSheet.haltHint)} />
+          <Button disabled={s.busy || !s.disputeValid} onClick={async () => report(await s.confirmDispute(), K.toast.disputed)}>
+            {t(K.disputeSheet.confirm)}
+          </Button>
+        </div>
+      )}
+    </Sheet>
+  );
+}
+
+function ContestSheet({ s, t, report }: { s: SupplierPaymentHistoryState; t: T; report: Report }) {
+  return (
+    <Sheet open={!!s.contestId} onClose={() => s.setContestId(null)} title={t(K.contestSheet.title)} closeLabel={t(K.action.close)}>
+      <div className="stack gap-3">
+        <p className="t-sm t-muted">{t(K.contestSheet.intro)}</p>
+        <Field label={t(K.contestSheet.reason)} required>
+          {({ id, describedBy }) => <TextArea id={id} aria-describedby={describedBy} rows={3} value={s.contestReason} onChange={(e) => s.setContestReason(e.target.value)} />}
+        </Field>
+        <Button disabled={s.busy || s.contestReason.trim().length < 8} onClick={async () => report(await s.confirmContest(), K.toast.contested)}>
+          {t(K.contestSheet.confirm)}
+        </Button>
+      </div>
     </Sheet>
   );
 }

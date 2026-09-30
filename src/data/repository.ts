@@ -1,4 +1,12 @@
 import type {
+  AlertSeverity,
+  SupplierDispute,
+  SupplierDisputeKind,
+  SupplierDisputeDecision,
+  SupplierDisputeEvent,
+  DisputeCorrection,
+  DisputeProcessArea,
+  SupplierRetentionStatus,
   ActivityEvent,
   Alert,
   AutomatedActionLogEntry,
@@ -1140,6 +1148,131 @@ export interface AdvanceResolutionInput {
   note?: string;
 }
 
+/* ---------------------------------- Supplier dispute resolution (117) */
+
+export type DisputeSlaState = 'on_track' | 'due_soon' | 'overdue' | 'resolved';
+
+/** What a decision would actually do, so Admin sees the financial effect before choosing. */
+export type DisputeEffect = 'payment_adjustment' | 'payment_amount' | 'retention_release' | 'invoice_accept' | 'none';
+
+export interface SupplierDisputeRow {
+  id: string;
+  code: string;
+  supplierId: string;
+  supplierName: string;
+  poId: string;
+  poCode: string;
+  siteName: string;
+  kind: SupplierDisputeKind;
+  position: string;
+  claimedAmount: number | null;
+  status: 'open' | 'resolved';
+  round: number;
+  raisedAt: string;
+  /** When the current round has to be resolved by. */
+  dueAt: string;
+  sla: DisputeSlaState;
+  slaSeverity: AlertSeverity | null;
+  threatensHalt: boolean;
+  lastDecision: SupplierDisputeDecision | null;
+  processFlagOpen: boolean;
+}
+
+export interface SupplierDisputeBoard {
+  rows: SupplierDisputeRow[];
+  totals: { open: number; overdue: number; halt: number; claimedOpen: number; resolved: number };
+}
+
+export interface DisputeEvidence {
+  poTotal: number;
+  /** How the disputed amount was worked out from the order's terms (115's basis), for an amount dispute. */
+  basis: PaymentHistoryBasis | null;
+  payment: { id: string; code: string; part: SupplierPaymentPart; amount: number; netAmount: number; status: SupplierPaymentStatus; paidAt: string | null; bankReference: string | null } | null;
+  adjustments: PaymentAdjustmentView[];
+  retention: { id: string; amount: number; pct: number; status: SupplierRetentionStatus; heldAt: string; pausedAt: string | null; decidedAt: string | null } | null;
+  invoices: PaymentHistoryInvoice[];
+  /** Rejected invoices for the order, with why. */
+  rejectedInvoices: { id: string; number: string; reason: string | null }[];
+  openReports: { id: string; code: string; status: string }[];
+  defects: number;
+  deliveredLines: { description: string; ordered: number; accepted: number }[];
+}
+
+export interface DisputeRelationship {
+  onTimeRate: number | null;
+  qualityScore: number | null;
+  ratedOrders: number;
+  agreementState: 'none' | 'active' | 'expiring' | 'lapsed';
+  tier: string;
+  openOrders: number;
+  orderValue: number;
+  /** Other active suppliers who cover the same part categories: how easily the work could go elsewhere. */
+  alternatives: number;
+  priorDisputes: { total: number; supplierFavor: number; partial: number; upheld: number };
+  otherOpenDisputes: number;
+}
+
+export interface DisputeDecisionView {
+  id: string;
+  decision: SupplierDisputeDecision;
+  amount: number;
+  note: string;
+  byName: string;
+  at: string;
+  correction: DisputeCorrection;
+  correctionRef: string | null;
+}
+
+export interface SupplierDisputeView extends SupplierDisputeRow {
+  supplierPosition: string;
+  raisedByName: string;
+  raisedByRole: 'supplier' | 'admin';
+  targetLabel: string;
+  evidence: DisputeEvidence;
+  relationship: DisputeRelationship;
+  decisions: DisputeDecisionView[];
+  events: SupplierDisputeEvent[];
+  processFlag: SupplierDispute['processFlag'] | null;
+  /** What a "for the supplier" decision would do here, and how much more it can give. */
+  effect: DisputeEffect;
+  alreadyGiven: number;
+  maxAmount: number | null;
+  canPartial: boolean;
+  /** A resolved dispute the supplier can still contest. */
+  canReopen: boolean;
+}
+
+export interface ResolveDisputeInput {
+  decision: SupplierDisputeDecision;
+  /** The extra money given to the supplier. Ignored when upholding. */
+  amount?: number;
+  note: string;
+}
+
+export interface RaiseDisputeInput {
+  kind: SupplierDisputeKind;
+  poId: string;
+  paymentId?: string;
+  retentionId?: string;
+  invoiceId?: string;
+  position: string;
+  claimedAmount?: number;
+  threatensHalt?: boolean;
+  /** Admin logging on a supplier's behalf names the supplier; a supplier's own is always themselves. */
+  supplierId?: string;
+}
+
+export interface DisputeTargets {
+  payments: { id: string; code: string; poId: string; poCode: string; supplierId: string; supplierName: string; part: SupplierPaymentPart; amount: number; status: SupplierPaymentStatus }[];
+  retentions: { id: string; poId: string; poCode: string; supplierId: string; supplierName: string; amount: number; status: SupplierRetentionStatus }[];
+  invoices: { id: string; poId: string; poCode: string; supplierId: string; supplierName: string; number: string; status: InvoiceMatchStatus }[];
+}
+
+export interface DisputeProcessInput {
+  area: DisputeProcessArea;
+  note: string;
+}
+
 /* ---------------------------------- GST compliance (116) */
 
 export interface GstRateBucket {
@@ -1319,6 +1452,10 @@ export interface PaymentHistoryDetail extends PaymentHistoryEntry {
   events: SupplierPaymentEvent[];
   evidence: PaymentEvidence[];
   approvedByName: string | null;
+  /** Disputes the supplier has raised about this payment, newest first. */
+  disputes: { id: string; code: string; status: 'open' | 'resolved'; lastDecision: SupplierDisputeDecision | null; round: number; canReopen: boolean }[];
+  /** The supplier may formally dispute it: it is theirs and no dispute over it is open. */
+  canDispute: boolean;
   /** Admin may record a further adjustment. */
   canAdjust: boolean;
   /** The supplier may ask about it. */
@@ -3239,6 +3376,21 @@ export interface Repository {
   completeDeliveryChecklist(checklistId: string, input: CompleteChecklistInput, byUserId: string): Promise<CompleteChecklistResult>;
   /** Abandons an unfinished checklist started by mistake. */
   cancelDeliveryChecklist(checklistId: string, byUserId: string): Promise<void>;
+
+  /* Supplier dispute resolution (117) — supplier-raised payment disputes, decided with real downstream corrections */
+  getSupplierDisputeBoard(byUserId: string): Promise<SupplierDisputeBoard>;
+  getSupplierDispute(disputeId: string, byUserId: string): Promise<SupplierDisputeView>;
+  /** A supplier raises one on their own payments; Admin may log one on a supplier's behalf. */
+  raiseSupplierDispute(input: RaiseDisputeInput, byUserId: string): Promise<SupplierDisputeView>;
+  /** Admin's decision. It makes the correction it names: an adjustment beside a paid payment, a change to an unpaid one,
+   *  releasing a retention, or accepting an invoice. */
+  resolveSupplierDispute(disputeId: string, input: ResolveDisputeInput, byUserId: string): Promise<SupplierDisputeView>;
+  /** The supplier contests a decision (or Admin logs that they did). Earlier decisions stay on the record. */
+  reopenSupplierDispute(disputeId: string, reason: string, byUserId: string): Promise<SupplierDisputeView>;
+  /** The dispute showed a flaw in AIEC's own process. */
+  flagDisputeProcessIssue(disputeId: string, input: DisputeProcessInput, byUserId: string): Promise<SupplierDisputeView>;
+  addressDisputeProcessIssue(disputeId: string, note: string, byUserId: string): Promise<SupplierDisputeView>;
+  getDisputeTargets(byUserId: string): Promise<DisputeTargets>;
 
   /* GST compliance (116) — input credit and output GST reconciled, with supplier standing */
   getGstCompliance(period: string | null, byUserId: string): Promise<GstComplianceView>;

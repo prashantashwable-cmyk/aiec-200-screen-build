@@ -68,6 +68,7 @@ import type {
   SupplierInvoice,
   SupplierPaymentAdjustment,
   SupplierGstCheck,
+  SupplierDispute,
   SupplierPayment,
   SupplierPaymentPart,
   SupplierPaymentTrigger,
@@ -1979,8 +1980,81 @@ export const seedSupplierGstChecks: SupplierGstCheck[] = [
   },
 ];
 
+/* ------------------------------------------ Supplier disputes (117) */
+
+/** Vertex contests the ₹6,000 credit on its cabin balance; Konark, whose retention is paused, says it will stop taking orders;
+ *  Sanghvi's freight dispute was settled a month ago in part, and showed the invoice screen did not ask for the freight line. */
+export const seedSupplierDisputes: SupplierDispute[] = [
+  {
+    id: 'sd-1',
+    code: 'AIEC-SD-6001',
+    supplierId: 'sp-1',
+    poId: 'spo-h2',
+    kind: 'amount',
+    paymentId: 'spay-3',
+    position: 'The dent on the cabin panel happened on the transporter’s truck after our dispatch, and we have the loading photos. The ₹6,000 credit should not come off our balance.',
+    claimedAmount: 6_000,
+    threatensHalt: false,
+    raisedByRole: 'supplier',
+    raisedByName: 'Anil Mehta',
+    raisedAt: daysAgo(2),
+    status: 'open',
+    round: 1,
+    roundStartedAt: daysAgo(2),
+    decisions: [],
+    events: [{ id: 'sd-1-e1', kind: 'raised', at: daysAgo(2), byName: 'Anil Mehta' }],
+    isDemo: true,
+  },
+  {
+    id: 'sd-2',
+    code: 'AIEC-SD-6002',
+    supplierId: 'sp-3',
+    poId: 'spo-h6',
+    kind: 'retention_timing',
+    retentionId: 'ret-6',
+    position: 'The retention on this order has been held for four weeks without an answer. If it is not released we will have to stop taking AIEC orders until it is.',
+    claimedAmount: null,
+    threatensHalt: true,
+    raisedByRole: 'supplier',
+    raisedByName: 'Suresh Konark',
+    raisedAt: daysAgo(4),
+    status: 'open',
+    round: 1,
+    roundStartedAt: daysAgo(4),
+    decisions: [],
+    events: [{ id: 'sd-2-e1', kind: 'raised', at: daysAgo(4), byName: 'Suresh Konark' }],
+    isDemo: true,
+  },
+  {
+    id: 'sd-3',
+    code: 'AIEC-SD-5990',
+    supplierId: 'sp-2',
+    poId: 'spo-h4',
+    kind: 'amount',
+    paymentId: 'spay-8',
+    position: 'Freight of ₹3,000 for the cabin was on our invoice but not in the amount paid.',
+    claimedAmount: 3_000,
+    threatensHalt: false,
+    raisedByRole: 'supplier',
+    raisedByName: 'Sanghvi Lift Works',
+    raisedAt: daysAgo(34),
+    status: 'resolved',
+    round: 1,
+    roundStartedAt: daysAgo(34),
+    decisions: [{ id: 'sd-3-d1', decision: 'partial', amount: 1_500, note: 'Half the freight was already in the order price. The other half was missed on the invoice screen.', byName: 'Prashant Vasant Wable', at: daysAgo(30), correction: 'payment_adjustment', correctionRef: 'spadj-2' }],
+    events: [
+      { id: 'sd-3-e1', kind: 'raised', at: daysAgo(34), byName: 'Sanghvi Lift Works' },
+      { id: 'sd-3-e2', kind: 'decided', at: daysAgo(30), byName: 'Prashant Vasant Wable', note: 'Half the freight was already in the order price. The other half was missed on the invoice screen.' },
+      { id: 'sd-3-e3', kind: 'process_flagged', at: daysAgo(6), byName: 'Prashant Vasant Wable', note: 'The invoice screen never asks whether freight is billed separately.' },
+    ],
+    processFlag: { area: 'invoice_matching', note: 'The invoice screen never asks whether freight is billed separately.', byName: 'Prashant Vasant Wable', at: daysAgo(6), status: 'open' },
+    isDemo: true,
+  },
+];
+
 /** Vertex's cabin balance (AIEC-SP-3003) was later corrected: a damaged panel was credited (108) after it had been paid. */
 export const seedSupplierPaymentAdjustments: SupplierPaymentAdjustment[] = [
+  { id: 'spadj-2', paymentId: 'spay-8', direction: 'top_up', amount: 1_500, reason: 'Dispute AIEC-SD-5990 settled in part: half the freight was missed on the invoice screen.', byName: 'Prashant Vasant Wable', at: daysAgo(30), isDemo: true },
   { id: 'spadj-1', paymentId: 'spay-3', direction: 'credit', amount: 6_000, reason: 'Credit note VEC/CN/0091 for one dented cabin panel found after the balance was paid.', byName: 'Prashant Vasant Wable', at: daysAgo(4), isDemo: true },
 ];
 

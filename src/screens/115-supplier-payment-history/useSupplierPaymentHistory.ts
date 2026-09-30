@@ -160,6 +160,38 @@ export function useSupplierPaymentHistory() {
       setQueryOpen(false);
     });
 
+  /* -------------------------------------------------------------- dispute */
+  const [disputeOpen, setDisputeOpen] = useState(false);
+  const [position, setPosition] = useState('');
+  const [claimed, setClaimed] = useState('');
+  const [halt, setHalt] = useState(false);
+  const openDispute = () => {
+    setPosition('');
+    setClaimed('');
+    setHalt(false);
+    setDisputeOpen(true);
+  };
+  const claimedNumber = Number(claimed);
+  const disputeValid = position.trim().length >= 15 && Number.isFinite(claimedNumber) && claimedNumber > 0;
+  const confirmDispute = () =>
+    run(async () => {
+      if (!user || !detail) throw new Error('forbidden');
+      await repository.raiseSupplierDispute({ kind: 'amount', poId: detail.poId, paymentId: detail.id, position, claimedAmount: claimedNumber, threatensHalt: halt }, user.id);
+      setDisputeOpen(false);
+    });
+  const [contestId, setContestId] = useState<string | null>(null);
+  const [contestReason, setContestReason] = useState('');
+  const openContest = (id: string) => {
+    setContestReason('');
+    setContestId(id);
+  };
+  const confirmContest = () =>
+    run(async () => {
+      if (!user || !contestId) throw new Error('forbidden');
+      await repository.reopenSupplierDispute(contestId, contestReason, user.id);
+      setContestId(null);
+    });
+
   /* -------------------------------------------------------------- export */
   const [exporting, setExporting] = useState(false);
   /** Everything that matches the filter, not just the pages on screen. */
@@ -217,6 +249,23 @@ export function useSupplierPaymentHistory() {
     note,
     setNote,
     confirmQuery,
+    disputeOpen,
+    setDisputeOpen,
+    openDispute,
+    position,
+    setPosition,
+    claimed,
+    setClaimed,
+    halt,
+    setHalt,
+    disputeValid,
+    confirmDispute,
+    contestId,
+    setContestId,
+    contestReason,
+    setContestReason,
+    openContest,
+    confirmContest,
     exporting,
     fetchAll,
   };

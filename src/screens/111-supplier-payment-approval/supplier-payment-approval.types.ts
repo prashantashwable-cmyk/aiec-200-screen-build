@@ -15,7 +15,7 @@ export const QUEUE_FILTERS: QueueFilter[] = ['toApprove', 'waiting', 'held', 're
 export const PARTS: SupplierPaymentPart[] = ['upfront', 'balance', 'retention'];
 export const TRIGGERS: SupplierPaymentTrigger[] = ['on_send', 'on_acknowledge', 'after_delivery', 'on_handover'];
 export const STATUSES: SupplierPaymentStatus[] = ['pending_approval', 'held', 'approved', 'executed'];
-export const FLAG_KINDS: HoldFlagKind[] = ['invoice_unmatched', 'supplier_blocked', 'open_report', 'orphaned', 'rating_dispute', 'high_value', 'early_release'];
+export const FLAG_KINDS: HoldFlagKind[] = ['invoice_unmatched', 'supplier_blocked', 'open_report', 'supplier_dispute', 'orphaned', 'rating_dispute', 'high_value', 'early_release'];
 export const EVIDENCE_KINDS: PaymentEvidenceKind[] = ['invoice_matched', 'manual_override', 'po_sent', 'acknowledged', 'delivery_received', 'delivery_signed', 'net_elapsed', 'retention_released', 'installation_handover'];
 export const EVENT_KINDS: SupplierPaymentEventKind[] = ['triggered', 'held', 'hold_released', 'approved', 'reversed', 'executed', 'amount_changed'];
 

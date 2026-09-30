@@ -426,7 +426,7 @@ function LineCard({ l, inv, s, t, lang, canAct }: { l: SupplierInvoiceLineView; 
           <div className="stack gap-1" role="note">
             <Badge tone="accent">{t(K.detail.adjustmentBasis)}</Badge>
             <span className="t-xs">
-              {t(K.detail.adjustmentAccepted, { price: formatINR(l.adjustment.toPrice), name: l.adjustment.acceptedBy, date: formatDate(l.adjustment.acceptedAt, lang) })}
+              {t(l.adjustment.changeId.startsWith('dispute:') ? K.detail.adjustmentDispute : K.detail.adjustmentAccepted, { price: formatINR(l.adjustment.toPrice), name: l.adjustment.acceptedBy, date: formatDate(l.adjustment.acceptedAt, lang), dispute: l.adjustment.changeId.slice(8) })}
               {l.adjustment.note ? ` · ${t(K.detail.adjustmentNote, { note: l.adjustment.note })}` : ''}
             </span>
           </div>

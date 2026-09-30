@@ -16,7 +16,7 @@ export const MATCH_STATUSES: InvoiceMatchStatus[] = ['matched', 'awaiting_delive
 export const VERDICTS: LineVerdict[] = ['matched', 'partial', 'adjusted', 'awaiting_delivery', 'mismatch'];
 export const ISSUES: MatchIssue[] = ['price_differs', 'over_delivered', 'over_ordered', 'unknown_item'];
 export const GATES: Exclude<InvoiceGate, 'ok'>[] = ['no_invoice', 'mismatch', 'incomplete', 'awaiting_delivery'];
-export const EVENT_KINDS: SupplierInvoiceEventKind[] = ['submitted', 'adjustment_accepted', 'rejected', 'withdrawn', 'mismatch_notified'];
+export const EVENT_KINDS: SupplierInvoiceEventKind[] = ['submitted', 'adjustment_accepted', 'rejected', 'withdrawn', 'reinstated', 'mismatch_notified'];
 
 const rec = <T extends string>(ns: string, keys: readonly T[]) => Object.fromEntries(keys.map((k) => [k, `${ns}.${k}`])) as Record<T, string>;
 
@@ -96,6 +96,7 @@ export const MATCHING_KEYS = {
     adjustmentNote: 'supplierInvoiceMatching.detail.adjustmentNote',
     approvedChange: 'supplierInvoiceMatching.detail.approvedChange',
     adjustmentAccepted: 'supplierInvoiceMatching.detail.adjustmentAccepted',
+    adjustmentDispute: 'supplierInvoiceMatching.detail.adjustmentDispute',
     noApprovedChange: 'supplierInvoiceMatching.detail.noApprovedChange',
     useChange: 'supplierInvoiceMatching.detail.useChange',
     partialNote: 'supplierInvoiceMatching.detail.partialNote',
