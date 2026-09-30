@@ -1,5 +1,6 @@
 import type { ItemState, SignOffProblem } from '@/features/qc/mechanical';
 import type { ElecSignOffProblem, ElecState } from '@/features/qc/electrical';
+import type { DisputeDecision, SnagProblem, SnagSeverity } from '@/features/qc/snags';
 import type { GuidanceProblem, ReadinessProblem, ReissueProblem, StandardsProblem } from '@/features/qc/compliance';
 import type { BusyReason, EligibilityProblem, Involvement, SlotOffer } from '@/features/qc/inspectors';
 import type {
@@ -13,6 +14,7 @@ import type {
   QcMechItemId,
   QcVerdict,
   ReworkRequest,
+  SnagEvent,
   InspectorUnavailability,
   QcAssignment,
   QcAssignmentEvent,
@@ -1722,6 +1724,66 @@ export interface QcElecInput {
   clientId?: string;
   capturedAt?: string;
 }
+
+/* ------------------------------------ Defect / snag list (135) */
+
+export interface SnagRowView {
+  id: string;
+  code: string;
+  jobId: string;
+  jobCode: string;
+  siteName: string;
+  source: ReworkRequest['source'];
+  itemId: string;
+  /** A checklist item's translation key, or null for a snag raised on the list (it has its own `title`). */
+  itemLabelKey: string | null;
+  title: string | null;
+  severity: SnagSeverity;
+  status: ReworkRequest['status'];
+  ownerId: string | null;
+  ownerName: string | null;
+  dueAt: string | null;
+  overdue: boolean;
+  raisedAt: string;
+  raisedByName: string;
+  evidenceCount: number;
+  groupSize: number;
+  /** An unresolved safety-critical snag: handover cannot go ahead. */
+  blocking: boolean;
+}
+
+export interface SnagDetailView extends SnagRowView {
+  note: string;
+  evidence: { id: string; kind: 'photo' | 'video'; previewUrl: string; mediaUrl?: string; capturedAt: string }[];
+  events: SnagEvent[];
+  group: { id: string; code: string; title: string | null; status: ReworkRequest['status']; primary: boolean }[];
+  groupNote: string | null;
+  dispute: ReworkRequest['dispute'] | null;
+  waiver: ReworkRequest['waiver'] | null;
+  verifiedAt: string | null;
+  verifiedByName: string | null;
+  resolvedVia: { id: string; code: string } | null;
+  /** Where the checklist's own re-test is done, for a snag a checklist raised. */
+  recheckRoute: string | null;
+  actions: { assign: boolean; regrade: boolean; link: boolean; dispute: boolean; decide: boolean; waive: boolean; verify: boolean; decisions: DisputeDecision[] };
+}
+
+export interface SnagBoardView {
+  viewer: 'admin' | 'inspector' | 'technician';
+  rows: SnagRowView[];
+  totals: { open: number; blocking: number; pendingVerification: number; disputed: number; closed: number };
+  jobs: { id: string; code: string; siteName: string; status: Job['status']; open: number; blocking: number; canAdd: boolean }[];
+  technicians: { id: string; name: string }[];
+}
+
+export interface SnagAddInput {
+  title: string;
+  note: string;
+  severity: SnagSeverity;
+  evidence: SopMediaInput[];
+}
+
+export type SnagError = SnagProblem | 'not_ready' | 'too_many_attachments' | 'not_technician';
 
 /* ------------------------------------ Compliance certification (134) */
 
@@ -4795,6 +4857,24 @@ export interface Repository {
   pingSiteLocation(technicianId: string, point: GeoPoint, at?: string): Promise<void>;
   /** Picks which step to do next, when the site does not allow the suggested order. Only steps whose prerequisites are done. */
   focusSopStep(jobId: string, stepId: string, technicianId: string): Promise<InstallationSopView>;
+
+  /* Defect / snag list (135) */
+  getSnagBoard(userId: string, jobId?: string): Promise<SnagBoardView>;
+  getSnag(snagId: string, userId: string): Promise<SnagDetailView>;
+  /** The inspector (or Admin) adds a finding the checklists do not cover. A safety-critical one needs proof and blocks handover. */
+  addSnag(jobId: string, input: SnagAddInput, userId: string): Promise<SnagDetailView>;
+  /** Admin only: names who puts these right, in one go. Due times follow each one's severity. */
+  assignSnags(snagIds: string[], technicianId: string, adminId: string): Promise<SnagBoardView>;
+  regradeSnag(snagId: string, severity: SnagSeverity, reason: string, adminId: string): Promise<SnagDetailView>;
+  /** Snags raised on the list that share a root cause: resolving the primary resolves the rest. */
+  linkSnags(input: { snagIds: string[]; primaryId: string; note: string }, userId: string): Promise<SnagBoardView>;
+  /** The technician on the job disagrees with a finding: it goes to Admin for a documented decision. */
+  disputeSnag(snagId: string, reason: string, userId: string): Promise<SnagDetailView>;
+  decideSnagDispute(snagId: string, decision: DisputeDecision, note: string, adminId: string): Promise<SnagDetailView>;
+  /** A cosmetic finding the customer chooses to live with: recorded as their choice, never as a fix. */
+  waiveSnag(snagId: string, input: { by: string; note: string }, userId: string): Promise<SnagDetailView>;
+  /** QC re-confirms a fix to a snag raised on the list. Not by the person who fixed it. */
+  verifySnag(snagId: string, note: string, userId: string): Promise<SnagDetailView>;
 
   /* Compliance certification (134) */
   getComplianceCertification(jobId: string, userId: string): Promise<ComplianceView>;

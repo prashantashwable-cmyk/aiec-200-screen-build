@@ -218,6 +218,9 @@ import type {
   QcMechAttemptView,
   ComplianceCertificateView,
   ComplianceView,
+  SnagBoardView,
+  SnagDetailView,
+  SnagRowView,
   QcElecAttemptView,
   QcElecItemView,
   QcElecView,
@@ -412,6 +415,7 @@ import type {
   SafetyStateItem,
   CertificatePackage,
   ComplianceCertificate,
+  SnagEvent,
   StateInspectionGuidance,
   JobStep,
   BankFeed,
@@ -587,6 +591,8 @@ import { DISPUTE_TARGET, NOTE_MIN, POSITION_MIN, REOPEN_WINDOW, canPartial, deci
 import { SOS_CANCEL_WINDOW_MS, SOS_SAME_INCIDENT } from '@/features/safety/sos';
 import { capturedAtProblem, completionProblem, isDone, missingSlots, naProblem, qcReadiness, slotsFor, stepApplies, suggestedNext, unmetDependencies, versionInForce as installVersionInForce } from '@/features/technician/installSop';
 import type { SpecFacts } from '@/features/technician/installSop';
+import { ASSIGN_DUE, DISPUTE_DECIDE_DUE, REWORK_DUE, REVERIFY_DUE, blocksHandover as sgBlocks, decisionProblem as sgDecisionProblem, disputeProblem as sgDisputeProblem, isChecklistSnag as sgIsChecklist, isOpen as sgIsOpen, linkProblem as sgLinkProblem, raiseProblem as sgRaiseProblem, regradeProblem as sgRegradeProblem, severityOfSource as sgSeverityOfSource, severityRank as sgRank, verifyProblem as sgVerifyProblem, waiveProblem as sgWaiveProblem } from '@/features/qc/snags';
+import type { DisputeDecision, SnagSeverity } from '@/features/qc/snags';
 import { guidanceProblem, primaryOf as certPrimaryOf, readinessOf as certReadiness, reissueProblem as certReissueProblem, standardFor as certStandardFor, standardsProblem as certStandardsProblem } from '@/features/qc/compliance';
 import { ELEC_ITEMS, defOf as elecDef, attemptProblem as elecAttemptProblem, signOffProblem as elecSignOffProblem, stateOf as elecStateOf, suggestVerdict as elecSuggest } from '@/features/qc/electrical';
 import { MECH_ITEMS, INSTALL_STEPS, NOTE_MIN as NOTE_MIN_MECH, attemptProblem as mechAttemptProblem, itemState, isCleared as isMechCleared, signOffProblem as mechSignOffProblem, suggestVerdict as mechSuggest } from '@/features/qc/mechanical';
@@ -2264,6 +2270,7 @@ function commitmentSources(now: number): CommitmentSources {
     qcAssignments: (ensureQcSeeds(), qcAssignments),
     qcWaiting: qcWaitingJobs(),
     qcCertificateWaiting: qcCertificateWaiting(),
+    snags: (ensureSnagSeeds(), reworkRequests),
     qcMechChecks,
     qcFindings,
     deliveryChecklists,
@@ -2524,6 +2531,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   syncQcAssignments(true, now);
   syncQcMechAlerts(now);
   syncQcElecAlerts(now);
+  syncSnagAlerts(now);
   syncLeadDelegations(now);
   for (const j of jobs) syncIssueHold(j);
   syncSopHandoff();
@@ -6530,6 +6538,33 @@ function qcNamable(job: Job, person: User, exceptionNote: string | undefined): {
 const qcMechChecks: QcMechCheck[] = [];
 const qcFindings: QcFinding[] = [];
 const reworkRequests: ReworkRequest[] = [];
+let snagCounter = 100;
+let snagSeeded = false;
+const snagEvent = (kind: SnagEvent['kind'], byName: string, note?: string, at = new Date().toISOString()): SnagEvent => ({ id: `sge-${++snagCounter}`, at, kind, byName, ...(note?.trim() ? { note: note.trim() } : {}) });
+
+/** A failed check is a snag. Failing the same item again updates the one already open rather than listing the same finding twice. */
+function raiseChecklistSnag(job: Job, source: 'qc_mechanical' | 'qc_electrical', itemId: string, note: string, evidence: JobEvidence[], byName: string, at: string): void {
+  const existing = reworkRequests.find((r) => r.jobId === job.id && r.source === source && r.itemId === itemId && sgIsOpen(r.status));
+  if (existing) {
+    existing.note = note;
+    existing.evidence = evidence.map((e) => ({ ...e }));
+    // A retest that failed again puts it back with whoever is fixing it, to be fixed properly.
+    if (existing.status === 'ready_for_retest') existing.status = existing.ownerId ? 'assigned' : 'open';
+    existing.events.push(snagEvent('failed_again', byName, note, at));
+    return;
+  }
+  snagCounter += 1;
+  reworkRequests.push({ id: `rw-${snagCounter}`, code: `SNAG-${snagCounter}`, jobId: job.id, source, itemId, note, evidence: evidence.map((e) => ({ ...e })), raisedByName: byName, raisedAt: at, severity: sgSeverityOfSource(source), status: 'open', events: [snagEvent('raised', byName, note, at)], isDemo: true });
+}
+
+/** A re-test that passes is QC's own verification of the snags on that item. */
+function verifyChecklistSnags(job: Job, source: 'qc_mechanical' | 'qc_electrical', itemId: string, byName: string, at: string): void {
+  for (const r of reworkRequests) {
+    if (r.jobId !== job.id || r.source !== source || r.itemId !== itemId || !sgIsOpen(r.status)) continue;
+    Object.assign(r, { status: 'verified' as const, verifiedAt: at, verifiedByName: byName });
+    r.events.push(snagEvent('verified', byName, 'Re-test passed', at));
+  }
+}
 let mechCounter = 100;
 
 /** Who may open this check: the assigned inspector (Admin, when Admin holds the role), Admin to review, and the lead to explain a difference. */
@@ -6568,7 +6603,7 @@ function mechViewOf(job: Job, _userId: string, viewer: QcMechView['viewer'], ass
   const floors = mechFloorsOf(job);
   const items: QcMechItemView[] = MECH_ITEMS.map((id) => {
     const attempts = check.attempts[id] ?? [];
-    const rework = [...reworkRequests].reverse().find((r) => r.jobId === job.id && r.source === 'qc_mechanical' && r.itemId === id && r.status !== 'verified');
+    const rework = [...reworkRequests].reverse().find((r) => r.jobId === job.id && r.source === 'qc_mechanical' && r.itemId === id && sgIsOpen(r.status));
     return {
       id,
       state: itemState(attempts),
@@ -6631,7 +6666,7 @@ function elecViewOf(job: Job, viewer: QcMechView['viewer'], assignment: QcAssign
   const check = elecCheckOf(job.id);
   const items: QcElecItemView[] = ELEC_ITEMS.map((id) => {
     const attempts = check.attempts[id] ?? [];
-    const rework = [...reworkRequests].reverse().find((r) => r.jobId === job.id && r.source === 'qc_electrical' && r.itemId === id && r.status !== 'verified');
+    const rework = [...reworkRequests].reverse().find((r) => r.jobId === job.id && r.source === 'qc_electrical' && r.itemId === id && sgIsOpen(r.status));
     return {
       id,
       state: elecStateOf(attempts),
@@ -6762,7 +6797,7 @@ function certPackageOf(job: Job, at: string): CertificatePackage {
 }
 
 function certReadinessOf(job: Job): { ready: boolean; problems: ReturnType<typeof certReadiness>; openRework: number } {
-  const openRework = reworkRequests.filter((r) => r.jobId === job.id && (r.source === 'qc_mechanical' || r.source === 'qc_electrical') && r.status !== 'verified').length;
+  const openRework = (ensureSnagSeeds(), reworkRequests).filter((r) => r.jobId === job.id && sgIsOpen(r.status) && (r.source !== 'snag' || r.severity === 'safety_critical')).length;
   const hasSpec = !!lockedSpecOf(byId(deals, job.dealId)?.leadId ?? '');
   const mechanicalSigned = !!mechCheckOf(job.id).signedOff;
   const electricalSigned = qcElectricalCleared(job.id);
@@ -6837,6 +6872,202 @@ function qcCertificateWaiting(): { jobId: string; readyAt: string; issued: boole
     return [{ jobId: m.jobId, readyAt, issued: !!currentCertOf(m.jobId) }];
   });
 }
+
+/* ============================== Defect / snag list (135) */
+
+/** A few snags so the list is not empty: open findings on the job waiting for quality check, and a closed history on a finished one. */
+function ensureSnagSeeds(): void {
+  if (snagSeeded) return;
+  snagSeeded = true;
+  const ago = (d: number) => new Date(Date.now() - d * 86_400_000).toISOString();
+  const add = (jobId: string, title: string, note: string, severity: SnagSeverity, daysBack: number, extra: Partial<ReworkRequest>): ReworkRequest | null => {
+    const job = byId(jobs, jobId);
+    if (!job) return null;
+    snagCounter += 1;
+    const at = ago(daysBack);
+    const r: ReworkRequest = { id: `rw-seed-${snagCounter}`, code: `SNAG-${snagCounter}`, jobId, source: 'snag', itemId: 'manual', title, note, evidence: [], raisedByName: 'Anand Deshpande', raisedAt: at, severity, status: 'open', events: [snagEvent('raised', 'Anand Deshpande', note, at)], isDemo: true, ...extra };
+    reworkRequests.push(r);
+    return r;
+  };
+  const lead = byId(jobs, 'j-2')?.technicianId;
+  const leadName = byId(users, lead ?? '')?.name;
+  add('j-2', 'Scratch on the cabin’s rear panel', 'A long scratch across the lower half of the rear cabin panel, visible in normal light.', 'cosmetic', 1, {});
+  const trim = add('j-2', 'Trim strip misaligned at the 2nd floor landing', 'The landing trim strip sits about 3 mm proud of the door frame along its whole length.', 'cosmetic', 1, {});
+  const trim2 = add('j-2', 'Trim strip chipped at the 3rd floor landing', 'A chip out of the lower corner of the landing trim strip. Same finish as the 2nd floor strip.', 'cosmetic', 1, {});
+  if (trim && trim2) {
+    for (const m of [trim, trim2]) Object.assign(m, { groupId: 'grp-seed-1', groupPrimaryId: trim.id, groupNote: 'Both strips came from one damaged batch of trim: replacing the batch fixes both.' });
+    trim.events.push(snagEvent('linked', 'Anand Deshpande', trim.groupNote, ago(1)));
+    trim2.events.push(snagEvent('linked', 'Anand Deshpande', trim.groupNote, ago(1)));
+  }
+  if (lead && leadName) {
+    const slow = add('j-2', 'Car door closes slower than the agreed speed', 'The car door takes about twice as long to close as the other doors on this job. It works, but it is noticeable.', 'functional', 2, { status: 'assigned', ownerId: lead, ownerName: leadName, assignedAt: ago(1) });
+    if (slow) {
+      slow.dueAt = new Date(new Date(slow.assignedAt as string).getTime() + REWORK_DUE.functional).toISOString();
+      slow.events.push(snagEvent('assigned', 'Prashant Vasant Wable', leadName, ago(1)));
+    }
+  }
+  const done = (title: string, note: string, severity: SnagSeverity, status: 'verified' | 'waived', daysBack: number) => {
+    const r = add('j-7', title, note, severity, daysBack + 3, { status, ownerId: byId(jobs, 'j-7')?.technicianId, ownerName: byId(users, byId(jobs, 'j-7')?.technicianId ?? '')?.name });
+    if (!r) return;
+    if (status === 'verified') {
+      Object.assign(r, { verifiedAt: ago(daysBack), verifiedByName: 'Anand Deshpande' });
+      r.events.push(snagEvent('ready_for_retest', r.ownerName ?? 'Technician', 'Put right', ago(daysBack + 1)), snagEvent('verified', 'Anand Deshpande', 'Checked on site', ago(daysBack)));
+    } else {
+      Object.assign(r, { waiver: { by: 'Mr. Kulkarni (customer)', note: 'The customer saw it and is content to leave it as it is.', recordedByName: 'Anand Deshpande', at: ago(daysBack) } });
+      r.events.push(snagEvent('waived', 'Anand Deshpande', 'The customer is content to leave it as it is.', ago(daysBack)));
+    }
+  };
+  done('Uneven gap on the car door panel', 'The gap between the door panels is wider at the top than at the bottom.', 'functional', 'verified', 6);
+  done('Small paint mark near the call button', 'A dab of paint on the landing wall beside the call button.', 'cosmetic', 'verified', 5);
+  done('Faint ripple in the cabin floor finish', 'A faint ripple in the finish, only visible at a low angle.', 'cosmetic', 'waived', 5);
+}
+
+type SnagRole = 'admin' | 'inspector' | 'owner' | 'lead' | 'crew';
+
+/** What this person is to this snag's job: Admin, the assigned QC inspector, the person fixing it, or someone else on the job. */
+function snagRoleOf(job: Job, snag: ReworkRequest | null, userId: string): SnagRole | null {
+  const u = byId(users, userId);
+  if (!u) return null;
+  if (u.role === 'admin') return 'admin';
+  if (u.role !== 'technician') return null;
+  if (qcOf(job.id)?.inspectorId === userId) return 'inspector';
+  if (snag?.ownerId === userId) return 'owner';
+  if (leadIdsOf(job).includes(userId)) return 'lead';
+  if (isOnJob(job, userId)) return 'crew';
+  return null;
+}
+
+function snagRowOf(r: ReworkRequest, now: number): SnagRowView {
+  const job = byId(jobs, r.jobId) as Job;
+  const pausedForQc = r.status === 'ready_for_retest' || r.status === 'disputed';
+  return {
+    id: r.id,
+    code: r.code,
+    jobId: r.jobId,
+    jobCode: job.code,
+    siteName: job.siteName,
+    source: r.source,
+    itemId: r.itemId,
+    itemLabelKey: r.source === 'qc_mechanical' ? `qcMech.item.${r.itemId}` : r.source === 'qc_electrical' ? `qcElec.item.${r.itemId}` : null,
+    title: r.title ?? null,
+    severity: r.severity,
+    status: r.status,
+    ownerId: r.ownerId ?? null,
+    ownerName: r.ownerName ?? null,
+    dueAt: r.dueAt ?? null,
+    overdue: !!r.dueAt && sgIsOpen(r.status) && !pausedForQc && new Date(r.dueAt).getTime() < now,
+    raisedAt: r.raisedAt,
+    raisedByName: r.raisedByName,
+    evidenceCount: r.evidence.length,
+    groupSize: r.groupId ? reworkRequests.filter((x) => x.groupId === r.groupId).length : 1,
+    blocking: sgBlocks(r),
+  };
+}
+
+function snagDetailOf(r: ReworkRequest, userId: string, now: number): SnagDetailView {
+  const job = byId(jobs, r.jobId) as Job;
+  const role = snagRoleOf(job, r, userId);
+  const open = sgIsOpen(r.status);
+  const qc = role === 'admin' || role === 'inspector';
+  const via = r.resolvedVia ? byId(reworkRequests, r.resolvedVia) : undefined;
+  const decisions: DisputeDecision[] = r.source === 'snag' && r.severity !== 'safety_critical' ? ['finding_stands', 'retest_ordered', 'finding_withdrawn'] : ['finding_stands', 'retest_ordered'];
+  return {
+    ...snagRowOf(r, now),
+    note: r.note,
+    evidence: r.evidence.map((e) => ({ id: e.id, kind: e.kind, previewUrl: e.previewUrl, ...(e.mediaUrl ? { mediaUrl: e.mediaUrl } : {}), capturedAt: e.capturedAt })),
+    events: r.events.map((e) => ({ ...e })),
+    group: r.groupId ? reworkRequests.filter((x) => x.groupId === r.groupId).map((x) => ({ id: x.id, code: x.code, title: x.title ?? null, status: x.status, primary: x.id === x.groupPrimaryId })) : [],
+    groupNote: r.groupNote ?? null,
+    dispute: r.dispute ? { ...r.dispute, ...(r.dispute.decision ? { decision: { ...r.dispute.decision } } : {}) } : null,
+    waiver: r.waiver ? { ...r.waiver } : null,
+    verifiedAt: r.verifiedAt ?? null,
+    verifiedByName: r.verifiedByName ?? null,
+    resolvedVia: via ? { id: via.id, code: via.code } : null,
+    recheckRoute: r.source === 'qc_mechanical' ? `/qc-mechanical/${r.jobId}` : r.source === 'qc_electrical' ? `/qc-electrical/${r.jobId}` : null,
+    actions: {
+      assign: role === 'admin' && open && (r.status === 'open' || r.status === 'assigned' || r.status === 'in_progress'),
+      regrade: role === 'admin' && open,
+      link: qc && open && r.source === 'snag' && r.status !== 'disputed',
+      dispute: (role === 'owner' || role === 'lead') && open && r.status !== 'disputed',
+      decide: role === 'admin' && r.status === 'disputed',
+      waive: qc && open && r.severity === 'cosmetic' && r.status !== 'disputed',
+      verify: qc && r.source === 'snag' && r.status === 'ready_for_retest' && r.fixedById !== userId,
+      decisions,
+    },
+  };
+}
+
+/** Everything the list shows this person: Admin everything, a technician the snags on jobs they inspect, lead or work on. */
+function snagsVisibleTo(userId: string): ReworkRequest[] {
+  ensureSnagSeeds();
+  return reworkRequests.filter((r) => {
+    const job = byId(jobs, r.jobId);
+    return !!job && snagRoleOf(job, r, userId) !== null;
+  });
+}
+
+function snagBoardOf(userId: string, jobId: string | undefined, now: number): SnagBoardView {
+  const user = byId(users, userId);
+  if (!user || (user.role !== 'admin' && user.role !== 'technician')) throw new RepositoryError('forbidden');
+  let visible = snagsVisibleTo(userId);
+  if (jobId) {
+    const job = byId(jobs, jobId);
+    if (!job) throw new RepositoryError('not_found');
+    if (snagRoleOf(job, null, userId) === null && !visible.some((r) => r.jobId === jobId)) throw new RepositoryError('forbidden');
+    visible = visible.filter((r) => r.jobId === jobId);
+  }
+  const rank = (r: ReworkRequest) => (sgIsOpen(r.status) ? 0 : 1);
+  const rows = [...visible].sort((a, b) => rank(a) - rank(b) || sgRank(a.severity) - sgRank(b.severity) || b.raisedAt.localeCompare(a.raisedAt)).map((r) => snagRowOf(r, now));
+  const jobIds = new Set(visible.map((r) => r.jobId));
+  for (const j of jobs) {
+    if ((j.status === 'qc_pending' || j.status === 'handover_pending') && (user.role === 'admin' || qcOf(j.id)?.inspectorId === userId) && (!jobId || j.id === jobId)) jobIds.add(j.id);
+  }
+  return {
+    viewer: user.role === 'admin' ? 'admin' : jobs.some((j) => qcOf(j.id)?.inspectorId === userId) ? 'inspector' : 'technician',
+    rows,
+    totals: { open: rows.filter((r) => sgIsOpen(r.status)).length, blocking: rows.filter((r) => r.blocking).length, pendingVerification: rows.filter((r) => r.status === 'ready_for_retest').length, disputed: rows.filter((r) => r.status === 'disputed').length, closed: rows.filter((r) => !sgIsOpen(r.status)).length },
+    jobs: [...jobIds].flatMap((id) => {
+      const j = byId(jobs, id);
+      if (!j) return [];
+      const mine = rows.filter((r) => r.jobId === id);
+      const role = snagRoleOf(j, null, userId);
+      return [{ id: j.id, code: j.code, siteName: j.siteName, status: j.status, open: mine.filter((r) => sgIsOpen(r.status)).length, blocking: mine.filter((r) => r.blocking).length, canAdd: (role === 'admin' || role === 'inspector') && (j.status === 'qc_pending' || j.status === 'handover_pending') }];
+    }),
+    technicians: user.role === 'admin' ? users.filter((u) => u.role === 'technician' && u.status === 'active').map((u) => ({ id: u.id, name: u.name })) : [],
+  };
+}
+
+function snagOf(snagId: string, userId: string, need: 'read' | 'qc' | 'admin'): { r: ReworkRequest; job: Job; user: User; role: SnagRole } {
+  ensureSnagSeeds();
+  const r = byId(reworkRequests, snagId);
+  const user = byId(users, userId);
+  if (!r) throw new RepositoryError('not_found');
+  if (!user) throw new RepositoryError('forbidden');
+  const job = byId(jobs, r.jobId) as Job;
+  const role = snagRoleOf(job, r, userId);
+  if (!role) throw new RepositoryError('forbidden');
+  if (need === 'admin' && role !== 'admin') throw new RepositoryError('forbidden');
+  if (need === 'qc' && role !== 'admin' && role !== 'inspector') throw new RepositoryError('forbidden');
+  return { r, job, user, role };
+}
+
+/** Safety-critical findings raised on the list are an alert until they are put right; checklist ones already have theirs. */
+function syncSnagAlerts(now: number): void {
+  const at = new Date(now).toISOString();
+  const live = new Set<string>();
+  for (const r of reworkRequests) {
+    if (r.source !== 'snag' || !sgBlocks(r)) continue;
+    const job = byId(jobs, r.jobId);
+    if (!job) continue;
+    const key = `snag:${r.id}`;
+    live.add(key);
+    if (!alerts.some((a) => a.relatedId === key && a.status !== 'resolved')) raiseAlert({ titleKey: 'snagList.alert.safety', context: `${job.code} · ${job.siteName}: ${r.title ?? r.code}`, severity: 'high', category: 'safety', relatedId: key, sourceRoute: `/snags/${r.jobId}?snag=${r.id}`, location: job.location });
+  }
+  for (const a of alerts) if (a.relatedId?.startsWith('snag:') && a.status !== 'resolved' && !live.has(a.relatedId)) patchInPlace(alerts, a.id, { status: 'resolved', resolvedAt: at, resolvedBy: 'system', resolutionNote: 'Put right.' });
+}
+
+/** Whether anything on this job stops handover: the one answer the handover screens read. */
+const snagBlockingOf = (jobId: string): number => (ensureSnagSeeds(), reworkRequests).filter((r) => r.jobId === jobId && sgBlocks(r)).length;
 
 /* ============================== Installation SOP (123) */
 
@@ -13016,8 +13247,8 @@ export const memoryRepository: Repository = {
           assignment.status = 'in_progress';
           assignment.events.push(qcEvent('scheduled', user.name, 'Inspection started'));
         }
-        if (input.verdict === 'fail') reworkRequests.push({ id: `rw-${++mechCounter}`, jobId: job.id, source: 'qc_electrical', itemId, note: attempt.note ?? '', evidence: evidence.map((e) => ({ ...e })), raisedByName: user.name, raisedAt: attempt.at, status: 'open', isDemo: true });
-        else for (const r of reworkRequests) if (r.jobId === job.id && r.source === 'qc_electrical' && r.itemId === itemId && r.status !== 'verified') Object.assign(r, { status: 'verified' as const, verifiedAt: attempt.at });
+        if (input.verdict === 'fail') raiseChecklistSnag(job, 'qc_electrical', itemId, attempt.note ?? '', evidence, user.name, attempt.at);
+        else verifyChecklistSnags(job, 'qc_electrical', itemId, user.name, attempt.at);
         syncQcElecAlerts(now);
       }
       return elecViewOf(job, viewer, assignment);
@@ -13033,6 +13264,156 @@ export const memoryRepository: Repository = {
       if (problem) throw new RepositoryError(problem);
       check.signedOff = { at: new Date().toISOString(), byUserId: user.id, byName: user.name };
       return elecViewOf(job, viewer, assignment);
+    }),
+
+  /* --------------------------------- Defect / snag list (135) */
+  getSnagBoard: (userId, jobId) =>
+    simulateRead((): SnagBoardView => snagBoardOf(userId, jobId, Date.now())),
+
+  getSnag: (snagId, userId) =>
+    simulateRead((): SnagDetailView => {
+      const { r } = snagOf(snagId, userId, 'read');
+      return snagDetailOf(r, userId, Date.now());
+    }),
+
+  addSnag: (jobId, input, userId) =>
+    simulateWrite((): SnagDetailView => {
+      ensureSnagSeeds();
+      const user = byId(users, userId);
+      const job = byId(jobs, jobId);
+      if (!user) throw new RepositoryError('forbidden');
+      if (!job) throw new RepositoryError('not_found');
+      const role = snagRoleOf(job, null, userId);
+      if (role !== 'admin' && role !== 'inspector') throw new RepositoryError('forbidden');
+      if (job.status !== 'qc_pending' && job.status !== 'handover_pending') throw new RepositoryError('not_ready');
+      const problem = sgRaiseProblem({ title: input.title, note: input.note, severity: input.severity, evidenceCount: input.evidence.length });
+      if (problem) throw new RepositoryError(problem);
+      if (input.evidence.length > 6) throw new RepositoryError('too_many_attachments');
+      snagCounter += 1;
+      const id = `rw-${snagCounter}`;
+      const evidence = input.evidence.map((m, n) => {
+        const bad = evidenceProblem(m.kind, { kind: m.kind, mimeType: m.mimeType, sizeBytes: m.sizeBytes, durationS: m.durationS });
+        if (bad) throw new RepositoryError(bad);
+        return mediaToEvidence(m, `${id}-ev${n + 1}`, 'qc.snag', user);
+      });
+      const at = new Date().toISOString();
+      const r: ReworkRequest = { id, code: `SNAG-${snagCounter}`, jobId: job.id, source: 'snag', itemId: 'manual', title: input.title.trim(), note: input.note.trim(), evidence, raisedByName: user.name, raisedAt: at, severity: input.severity, status: 'open', events: [snagEvent('raised', user.name, input.note, at)], isDemo: true };
+      reworkRequests.push(r);
+      syncSnagAlerts(Date.now());
+      return snagDetailOf(r, userId, Date.now());
+    }),
+
+  assignSnags: (snagIds, technicianId, adminId) =>
+    simulateWrite((): SnagBoardView => {
+      const admin = adminOnly(adminId);
+      ensureSnagSeeds();
+      const tech = byId(users, technicianId);
+      if (!tech || tech.role !== 'technician' || tech.status !== 'active') throw new RepositoryError('not_technician');
+      const picked = snagIds.map((id) => byId(reworkRequests, id));
+      if (picked.length === 0 || picked.some((r) => !r)) throw new RepositoryError('not_found');
+      const list = picked as ReworkRequest[];
+      if (list.some((r) => r.status !== 'open' && r.status !== 'assigned' && r.status !== 'in_progress')) throw new RepositoryError('invalid_state');
+      const now = Date.now();
+      for (const r of list) {
+        const again = !!r.ownerId && r.ownerId !== tech.id;
+        if (r.ownerId === tech.id) continue;
+        Object.assign(r, { ownerId: tech.id, ownerName: tech.name, assignedAt: new Date(now).toISOString(), dueAt: new Date(now + REWORK_DUE[r.severity]).toISOString(), status: r.status === 'open' ? ('assigned' as const) : r.status });
+        r.events.push(snagEvent(again ? 'reassigned' : 'assigned', admin.name, tech.name));
+      }
+      return snagBoardOf(adminId, undefined, now);
+    }),
+
+  regradeSnag: (snagId, severity, reason, adminId) =>
+    simulateWrite((): SnagDetailView => {
+      const { r, user } = snagOf(snagId, adminId, 'admin');
+      if (!sgIsOpen(r.status) || r.severity === severity) throw new RepositoryError('invalid_state');
+      const problem = sgRegradeProblem({ source: r.source, from: r.severity, to: severity, reason });
+      if (problem) throw new RepositoryError(problem);
+      const from = r.severity;
+      r.severity = severity;
+      if (r.ownerId && r.assignedAt) r.dueAt = new Date(new Date(r.assignedAt).getTime() + REWORK_DUE[severity]).toISOString();
+      r.events.push(snagEvent('regraded', user.name, `${from} → ${severity}: ${reason.trim()}`));
+      syncSnagAlerts(Date.now());
+      return snagDetailOf(r, adminId, Date.now());
+    }),
+
+  linkSnags: (input, userId) =>
+    simulateWrite((): SnagBoardView => {
+      ensureSnagSeeds();
+      const members = input.snagIds.map((id) => byId(reworkRequests, id));
+      if (members.some((m) => !m)) throw new RepositoryError('not_found');
+      const list = members as ReworkRequest[];
+      const { user } = snagOf(list[0].id, userId, 'qc');
+      const problem = sgLinkProblem({ members: list.map((m) => ({ id: m.id, jobId: m.jobId, source: m.source, status: m.status })), primaryId: input.primaryId, note: input.note });
+      if (problem) throw new RepositoryError(problem);
+      const groupId = `grp-${++snagCounter}`;
+      for (const m of list) {
+        Object.assign(m, { groupId, groupPrimaryId: input.primaryId, groupNote: input.note.trim() });
+        m.events.push(snagEvent('linked', user.name, input.note));
+      }
+      return snagBoardOf(userId, list[0].jobId, Date.now());
+    }),
+
+  disputeSnag: (snagId, reason, userId) =>
+    simulateWrite((): SnagDetailView => {
+      const { r, user, role } = snagOf(snagId, userId, 'read');
+      if (role !== 'owner' && role !== 'lead') throw new RepositoryError('not_owner');
+      if (!sgIsOpen(r.status) || r.status === 'disputed') throw new RepositoryError('invalid_state');
+      const problem = sgDisputeProblem(reason);
+      if (problem) throw new RepositoryError(problem);
+      r.dispute = { reason: reason.trim(), byName: user.name, at: new Date().toISOString(), fromStatus: r.status as 'open' | 'assigned' | 'in_progress' | 'ready_for_retest' };
+      r.status = 'disputed';
+      r.events.push(snagEvent('disputed', user.name, reason));
+      return snagDetailOf(r, userId, Date.now());
+    }),
+
+  decideSnagDispute: (snagId, decision, note, adminId) =>
+    simulateWrite((): SnagDetailView => {
+      const { r, user } = snagOf(snagId, adminId, 'admin');
+      if (r.status !== 'disputed' || !r.dispute) throw new RepositoryError('invalid_state');
+      const problem = sgDecisionProblem({ kind: decision, note, source: r.source, severity: r.severity });
+      if (problem) throw new RepositoryError(problem);
+      const at = new Date().toISOString();
+      r.dispute.decision = { kind: decision, note: note.trim(), byName: user.name, at };
+      if (decision === 'finding_stands') r.status = r.dispute.fromStatus;
+      else if (decision === 'retest_ordered') r.status = 'ready_for_retest';
+      else {
+        r.status = 'withdrawn';
+        r.events.push(snagEvent('withdrawn', user.name, note, at));
+      }
+      r.events.push(snagEvent('dispute_decided', user.name, `${decision}: ${note.trim()}`, at));
+      syncSnagAlerts(Date.now());
+      return snagDetailOf(r, adminId, Date.now());
+    }),
+
+  waiveSnag: (snagId, input, userId) =>
+    simulateWrite((): SnagDetailView => {
+      const { r, user } = snagOf(snagId, userId, 'qc');
+      if (!sgIsOpen(r.status) || r.status === 'disputed') throw new RepositoryError('invalid_state');
+      const problem = sgWaiveProblem({ severity: r.severity, by: input.by, note: input.note });
+      if (problem) throw new RepositoryError(problem);
+      const at = new Date().toISOString();
+      r.waiver = { by: input.by.trim(), note: input.note.trim(), recordedByName: user.name, at };
+      r.status = 'waived';
+      r.events.push(snagEvent('waived', user.name, `${input.by.trim()}: ${input.note.trim()}`, at));
+      return snagDetailOf(r, userId, Date.now());
+    }),
+
+  verifySnag: (snagId, note, userId) =>
+    simulateWrite((): SnagDetailView => {
+      const { r, user } = snagOf(snagId, userId, 'qc');
+      const problem = sgVerifyProblem({ source: r.source, status: r.status, verifierId: userId, fixedById: r.fixedById });
+      if (problem) throw new RepositoryError(problem);
+      const at = new Date().toISOString();
+      const close = (x: ReworkRequest, via?: string) => {
+        Object.assign(x, { status: 'verified' as const, verifiedAt: at, verifiedByName: user.name, ...(via ? { resolvedVia: via } : {}) });
+        x.events.push(snagEvent('verified', user.name, via ? `Resolved with ${r.code}` : note, at));
+      };
+      close(r);
+      // Fixing the root cause resolves every snag linked to it.
+      if (r.groupId && r.groupPrimaryId === r.id) for (const m of reworkRequests) if (m.groupId === r.groupId && m.id !== r.id && sgIsOpen(m.status)) close(m, r.id);
+      syncSnagAlerts(Date.now());
+      return snagDetailOf(r, userId, Date.now());
     }),
 
   /* --------------------------------- Compliance certification (134) */
@@ -13172,10 +13553,10 @@ export const memoryRepository: Repository = {
           assignment.events.push(qcEvent('scheduled', user.name, 'Inspection started'));
         }
         if (input.verdict === 'fail') {
-          reworkRequests.push({ id: `rw-${++mechCounter}`, jobId: job.id, source: 'qc_mechanical', itemId, note: attempt.note ?? '', evidence: evidence.map((e) => ({ ...e })), raisedByName: user.name, raisedAt: attempt.at, status: 'open', isDemo: true });
+          raiseChecklistSnag(job, 'qc_mechanical', itemId, attempt.note ?? '', evidence, user.name, attempt.at);
         } else if (input.verdict === 'pass') {
-          // A recheck that passes is what closes the rework raised by the earlier fail.
-          for (const r of reworkRequests) if (r.jobId === job.id && r.source === 'qc_mechanical' && r.itemId === itemId && r.status !== 'verified') Object.assign(r, { status: 'verified' as const, verifiedAt: attempt.at });
+          // A recheck that passes is what closes the snag raised by the earlier fail.
+          verifyChecklistSnags(job, 'qc_mechanical', itemId, user.name, attempt.at);
         }
         syncQcMechAlerts(now);
       }
@@ -13192,7 +13573,7 @@ export const memoryRepository: Repository = {
       if (decision === 'reject' && note.trim().length < NOTE_MIN_MECH) throw new RepositoryError('note_required');
       last.review = { status: decision === 'accept' ? 'accepted' : 'rejected', byName: user.name, at: new Date().toISOString(), ...(note.trim() ? { note: note.trim() } : {}) };
       // Rejecting an exception makes it a fail, and a fail has to be put right.
-      if (decision === 'reject') reworkRequests.push({ id: `rw-${++mechCounter}`, jobId: job.id, source: 'qc_mechanical', itemId, note: note.trim(), evidence: last.evidence.map((e) => ({ ...e })), raisedByName: user.name, raisedAt: last.review.at as string, status: 'open', isDemo: true });
+      if (decision === 'reject') raiseChecklistSnag(job, 'qc_mechanical', itemId, note.trim(), last.evidence, user.name, last.review.at as string);
       syncQcMechAlerts(Date.now());
       return mechViewOf(job, adminId, viewer, assignment);
     }),

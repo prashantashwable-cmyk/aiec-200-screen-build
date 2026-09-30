@@ -133,7 +133,7 @@ const translations: ScreenTranslations = {
       },
       history: { heading: 'Earlier attempts ({{count}} in all)', attempt: 'Attempt {{n}} · {{when}} · {{name}}', intermittent: 'Not repeatable' },
       compare: { heading: 'Compare with the install record', none: 'No installation steps are linked to this check.', doneBy: 'by {{name}}', noPhotos: 'No photo was kept for this step.' },
-      rework: { open: 'Rework', status: { open: 'Open', in_progress: 'In progress', ready_for_retest: 'Ready for retest', verified: 'Verified' } },
+      rework: { open: 'Rework', status: { open: 'Open', assigned: 'Given to someone', disputed: 'Disputed', waived: 'Customer accepted it', withdrawn: 'Withdrawn', in_progress: 'In progress', ready_for_retest: 'Ready for retest', verified: 'Verified' } },
       hero: {
         progress: '{{done}} of {{total}} checks passed',
         inspector: 'Inspector: {{name}}',
@@ -291,7 +291,7 @@ const translations: ScreenTranslations = {
       },
       history: { heading: 'पहले की कोशिशें (कुल {{count}})', attempt: 'कोशिश {{n}} · {{when}} · {{name}}', intermittent: 'दोहराने पर नहीं आया' },
       compare: { heading: 'इंस्टॉलेशन रिकॉर्ड से मिलाएँ', none: 'इस जाँच से कोई इंस्टॉलेशन चरण जुड़ा नहीं है।', doneBy: '{{name}} द्वारा', noPhotos: 'इस चरण की कोई फ़ोटो नहीं रखी गई।' },
-      rework: { open: 'रीवर्क', status: { open: 'खुला', in_progress: 'जारी', ready_for_retest: 'दोबारा जाँच के लिए तैयार', verified: 'सत्यापित' } },
+      rework: { open: 'रीवर्क', status: { open: 'खुला', assigned: 'किसी को सौंपा गया', disputed: 'विवादित', waived: 'ग्राहक ने स्वीकार किया', withdrawn: 'वापस लिया गया', in_progress: 'जारी', ready_for_retest: 'दोबारा जाँच के लिए तैयार', verified: 'सत्यापित' } },
       hero: {
         progress: '{{total}} में से {{done}} जाँच पास',
         inspector: 'निरीक्षक: {{name}}',
@@ -449,7 +449,7 @@ const translations: ScreenTranslations = {
       },
       history: { heading: 'आधीचे प्रयत्न (एकूण {{count}})', attempt: 'प्रयत्न {{n}} · {{when}} · {{name}}', intermittent: 'पुन्हा तसे घडले नाही' },
       compare: { heading: 'इन्स्टॉलेशन नोंदीशी तुलना करा', none: 'या तपासणीला कोणताही इन्स्टॉलेशन टप्पा जोडलेला नाही.', doneBy: '{{name}} यांनी', noPhotos: 'या टप्प्याचा फोटो ठेवलेला नाही.' },
-      rework: { open: 'रीवर्क', status: { open: 'उघडे', in_progress: 'सुरू', ready_for_retest: 'पुनर्तपासणीस तयार', verified: 'पडताळलेले' } },
+      rework: { open: 'रीवर्क', status: { open: 'उघडे', assigned: 'कोणाला तरी सोपवले', disputed: 'वादात', waived: 'ग्राहकाने स्वीकारले', withdrawn: 'मागे घेतले', in_progress: 'सुरू', ready_for_retest: 'पुनर्तपासणीस तयार', verified: 'पडताळलेले' } },
       hero: {
         progress: '{{total}} पैकी {{done}} तपासण्या पास',
         inspector: 'निरीक्षक: {{name}}',

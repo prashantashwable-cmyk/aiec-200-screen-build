@@ -2709,18 +2709,57 @@ export interface QcMechCheck {
   isDemo: boolean;
 }
 
-/** A quality-check fail that has to be put right before handover. Raised here; the rework screen (136) owns what happens next. */
+export type SnagEventKind = 'raised' | 'failed_again' | 'assigned' | 'reassigned' | 'regraded' | 'linked' | 'disputed' | 'dispute_decided' | 'ready_for_retest' | 'verified' | 'waived' | 'withdrawn';
+/** Append-only: what happened to a snag, by whom, and why. */
+export interface SnagEvent {
+  id: string;
+  at: string;
+  kind: SnagEventKind;
+  byName: string;
+  note?: string;
+}
+
+/**
+ * One finding that has to be put right before handover (the defect / snag list, 135). Raised by a failed mechanical or electrical check (132,
+ * 133) or by the inspector on the list itself. Closed only by QC: a checklist snag when its own re-test passes, a snag raised on the list when
+ * the inspector verifies it. The rework screen (136) owns the work of putting it right.
+ */
 export interface ReworkRequest {
   id: string;
+  code: string;
   jobId: string;
   source: 'qc_mechanical' | 'qc_electrical' | 'snag';
+  /** The checklist item, or `manual` for a snag raised on the list. */
   itemId: string;
+  /** A short name for a snag raised on the list. */
+  title?: string;
   note: string;
   evidence: JobEvidence[];
   raisedByName: string;
   raisedAt: string;
-  status: 'open' | 'in_progress' | 'ready_for_retest' | 'verified';
+  severity: 'safety_critical' | 'functional' | 'cosmetic';
+  /** `assigned` waits for the rework to start; `ready_for_retest` is "pending re-verification"; `waived` is the customer's own choice; `withdrawn` is Admin's ruling that the finding was acceptable. */
+  status: 'open' | 'assigned' | 'in_progress' | 'ready_for_retest' | 'disputed' | 'verified' | 'waived' | 'withdrawn';
+  ownerId?: string;
+  ownerName?: string;
+  assignedAt?: string;
+  dueAt?: string;
+  /** Whoever did the rework (136): never the one who verifies it. */
+  fixedById?: string;
+  fixedAt?: string;
+  /** Snags that share a root cause: fixing the primary resolves the rest. */
+  groupId?: string;
+  groupPrimaryId?: string;
+  groupNote?: string;
+  /** A technician's professional disagreement with the finding, and Admin's tie-break. */
+  dispute?: { reason: string; byName: string; at: string; fromStatus: 'open' | 'assigned' | 'in_progress' | 'ready_for_retest'; decision?: { kind: 'finding_stands' | 'retest_ordered' | 'finding_withdrawn'; note: string; byName: string; at: string } };
+  /** A cosmetic finding the customer is content to live with. A choice, never a fix. */
+  waiver?: { by: string; note: string; recordedByName: string; at: string };
   verifiedAt?: string;
+  verifiedByName?: string;
+  /** Closed because the primary snag of its group was resolved. */
+  resolvedVia?: string;
+  events: SnagEvent[];
   isDemo: boolean;
 }
 
@@ -3620,6 +3659,10 @@ export type CommitmentKind =
   | 'qc_visit'
   | 'qc_exception_review'
   | 'qc_certificate_issue'
+  | 'snag_assign'
+  | 'snag_rework'
+  | 'snag_reverify'
+  | 'snag_dispute_decide'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'
@@ -3644,6 +3687,7 @@ export type CommitmentKind =
   | 'lead_revisit';
 
 export type CommitmentSubjectType =
+  | 'snag'
   | 'material_log'
   | 'handoff'
   | 'qc_assignment'

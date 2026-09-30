@@ -67,7 +67,7 @@ export const ELEC_KEYS = {
   },
   history: { heading: 'qcElec.history.heading', attempt: 'qcElec.history.attempt', intermittent: 'qcElec.history.intermittent' },
   compare: { heading: 'qcElec.compare.heading', none: 'qcElec.compare.none', doneBy: 'qcElec.compare.doneBy', noPhotos: 'qcElec.compare.noPhotos' },
-  rework: { open: 'qcElec.rework.open', status: rec('qcElec.rework.status', ['open', 'in_progress', 'ready_for_retest', 'verified'] as const) },
+  rework: { open: 'qcElec.rework.open', status: rec('qcElec.rework.status', ['open', 'assigned', 'in_progress', 'ready_for_retest', 'disputed', 'verified', 'waived', 'withdrawn'] as const) },
   hero: { progress: 'qcElec.hero.progress', inspector: 'qcElec.hero.inspector', view: 'qcElec.hero.view', notAssigned: 'qcElec.hero.notAssigned', notReady: 'qcElec.hero.notReady', mechanical: 'qcElec.hero.mechanical', mechanicalOpen: 'qcElec.hero.mechanicalOpen', mechanicalLink: 'qcElec.hero.mechanicalLink' },
   signOff: {
     button: 'qcElec.signOff.button',

@@ -109,7 +109,7 @@ const translations: ScreenTranslations = {
       },
       review: { heading: 'Admin review', pending: 'Waiting for Admin', accepted: 'Accepted by Admin', rejected: 'Refused by Admin', accept: 'Accept the exception', reject: 'Refuse (it becomes a fail)', rejectTitle: 'Refuse the exception', rejectLabel: 'Why it is not acceptable', rejectGo: 'Refuse', toastAccepted: 'Exception accepted.', toastRejected: 'Refused. It is now a fail and goes to rework.', noteOptional: 'Note' },
       history: { heading: 'Recorded {{count}} times', attempt: 'Check {{n}}: {{verdict}}, {{when}}', overridden: 'softer than the reference' },
-      rework: { open: 'Rework', status: { open: 'raised', in_progress: 'under way', ready_for_retest: 'ready to check again', verified: 'put right' }, note: 'Note' },
+      rework: { open: 'Rework', status: { open: 'raised', assigned: 'given to someone', disputed: 'disputed', waived: 'customer accepted it', withdrawn: 'withdrawn', in_progress: 'under way', ready_for_retest: 'ready to check again', verified: 'put right' }, note: 'Note' },
       hero: { progress: '{{done}} of {{total}} checks clear', inspector: 'Inspector: {{name}}', viewerLead: 'You can see the results and explain any difference the inspector raises.', viewerAdmin: 'You can review noted exceptions here.', notAssigned: 'No inspector has been named for this job yet.', notReady: 'This job is not at the quality-check stage.' },
       signOff: {
         button: 'Sign off the mechanical check',
@@ -234,7 +234,7 @@ const translations: ScreenTranslations = {
       },
       review: { heading: 'Admin की समीक्षा', pending: 'Admin का इंतज़ार', accepted: 'Admin ने स्वीकार किया', rejected: 'Admin ने अस्वीकार किया', accept: 'अपवाद स्वीकार करें', reject: 'अस्वीकार करें (यह फ़ेल बन जाएगा)', rejectTitle: 'अपवाद अस्वीकार करें', rejectLabel: 'यह स्वीकार्य क्यों नहीं है', rejectGo: 'अस्वीकार करें', toastAccepted: 'अपवाद स्वीकार किया गया।', toastRejected: 'अस्वीकार किया गया। अब यह फ़ेल है और रीवर्क में जाता है।', noteOptional: 'नोट' },
       history: { heading: '{{count}} बार दर्ज', attempt: 'जाँच {{n}}: {{verdict}}, {{when}}', overridden: 'संदर्भ से नरम' },
-      rework: { open: 'रीवर्क', status: { open: 'उठाया गया', in_progress: 'चल रहा है', ready_for_retest: 'दोबारा जाँच के लिए तैयार', verified: 'ठीक किया गया' }, note: 'नोट' },
+      rework: { open: 'रीवर्क', status: { open: 'उठाया गया', assigned: 'किसी को सौंपा गया', disputed: 'विवादित', waived: 'ग्राहक ने स्वीकार किया', withdrawn: 'वापस लिया गया', in_progress: 'चल रहा है', ready_for_retest: 'दोबारा जाँच के लिए तैयार', verified: 'ठीक किया गया' }, note: 'नोट' },
       hero: { progress: '{{total}} में से {{done}} जाँच ठीक', inspector: 'निरीक्षक: {{name}}', viewerLead: 'आप नतीजे देख सकते हैं और निरीक्षक के उठाए किसी भी अंतर को समझा सकते हैं।', viewerAdmin: 'आप यहाँ दर्ज अपवादों की समीक्षा कर सकते हैं।', notAssigned: 'इस जॉब के लिए अभी कोई निरीक्षक तय नहीं हुआ।', notReady: 'यह जॉब गुणवत्ता जाँच के चरण पर नहीं है।' },
       signOff: {
         button: 'मैकेनिकल जाँच पर मंज़ूरी दें',
@@ -359,7 +359,7 @@ const translations: ScreenTranslations = {
       },
       review: { heading: 'Admin पुनरावलोकन', pending: 'Admin ची वाट', accepted: 'Admin ने स्वीकारले', rejected: 'Admin ने नाकारले', accept: 'अपवाद स्वीकारा', reject: 'नाकारा (तो नापास बनतो)', rejectTitle: 'अपवाद नाकारा', rejectLabel: 'हे स्वीकारार्ह का नाही', rejectGo: 'नाकारा', toastAccepted: 'अपवाद स्वीकारला.', toastRejected: 'नाकारला. आता तो नापास आहे आणि रीवर्कला जातो.', noteOptional: 'टीप' },
       history: { heading: '{{count}} वेळा नोंदवले', attempt: 'तपासणी {{n}}: {{verdict}}, {{when}}', overridden: 'संदर्भापेक्षा सौम्य' },
-      rework: { open: 'रीवर्क', status: { open: 'मांडले', in_progress: 'सुरू आहे', ready_for_retest: 'पुन्हा तपासणीसाठी तयार', verified: 'दुरुस्त केले' }, note: 'टीप' },
+      rework: { open: 'रीवर्क', status: { open: 'मांडले', assigned: 'कोणाला तरी सोपवले', disputed: 'वादात', waived: 'ग्राहकाने स्वीकारले', withdrawn: 'मागे घेतले', in_progress: 'सुरू आहे', ready_for_retest: 'पुन्हा तपासणीसाठी तयार', verified: 'दुरुस्त केले' }, note: 'टीप' },
       hero: { progress: '{{total}} पैकी {{done}} तपासण्या ठीक', inspector: 'निरीक्षक: {{name}}', viewerLead: 'तुम्ही निकाल पाहू शकता आणि निरीक्षकाने मांडलेला कोणताही फरक स्पष्ट करू शकता.', viewerAdmin: 'तुम्ही येथे नोंदवलेल्या अपवादांचे पुनरावलोकन करू शकता.', notAssigned: 'या जॉबसाठी अजून निरीक्षक नेमलेला नाही.', notReady: 'हा जॉब गुणवत्ता तपासणीच्या टप्प्यावर नाही.' },
       signOff: {
         button: 'मेकॅनिकल तपासणीला मंजुरी द्या',

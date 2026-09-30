@@ -1,4 +1,5 @@
-import type {
+import { ASSIGN_DUE, DISPUTE_DECIDE_DUE, REVERIFY_DUE } from '@/features/qc/snags';
+import type { ReworkRequest,
   Alert,
   AlertSeverity,
   CatalogPriceChange,
@@ -113,6 +114,8 @@ export interface CommitmentSources {
   qcWaiting: { jobId: string; readyAt: string; assigned: boolean }[];
   /** Jobs whose mechanical and electrical checks are both signed off, and whether AIEC's compliance certificate has been issued (134). */
   qcCertificateWaiting: { jobId: string; readyAt: string; issued: boolean }[];
+  /** Every defect / snag, open or closed (135). */
+  snags: ReworkRequest[];
   /** Mechanical quality-check attempts and the differences from the install record the inspector raised (132). */
   qcMechChecks: QcMechCheck[];
   qcFindings: QcFinding[];
@@ -1265,6 +1268,123 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
           oversightRoute: `/compliance/${w.jobId}`,
         };
       });
+    },
+  },
+  {
+    // A snag nobody has been named to fix waits on Admin (135): within hours for a safety-critical one, a day for a functional one.
+    kind: 'snag_assign',
+    nudgeBefore: hours(2),
+    escalateAfter: hours(6),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'quality',
+    collect(src) {
+      const admin = adminId(src);
+      return src.snags
+        .filter((r) => !r.ownerId || r.status === 'open')
+        .map((r) => {
+          const job = src.jobs.find((j) => j.id === r.jobId);
+          return {
+            ...base('snag_assign', 'snag', r.id),
+            ownerUserId: admin,
+            titleKey: 'work.title.snag_assign',
+            titleParams: { snag: r.code, job: job?.code ?? '', what: r.title ?? r.itemId },
+            dueAt: plus(r.raisedAt, ASSIGN_DUE[r.severity]),
+            state: r.status === 'open' && !r.ownerId ? ('open' as const) : ('done' as const),
+            paused: false,
+            actionRoute: `/snags/${r.jobId}?snag=${r.id}`,
+            oversightRoute: `/snags/${r.jobId}?snag=${r.id}`,
+          };
+        });
+    },
+  },
+  {
+    // The person named to put a snag right does it by the time set from its severity (135). Reporting it done hands it to QC, not to closed.
+    kind: 'snag_rework',
+    nudgeBefore: hours(2),
+    escalateAfter: hours(6),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'quality',
+    collect(src) {
+      return src.snags
+        .filter((r) => !!r.ownerId && !!r.dueAt)
+        .map((r) => {
+          const job = src.jobs.find((j) => j.id === r.jobId);
+          return {
+            ...base('snag_rework', 'snag', r.id),
+            ownerUserId: r.ownerId as string,
+            titleKey: 'work.title.snag_rework',
+            titleParams: { snag: r.code, job: job?.code ?? '', what: r.title ?? r.itemId },
+            dueAt: r.dueAt as string,
+            state: r.status === 'assigned' || r.status === 'in_progress' || r.status === 'open' ? ('open' as const) : ('done' as const),
+            // A disagreement with the finding waits for Admin's decision, not the clock.
+            paused: r.status === 'disputed',
+            completedAt: r.fixedAt,
+            actionRoute: `/snags/${r.jobId}?snag=${r.id}`,
+            oversightRoute: `/snags/${r.jobId}?snag=${r.id}`,
+          };
+        });
+    },
+  },
+  {
+    // A fix is not closed by the person who made it: QC re-confirms it (135), the inspector on the job or Admin.
+    kind: 'snag_reverify',
+    nudgeBefore: hours(2),
+    escalateAfter: hours(6),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'quality',
+    collect(src) {
+      const admin = adminId(src);
+      return src.snags
+        .filter((r) => r.status === 'ready_for_retest' || r.verifiedAt || r.resolvedVia)
+        .map((r) => {
+          const job = src.jobs.find((j) => j.id === r.jobId);
+          const inspector = src.qcAssignments.filter((a) => a.jobId === r.jobId && a.status !== 'cancelled').sort((a, b) => b.assignedAt.localeCompare(a.assignedAt))[0];
+          const readyAt = [...r.events].reverse().find((e) => e.kind === 'ready_for_retest' || e.kind === 'dispute_decided')?.at ?? r.fixedAt ?? r.raisedAt;
+          return {
+            ...base('snag_reverify', 'snag', r.id),
+            ownerUserId: inspector?.inspectorId ?? admin,
+            titleKey: 'work.title.snag_reverify',
+            titleParams: { snag: r.code, job: job?.code ?? '', what: r.title ?? r.itemId },
+            dueAt: plus(readyAt, REVERIFY_DUE[r.severity]),
+            state: r.status === 'ready_for_retest' ? ('open' as const) : ('done' as const),
+            paused: false,
+            completedAt: r.verifiedAt,
+            actionRoute: r.source === 'snag' ? `/snags/${r.jobId}?snag=${r.id}` : r.source === 'qc_electrical' ? `/qc-electrical/${r.jobId}` : `/qc-mechanical/${r.jobId}`,
+            oversightRoute: `/snags/${r.jobId}?snag=${r.id}`,
+          };
+        });
+    },
+  },
+  {
+    // A technician's disagreement with a finding is Admin's to decide (135), so a standoff never sits.
+    kind: 'snag_dispute_decide',
+    nudgeBefore: hours(4),
+    escalateAfter: hours(12),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'quality',
+    collect(src) {
+      const admin = adminId(src);
+      return src.snags
+        .filter((r) => !!r.dispute)
+        .map((r) => {
+          const job = src.jobs.find((j) => j.id === r.jobId);
+          return {
+            ...base('snag_dispute_decide', 'snag', `${r.id}:${(r.dispute as NonNullable<typeof r.dispute>).at}`),
+            ownerUserId: admin,
+            titleKey: 'work.title.snag_dispute_decide',
+            titleParams: { snag: r.code, job: job?.code ?? '', what: r.title ?? r.itemId },
+            dueAt: plus((r.dispute as NonNullable<typeof r.dispute>).at, DISPUTE_DECIDE_DUE),
+            state: r.status === 'disputed' ? ('open' as const) : ('done' as const),
+            paused: false,
+            completedAt: r.dispute?.decision?.at,
+            actionRoute: `/snags/${r.jobId}?snag=${r.id}`,
+            oversightRoute: `/snags/${r.jobId}?snag=${r.id}`,
+          };
+        });
     },
   },
   {
