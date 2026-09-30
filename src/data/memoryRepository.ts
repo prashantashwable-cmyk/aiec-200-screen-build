@@ -214,6 +214,11 @@ import type {
   MaterialLogView,
   InstallTimelineView,
   JobTeamView,
+  QcMechAttemptView,
+  SopMediaInput,
+  QcMechItemView,
+  QcMechView,
+  QcFindingView,
   QcAssignmentView,
   QcBoardRow,
   QcBoardView,
@@ -375,6 +380,10 @@ import type {
   JobCrewMember,
   InspectorUnavailability,
   QcAssignment,
+  QcMechAttempt,
+  QcMechCheck,
+  QcFinding,
+  ReworkRequest,
   QcAssignmentEvent,
   QcEventKind,
   QcVisitPreference,
@@ -567,6 +576,7 @@ import { DISPUTE_TARGET, NOTE_MIN, POSITION_MIN, REOPEN_WINDOW, canPartial, deci
 import { SOS_CANCEL_WINDOW_MS, SOS_SAME_INCIDENT } from '@/features/safety/sos';
 import { capturedAtProblem, completionProblem, isDone, missingSlots, naProblem, qcReadiness, slotsFor, stepApplies, suggestedNext, unmetDependencies, versionInForce as installVersionInForce } from '@/features/technician/installSop';
 import type { SpecFacts } from '@/features/technician/installSop';
+import { MECH_ITEMS, INSTALL_STEPS, NOTE_MIN as NOTE_MIN_MECH, attemptProblem as mechAttemptProblem, itemState, isCleared as isMechCleared, signOffProblem as mechSignOffProblem, suggestVerdict as mechSuggest } from '@/features/qc/mechanical';
 import { WINDOWS, busyBecause, dayKeyOf as qcDay, eligibilityOf, involvementOf, isWorkingDay, matchesPreference, missingQcSkills, normalizeSkills, schedulingProblem, suggestSlots } from '@/features/qc/inspectors';
 import type { BusyFacts, InvolvementFacts } from '@/features/qc/inspectors';
 import { PHASES, REASON_OF, estimateOf, freshnessOf, plannedDuration, stageExpectedAt } from '@/features/technician/timeline';
@@ -2240,6 +2250,8 @@ function commitmentSources(now: number): CommitmentSources {
     leadSignOffs: leadSignOffsWaiting(),
     qcAssignments: (ensureQcSeeds(), qcAssignments),
     qcWaiting: qcWaitingJobs(),
+    qcMechChecks,
+    qcFindings,
     deliveryChecklists,
     delayCases,
     discrepancyReports,
@@ -2496,6 +2508,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   syncMaterialDeviations(true, now);
   syncTeamAlerts(true, now);
   syncQcAssignments(true, now);
+  syncQcMechAlerts(now);
   syncLeadDelegations(now);
   for (const j of jobs) syncIssueHold(j);
   syncSopHandoff();
@@ -6495,6 +6508,96 @@ function qcNamable(job: Job, person: User, exceptionNote: string | undefined): {
     return { mode: 'admin_exception', gaps: e.missing };
   }
   return { mode: 'inspector', gaps: [] };
+}
+
+/* ============================== QC mechanical check (132) */
+
+const qcMechChecks: QcMechCheck[] = [];
+const qcFindings: QcFinding[] = [];
+const reworkRequests: ReworkRequest[] = [];
+let mechCounter = 100;
+
+/** Who may open this check: the assigned inspector (Admin, when Admin holds the role), Admin to review, and the lead to explain a difference. */
+function mechActor(jobId: string, userId: string): { job: Job; user: User; viewer: QcMechView['viewer']; assignment: QcAssignment | undefined } {
+  ensureQcSeeds();
+  const user = byId(users, userId);
+  const job = byId(jobs, jobId);
+  if (!user) throw new RepositoryError('forbidden');
+  if (!job) throw new RepositoryError('not_found');
+  const assignment = qcOf(job.id);
+  if (user.role === 'admin') return { job, user, viewer: 'admin', assignment };
+  if (user.role === 'technician' && assignment && assignment.inspectorId === userId) return { job, user, viewer: 'inspector', assignment };
+  if (user.role === 'technician' && leadIdsOf(job).includes(userId)) return { job, user, viewer: 'lead', assignment };
+  throw new RepositoryError('forbidden');
+}
+
+const mechCheckOf = (jobId: string): QcMechCheck => {
+  let c = qcMechChecks.find((x) => x.jobId === jobId);
+  if (!c) {
+    c = { jobId, attempts: {}, isDemo: true };
+    qcMechChecks.push(c);
+  }
+  return c;
+};
+
+function mechFloorsOf(job: Job): number {
+  const deal = byId(deals, job.dealId);
+  const lead = deal ? resolveLead(deal.leadId) : null;
+  return Math.max(2, Math.min(lead?.spec?.floors ?? 4, 40));
+}
+
+const mediaToEvidence = (m: SopMediaInput, id: string, slotId: string, user: User): JobEvidence => ({ id, slotId, kind: m.kind, fileName: m.fileName, previewUrl: m.previewUrl, ...(m.mediaUrl ? { mediaUrl: m.mediaUrl } : {}), mimeType: m.mimeType, sizeBytes: m.sizeBytes, ...(m.durationS !== undefined ? { durationS: m.durationS } : {}), capturedAt: m.capturedAt, ...(m.location ? { location: m.location } : {}), byUserId: user.id, byName: user.name });
+
+function mechViewOf(job: Job, _userId: string, viewer: QcMechView['viewer'], assignment: QcAssignment | undefined): QcMechView {
+  const check = mechCheckOf(job.id);
+  const floors = mechFloorsOf(job);
+  const items: QcMechItemView[] = MECH_ITEMS.map((id) => {
+    const attempts = check.attempts[id] ?? [];
+    const rework = [...reworkRequests].reverse().find((r) => r.jobId === job.id && r.source === 'qc_mechanical' && r.itemId === id && r.status !== 'verified');
+    return {
+      id,
+      state: itemState(attempts),
+      attempts: attempts.map((a): QcMechAttemptView => ({ id: a.id, n: a.n, verdict: a.verdict, suggested: a.suggested, overrideReason: a.overrideReason ?? null, measures: a.measures.map((m) => ({ ...m })), floors: a.floors.map((f) => ({ ...f })), rubric: a.rubric ?? null, note: a.note ?? null, evidence: a.evidence.map((e) => ({ id: e.id, kind: e.kind, previewUrl: e.previewUrl, ...(e.mediaUrl ? { mediaUrl: e.mediaUrl } : {}), capturedAt: e.capturedAt })), at: a.at, byName: a.byName, review: a.review ? { ...a.review } : null })),
+      reference: INSTALL_STEPS[id].flatMap((sid) => {
+        const st = job.steps.find((x) => x.id === sid);
+        return st ? [{ stepId: st.id, labelKey: st.labelKey, completedAt: st.completedAt ?? null, completedByName: st.completedByName ?? null, photos: (st.evidence ?? []).map((e) => ({ id: e.id, previewUrl: e.previewUrl, capturedAt: e.capturedAt })) }] : [];
+      }),
+      findings: qcFindings.filter((f) => f.jobId === job.id && f.itemId === id).map((f): QcFindingView => ({ id: f.id, itemId: f.itemId, description: f.description, raisedByName: f.raisedByName, raisedAt: f.raisedAt, explanation: f.explanation ? { ...f.explanation } : null, accepted: !!f.acceptedAt })),
+      rework: rework ? { id: rework.id, status: rework.status } : null,
+    };
+  });
+  const cleared = items.filter((i) => isMechCleared(i.state)).length;
+  const openFindings = qcFindings.filter((f) => f.jobId === job.id && !f.acceptedAt).length;
+  const activeAssignment = !!assignment && qcActive(assignment);
+  return {
+    job: { id: job.id, code: job.code, siteName: job.siteName, status: job.status },
+    viewer,
+    assignment: assignment ? { inspectorName: assignment.inspectorName, status: assignment.status, mode: assignment.mode } : null,
+    floors,
+    items,
+    progress: { cleared, total: items.length },
+    signOff: { problem: mechSignOffProblem(items.map((i) => i.state), openFindings), signedOff: check.signedOff ? { at: check.signedOff.at, byName: check.signedOff.byName } : null },
+    canRecord: viewer === 'inspector' && activeAssignment && job.status === 'qc_pending' && !check.signedOff,
+    canReview: viewer === 'admin',
+    canExplain: viewer === 'lead' || viewer === 'admin',
+  };
+}
+
+/** A fail is an alert until it is put right; the rework screen (136) takes it from there. Cleared when the item passes. */
+function syncQcMechAlerts(now: number): void {
+  const at = new Date(now).toISOString();
+  const live = new Set<string>();
+  for (const c of qcMechChecks) {
+    const job = byId(jobs, c.jobId);
+    if (!job) continue;
+    for (const id of MECH_ITEMS) {
+      if (itemState(c.attempts[id]) !== 'fail') continue;
+      const key = `qcfail:${c.jobId}:${id}`;
+      live.add(key);
+      if (!alerts.some((a) => a.relatedId === key && a.status !== 'resolved')) raiseAlert({ titleKey: 'qcMech.alert.fail', context: `${job.code} · ${job.siteName}: ${id}`, severity: 'high', category: 'quality', relatedId: key, sourceRoute: `/qc-mechanical/${c.jobId}`, location: job.location });
+    }
+  }
+  for (const a of alerts) if (a.relatedId?.startsWith('qcfail:') && a.status !== 'resolved' && !live.has(a.relatedId)) patchInPlace(alerts, a.id, { status: 'resolved', resolvedAt: at, resolvedBy: 'system', resolutionNote: 'Put right.' });
 }
 
 /* ============================== Installation SOP (123) */
@@ -12636,6 +12739,119 @@ export const memoryRepository: Repository = {
       if (unmetDependencies(def as InstallSopStepDef, job.steps).length > 0) throw new RepositoryError('depends_on');
       const updated = patchInPlace(jobs, job.id, { steps: withCurrent(job.steps, sopVersionOf(job).steps, stepId) });
       return installationSopViewOf(updated, technicianId);
+    }),
+
+  /* --------------------------------- QC mechanical check (132) */
+  getMechanicalCheck: (jobId, userId) =>
+    simulateRead((): QcMechView => {
+      const { job, viewer, assignment } = mechActor(jobId, userId);
+      return mechViewOf(job, userId, viewer, assignment);
+    }),
+
+  recordMechanicalResult: (jobId, itemId, input, inspectorId) =>
+    simulateWrite((): QcMechView => {
+      const { job, user, viewer, assignment } = mechActor(jobId, inspectorId);
+      if (viewer !== 'inspector' || !assignment || !qcActive(assignment)) throw new RepositoryError('not_inspector');
+      if (job.status !== 'qc_pending') throw new RepositoryError('not_ready');
+      const check = mechCheckOf(job.id);
+      if (check.signedOff) throw new RepositoryError('invalid_state');
+      const floors = mechFloorsOf(job);
+      const reading = { measures: input.measures, floors: input.floors, ...(input.rubric ? { rubric: input.rubric } : {}) };
+      const problem = mechAttemptProblem({ itemId, verdict: input.verdict, reading, floorCount: floors, note: input.note, evidenceCount: input.evidence.length, overrideReason: input.overrideReason });
+      if (problem) throw new RepositoryError(problem);
+      if (input.evidence.length > 6) throw new RepositoryError('too_many_attachments');
+      const now = Date.now();
+      const at = input.capturedAt ? new Date(input.capturedAt).getTime() : now;
+      if (Number.isNaN(at)) throw new RepositoryError('captured_invalid');
+      if (at > now + 60_000) throw new RepositoryError('captured_in_future');
+      const list = check.attempts[itemId] ?? (check.attempts[itemId] = []);
+      // A message sent twice (a phone that was offline) is one recording.
+      const id = input.clientId ? `qma-${input.clientId}` : `qma-${++mechCounter}`;
+      if (!list.some((a) => a.id === id)) {
+        const suggested = mechSuggest(itemId, reading, floors);
+        const evidence = input.evidence.map((m, n) => {
+          const bad = evidenceProblem(m.kind, { kind: m.kind, mimeType: m.mimeType, sizeBytes: m.sizeBytes, durationS: m.durationS });
+          if (bad) throw new RepositoryError(bad);
+          return mediaToEvidence(m, `${id}-ev${n + 1}`, `qc.${itemId}`, user);
+        });
+        const attempt: QcMechAttempt = { id, n: list.length + 1, verdict: input.verdict, suggested, ...(input.overrideReason?.trim() ? { overrideReason: input.overrideReason.trim() } : {}), measures: input.measures.map((m) => ({ ...m })), floors: input.floors.map((f) => ({ ...f })), ...(input.rubric ? { rubric: input.rubric } : {}), ...(input.note?.trim() ? { note: input.note.trim() } : {}), evidence, at: new Date(at).toISOString(), byUserId: user.id, byName: user.name, ...(input.verdict === 'exception' ? { review: { status: 'pending' as const } } : {}) };
+        list.push(attempt);
+        // The first thing recorded is the inspection starting.
+        if (assignment.status !== 'in_progress') {
+          assignment.status = 'in_progress';
+          assignment.events.push(qcEvent('scheduled', user.name, 'Inspection started'));
+        }
+        if (input.verdict === 'fail') {
+          reworkRequests.push({ id: `rw-${++mechCounter}`, jobId: job.id, source: 'qc_mechanical', itemId, note: attempt.note ?? '', evidence: evidence.map((e) => ({ ...e })), raisedByName: user.name, raisedAt: attempt.at, status: 'open', isDemo: true });
+        } else if (input.verdict === 'pass') {
+          // A recheck that passes is what closes the rework raised by the earlier fail.
+          for (const r of reworkRequests) if (r.jobId === job.id && r.source === 'qc_mechanical' && r.itemId === itemId && r.status !== 'verified') Object.assign(r, { status: 'verified' as const, verifiedAt: attempt.at });
+        }
+        syncQcMechAlerts(now);
+      }
+      return mechViewOf(job, inspectorId, viewer, assignment);
+    }),
+
+  reviewMechanicalException: (jobId, itemId, decision, note, adminId) =>
+    simulateWrite((): QcMechView => {
+      adminOnly(adminId);
+      const { job, user, viewer, assignment } = mechActor(jobId, adminId);
+      const list = mechCheckOf(job.id).attempts[itemId] ?? [];
+      const last = list[list.length - 1];
+      if (!last || last.verdict !== 'exception' || last.review?.status !== 'pending') throw new RepositoryError('invalid_state');
+      if (decision === 'reject' && note.trim().length < NOTE_MIN_MECH) throw new RepositoryError('note_required');
+      last.review = { status: decision === 'accept' ? 'accepted' : 'rejected', byName: user.name, at: new Date().toISOString(), ...(note.trim() ? { note: note.trim() } : {}) };
+      // Rejecting an exception makes it a fail, and a fail has to be put right.
+      if (decision === 'reject') reworkRequests.push({ id: `rw-${++mechCounter}`, jobId: job.id, source: 'qc_mechanical', itemId, note: note.trim(), evidence: last.evidence.map((e) => ({ ...e })), raisedByName: user.name, raisedAt: last.review.at as string, status: 'open', isDemo: true });
+      syncQcMechAlerts(Date.now());
+      return mechViewOf(job, adminId, viewer, assignment);
+    }),
+
+  raiseInstallDiscrepancy: (jobId, itemId, description, inspectorId) =>
+    simulateWrite((): QcMechView => {
+      const { job, user, viewer, assignment } = mechActor(jobId, inspectorId);
+      if (viewer !== 'inspector') throw new RepositoryError('not_inspector');
+      if (!MECH_ITEMS.includes(itemId)) throw new RepositoryError('unknown_item');
+      if (description.trim().length < NOTE_MIN_MECH) throw new RepositoryError('note_required');
+      if (mechCheckOf(job.id).signedOff) throw new RepositoryError('invalid_state');
+      qcFindings.push({ id: `qcf-${++mechCounter}`, jobId: job.id, itemId, description: description.trim(), raisedByName: user.name, raisedAt: new Date().toISOString(), isDemo: true });
+      return mechViewOf(job, inspectorId, viewer, assignment);
+    }),
+
+  explainDiscrepancy: (findingId, text, userId) =>
+    simulateWrite((): QcMechView => {
+      const f = qcFindings.find((x) => x.id === findingId);
+      if (!f) throw new RepositoryError('not_found');
+      const { job, user, viewer, assignment } = mechActor(f.jobId, userId);
+      if (viewer === 'inspector') throw new RepositoryError('forbidden');
+      if (f.acceptedAt) throw new RepositoryError('invalid_state');
+      if (text.trim().length < NOTE_MIN_MECH) throw new RepositoryError('note_required');
+      f.explanation = { text: text.trim(), byName: user.name, at: new Date().toISOString() };
+      return mechViewOf(job, userId, viewer, assignment);
+    }),
+
+  acceptDiscrepancy: (findingId, userId) =>
+    simulateWrite((): QcMechView => {
+      const f = qcFindings.find((x) => x.id === findingId);
+      if (!f) throw new RepositoryError('not_found');
+      const { job, user, viewer, assignment } = mechActor(f.jobId, userId);
+      if (viewer === 'lead') throw new RepositoryError('forbidden');
+      if (!f.explanation || f.acceptedAt) throw new RepositoryError('invalid_state');
+      f.acceptedAt = new Date().toISOString();
+      f.acceptedByName = user.name;
+      return mechViewOf(job, userId, viewer, assignment);
+    }),
+
+  signOffMechanical: (jobId, inspectorId) =>
+    simulateWrite((): QcMechView => {
+      const { job, user, viewer, assignment } = mechActor(jobId, inspectorId);
+      if (viewer !== 'inspector') throw new RepositoryError('not_inspector');
+      const check = mechCheckOf(job.id);
+      if (check.signedOff) throw new RepositoryError('invalid_state');
+      const view = mechViewOf(job, inspectorId, viewer, assignment);
+      if (view.signOff.problem) throw new RepositoryError(view.signOff.problem);
+      check.signedOff = { at: new Date().toISOString(), byUserId: user.id, byName: user.name };
+      return mechViewOf(job, inspectorId, viewer, assignment);
     }),
 
   /* --------------------------------- QC inspector assignment (131) */

@@ -1,6 +1,11 @@
+import type { ItemState, SignOffProblem } from '@/features/qc/mechanical';
 import type { BusyReason, EligibilityProblem, Involvement, SlotOffer } from '@/features/qc/inspectors';
 import type {
   AdvanceRecovery,
+  QcMechAttempt,
+  QcMechItemId,
+  QcVerdict,
+  ReworkRequest,
   InspectorUnavailability,
   QcAssignment,
   QcAssignmentEvent,
@@ -1661,6 +1666,69 @@ export interface JobIssueView {
   canReopen: boolean;
   /** Only on this phone so far. */
   local?: boolean;
+}
+
+/* ------------------------------------ QC mechanical check (132) */
+
+export interface QcMechAttemptView {
+  id: string;
+  n: number;
+  verdict: QcVerdict;
+  suggested: QcVerdict | null;
+  overrideReason: string | null;
+  measures: { key: string; value: number }[];
+  floors: { floor: number; mm: number }[];
+  rubric: 1 | 2 | 3 | null;
+  note: string | null;
+  evidence: { id: string; kind: 'photo' | 'video'; previewUrl: string; mediaUrl?: string; capturedAt: string }[];
+  at: string;
+  byName: string;
+  review: NonNullable<QcMechAttempt['review']> | null;
+}
+
+export interface QcFindingView {
+  id: string;
+  itemId: QcMechItemId;
+  description: string;
+  raisedByName: string;
+  raisedAt: string;
+  explanation: { text: string; byName: string; at: string } | null;
+  accepted: boolean;
+}
+
+export interface QcMechItemView {
+  id: QcMechItemId;
+  state: ItemState;
+  attempts: QcMechAttemptView[];
+  /** What was logged when it was installed, for the inspector to cross-check against. */
+  reference: { stepId: string; labelKey: string; completedAt: string | null; completedByName: string | null; photos: { id: string; previewUrl: string; capturedAt: string }[] }[];
+  findings: QcFindingView[];
+  rework: { id: string; status: ReworkRequest['status'] } | null;
+}
+
+export interface QcMechView {
+  job: { id: string; code: string; siteName: string; status: Job['status'] };
+  viewer: 'inspector' | 'admin' | 'lead';
+  assignment: { inspectorName: string; status: QcAssignmentStatus; mode: 'inspector' | 'admin_exception' } | null;
+  floors: number;
+  items: QcMechItemView[];
+  progress: { cleared: number; total: number };
+  signOff: { problem: SignOffProblem | null; signedOff: { at: string; byName: string } | null };
+  canRecord: boolean;
+  canReview: boolean;
+  canExplain: boolean;
+}
+
+export interface QcMechInput {
+  verdict: QcVerdict;
+  measures: { key: string; value: number }[];
+  floors: { floor: number; mm: number }[];
+  rubric?: 1 | 2 | 3;
+  note?: string;
+  overrideReason?: string;
+  evidence: SopMediaInput[];
+  clientId?: string;
+  capturedAt?: string;
 }
 
 /* ------------------------------------ QC inspector assignment (131) */
@@ -4622,6 +4690,20 @@ export interface Repository {
   pingSiteLocation(technicianId: string, point: GeoPoint, at?: string): Promise<void>;
   /** Picks which step to do next, when the site does not allow the suggested order. Only steps whose prerequisites are done. */
   focusSopStep(jobId: string, stepId: string, technicianId: string): Promise<InstallationSopView>;
+
+  /* QC mechanical check (132) */
+  getMechanicalCheck(jobId: string, userId: string): Promise<QcMechView>;
+  /** The assigned inspector records one check. A fail needs evidence and words and is raised as rework; a verdict softer than the reference needs a reason. */
+  recordMechanicalResult(jobId: string, itemId: QcMechItemId, input: QcMechInput, inspectorId: string): Promise<QcMechView>;
+  /** Admin only: a pass with a noted exception is accepted, or rejected and becomes a fail. */
+  reviewMechanicalException(jobId: string, itemId: QcMechItemId, decision: 'accept' | 'reject', note: string, adminId: string): Promise<QcMechView>;
+  /** The inspector says the lift differs from what was logged at install time. */
+  raiseInstallDiscrepancy(jobId: string, itemId: QcMechItemId, description: string, inspectorId: string): Promise<QcMechView>;
+  /** The lead technician (or Admin) explains it. */
+  explainDiscrepancy(findingId: string, text: string, userId: string): Promise<QcMechView>;
+  /** The inspector (or Admin) accepts the explanation. */
+  acceptDiscrepancy(findingId: string, userId: string): Promise<QcMechView>;
+  signOffMechanical(jobId: string, inspectorId: string): Promise<QcMechView>;
 
   /* QC inspector assignment (131) */
   getQcBoard(userId: string): Promise<QcBoardView>;

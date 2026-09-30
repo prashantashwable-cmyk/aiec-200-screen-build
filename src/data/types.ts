@@ -2568,6 +2568,70 @@ export interface PreInspectionSummary {
   isDemo: boolean;
 }
 
+/* ------------------------------------ QC mechanical check (132) */
+
+export type QcMechItemId = 'rail_alignment' | 'car_cwt_balance' | 'ride_smoothness' | 'levelling' | 'door_smoothness';
+/** `exception` is a pass with a noted, Admin-reviewable imperfection; it is never a hard fail and never a silent pass. */
+export type QcVerdict = 'pass' | 'exception' | 'fail';
+
+/** One recording of one check by the inspector. Append-only: a fail that was put right is followed by a new attempt, never edited. */
+export interface QcMechAttempt {
+  id: string;
+  n: number;
+  verdict: QcVerdict;
+  /** What the app's reference thresholds said the verdict should be, kept so an override is visible. */
+  suggested: QcVerdict | null;
+  overrideReason?: string;
+  /** Named measurements (rail deviation, vibration, jerk, balance) and the per-floor levelling readings. */
+  measures: { key: string; value: number }[];
+  floors: { floor: number; mm: number }[];
+  /** Door rubric: 1 smooth, 2 slight noise, 3 rough or sticking. */
+  rubric?: 1 | 2 | 3;
+  note?: string;
+  evidence: JobEvidence[];
+  at: string;
+  byUserId: string;
+  byName: string;
+  /** For an `exception`: what Admin decided. */
+  review?: { status: 'pending' | 'accepted' | 'rejected'; byName?: string; at?: string; note?: string };
+}
+
+/** The inspector found the installation differs from what was logged at install time. It needs an explanation before sign-off. */
+export interface QcFinding {
+  id: string;
+  jobId: string;
+  itemId: QcMechItemId;
+  description: string;
+  raisedByName: string;
+  raisedAt: string;
+  explanation?: { text: string; byName: string; at: string };
+  acceptedAt?: string;
+  acceptedByName?: string;
+  isDemo: boolean;
+}
+
+export interface QcMechCheck {
+  jobId: string;
+  attempts: Partial<Record<QcMechItemId, QcMechAttempt[]>>;
+  signedOff?: { at: string; byUserId: string; byName: string };
+  isDemo: boolean;
+}
+
+/** A quality-check fail that has to be put right before handover. Raised here; the rework screen (136) owns what happens next. */
+export interface ReworkRequest {
+  id: string;
+  jobId: string;
+  source: 'qc_mechanical' | 'qc_electrical' | 'snag';
+  itemId: string;
+  note: string;
+  evidence: JobEvidence[];
+  raisedByName: string;
+  raisedAt: string;
+  status: 'open' | 'in_progress' | 'ready_for_retest' | 'verified';
+  verifiedAt?: string;
+  isDemo: boolean;
+}
+
 /* ------------------------------------ QC inspector assignment (131) */
 
 export type QcAssignmentStatus = 'assigned' | 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
@@ -3462,6 +3526,8 @@ export type CommitmentKind =
   | 'qc_assign'
   | 'qc_schedule'
   | 'qc_visit'
+  | 'qc_exception_review'
+  | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'
   | 'partner_feed_restore'
@@ -3488,6 +3554,8 @@ export type CommitmentSubjectType =
   | 'material_log'
   | 'handoff'
   | 'qc_assignment'
+  | 'qc_attempt'
+  | 'qc_finding'
   | 'job_issue'
   | 'safety_test'
   | 'site_checkin'

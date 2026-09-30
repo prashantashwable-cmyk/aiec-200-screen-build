@@ -35,6 +35,8 @@ import type {
   JobMaterialLog,
   JobHandoffNote,
   QcAssignment,
+  QcMechCheck,
+  QcFinding,
   DeliveryDelayCase,
   DeliveryDiscrepancyReport,
   DeliveryPartner,
@@ -109,6 +111,9 @@ export interface CommitmentSources {
   /** Quality-check assignments (131), and the jobs waiting for one. */
   qcAssignments: QcAssignment[];
   qcWaiting: { jobId: string; readyAt: string; assigned: boolean }[];
+  /** Mechanical quality-check attempts and the differences from the install record the inspector raised (132). */
+  qcMechChecks: QcMechCheck[];
+  qcFindings: QcFinding[];
   deliveryChecklists: DeliveryChecklist[];
   delayCases: DeliveryDelayCase[];
   discrepancyReports: DeliveryDiscrepancyReport[];
@@ -1198,6 +1203,68 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
             oversightRoute: `/qc-assignments/${a.jobId}`,
           };
         });
+    },
+  },
+  {
+    // A pass with a noted exception is Admin's to accept or refuse (132), within a day; until then the check cannot be signed off.
+    kind: 'qc_exception_review',
+    nudgeBefore: hours(4),
+    escalateAfter: hours(12),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'quality',
+    collect(src) {
+      const admin = adminId(src);
+      return src.qcMechChecks.flatMap((c) =>
+        Object.entries(c.attempts).flatMap(([itemId, list]) => {
+          const last = list?.[list.length - 1];
+          if (!last || last.verdict !== 'exception') return [];
+          const job = src.jobs.find((j) => j.id === c.jobId);
+          return [
+            {
+              ...base('qc_exception_review', 'qc_attempt', `${c.jobId}:${itemId}:${last.n}`),
+              ownerUserId: admin,
+              titleKey: 'work.title.qc_exception_review',
+              titleParams: { code: job?.code ?? '', item: itemId },
+              dueAt: plus(last.at, hours(24)),
+              state: last.review?.status === 'pending' ? ('open' as const) : ('done' as const),
+              paused: false,
+              completedAt: last.review?.at,
+              actionRoute: `/qc-mechanical/${c.jobId}`,
+              oversightRoute: `/qc-mechanical/${c.jobId}`,
+            },
+          ];
+        }),
+      );
+    },
+  },
+  {
+    // When the inspector finds the lift is not as it was logged, the installer explains it within a day (132): as-built records matter.
+    kind: 'qc_finding_explain',
+    nudgeBefore: hours(4),
+    escalateAfter: hours(12),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'quality',
+    collect(src) {
+      return src.qcFindings.flatMap((f) => {
+        const job = src.jobs.find((j) => j.id === f.jobId);
+        if (!job?.technicianId) return [];
+        return [
+          {
+            ...base('qc_finding_explain', 'qc_finding', f.id),
+            ownerUserId: job.technicianId,
+            titleKey: 'work.title.qc_finding_explain',
+            titleParams: { code: job.code, item: f.itemId },
+            dueAt: plus(f.raisedAt, hours(24)),
+            state: f.explanation ? ('done' as const) : ('open' as const),
+            paused: false,
+            completedAt: f.explanation?.at,
+            actionRoute: `/qc-mechanical/${f.jobId}`,
+            oversightRoute: `/qc-mechanical/${f.jobId}`,
+          },
+        ];
+      });
     },
   },
   {

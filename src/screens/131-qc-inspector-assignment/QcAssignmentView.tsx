@@ -251,6 +251,9 @@ function JobScreen({ s, d, t }: { s: QcState; d: QcJobDetail; t: T }) {
                 )}
                 {a.notifiedAt && <p className="t-xs t-muted">{t(K.assigned.notified, { when: formatDateTime(a.notifiedAt, lang) })}</p>}
                 {a.previous.length > 0 && <p className="t-xs t-muted">{a.previous.map((p) => t(K.assigned.previous, { name: p.inspectorName, reason: p.reason })).join(' · ')}</p>}
+                {(admin || inspectorView) && (a.status === 'assigned' || a.status === 'scheduled' || a.status === 'in_progress') && d.readiness.ready && (
+                  <Button size="sm" variant="secondary" icon={<ClipboardText size={16} aria-hidden="true" />} style={{ width: 'fit-content' }} onClick={() => s.goto(`/qc-mechanical/${d.job.id}`)} data-open="mechanical">{t('qcMech.title')}</Button>
+                )}
                 {admin && (a.status === 'assigned' || a.status === 'scheduled') && (
                   <Button size="sm" variant="secondary" style={{ width: 'fit-content' }} onClick={() => setSheet('reassign')} data-open="reassign">{t(K.assigned.reassign)}</Button>
                 )}
