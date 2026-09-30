@@ -2568,6 +2568,34 @@ export interface PreInspectionSummary {
   isDemo: boolean;
 }
 
+/* ------------------------------------ QC electrical & safety check (133) */
+
+export type QcElecItemId = 'wiring_grounding' | 'control_panel' | 'governor_overspeed' | 'buffer_function' | 'ard_function' | 'door_sensors' | 'overload_device' | 'alarm_comms' | 'trial_no_load' | 'trial_full_load';
+
+/** One recording of one safety-critical check. There is no soft pass here: it passed or it failed, and every attempt is kept. */
+export interface QcElecAttempt {
+  id: string;
+  n: number;
+  verdict: 'pass' | 'fail';
+  suggested: 'pass' | 'fail' | null;
+  measures: { key: string; value: number }[];
+  checks: { key: string; ok: boolean }[];
+  /** It did not behave the same every time. That is a fail to investigate, never a "sometimes fine". */
+  intermittent: boolean;
+  note?: string;
+  evidence: JobEvidence[];
+  at: string;
+  byUserId: string;
+  byName: string;
+}
+
+export interface QcElecCheck {
+  jobId: string;
+  attempts: Partial<Record<QcElecItemId, QcElecAttempt[]>>;
+  signedOff?: { at: string; byUserId: string; byName: string };
+  isDemo: boolean;
+}
+
 /* ------------------------------------ QC mechanical check (132) */
 
 export type QcMechItemId = 'rail_alignment' | 'car_cwt_balance' | 'ride_smoothness' | 'levelling' | 'door_smoothness';

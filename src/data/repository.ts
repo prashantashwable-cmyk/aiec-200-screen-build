@@ -1,7 +1,9 @@
 import type { ItemState, SignOffProblem } from '@/features/qc/mechanical';
+import type { ElecSignOffProblem, ElecState } from '@/features/qc/electrical';
 import type { BusyReason, EligibilityProblem, Involvement, SlotOffer } from '@/features/qc/inspectors';
 import type {
   AdvanceRecovery,
+  QcElecItemId,
   QcMechAttempt,
   QcMechItemId,
   QcVerdict,
@@ -1666,6 +1668,54 @@ export interface JobIssueView {
   canReopen: boolean;
   /** Only on this phone so far. */
   local?: boolean;
+}
+
+/* ------------------------------------ QC electrical & safety check (133) */
+
+export interface QcElecAttemptView {
+  id: string;
+  n: number;
+  verdict: 'pass' | 'fail';
+  suggested: 'pass' | 'fail' | null;
+  measures: { key: string; value: number }[];
+  checks: { key: string; ok: boolean }[];
+  intermittent: boolean;
+  note: string | null;
+  evidence: { id: string; kind: 'photo' | 'video'; previewUrl: string; mediaUrl?: string; capturedAt: string }[];
+  at: string;
+  byName: string;
+}
+
+export interface QcElecItemView {
+  id: QcElecItemId;
+  state: ElecState;
+  attempts: QcElecAttemptView[];
+  reference: QcMechItemView['reference'];
+  rework: { id: string; status: ReworkRequest['status'] } | null;
+}
+
+export interface QcElecView {
+  job: { id: string; code: string; siteName: string; status: Job['status'] };
+  viewer: 'inspector' | 'admin' | 'lead';
+  assignment: { inspectorName: string; status: QcAssignmentStatus; mode: 'inspector' | 'admin_exception' } | null;
+  items: QcElecItemView[];
+  progress: { cleared: number; total: number };
+  /** While any check has failed or is still open, nothing can proceed to handover. There is no Admin override. */
+  hardBlock: { blocked: boolean; failing: QcElecItemId[]; open: QcElecItemId[] };
+  signOff: { problem: ElecSignOffProblem | null; signedOff: { at: string; byName: string } | null };
+  mechanicalSignedOff: boolean;
+  canRecord: boolean;
+}
+
+export interface QcElecInput {
+  verdict: 'pass' | 'fail';
+  measures: { key: string; value: number }[];
+  checks: { key: string; ok: boolean }[];
+  intermittent: boolean;
+  note?: string;
+  evidence: SopMediaInput[];
+  clientId?: string;
+  capturedAt?: string;
 }
 
 /* ------------------------------------ QC mechanical check (132) */
@@ -4690,6 +4740,12 @@ export interface Repository {
   pingSiteLocation(technicianId: string, point: GeoPoint, at?: string): Promise<void>;
   /** Picks which step to do next, when the site does not allow the suggested order. Only steps whose prerequisites are done. */
   focusSopStep(jobId: string, stepId: string, technicianId: string): Promise<InstallationSopView>;
+
+  /* QC electrical & safety check (133) */
+  getElectricalCheck(jobId: string, userId: string): Promise<QcElecView>;
+  /** The assigned inspector records one check. There is no soft pass: a pass the readings do not support is refused, a fail needs evidence and words and goes to rework. */
+  recordElectricalResult(jobId: string, itemId: QcElecItemId, input: QcElecInput, inspectorId: string): Promise<QcElecView>;
+  signOffElectrical(jobId: string, inspectorId: string): Promise<QcElecView>;
 
   /* QC mechanical check (132) */
   getMechanicalCheck(jobId: string, userId: string): Promise<QcMechView>;

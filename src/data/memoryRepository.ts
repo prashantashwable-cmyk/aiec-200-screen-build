@@ -215,6 +215,9 @@ import type {
   InstallTimelineView,
   JobTeamView,
   QcMechAttemptView,
+  QcElecAttemptView,
+  QcElecItemView,
+  QcElecView,
   SopMediaInput,
   QcMechItemView,
   QcMechView,
@@ -382,6 +385,8 @@ import type {
   QcAssignment,
   QcMechAttempt,
   QcMechCheck,
+  QcElecAttempt,
+  QcElecCheck,
   QcFinding,
   ReworkRequest,
   QcAssignmentEvent,
@@ -576,6 +581,7 @@ import { DISPUTE_TARGET, NOTE_MIN, POSITION_MIN, REOPEN_WINDOW, canPartial, deci
 import { SOS_CANCEL_WINDOW_MS, SOS_SAME_INCIDENT } from '@/features/safety/sos';
 import { capturedAtProblem, completionProblem, isDone, missingSlots, naProblem, qcReadiness, slotsFor, stepApplies, suggestedNext, unmetDependencies, versionInForce as installVersionInForce } from '@/features/technician/installSop';
 import type { SpecFacts } from '@/features/technician/installSop';
+import { ELEC_ITEMS, defOf as elecDef, attemptProblem as elecAttemptProblem, signOffProblem as elecSignOffProblem, stateOf as elecStateOf, suggestVerdict as elecSuggest } from '@/features/qc/electrical';
 import { MECH_ITEMS, INSTALL_STEPS, NOTE_MIN as NOTE_MIN_MECH, attemptProblem as mechAttemptProblem, itemState, isCleared as isMechCleared, signOffProblem as mechSignOffProblem, suggestVerdict as mechSuggest } from '@/features/qc/mechanical';
 import { WINDOWS, busyBecause, dayKeyOf as qcDay, eligibilityOf, involvementOf, isWorkingDay, matchesPreference, missingQcSkills, normalizeSkills, schedulingProblem, suggestSlots } from '@/features/qc/inspectors';
 import type { BusyFacts, InvolvementFacts } from '@/features/qc/inspectors';
@@ -2509,6 +2515,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   syncTeamAlerts(true, now);
   syncQcAssignments(true, now);
   syncQcMechAlerts(now);
+  syncQcElecAlerts(now);
   syncLeadDelegations(now);
   for (const j of jobs) syncIssueHold(j);
   syncSopHandoff();
@@ -6599,6 +6606,70 @@ function syncQcMechAlerts(now: number): void {
   }
   for (const a of alerts) if (a.relatedId?.startsWith('qcfail:') && a.status !== 'resolved' && !live.has(a.relatedId)) patchInPlace(alerts, a.id, { status: 'resolved', resolvedAt: at, resolvedBy: 'system', resolutionNote: 'Put right.' });
 }
+
+/* ============================== QC electrical & safety check (133) */
+
+const qcElecChecks: QcElecCheck[] = [];
+const elecCheckOf = (jobId: string): QcElecCheck => {
+  let c = qcElecChecks.find((x) => x.jobId === jobId);
+  if (!c) {
+    c = { jobId, attempts: {}, isDemo: true };
+    qcElecChecks.push(c);
+  }
+  return c;
+};
+
+function elecViewOf(job: Job, viewer: QcMechView['viewer'], assignment: QcAssignment | undefined): QcElecView {
+  const check = elecCheckOf(job.id);
+  const items: QcElecItemView[] = ELEC_ITEMS.map((id) => {
+    const attempts = check.attempts[id] ?? [];
+    const rework = [...reworkRequests].reverse().find((r) => r.jobId === job.id && r.source === 'qc_electrical' && r.itemId === id && r.status !== 'verified');
+    return {
+      id,
+      state: elecStateOf(attempts),
+      attempts: attempts.map((a): QcElecAttemptView => ({ id: a.id, n: a.n, verdict: a.verdict, suggested: a.suggested, measures: a.measures.map((m) => ({ ...m })), checks: a.checks.map((c) => ({ ...c })), intermittent: a.intermittent, note: a.note ?? null, evidence: a.evidence.map((e) => ({ id: e.id, kind: e.kind, previewUrl: e.previewUrl, ...(e.mediaUrl ? { mediaUrl: e.mediaUrl } : {}), capturedAt: e.capturedAt })), at: a.at, byName: a.byName })),
+      reference: elecDef(id).installSteps.flatMap((sid) => {
+        const st = job.steps.find((x) => x.id === sid);
+        return st ? [{ stepId: st.id, labelKey: st.labelKey, completedAt: st.completedAt ?? null, completedByName: st.completedByName ?? null, photos: (st.evidence ?? []).map((e) => ({ id: e.id, previewUrl: e.previewUrl, capturedAt: e.capturedAt })) }] : [];
+      }),
+      rework: rework ? { id: rework.id, status: rework.status } : null,
+    };
+  });
+  const cleared = items.filter((i) => i.state === 'pass').length;
+  const failing = items.filter((i) => i.state === 'fail').map((i) => i.id);
+  const open = items.filter((i) => i.state === 'not_checked').map((i) => i.id);
+  return {
+    job: { id: job.id, code: job.code, siteName: job.siteName, status: job.status },
+    viewer,
+    assignment: assignment ? { inspectorName: assignment.inspectorName, status: assignment.status, mode: assignment.mode } : null,
+    items,
+    progress: { cleared, total: items.length },
+    hardBlock: { blocked: !check.signedOff, failing, open },
+    signOff: { problem: elecSignOffProblem(items.map((i) => i.state)), signedOff: check.signedOff ? { at: check.signedOff.at, byName: check.signedOff.byName } : null },
+    mechanicalSignedOff: !!mechCheckOf(job.id).signedOff,
+    canRecord: viewer === 'inspector' && !!assignment && qcActive(assignment) && job.status === 'qc_pending' && !check.signedOff,
+  };
+}
+
+/** A failed safety-critical check is an alert until a re-test passes; there is no way to wave it through. */
+function syncQcElecAlerts(now: number): void {
+  const at = new Date(now).toISOString();
+  const live = new Set<string>();
+  for (const c of qcElecChecks) {
+    const job = byId(jobs, c.jobId);
+    if (!job) continue;
+    for (const id of ELEC_ITEMS) {
+      if (elecStateOf(c.attempts[id]) !== 'fail') continue;
+      const key = `qcelecfail:${c.jobId}:${id}`;
+      live.add(key);
+      if (!alerts.some((a) => a.relatedId === key && a.status !== 'resolved')) raiseAlert({ titleKey: 'qcElec.alert.fail', context: `${job.code} · ${job.siteName}: ${id}`, severity: 'high', category: 'safety', relatedId: key, sourceRoute: `/qc-electrical/${c.jobId}`, location: job.location });
+    }
+  }
+  for (const a of alerts) if (a.relatedId?.startsWith('qcelecfail:') && a.status !== 'resolved' && !live.has(a.relatedId)) patchInPlace(alerts, a.id, { status: 'resolved', resolvedAt: at, resolvedBy: 'system', resolutionNote: 'Re-tested and passed.' });
+}
+
+/** Whether this job's safety verification has been passed in full: the one thing the compliance certification (134) waits for. */
+const qcElectricalCleared = (jobId: string): boolean => !!elecCheckOf(jobId).signedOff;
 
 /* ============================== Installation SOP (123) */
 
@@ -12739,6 +12810,62 @@ export const memoryRepository: Repository = {
       if (unmetDependencies(def as InstallSopStepDef, job.steps).length > 0) throw new RepositoryError('depends_on');
       const updated = patchInPlace(jobs, job.id, { steps: withCurrent(job.steps, sopVersionOf(job).steps, stepId) });
       return installationSopViewOf(updated, technicianId);
+    }),
+
+  /* --------------------------------- QC electrical & safety check (133) */
+  getElectricalCheck: (jobId, userId) =>
+    simulateRead((): QcElecView => {
+      const { job, viewer, assignment } = mechActor(jobId, userId);
+      if (viewer === 'lead') throw new RepositoryError('forbidden');
+      return elecViewOf(job, viewer, assignment);
+    }),
+
+  recordElectricalResult: (jobId, itemId, input, inspectorId) =>
+    simulateWrite((): QcElecView => {
+      const { job, user, viewer, assignment } = mechActor(jobId, inspectorId);
+      if (viewer !== 'inspector' || !assignment || !qcActive(assignment)) throw new RepositoryError('not_inspector');
+      if (job.status !== 'qc_pending') throw new RepositoryError('not_ready');
+      const check = elecCheckOf(job.id);
+      if (check.signedOff) throw new RepositoryError('invalid_state');
+      const reading = { measures: input.measures, checks: input.checks, intermittent: input.intermittent };
+      const problem = elecAttemptProblem({ itemId, verdict: input.verdict, reading, note: input.note, evidenceCount: input.evidence.length });
+      if (problem) throw new RepositoryError(problem);
+      if (input.evidence.length > 6) throw new RepositoryError('too_many_attachments');
+      const now = Date.now();
+      const at = input.capturedAt ? new Date(input.capturedAt).getTime() : now;
+      if (Number.isNaN(at)) throw new RepositoryError('captured_invalid');
+      if (at > now + 60_000) throw new RepositoryError('captured_in_future');
+      const list = check.attempts[itemId] ?? (check.attempts[itemId] = []);
+      const id = input.clientId ? `qea-${input.clientId}` : `qea-${++mechCounter}`;
+      if (!list.some((a) => a.id === id)) {
+        const evidence = input.evidence.map((m, n) => {
+          const bad = evidenceProblem(m.kind, { kind: m.kind, mimeType: m.mimeType, sizeBytes: m.sizeBytes, durationS: m.durationS });
+          if (bad) throw new RepositoryError(bad);
+          return mediaToEvidence(m, `${id}-ev${n + 1}`, `qc.${itemId}`, user);
+        });
+        const attempt: QcElecAttempt = { id, n: list.length + 1, verdict: input.verdict, suggested: elecSuggest(itemId, reading), measures: input.measures.map((m) => ({ ...m })), checks: input.checks.map((c) => ({ ...c })), intermittent: input.intermittent, ...(input.note?.trim() ? { note: input.note.trim() } : {}), evidence, at: new Date(at).toISOString(), byUserId: user.id, byName: user.name };
+        list.push(attempt);
+        if (assignment.status !== 'in_progress') {
+          assignment.status = 'in_progress';
+          assignment.events.push(qcEvent('scheduled', user.name, 'Inspection started'));
+        }
+        if (input.verdict === 'fail') reworkRequests.push({ id: `rw-${++mechCounter}`, jobId: job.id, source: 'qc_electrical', itemId, note: attempt.note ?? '', evidence: evidence.map((e) => ({ ...e })), raisedByName: user.name, raisedAt: attempt.at, status: 'open', isDemo: true });
+        else for (const r of reworkRequests) if (r.jobId === job.id && r.source === 'qc_electrical' && r.itemId === itemId && r.status !== 'verified') Object.assign(r, { status: 'verified' as const, verifiedAt: attempt.at });
+        syncQcElecAlerts(now);
+      }
+      return elecViewOf(job, viewer, assignment);
+    }),
+
+  signOffElectrical: (jobId, inspectorId) =>
+    simulateWrite((): QcElecView => {
+      const { job, user, viewer, assignment } = mechActor(jobId, inspectorId);
+      if (viewer !== 'inspector') throw new RepositoryError('not_inspector');
+      const check = elecCheckOf(job.id);
+      if (check.signedOff) throw new RepositoryError('invalid_state');
+      const problem = elecSignOffProblem(ELEC_ITEMS.map((i) => elecStateOf(check.attempts[i])));
+      if (problem) throw new RepositoryError(problem);
+      check.signedOff = { at: new Date().toISOString(), byUserId: user.id, byName: user.name };
+      return elecViewOf(job, viewer, assignment);
     }),
 
   /* --------------------------------- QC mechanical check (132) */
