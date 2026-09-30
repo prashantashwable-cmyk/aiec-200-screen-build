@@ -24,7 +24,7 @@ export const HOLD_REASON_MIN = 4;
 export const PARTS: SupplierPaymentPart[] = ['upfront', 'balance', 'retention'];
 export const TRIGGERS: SupplierPaymentTrigger[] = ['on_send', 'on_acknowledge', 'after_delivery', 'on_handover'];
 
-export type HoldFlagKind = 'supplier_blocked' | 'open_report' | 'orphaned' | 'rating_dispute' | 'high_value';
+export type HoldFlagKind = 'supplier_blocked' | 'open_report' | 'orphaned' | 'rating_dispute' | 'high_value' | 'early_release';
 /** `block`: cannot be approved at all. `hold`: a reason to hold, approvable only after acknowledging it.
  *  `care`: worth a look, no gate. */
 export type FlagSeverity = 'block' | 'hold' | 'care';
@@ -35,9 +35,10 @@ export const FLAG_SEVERITY: Record<HoldFlagKind, FlagSeverity> = {
   orphaned: 'hold',
   rating_dispute: 'care',
   high_value: 'care',
+  early_release: 'care',
 };
 
-export const FLAG_ORDER: HoldFlagKind[] = ['supplier_blocked', 'open_report', 'orphaned', 'rating_dispute', 'high_value'];
+export const FLAG_ORDER: HoldFlagKind[] = ['supplier_blocked', 'open_report', 'orphaned', 'rating_dispute', 'high_value', 'early_release'];
 
 export interface PaymentFlag {
   kind: HoldFlagKind;
@@ -100,7 +101,8 @@ export function firedMilestones(f: MilestoneFacts): Milestone[] {
       // A net supplier is owed after the net days; everyone else once the delivery is confirmed.
       const owedAt = f.paymentTerms.termType === 'net' && f.netDays !== null ? iso(ms(f.deliveredAt) + days(f.netDays)) : f.deliveredAt;
       if (ms(owedAt) <= f.now) out.push({ part: 'balance', trigger: 'after_delivery', amount: part.amount, firedAt: owedAt, dueAt: owedAt });
-    } else if (f.retentionReleased) {
+    } else if (f.retentionReleased && f.deliveredAt) {
+      // A retention released before the delivery was confirmed is out of sequence: it is surfaced (112), never paid quietly.
       out.push({ part: 'retention', trigger: 'on_handover', amount: f.retentionReleased.amount, firedAt: f.retentionReleased.at, dueAt: f.retentionReleased.at });
     }
   }

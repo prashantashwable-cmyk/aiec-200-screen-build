@@ -110,7 +110,29 @@ the module's section to `BUILD_README.md`.
 - **Module 11 Material Logistics & Delivery is done, including its checkpoint** (`101`–`110`, see
   BUILD_README's Module 11 section). Admin has a "Logistics" nav tab; every delivery screen declares
   `tab: 'logistics'` for Admin.
-- **Module 12 Supplier Payment Processing in progress:** `111` built. **Next: `112`**.
+- **Module 12 Supplier Payment Processing in progress:** `111`–`112` built. **Next: `113`**.
+  112 facts:
+  - `@/features/suppliers/paymentChain` is the chain's pure logic: `chainKinds` (the nodes an order's terms
+    pass through: order sent, supplier confirmed, delivery confirmed, net period, retention release, final
+    release), `firedAtOf` (each node is a real event the app already records, with a `source` of `event`,
+    `system` or `manual`), `chainAnomalies`, `splitOf`, `checkDeviation`, `deviationIncreasesRisk`.
+    `paymentChainOf` (memoryRepository) builds the one `PaymentChainView` that 114 (schedule) should read for
+    expected dates: `expectedDeliveryFor` uses the promise or a later tracker ETA, never a past date.
+  - A one-off split is `PurchaseOrderPaymentSnapshot.deviations` (append-only, reason ≥ 8 chars). It can only
+    change portions not yet approved, paid or (for retention) released (`part_locked`); pending or held
+    payment amounts and the 100 retention record follow it. Paying earlier or holding back less needs an
+    explicit acknowledgement (`risk_unconfirmed`). Seeded: Sanghvi's cabin order (30% advance).
+  - `releasePortionEarly` (balance or advance only) queues a `SupplierPayment` with `origin: 'override'` and
+    a reason; it still needs 111's approval, carries the `early_release` flag and its evidence is only that
+    decision. Manual entries are drawn differently from events in the timeline.
+  - Out of order: a retention released before the delivery is confirmed and signed is never queued
+    (`firedMilestones` needs `deliveredAt`); `syncPaymentAnomalies` raises a `payment` alert once
+    (`supplierPaymentRelease.alert.outOfSequence`) and resolves it when the order is back in sequence.
+    A retention that falls due while a related report or rating dispute is open is created already `held`
+    (`heldAuto: 'related_dispute'`, `supplier_payment.auto_held` in the audit log), without touching the
+    portions that already released.
+  - `/supplier-payment-release` (Admin; `?po=` or `?payment=`; no param lists every order), reached from 111's
+    detail sheet and 091's hub.
   111 facts:
   - `SupplierPayment` is the one record every Module 12 screen reads: `part` (`upfront` / `balance` /
     `retention`, 100's schedule), the `trigger` that made it due, `amount` (frozen when it fired),

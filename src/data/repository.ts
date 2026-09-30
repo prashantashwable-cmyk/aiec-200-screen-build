@@ -94,6 +94,7 @@ import type {
   DeliverySopStep,
   DeliverySopVersion,
   DeliveryDiscrepancyReport,
+  PaymentDeviation,
   SupplierPaymentEvent,
   SupplierPaymentPart,
   SupplierPaymentStatus,
@@ -128,6 +129,7 @@ import type { SlotDay } from '@/features/logistics/deliverySlots';
 import type { ArrivalWindow, CapacityWeek, ReadinessStatus } from '@/features/logistics/transit';
 import type { SopVersionStatus } from '@/features/logistics/deliverySop';
 import type { PaymentFlag } from '@/features/suppliers/supplierPayments';
+import type { AnomalyKind, ChainNodeKind, ChainNodeState, ChainSource, SplitIssue } from '@/features/suppliers/paymentChain';
 import type { Bucket, Direction, TransitSummary, TrendTone } from '@/features/logistics/deliveryAnalytics';
 import type { PartnerStats, PartnerUnavailable, Responsibility, TrackingMode } from '@/features/logistics/partnerPerformance';
 
@@ -1133,9 +1135,105 @@ export interface AdvanceResolutionInput {
   note?: string;
 }
 
+/* ---------------------------------- Milestone-linked payment release (112) */
+
+export interface PaymentChainNodeView {
+  kind: ChainNodeKind;
+  state: ChainNodeState;
+  /** When the real event fired. */
+  at: string | null;
+  /** When it is now expected, recalculated from where the order really is. Null when it cannot yet be said. */
+  expectedAt: string | null;
+  source: ChainSource | null;
+  byName: string | null;
+  ref: string | null;
+  route: string | null;
+}
+
+export type SplitPartState = 'not_due' | 'pending' | 'held' | 'approved' | 'paid';
+
+export interface PaymentSplitPartView {
+  part: SupplierPaymentPart;
+  pct: number;
+  amount: number;
+  trigger: SupplierPaymentTrigger;
+  paymentId: string | null;
+  paymentCode: string | null;
+  state: SplitPartState;
+  /** When it will be owed (real, or expected from the milestone's trajectory). */
+  dueAt: string | null;
+  dueIsExpected: boolean;
+  /** Admin can change this portion's amount: it has neither been approved nor paid. */
+  editable: boolean;
+  origin: 'event' | 'override' | null;
+  overrideReason: string | null;
+  heldAuto: boolean;
+  /** Not yet fired and not a retention: Admin may release it ahead of its milestone, with a reason. */
+  canReleaseEarly: boolean;
+}
+
+export type ChainTimelineKind = ChainNodeKind | 'held' | 'hold_released' | 'approved' | 'reversed' | 'executed' | 'amount_changed' | 'split_changed' | 'early_release' | 'triggered' | 'auto_held';
+
+export interface PaymentTimelineEntry {
+  id: string;
+  kind: ChainTimelineKind;
+  at: string;
+  source: ChainSource;
+  byName: string | null;
+  note: string | null;
+  part: SupplierPaymentPart | null;
+}
+
+export interface PaymentChainView {
+  poId: string;
+  poCode: string;
+  supplierId: string;
+  supplierName: string;
+  siteName: string;
+  total: number;
+  paid: number;
+  termType: 'net' | 'milestone' | 'advance';
+  tier: string;
+  /** This order's split differs from its tier's default. */
+  custom: boolean;
+  upfrontPct: number;
+  retentionPct: number;
+  netDays: number | null;
+  nodes: PaymentChainNodeView[];
+  parts: PaymentSplitPartView[];
+  anomalies: AnomalyKind[];
+  deviations: PaymentDeviation[];
+  timeline: PaymentTimelineEntry[];
+  /** The payment the screen was opened for, if any. */
+  focusPaymentId: string | null;
+}
+
+export interface PaymentChainSummary {
+  poId: string;
+  poCode: string;
+  supplierName: string;
+  siteName: string;
+  total: number;
+  paid: number;
+  custom: boolean;
+  state: 'awaiting' | 'in_progress' | 'complete';
+  anomaly: boolean;
+  pending: number;
+}
+
+export interface AdjustSplitInput {
+  upfrontPct: number;
+  retentionPct: number;
+  reason: string;
+  /** The change pays the supplier earlier or holds back less: Admin has read that and still wants it. */
+  acknowledgeRisk?: boolean;
+}
+
+export type AdjustSplitProblem = SplitIssue | 'part_locked' | 'risk_unconfirmed';
+
 /* ---------------------------------- Supplier payment approval (111) */
 
-export type PaymentEvidenceKind = 'po_sent' | 'acknowledged' | 'delivery_received' | 'delivery_signed' | 'net_elapsed' | 'retention_released' | 'installation_handover';
+export type PaymentEvidenceKind = 'manual_override' | 'po_sent' | 'acknowledged' | 'delivery_received' | 'delivery_signed' | 'net_elapsed' | 'retention_released' | 'installation_handover';
 
 /** What made a payment due, attached so Admin can check it in one glance. */
 export interface PaymentEvidence {
@@ -1181,6 +1279,8 @@ export interface SupplierPaymentView {
   /** Nothing here needs judging: small and clean, so it may be approved in a batch. */
   routine: boolean;
   heldReason: string | null;
+  /** Held by the assistant because a related dispute was open, not by Admin. */
+  heldAuto: boolean;
   heldAt: string | null;
   heldByName: string | null;
   approvedAt: string | null;
@@ -2779,6 +2879,14 @@ export interface Repository {
   completeDeliveryChecklist(checklistId: string, input: CompleteChecklistInput, byUserId: string): Promise<CompleteChecklistResult>;
   /** Abandons an unfinished checklist started by mistake. */
   cancelDeliveryChecklist(checklistId: string, byUserId: string): Promise<void>;
+
+  /* Milestone-linked payment release (112) — one order's full chain, drilled into from the queue or the schedule */
+  getSupplierPaymentChains(byUserId: string): Promise<PaymentChainSummary[]>;
+  getSupplierPaymentChain(ref: { poId?: string; paymentId?: string }, byUserId: string): Promise<PaymentChainView>;
+  /** A one-off split for this order. Only for portions not yet approved or paid; the reason is kept for good. */
+  adjustPaymentSplit(poId: string, input: AdjustSplitInput, byUserId: string): Promise<PaymentChainView>;
+  /** Releases a portion ahead of its milestone. Still goes through approval, marked as Admin's own override. */
+  releasePortionEarly(poId: string, part: SupplierPaymentPart, reason: string, byUserId: string): Promise<PaymentChainView>;
 
   /* Supplier payment approval (111) — the deliberate last human step before money moves */
   getSupplierPaymentQueue(byUserId: string): Promise<SupplierPaymentQueue>;

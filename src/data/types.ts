@@ -928,7 +928,7 @@ export type SupplierPaymentTrigger = 'on_send' | 'on_acknowledge' | 'after_deliv
  *  `approved`: still inside the reversal window, nothing has moved. `executed`: the transfer went. */
 export type SupplierPaymentStatus = 'pending_approval' | 'held' | 'approved' | 'executed';
 
-export type SupplierPaymentEventKind = 'triggered' | 'held' | 'hold_released' | 'approved' | 'reversed' | 'executed';
+export type SupplierPaymentEventKind = 'triggered' | 'held' | 'hold_released' | 'approved' | 'reversed' | 'executed' | 'amount_changed';
 
 export interface SupplierPaymentEvent {
   id: string;
@@ -956,8 +956,13 @@ export interface SupplierPayment {
   dueAt: string;
   status: SupplierPaymentStatus;
   heldReason?: string;
+  /** Held by the assistant, not by Admin: a related dispute was still open when the payment fell due (112). */
+  heldAuto?: 'related_dispute';
   heldAt?: string;
   heldByName?: string;
+  /** `override`: Admin released this portion ahead of its milestone, with a reason (112). Never the default. */
+  origin?: 'event' | 'override';
+  overrideReason?: string;
   approvedAt?: string;
   approvedByName?: string;
   /** Until this moment an approval can be taken back. After it the transfer is irreversible. */
@@ -1414,6 +1419,18 @@ export interface SupplierTermsChange {
 export interface PurchaseOrderPaymentSnapshot extends SupplierPaymentTermSettings {
   tier: SupplierTrustTier;
   custom: boolean;
+  /** One-off changes to this order's split, oldest first. Append-only: the reason for a deviation is never lost (112). */
+  deviations?: PaymentDeviation[];
+}
+
+/** A one-off arrangement that moved an order off its tier's default split. */
+export interface PaymentDeviation {
+  id: string;
+  at: string;
+  byName: string;
+  reason: string;
+  before: { upfrontPct: number; retentionPct: number };
+  after: { upfrontPct: number; retentionPct: number };
 }
 
 export type SupplierRetentionStatus = 'held' | 'paused' | 'released' | 'withheld';

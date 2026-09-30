@@ -21,6 +21,7 @@ const translations: ScreenTranslations = {
         orphaned: 'Deal lost or cancelled',
         rating_dispute: 'Rating in dispute',
         high_value: 'Large payment',
+        early_release: 'Released ahead of its milestone',
       },
       flagBody: {
         supplier_blocked: 'This supplier is not active and approved, so no payment can go to them until that is fixed.',
@@ -28,6 +29,7 @@ const translations: ScreenTranslations = {
         orphaned: 'The deal these parts were ordered for was lost or cancelled. Decide what happens to the parts before paying for them.',
         rating_dispute: 'The supplier is disputing this order’s rating. Not a reason to hold on its own, but worth knowing.',
         high_value: 'A payment this size is always looked at by itself and is never approved in a batch.',
+        early_release: 'You released this portion before its milestone, with a reason. Check that reason still holds.',
       },
     },
     supplierPaymentApproval: {
@@ -81,10 +83,13 @@ const translations: ScreenTranslations = {
         historyHeading: 'History',
         by: 'by {{name}}',
         heldBecause: 'Held: {{reason}} ({{name}})',
+        heldAuto: 'Held automatically: a related dispute was still open when this fell due. Lift the hold when it is settled.',
+        seeChain: 'See the full milestone chain',
         reference: 'Bank reference {{ref}}',
         blockedNote: 'This payment cannot be approved until the supplier is cleared again.',
       },
       evidence: {
+        manual_override: 'Released early by Admin',
         po_sent: 'Order sent to the supplier',
         acknowledged: 'Supplier confirmed the order',
         delivery_received: 'Delivery checked in at the site',
@@ -96,7 +101,7 @@ const translations: ScreenTranslations = {
         netDays_one: '{{count}} day after delivery',
         netDays_other: '{{count}} days after delivery',
       },
-      event: { triggered: 'Became due', held: 'Held', hold_released: 'Hold lifted', approved: 'Approved', reversed: 'Approval taken back', executed: 'Paid' },
+      event: { triggered: 'Became due', held: 'Held', hold_released: 'Hold lifted', approved: 'Approved', reversed: 'Approval taken back', executed: 'Paid', amount_changed: 'Amount changed' },
       action: { approve: 'Approve payment', approveAnyway: 'Approve anyway', hold: 'Hold', release: 'Lift the hold', reverse: 'Take back', close: 'Close' },
       hold: {
         title: 'Hold this payment',
@@ -170,6 +175,7 @@ const translations: ScreenTranslations = {
         orphaned: 'सौदा हारा या रद्द',
         rating_dispute: 'रेटिंग पर विवाद',
         high_value: 'बड़ा भुगतान',
+        early_release: 'पड़ाव से पहले जारी किया गया',
       },
       flagBody: {
         supplier_blocked: 'यह सप्लायर चालू और मंज़ूर नहीं है, इसलिए यह ठीक होने तक इन्हें कोई भुगतान नहीं जा सकता।',
@@ -177,6 +183,7 @@ const translations: ScreenTranslations = {
         orphaned: 'जिस सौदे के लिए ये पार्ट्स मँगाए गए थे वह हार गया या रद्द हुआ। भुगतान से पहले तय करें कि पार्ट्स का क्या होगा।',
         rating_dispute: 'सप्लायर इस ऑर्डर की रेटिंग पर विवाद कर रहा है। अपने आप में रोकने का कारण नहीं, पर जानना ज़रूरी है।',
         high_value: 'इतना बड़ा भुगतान हमेशा अकेले देखा जाता है और कभी बैच में मंज़ूर नहीं होता।',
+        early_release: 'आपने कारण के साथ इस हिस्से को पड़ाव से पहले जारी किया। देख लें कि वह कारण अब भी सही है।',
       },
     },
     supplierPaymentApproval: {
@@ -230,10 +237,13 @@ const translations: ScreenTranslations = {
         historyHeading: 'इतिहास',
         by: '{{name}} द्वारा',
         heldBecause: 'रुका: {{reason}} ({{name}})',
+        heldAuto: 'अपने आप रुका: यह देय होते समय कोई जुड़ा विवाद खुला था। सुलझने पर रोक हटाएँ।',
+        seeChain: 'पूरी पड़ाव-कड़ी देखें',
         reference: 'बैंक संदर्भ {{ref}}',
         blockedNote: 'सप्लायर के फिर से मंज़ूर होने तक यह भुगतान मंज़ूर नहीं हो सकता।',
       },
       evidence: {
+        manual_override: 'एडमिन ने पहले जारी किया',
         po_sent: 'सप्लायर को ऑर्डर भेजा गया',
         acknowledged: 'सप्लायर ने ऑर्डर पक्का किया',
         delivery_received: 'साइट पर डिलीवरी दर्ज हुई',
@@ -245,7 +255,7 @@ const translations: ScreenTranslations = {
         netDays_one: 'डिलीवरी के {{count}} दिन बाद',
         netDays_other: 'डिलीवरी के {{count}} दिन बाद',
       },
-      event: { triggered: 'देय हुआ', held: 'रोका गया', hold_released: 'रोक हटी', approved: 'मंज़ूर', reversed: 'मंज़ूरी वापस ली', executed: 'चुकाया गया' },
+      event: { triggered: 'देय हुआ', held: 'रोका गया', hold_released: 'रोक हटी', approved: 'मंज़ूर', reversed: 'मंज़ूरी वापस ली', executed: 'चुकाया गया', amount_changed: 'रकम बदली' },
       action: { approve: 'भुगतान मंज़ूर करें', approveAnyway: 'फिर भी मंज़ूर करें', hold: 'रोकें', release: 'रोक हटाएँ', reverse: 'वापस लें', close: 'बंद करें' },
       hold: {
         title: 'यह भुगतान रोकें',
@@ -319,6 +329,7 @@ const translations: ScreenTranslations = {
         orphaned: 'सौदा हरला किंवा रद्द',
         rating_dispute: 'रेटिंगवर वाद',
         high_value: 'मोठं पेमेंट',
+        early_release: 'टप्प्याआधी सोडलेलं',
       },
       flagBody: {
         supplier_blocked: 'हा पुरवठादार चालू आणि मंजूर नाही, त्यामुळे हे दुरुस्त होईपर्यंत यांना कोणतंही पेमेंट जाऊ शकत नाही.',
@@ -326,6 +337,7 @@ const translations: ScreenTranslations = {
         orphaned: 'ज्या सौद्यासाठी हे पार्ट्स मागवले होते तो हरला किंवा रद्द झाला. पेमेंटआधी पार्ट्सचं काय करायचं ते ठरवा.',
         rating_dispute: 'पुरवठादार या ऑर्डरच्या रेटिंगवर वाद घालत आहे. एवढ्यावरून थांबवायचं कारण नाही, पण माहीत असावं.',
         high_value: 'एवढं मोठं पेमेंट नेहमी वेगळं पाहिलं जातं आणि कधीही एकत्र मंजूर होत नाही.',
+        early_release: 'तुम्ही कारणासह हा भाग टप्प्याआधी सोडला. ते कारण अजूनही योग्य आहे ना ते पहा.',
       },
     },
     supplierPaymentApproval: {
@@ -379,10 +391,13 @@ const translations: ScreenTranslations = {
         historyHeading: 'इतिहास',
         by: '{{name}} यांच्याकडून',
         heldBecause: 'थांबवलं: {{reason}} ({{name}})',
+        heldAuto: 'आपोआप थांबवलं: देय होताना संबंधित वाद उघडा होता. तो मिटला की थांबा उठवा.',
+        seeChain: 'संपूर्ण टप्प्यांची साखळी पहा',
         reference: 'बँक संदर्भ {{ref}}',
         blockedNote: 'पुरवठादार पुन्हा मंजूर होईपर्यंत हे पेमेंट मंजूर करता येणार नाही.',
       },
       evidence: {
+        manual_override: 'अॅडमिनने आधी सोडलं',
         po_sent: 'पुरवठादाराला ऑर्डर पाठवला',
         acknowledged: 'पुरवठादाराने ऑर्डर निश्चित केला',
         delivery_received: 'साइटवर डिलिव्हरी नोंदवली',
@@ -394,7 +409,7 @@ const translations: ScreenTranslations = {
         netDays_one: 'डिलिव्हरीनंतर {{count}} दिवस',
         netDays_other: 'डिलिव्हरीनंतर {{count}} दिवस',
       },
-      event: { triggered: 'देय झालं', held: 'थांबवलं', hold_released: 'थांबा उठवला', approved: 'मंजूर', reversed: 'मंजुरी परत घेतली', executed: 'चुकतं केलं' },
+      event: { triggered: 'देय झालं', held: 'थांबवलं', hold_released: 'थांबा उठवला', approved: 'मंजूर', reversed: 'मंजुरी परत घेतली', executed: 'चुकतं केलं', amount_changed: 'रक्कम बदलली' },
       action: { approve: 'पेमेंट मंजूर करा', approveAnyway: 'तरीही मंजूर करा', hold: 'थांबवा', release: 'थांबा उठवा', reverse: 'परत घ्या', close: 'बंद करा' },
       hold: {
         title: 'हे पेमेंट थांबवा',

@@ -15,9 +15,9 @@ export const QUEUE_FILTERS: QueueFilter[] = ['toApprove', 'held', 'recent'];
 export const PARTS: SupplierPaymentPart[] = ['upfront', 'balance', 'retention'];
 export const TRIGGERS: SupplierPaymentTrigger[] = ['on_send', 'on_acknowledge', 'after_delivery', 'on_handover'];
 export const STATUSES: SupplierPaymentStatus[] = ['pending_approval', 'held', 'approved', 'executed'];
-export const FLAG_KINDS: HoldFlagKind[] = ['supplier_blocked', 'open_report', 'orphaned', 'rating_dispute', 'high_value'];
-export const EVIDENCE_KINDS: PaymentEvidenceKind[] = ['po_sent', 'acknowledged', 'delivery_received', 'delivery_signed', 'net_elapsed', 'retention_released', 'installation_handover'];
-export const EVENT_KINDS: SupplierPaymentEventKind[] = ['triggered', 'held', 'hold_released', 'approved', 'reversed', 'executed'];
+export const FLAG_KINDS: HoldFlagKind[] = ['supplier_blocked', 'open_report', 'orphaned', 'rating_dispute', 'high_value', 'early_release'];
+export const EVIDENCE_KINDS: PaymentEvidenceKind[] = ['manual_override', 'po_sent', 'acknowledged', 'delivery_received', 'delivery_signed', 'net_elapsed', 'retention_released', 'installation_handover'];
+export const EVENT_KINDS: SupplierPaymentEventKind[] = ['triggered', 'held', 'hold_released', 'approved', 'reversed', 'executed', 'amount_changed'];
 
 const rec = <T extends string>(ns: string, keys: readonly T[]) => Object.fromEntries(keys.map((k) => [k, `${ns}.${k}`])) as Record<T, string>;
 
@@ -89,6 +89,8 @@ export const APPROVAL_KEYS = {
     historyHeading: 'supplierPaymentApproval.detail.historyHeading',
     by: 'supplierPaymentApproval.detail.by',
     heldBecause: 'supplierPaymentApproval.detail.heldBecause',
+    heldAuto: 'supplierPaymentApproval.detail.heldAuto',
+    seeChain: 'supplierPaymentApproval.detail.seeChain',
     reference: 'supplierPaymentApproval.detail.reference',
     blockedNote: 'supplierPaymentApproval.detail.blockedNote',
   },

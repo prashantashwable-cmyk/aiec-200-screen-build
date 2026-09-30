@@ -1,4 +1,5 @@
 import type { PurchaseOrderPaymentSnapshot, SupplierPaymentPart } from '@/data/types';
+import { days } from '@/features/sla/clock';
 import { checkSettings, paymentSchedule } from '@/features/suppliers/paymentTerms';
 import type { SettingsIssue } from '@/features/suppliers/paymentTerms';
 
@@ -8,6 +9,11 @@ import type { SettingsIssue } from '@/features/suppliers/paymentTerms';
  * the retention released at handover), and the amounts come from 100's schedule. What this file adds is the
  * order those events should happen in, and a way to say when they did not.
  */
+
+/** How long after the supplier is told, a confirmation is normally expected. */
+export const ACK_EXPECTED_AFTER = days(1);
+/** How long an installation typically runs from its start to its handover, for an expected retention date. */
+export const HANDOVER_AFTER_START = days(14);
 
 export type ChainNodeKind = 'po_issued' | 'acknowledged' | 'delivery_confirmed' | 'net_period' | 'retention_release' | 'final_release';
 
@@ -97,3 +103,7 @@ export function checkDeviation(current: PurchaseOrderPaymentSnapshot, next: { up
   if (reason.trim().length < DEVIATION_REASON_MIN) issues.push('reason_required');
   return issues;
 }
+
+/** Paying more up front, or holding back less, puts more of AIEC's money in the supplier's hands before the parts are proven. */
+export const deviationIncreasesRisk = (before: { upfrontPct: number; retentionPct: number }, after: { upfrontPct: number; retentionPct: number }): boolean =>
+  after.upfrontPct > before.upfrontPct || after.retentionPct < before.retentionPct;

@@ -1945,6 +1945,12 @@ export const seedSupplierPayments: SupplierPayment[] = [
   paidSupplierPayment(12, 'spo-h6', 'sp-3', 'dl-h3', 'balance', 'after_delivery', 66_000, 28, 27),
 ];
 
+/** A one-off split agreed by phone for Sanghvi's cabin order: 30% up front against a 5% retention, where their
+ *  tier would have paid 20%. The reason is kept with the order so it is never mistaken for their standing terms. */
+export const seedPaymentDeviations: { poId: string; upfrontPct: number; retentionPct: number; reason: string; byName: string; at: string }[] = [
+  { poId: 'spo-201', upfrontPct: 30, retentionPct: 5, reason: 'Sanghvi buys the cabin sheet steel against this order, so we agreed 30% up front on a call on 12 September.', byName: 'Prashant Vasant Wable', at: daysAgo(10) },
+];
+
 /* ------------------------------------------ Supplier payment terms (100) */
 
 /** How each supplier got to the terms they're on — with the score that justified it. */

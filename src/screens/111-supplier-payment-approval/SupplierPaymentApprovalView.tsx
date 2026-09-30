@@ -341,11 +341,14 @@ function DetailSheet({ s, t, lang, report }: { s: SupplierPaymentApprovalState; 
             )}
           </section>
 
-          {p.status === 'held' && p.heldReason && (
+          {p.status === 'held' && (p.heldAuto || p.heldReason) && (
             <p className="t-sm" role="note">
-              {t(K.detail.heldBecause, { reason: p.heldReason, name: p.heldByName ?? '' })}
+              {p.heldAuto ? t(K.detail.heldAuto) : t(K.detail.heldBecause, { reason: p.heldReason, name: p.heldByName ?? '' })}
             </p>
           )}
+          <Button size="sm" variant="ghost" onClick={() => navigate(`/supplier-payment-release?payment=${p.id}`)}>
+            {t(K.detail.seeChain)}
+          </Button>
           {p.status === 'executed' && p.bankReference && <p className="t-sm">{t(K.detail.reference, { ref: p.bankReference })}</p>}
 
           {p.status === 'pending_approval' && gateHold && !blocked && <Checkbox checked={s.acknowledged} onChange={s.setAcknowledged} label={<span className="t-sm">{t(K.detail.acknowledge)}</span>} />}

@@ -61,6 +61,7 @@ import {
   seedShipmentLegs,
   seedDeliveryPartners,
   seedSupplierPayments,
+  seedPaymentDeviations,
   seedDiscrepancyReports,
   seedDeliveryDisruptions,
   seedPartnerTrips,
@@ -152,6 +153,13 @@ import type {
   DiscrepancyReportView,
   AnalyticsMonths,
   BatchApproveResult,
+  PaymentChainNodeView,
+  PaymentChainSummary,
+  PaymentChainView,
+  PaymentSplitPartView,
+  PaymentTimelineEntry,
+  ChainTimelineKind,
+  SplitPartState,
   PaymentEvidence,
   SupplierPaymentQueue,
   SupplierPaymentView,
@@ -237,6 +245,8 @@ import type {
   DeliveryDisruption,
   SupplierPayment,
   SupplierPaymentEvent,
+  SupplierPaymentPart,
+  PaymentDeviation,
   DeliveryPartner,
   DeliveryPartnerLane,
   PartnerEvent,
@@ -360,6 +370,7 @@ import {
   checkSettings,
   effectiveSettings,
   graduationFor,
+  paymentSchedule,
   retentionAction,
   snapshotFor,
   tierOf,
@@ -385,6 +396,8 @@ import {
 import { compareDelays, etaMovedSince, judgeDelay } from '@/features/logistics/delay';
 import { capacityWeeks, categoryPatterns, readinessStatus, weekStartOf, windowOf } from '@/features/logistics/transit';
 import type { ReadinessStatus } from '@/features/logistics/transit';
+import { ACK_EXPECTED_AFTER, DEVIATION_REASON_MIN, deviationIncreasesRisk, HANDOVER_AFTER_START, chainAnomalies, chainKinds, checkDeviation, firedAtOf, splitOf } from '@/features/suppliers/paymentChain';
+import type { ChainNodeFacts, ChainNodeKind, ChainNodeState } from '@/features/suppliers/paymentChain';
 import { FLAG_ORDER, HOLD_REASON_MIN, REVERSAL_WINDOW, ROUTINE_LIMIT, approvalGate, bankReferenceFor, firedMilestones, flagOf, isRoutine, overdueDays } from '@/features/suppliers/supplierPayments';
 import type { HoldFlagKind, PaymentFlag } from '@/features/suppliers/supplierPayments';
 import { MIN_RISING_INCIDENTS, MIN_SAMPLE, REVISIT_COST, RISING_WINDOW_DAYS, SCHEDULE_DELAY_COST_PER_DAY, bucketsOf, costOf, inDisruption, inLast, inPriorWindow, isRising, monthKey, monthKeys, pctOf, previousWindow, transitSummary, trendOf, windowStart } from '@/features/logistics/deliveryAnalytics';
@@ -548,6 +561,18 @@ let jobCounter = 100;
 for (const po of supplierPurchaseOrders) {
   const supplier = suppliers.find((sp) => sp.id === po.supplierId);
   if (po.status === 'sent' && supplier && !po.paymentTerms) po.paymentTerms = snapshotFor(supplier, paymentTermsConfig);
+}
+// Negotiated one-off splits that predate this record (112), applied with the reason they were agreed.
+for (const d of seedPaymentDeviations) {
+  const po = supplierPurchaseOrders.find((x) => x.id === d.poId);
+  if (!po?.paymentTerms) continue;
+  po.paymentTerms = {
+    ...po.paymentTerms,
+    upfrontPct: d.upfrontPct,
+    retentionPct: d.retentionPct,
+    custom: true,
+    deviations: [{ id: `dev-${po.id}-1`, at: d.at, byName: d.byName, reason: d.reason, before: { upfrontPct: po.paymentTerms.upfrontPct, retentionPct: po.paymentTerms.retentionPct }, after: { upfrontPct: d.upfrontPct, retentionPct: d.retentionPct } }],
+  };
 }
 const supplierThreads = [...seedSupplierThreads];
 const supplierMessages = [...seedSupplierMessages];
@@ -2208,6 +2233,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   syncPartnerFeeds(now);
   syncSupplierPayments(now);
   executeSupplierPayments(now);
+  syncPaymentAnomalies(now);
   advanceShipments(now);
   // 105: a delivery running late is noticed, and one that caught up is cleared, without anyone looking.
   syncDelayCases(now);
@@ -4060,11 +4086,21 @@ function syncSupplierPayments(now: number): void {
         isDemo: true,
       };
       created.events = [{ id: `${created.id}-e1`, kind: 'triggered', at: m.firedAt, byName: 'AIEC Assistant' }];
+      // A retention that falls due while a related dispute is still open is held on its own (112): the earlier
+      // portions that already released correctly are not touched, and Admin decides when it goes.
+      const disputed = m.part === 'retention' && (openReportsOnPo(po.id).length > 0 || supplierOrderRatings.some((r) => r.poId === po.id && r.dispute?.status === 'open'));
+      if (disputed) {
+        created.status = 'held';
+        created.heldAuto = 'related_dispute';
+        created.heldAt = new Date(now).toISOString();
+        created.heldByName = 'AIEC Assistant';
+        created.events.push({ id: `${created.id}-e2`, kind: 'held', at: created.heldAt, byName: 'AIEC Assistant' });
+      }
       supplierPayments.push(created);
       logAutomatedAction({
         sourceKey: 'supplier_payment.due',
         triggeringCondition: `The ${m.part} milestone on ${po.code} fired`,
-        actionTaken: `Queued ${created.code} (${formatINR(m.amount)}) for Admin's approval`,
+        actionTaken: disputed ? `Queued ${created.code} (${formatINR(m.amount)}) already held: a related dispute is still open` : `Queued ${created.code} (${formatINR(m.amount)}) for Admin's approval`,
         affectedRecordId: created.id,
         affectedRecordType: 'purchase_order',
         subjectLabel: po.code,
@@ -4105,6 +4141,7 @@ function paymentFlags(p: SupplierPayment): PaymentFlag[] {
   if (dealStatus === 'lost' || dealStatus === 'cancelled') kinds.push('orphaned');
   if (supplierOrderRatings.some((r) => r.poId === p.poId && r.dispute?.status === 'open')) kinds.push('rating_dispute');
   if (p.amount > ROUTINE_LIMIT) kinds.push('high_value');
+  if (p.origin === 'override') kinds.push('early_release');
   return FLAG_ORDER.filter((k) => kinds.includes(k)).map(flagOf);
 }
 
@@ -4113,6 +4150,8 @@ function paymentEvidence(p: SupplierPayment): PaymentEvidence[] {
   if (!po) return [];
   const item = (kind: PaymentEvidence['kind'], at: string | null | undefined, by?: string | null, ref?: string | null, route?: string | null): PaymentEvidence => ({ kind, at: at ?? null, by: by ?? null, ref: ref ?? null, route: route ?? null });
   const out: PaymentEvidence[] = [];
+  // Released ahead of its milestone: the only honest evidence is that decision. The milestone itself has not happened.
+  if (p.origin === 'override') return [item('manual_override', p.triggeredAt, p.events[0]?.byName ?? null, p.overrideReason ?? null, `/supplier-payment-release?po=${po.id}`)];
   if (p.part === 'upfront') {
     out.push(item('po_sent', po.sentAt, po.sentBy, po.code, '/orders'));
     if (p.trigger === 'on_acknowledge') out.push(item('acknowledged', po.acknowledgedAt, po.acknowledgedBy, null, '/orders'));
@@ -4156,6 +4195,7 @@ function paymentViewOf(p: SupplierPayment, now: number): SupplierPaymentView {
     reports: openReportsOnPo(p.poId).map((d) => ({ id: d.id, code: d.code, itemCount: d.items.length, rush: d.rush, resolution: d.resolution })),
     routine: isRoutine(flags, p.amount),
     heldReason: p.heldReason ?? null,
+    heldAuto: !!p.heldAuto,
     heldAt: p.heldAt ?? null,
     heldByName: p.heldByName ?? null,
     approvedAt: p.approvedAt ?? null,
@@ -4179,6 +4219,189 @@ function approvePaymentNow(p: SupplierPayment, actor: User, acknowledged: boolea
     reversibleUntil: new Date(now + REVERSAL_WINDOW).toISOString(),
     events: paymentEvents(p, 'approved', actor.name),
   });
+}
+
+/* ============================== Milestone-linked payment release (112) */
+
+const paymentTotalOf = (po: SupplierPurchaseOrder) => poTotalOf(po.lineItems ?? []);
+
+/** What is realistically expected for delivery: the promise, or later if a vehicle is on the road with a later ETA. */
+function expectedDeliveryFor(po: SupplierPurchaseOrder, now: number): string | null {
+  if (po.receivedAt) return po.receivedAt;
+  const promised = promisedDeliveryOf(po);
+  const etas = shipmentLegs.filter((l) => l.poId === po.id && !l.milestones.some((m) => m.milestone === 'arrived')).map((l) => l.etaAt);
+  const latest = [promised, ...etas].filter((x): x is string => !!x).sort().pop();
+  if (!latest) return null;
+  // Never "expected" in the past: a late delivery is expected now at the earliest.
+  return new Date(Math.max(new Date(latest).getTime(), now)).toISOString();
+}
+
+function chainFactsOf(po: SupplierPurchaseOrder, now: number) {
+  const terms = po.paymentTerms!;
+  const total = paymentTotalOf(po);
+  const netDays = po.agreementTerms?.paymentTermsDays ?? null;
+  const parts = paymentSchedule(total, terms, netDays);
+  const retention = supplierRetentions.find((r) => r.poId === po.id);
+  const released = retention && retention.status === 'released' ? retention : null;
+  const deliveredAt = paymentDeliveredAt(po);
+  const isNet = terms.termType === 'net' && netDays !== null;
+  const mine = supplierPayments.filter((p) => p.poId === po.id);
+  const allPaid = parts.every((part) => mine.some((p) => p.part === part.kind && p.status === 'executed'));
+  const facts: ChainNodeFacts = {
+    sentAt: po.sentAt,
+    acknowledgedAt: po.acknowledgedAt,
+    deliveredAt,
+    receivedNotSigned: !!po.receivedAt && !deliveredAt,
+    netDueAt: isNet && deliveredAt ? new Date(new Date(deliveredAt).getTime() + netDays! * 86_400_000).toISOString() : null,
+    retention: released ? { at: released.decidedAt ?? released.heldAt, by: released.decidedBy && released.decidedBy !== 'system' ? released.decidedBy : null } : null,
+    finishedAt: allPaid ? (mine.map((p) => p.executedAt ?? '').sort().pop() || null) : null,
+    upfrontTrigger: (parts.find((p) => p.kind === 'upfront')?.trigger as 'on_send' | 'on_acknowledge' | undefined) ?? null,
+    isNet,
+    hasRetention: parts.some((p) => p.kind === 'retention'),
+  };
+  return { terms, total, netDays, parts, retention, facts, mine, now };
+}
+
+function paymentChainOf(po: SupplierPurchaseOrder, focusPaymentId: string | null, now: number): PaymentChainView {
+  const { terms, total, netDays, parts, retention, facts, mine } = chainFactsOf(po, now);
+  const supplier = byId(suppliers, po.supplierId ?? '');
+  const anomalies = chainAnomalies(facts);
+  const kinds = chainKinds(facts);
+  const expectedDelivery = expectedDeliveryFor(po, now);
+  const job = pendingJobFor(po.dealId);
+
+  const expectedOf = (kind: ChainNodeKind): string | null => {
+    if (kind === 'acknowledged') return po.sentAt ? new Date(Math.max(new Date(po.sentAt).getTime() + ACK_EXPECTED_AFTER, now)).toISOString() : null;
+    if (kind === 'delivery_confirmed') return expectedDelivery;
+    if (kind === 'net_period') return expectedDelivery && netDays !== null ? new Date(new Date(expectedDelivery).getTime() + netDays * 86_400_000).toISOString() : null;
+    if (kind === 'retention_release') return job?.scheduledFor ? new Date(Math.max(new Date(job.scheduledFor).getTime() + HANDOVER_AFTER_START, now)).toISOString() : null;
+    return null;
+  };
+
+  const doneKinds = kinds.filter((k) => !!firedAtOf(k, facts));
+  let currentSet = false;
+  const nodes: PaymentChainNodeView[] = kinds.map((kind) => {
+    const fired = firedAtOf(kind, facts);
+    const outOfOrder = kind === 'retention_release' && anomalies.includes('retention_before_delivery_confirmed');
+    let state: ChainNodeState = fired ? 'done' : 'upcoming';
+    if (outOfOrder) state = 'anomaly';
+    else if (!fired && !currentSet) {
+      state = 'current';
+      currentSet = true;
+    }
+    const ref =
+      kind === 'delivery_confirmed'
+        ? (deliveryConfirmations.find((c) => c.poId === po.id && c.status === 'signed')?.code ?? null)
+        : kind === 'net_period' && netDays !== null
+          ? String(netDays)
+          : null;
+    const route = kind === 'delivery_confirmed' ? `/delivery-confirmation` : kind === 'retention_release' ? '/admin/suppliers/payment-terms' : kind === 'po_issued' || kind === 'acknowledged' ? '/orders' : null;
+    const byName = kind === 'po_issued' ? (po.sentBy ?? null) : kind === 'acknowledged' ? (po.acknowledgedBy ?? null) : kind === 'delivery_confirmed' ? (po.receivedBy ?? null) : (fired?.by ?? null);
+    return { kind, state, at: fired?.at ?? null, expectedAt: fired ? null : expectedOf(kind), source: fired?.source ?? null, byName, ref, route };
+  });
+  void doneKinds;
+
+  const partViews: PaymentSplitPartView[] = parts.map((part) => {
+    const kind = part.kind as SupplierPaymentPart;
+    const payment = mine.find((p) => p.part === kind) ?? null;
+    const pct = splitOf(total, terms).find((x) => x.part === kind)?.pct ?? 0;
+    const state: SplitPartState = !payment ? 'not_due' : payment.status === 'pending_approval' ? 'pending' : payment.status === 'held' ? 'held' : payment.status === 'approved' ? 'approved' : 'paid';
+    const locked = state === 'approved' || state === 'paid' || (kind === 'retention' && !!retention && retention.status === 'released');
+    const expectedFor: Record<SupplierPaymentPart, string | null> = {
+      upfront: part.trigger === 'on_send' ? (po.sentAt ?? null) : expectedOf('acknowledged'),
+      balance: terms.termType === 'net' && netDays !== null ? expectedOf('net_period') : expectedDelivery,
+      retention: expectedOf('retention_release'),
+    };
+    return {
+      part: kind,
+      pct,
+      amount: payment ? payment.amount : part.amount,
+      trigger: part.trigger,
+      paymentId: payment?.id ?? null,
+      paymentCode: payment?.code ?? null,
+      state,
+      dueAt: payment ? payment.dueAt : expectedFor[kind],
+      dueIsExpected: !payment,
+      editable: !locked && part.amount > 0,
+      origin: payment?.origin ?? null,
+      overrideReason: payment?.overrideReason ?? null,
+      heldAuto: !!payment?.heldAuto,
+      canReleaseEarly: !payment && kind !== 'retention' && part.amount > 0 && po.status === 'sent',
+    };
+  });
+
+  const timeline: PaymentTimelineEntry[] = [];
+  for (const n of nodes) {
+    if (n.at) timeline.push({ id: `node-${n.kind}`, kind: n.kind, at: n.at, source: n.source ?? 'event', byName: n.byName, note: null, part: null });
+  }
+  for (const p of mine) {
+    for (const e of p.events) {
+      const manual = e.byName !== 'AIEC Assistant';
+      // The milestone's own "triggered" is already a node above, unless a person forced it ahead of time.
+      if (e.kind === 'triggered' && p.origin !== 'override') continue;
+      const kind: ChainTimelineKind = e.kind === 'triggered' ? 'early_release' : e.kind === 'held' && !manual ? 'auto_held' : e.kind;
+      timeline.push({ id: e.id, kind, at: e.at, source: manual ? 'manual' : 'system', byName: manual ? e.byName : null, note: e.kind === 'triggered' ? (p.overrideReason ?? null) : (e.note ?? null), part: p.part });
+    }
+  }
+  for (const d of terms.deviations ?? []) timeline.push({ id: d.id, kind: 'split_changed', at: d.at, source: 'manual', byName: d.byName, note: d.reason, part: null });
+  timeline.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+
+  return {
+    poId: po.id,
+    poCode: po.code,
+    supplierId: po.supplierId ?? '',
+    supplierName: supplier?.name ?? '',
+    siteName: shipmentSite(po.dealId)?.siteName ?? '',
+    total,
+    paid: mine.filter((p) => p.status === 'executed' || p.status === 'approved').reduce((n, p) => n + p.amount, 0),
+    termType: terms.termType,
+    tier: terms.tier,
+    custom: terms.custom || (terms.deviations?.length ?? 0) > 0,
+    upfrontPct: terms.upfrontPct,
+    retentionPct: terms.retentionPct,
+    netDays,
+    nodes,
+    parts: partViews,
+    anomalies,
+    deviations: terms.deviations ?? [],
+    timeline,
+    focusPaymentId,
+  };
+}
+
+/** An out-of-order milestone is never processed quietly: Admin is told once, and told again if it recurs. */
+function syncPaymentAnomalies(now: number): void {
+  for (const po of supplierPurchaseOrders) {
+    if (po.status !== 'sent' || !po.supplierId || !po.paymentTerms) continue;
+    const anomalies = chainAnomalies(chainFactsOf(po, now).facts);
+    const open = alerts.find((a) => a.relatedId === po.id && a.titleKey === 'supplierPaymentRelease.alert.outOfSequence' && a.status !== 'resolved');
+    if (anomalies.length > 0 && !open) {
+      const alert = raiseAlert({
+        titleKey: 'supplierPaymentRelease.alert.outOfSequence',
+        context: `${po.code} · ${byId(suppliers, po.supplierId)?.name ?? ''}`,
+        severity: 'high',
+        category: 'payment',
+        relatedId: po.id,
+        sourceRoute: `/supplier-payment-release?po=${po.id}`,
+      });
+      logAutomatedAction({
+        sourceKey: 'supplier_payment.out_of_sequence',
+        triggeringCondition: `A milestone on ${po.code} fired out of order`,
+        actionTaken: `Held the release and raised ${alert.code} for review`,
+        affectedRecordId: po.id,
+        affectedRecordType: 'purchase_order',
+        subjectLabel: po.code,
+      });
+    } else if (anomalies.length === 0 && open) {
+      patchInPlace(alerts, open.id, { status: 'resolved', resolvedAt: new Date(now).toISOString(), resolvedBy: 'system', resolutionNote: 'The events are back in order.' });
+    }
+  }
+}
+
+function chainPoOrThrow(poId: string): SupplierPurchaseOrder {
+  const po = byId(supplierPurchaseOrders, poId);
+  if (!po || po.status !== 'sent' || !po.supplierId || !po.paymentTerms) throw new RepositoryError('not_found');
+  return po;
 }
 
 /* ============================================ Delivery SOP (107) */
@@ -8068,6 +8291,126 @@ export const memoryRepository: Repository = {
       patchInPlace(conversations, conversation.id, { lastMessageAt: at });
       patchInPlace(discrepancyReports, r.id, { customerNotifiedAt: at, events: reportEvent(r, 'customer_told', actor.name) });
       return { notified: true };
+    }),
+
+  /* --------------------------------------------- Payment release (112) */
+  getSupplierPaymentChains: (byUserId) =>
+    simulateRead((): PaymentChainSummary[] => {
+      adminOnly(byUserId);
+      const now = Date.now();
+      syncSupplierPayments(now);
+      executeSupplierPayments(now);
+      syncPaymentAnomalies(now);
+      return supplierPurchaseOrders
+        .filter((po) => po.status === 'sent' && !!po.supplierId && !!po.paymentTerms && paymentTotalOf(po) > 0)
+        .map((po): PaymentChainSummary => {
+          const chain = paymentChainOf(po, null, now);
+          const paidParts = chain.parts.filter((p) => p.state === 'paid').length;
+          return {
+            poId: po.id,
+            poCode: po.code,
+            supplierName: chain.supplierName,
+            siteName: chain.siteName,
+            total: chain.total,
+            paid: chain.paid,
+            custom: chain.custom,
+            state: paidParts === chain.parts.length ? 'complete' : chain.paid > 0 || chain.parts.some((p) => p.state !== 'not_due') ? 'in_progress' : 'awaiting',
+            anomaly: chain.anomalies.length > 0,
+            pending: chain.parts.filter((p) => p.state === 'pending' || p.state === 'held').length,
+          };
+        })
+        .sort((a, b) => Number(b.anomaly) - Number(a.anomaly) || b.pending - a.pending || (a.state === 'complete' ? 1 : 0) - (b.state === 'complete' ? 1 : 0) || (a.poCode < b.poCode ? 1 : -1));
+    }),
+
+  getSupplierPaymentChain: (ref, byUserId) =>
+    simulateRead((): PaymentChainView => {
+      adminOnly(byUserId);
+      const now = Date.now();
+      syncSupplierPayments(now);
+      executeSupplierPayments(now);
+      syncPaymentAnomalies(now);
+      const payment = ref.paymentId ? byId(supplierPayments, ref.paymentId) : undefined;
+      const poId = ref.poId ?? payment?.poId;
+      if (!poId) throw new RepositoryError('not_found');
+      return paymentChainOf(chainPoOrThrow(poId), payment?.id ?? null, now);
+    }),
+
+  adjustPaymentSplit: (poId, input, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const po = chainPoOrThrow(poId);
+      const terms = po.paymentTerms!;
+      const issues = checkDeviation(terms, { upfrontPct: input.upfrontPct, retentionPct: input.retentionPct }, input.reason);
+      if (issues.length > 0) throw new RepositoryError(issues[0]);
+      const after = { ...terms, upfrontPct: input.upfrontPct, retentionPct: input.retentionPct };
+      if (deviationIncreasesRisk(terms, after) && !input.acknowledgeRisk) throw new RepositoryError('risk_unconfirmed');
+      const total = paymentTotalOf(po);
+      const netDays = po.agreementTerms?.paymentTermsDays ?? null;
+      const before = paymentSchedule(total, terms, netDays);
+      const next = paymentSchedule(total, after, netDays);
+      const amountOf = (parts: typeof before, kind: string) => parts.find((p) => p.kind === kind)?.amount ?? 0;
+      const retention = supplierRetentions.find((r) => r.poId === po.id);
+      // A portion already approved or paid is history. Changing what is still open must not rewrite what has gone.
+      for (const kind of ['upfront', 'balance', 'retention'] as const) {
+        if (amountOf(before, kind) === amountOf(next, kind)) continue;
+        const mine = supplierPayments.find((p) => p.poId === po.id && p.part === kind);
+        if (mine && (mine.status === 'approved' || mine.status === 'executed')) throw new RepositoryError('part_locked');
+        if (kind === 'retention' && retention && retention.status === 'released') throw new RepositoryError('part_locked');
+      }
+      const now = Date.now();
+      const at = new Date(now).toISOString();
+      const deviation: PaymentDeviation = {
+        id: `dev-${po.id}-${(terms.deviations?.length ?? 0) + 1}`,
+        at,
+        byName: actor.name,
+        reason: input.reason.trim(),
+        before: { upfrontPct: terms.upfrontPct, retentionPct: terms.retentionPct },
+        after: { upfrontPct: input.upfrontPct, retentionPct: input.retentionPct },
+      };
+      patchInPlace(supplierPurchaseOrders, po.id, { paymentTerms: { ...after, custom: true, deviations: [...(terms.deviations ?? []), deviation] } });
+      // The amounts still open follow the new split; the retention record 100 holds follows too.
+      for (const kind of ['upfront', 'balance', 'retention'] as const) {
+        const amount = amountOf(next, kind);
+        const mine = supplierPayments.find((p) => p.poId === po.id && p.part === kind);
+        if (mine && mine.amount !== amount) patchInPlace(supplierPayments, mine.id, { amount, events: paymentEvents(mine, 'amount_changed', actor.name, input.reason) });
+      }
+      if (retention && retention.status !== 'released' && retention.status !== 'withheld') patchInPlace(supplierRetentions, retention.id, { pct: input.retentionPct, amount: amountOf(next, 'retention') });
+      syncCommitments(now);
+      return paymentChainOf(byId(supplierPurchaseOrders, po.id)!, null, now);
+    }),
+
+  releasePortionEarly: (poId, part, reason, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const po = chainPoOrThrow(poId);
+      if (part === 'retention') throw new RepositoryError('invalid_input');
+      if (reason.trim().length < DEVIATION_REASON_MIN) throw new RepositoryError('reason_required');
+      if (supplierPayments.some((p) => p.poId === po.id && p.part === part)) throw new RepositoryError('already_fired');
+      const schedule = paymentSchedule(paymentTotalOf(po), po.paymentTerms!, po.agreementTerms?.paymentTermsDays ?? null).find((p) => p.kind === part);
+      if (!schedule || schedule.amount <= 0) throw new RepositoryError('invalid_input');
+      const now = Date.now();
+      const at = new Date(now).toISOString();
+      supplierPaymentCounter += 1;
+      const created: SupplierPayment = {
+        id: `spay-new-${supplierPaymentCounter}`,
+        code: `AIEC-SP-${3100 + supplierPaymentCounter}`,
+        poId: po.id,
+        supplierId: po.supplierId!,
+        dealId: po.dealId,
+        part,
+        trigger: schedule.trigger,
+        amount: schedule.amount,
+        triggeredAt: at,
+        dueAt: at,
+        status: 'pending_approval',
+        origin: 'override',
+        overrideReason: reason.trim(),
+        events: [{ id: `spay-new-${supplierPaymentCounter}-e1`, kind: 'triggered', at, byName: actor.name, note: reason.trim() }],
+        isDemo: true,
+      };
+      supplierPayments.push(created);
+      syncCommitments(now);
+      return paymentChainOf(po, created.id, now);
     }),
 
   /* --------------------------------------------- Supplier payments (111) */
