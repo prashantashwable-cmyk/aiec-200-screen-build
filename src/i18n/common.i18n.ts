@@ -276,6 +276,8 @@ const common: ScreenTranslations = {
         shipment_status_update: 'Update where the {{code}} shipment has got to',
         delivery_confirmation_sign: 'Sign the delivery confirmation for {{code}} at {{site}}',
         delivery_delay_action: '{{code}} for {{site}} is late. Tell the customer and say why',
+        supplier_payment_approve: 'Approve or hold the payment to {{supplier}} for {{code}}',
+        supplier_payment_hold_review: 'Decide again on the payment to {{supplier}} for {{code}} that you held',
         partner_feed_restore: '{{partner}}’s live tracking is down. Get it fixed; their deliveries are on milestones meanwhile',
         discrepancy_report_review: 'Decide whose fault report {{code}} at {{site}} is, and get the parts put right',
         orphaned_po_decision: 'Decide what to do with {{code}} from {{supplier}}: its deal was cancelled',
@@ -320,6 +322,10 @@ const common: ScreenTranslations = {
         },
         discrepancy: {
           routed: 'Sent damaged-parts report {{label}}, with photos, to the supplier',
+        },
+        supplier_payment: {
+          due: 'Queued supplier payment {{label}} for your approval: its milestone fired',
+          executed: 'Made supplier payment {{label}}: the reversal window closed',
         },
         partner: {
           feed_fallback: 'Moved a delivery of {{label}} to milestone updates while their live tracking is down',
@@ -613,6 +619,8 @@ const common: ScreenTranslations = {
         shipment_status_update: '{{code}} की खेप कहाँ पहुँची, यह अपडेट करें',
         delivery_confirmation_sign: '{{site}} पर {{code}} की डिलीवरी कन्फ़र्मेशन पर दस्तख़त करें',
         delivery_delay_action: '{{site}} के लिए {{code}} देर से है। ग्राहक को बताएँ और कारण दर्ज करें',
+        supplier_payment_approve: '{{code}} के लिए {{supplier}} को भुगतान मंज़ूर करें या रोकें',
+        supplier_payment_hold_review: '{{code}} के लिए {{supplier}} का जो भुगतान आपने रोका था उस पर फिर फ़ैसला करें',
         partner_feed_restore: '{{partner}} की लाइव ट्रैकिंग बंद है। इसे ठीक करवाएँ; तब तक उनकी डिलीवरी सिर्फ़ पड़ावों से चल रही हैं',
         discrepancy_report_review: '{{site}} की रिपोर्ट {{code}} में गलती किसकी है तय करें और पार्ट्स ठीक करवाएँ',
         orphaned_po_decision: '{{supplier}} से {{code}} का क्या करना है तय करें: उसकी डील रद्द हो गई',
@@ -657,6 +665,10 @@ const common: ScreenTranslations = {
         },
         discrepancy: {
           routed: 'खराब पार्ट्सची रिपोर्ट {{label}} फ़ोटो के साथ सप्लायर को भेजी',
+        },
+        supplier_payment: {
+          due: 'सप्लायर भुगतान {{label}} आपकी मंज़ूरी के लिए कतार में रखा: इसका पड़ाव आ गया',
+          executed: 'सप्लायर भुगतान {{label}} कर दिया: वापसी की अवधि पूरी हुई',
         },
         partner: {
           feed_fallback: '{{label}} की एक डिलीवरी को पड़ाव-अपडेट पर किया, क्योंकि उनकी लाइव ट्रैकिंग बंद है',
@@ -950,6 +962,8 @@ const common: ScreenTranslations = {
         shipment_status_update: '{{code}} ची खेप कुठवर पोहोचली ते अपडेट करा',
         delivery_confirmation_sign: '{{site}} येथील {{code}} च्या डिलिव्हरी कन्फर्मेशनवर सही करा',
         delivery_delay_action: '{{site}} साठीची {{code}} उशिरा आहे. ग्राहकाला कळवा आणि कारण नोंदवा',
+        supplier_payment_approve: '{{code}} साठी {{supplier}} ला दिलेलं पेमेंट मंजूर करा किंवा थांबवा',
+        supplier_payment_hold_review: '{{code}} साठी {{supplier}} चं जे पेमेंट तुम्ही थांबवलं होतं त्यावर पुन्हा निर्णय घ्या',
         partner_feed_restore: '{{partner}} चं लाइव्ह ट्रॅकिंग बंद आहे. ते दुरुस्त करून घ्या; तोपर्यंत त्यांच्या डिलिव्हऱ्या फक्त टप्प्यांवर चालतात',
         discrepancy_report_review: '{{site}} येथील अहवाल {{code}} मध्ये चूक कोणाची ते ठरवा आणि पार्ट्स दुरुस्त करून घ्या',
         orphaned_po_decision: '{{supplier}} कडील {{code}} चं काय करायचं ते ठरवा: त्याची डील रद्द झाली',
@@ -994,6 +1008,10 @@ const common: ScreenTranslations = {
         },
         discrepancy: {
           routed: 'खराब पार्ट्सचा अहवाल {{label}} फोटोंसह पुरवठादाराला पाठवला',
+        },
+        supplier_payment: {
+          due: 'पुरवठादाराचं पेमेंट {{label}} तुमच्या मंजुरीसाठी रांगेत ठेवलं: त्याचा टप्पा आला',
+          executed: 'पुरवठादाराचं पेमेंट {{label}} केलं: परत घेण्याची मुदत संपली',
         },
         partner: {
           feed_fallback: '{{label}} ची एक डिलिव्हरी टप्प्यांच्या अपडेटवर आणली, कारण त्यांचं लाइव्ह ट्रॅकिंग बंद आहे',

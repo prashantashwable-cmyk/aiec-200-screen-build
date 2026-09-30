@@ -917,6 +917,57 @@ export interface ShipmentLeg {
   isDemo: boolean;
 }
 
+/* ------------------------------------ Supplier payment processing (111) */
+
+/** The three parts a supplier order can be paid in (100's schedule). */
+export type SupplierPaymentPart = 'upfront' | 'balance' | 'retention';
+/** The milestone that made it due, as 100's `paymentSchedule` names it. */
+export type SupplierPaymentTrigger = 'on_send' | 'on_acknowledge' | 'after_delivery' | 'on_handover';
+
+/** `pending_approval`: due and waiting for Admin. `held`: Admin said not yet, with a reason.
+ *  `approved`: still inside the reversal window, nothing has moved. `executed`: the transfer went. */
+export type SupplierPaymentStatus = 'pending_approval' | 'held' | 'approved' | 'executed';
+
+export type SupplierPaymentEventKind = 'triggered' | 'held' | 'hold_released' | 'approved' | 'reversed' | 'executed';
+
+export interface SupplierPaymentEvent {
+  id: string;
+  kind: SupplierPaymentEventKind;
+  at: string;
+  byName: string;
+  note?: string;
+}
+
+/** One payment to a supplier, made real the moment its configured milestone fires (never before).
+ *  Approving it is the deliberate last human step before money moves. */
+export interface SupplierPayment {
+  id: string;
+  code: string;
+  poId: string;
+  supplierId: string;
+  dealId: string;
+  part: SupplierPaymentPart;
+  trigger: SupplierPaymentTrigger;
+  /** Frozen when it fired, so a later edit to the terms never changes what was owed. */
+  amount: number;
+  /** When the milestone fired. */
+  triggeredAt: string;
+  /** When it is actually owed: the same moment, or the end of the net period. */
+  dueAt: string;
+  status: SupplierPaymentStatus;
+  heldReason?: string;
+  heldAt?: string;
+  heldByName?: string;
+  approvedAt?: string;
+  approvedByName?: string;
+  /** Until this moment an approval can be taken back. After it the transfer is irreversible. */
+  reversibleUntil?: string;
+  executedAt?: string;
+  bankReference?: string;
+  events: SupplierPaymentEvent[];
+  isDemo: boolean;
+}
+
 /* ------------------------------------ Delivery analytics (110) */
 
 /** A stretch when something outside anyone's control (a flood, closed expressway, strike) hit deliveries
@@ -2565,6 +2616,8 @@ export type CommitmentKind =
   | 'delivery_confirmation_sign'
   | 'discrepancy_report_review'
   | 'partner_feed_restore'
+  | 'supplier_payment_approve'
+  | 'supplier_payment_hold_review'
   | 'delivery_delay_action'
   | 'orphaned_po_decision'
   | 'discrepancy_report_review'
@@ -2590,7 +2643,8 @@ export type CommitmentSubjectType =
   | 'supplier_retention'
   | 'delivery'
   | 'shipment'
-  | 'delivery_partner';
+  | 'delivery_partner'
+  | 'supplier_payment';
 
 /**
  * 0 nothing sent yet · 1 owner nudged before due · 2 owner told it's overdue

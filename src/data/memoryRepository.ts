@@ -60,6 +60,7 @@ import {
   seedDeliverySchedules,
   seedShipmentLegs,
   seedDeliveryPartners,
+  seedSupplierPayments,
   seedDiscrepancyReports,
   seedDeliveryDisruptions,
   seedPartnerTrips,
@@ -150,6 +151,10 @@ import type {
   SopTemplateView,
   DiscrepancyReportView,
   AnalyticsMonths,
+  BatchApproveResult,
+  PaymentEvidence,
+  SupplierPaymentQueue,
+  SupplierPaymentView,
   BookablePo,
   DeliveryAnalytics,
   DisruptionView,
@@ -230,6 +235,8 @@ import type {
   SupplierMessageChannel,
   ReportEvent,
   DeliveryDisruption,
+  SupplierPayment,
+  SupplierPaymentEvent,
   DeliveryPartner,
   DeliveryPartnerLane,
   PartnerEvent,
@@ -378,6 +385,8 @@ import {
 import { compareDelays, etaMovedSince, judgeDelay } from '@/features/logistics/delay';
 import { capacityWeeks, categoryPatterns, readinessStatus, weekStartOf, windowOf } from '@/features/logistics/transit';
 import type { ReadinessStatus } from '@/features/logistics/transit';
+import { FLAG_ORDER, HOLD_REASON_MIN, REVERSAL_WINDOW, ROUTINE_LIMIT, approvalGate, bankReferenceFor, firedMilestones, flagOf, isRoutine, overdueDays } from '@/features/suppliers/supplierPayments';
+import type { HoldFlagKind, PaymentFlag } from '@/features/suppliers/supplierPayments';
 import { MIN_RISING_INCIDENTS, MIN_SAMPLE, REVISIT_COST, RISING_WINDOW_DAYS, SCHEDULE_DELAY_COST_PER_DAY, bucketsOf, costOf, inDisruption, inLast, inPriorWindow, isRising, monthKey, monthKeys, pctOf, previousWindow, transitSummary, trendOf, windowStart } from '@/features/logistics/deliveryAnalytics';
 import type { DeliveryFact } from '@/features/logistics/deliveryAnalytics';
 import { carriedOnTime, laneFor, latenessOf, serves, statsFor, tripOfRecord, trackingModeOf, unavailableFor } from '@/features/logistics/partnerPerformance';
@@ -2010,6 +2019,7 @@ function commitmentSources(now: number): CommitmentSources {
     delayCases,
     discrepancyReports,
     deliveryPartners,
+    supplierPayments,
     pausedDealIds: new Set(paymentReminderPauses.filter((p) => p.paused).map((p) => p.dealId)),
   };
 }
@@ -2196,6 +2206,8 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   detectProductionStalls(now);
   settleRetentions(now);
   syncPartnerFeeds(now);
+  syncSupplierPayments(now);
+  executeSupplierPayments(now);
   advanceShipments(now);
   // 105: a delivery running late is noticed, and one that caught up is cleared, without anyone looking.
   syncDelayCases(now);
@@ -3988,6 +4000,187 @@ function computeDeliveryAnalytics(months: AnalyticsMonths, now: number): Deliver
   };
 }
 
+/* ============================================ Supplier payments (111) */
+
+const supplierPayments: SupplierPayment[] = seedSupplierPayments.map((p) => ({ ...p, events: [...p.events] }));
+let supplierPaymentCounter = 100;
+
+const paymentOrThrow = (paymentId: string): SupplierPayment => {
+  const payment = byId(supplierPayments, paymentId);
+  if (!payment) throw new RepositoryError('not_found');
+  return payment;
+};
+
+function paymentEvents(p: SupplierPayment, kind: SupplierPaymentEvent['kind'], byName: string, note?: string): SupplierPaymentEvent[] {
+  return [...p.events, { id: `${p.id}-e${p.events.length + 1}`, kind, at: new Date().toISOString(), byName, note: note?.trim() || undefined }];
+}
+
+/** When an order counts as delivered for payment: received (103) and, where a confirmation exists, signed (104). */
+function paymentDeliveredAt(po: SupplierPurchaseOrder): string | null {
+  if (!po.receivedAt) return null;
+  const confirmations = deliveryConfirmations.filter((c) => c.poId === po.id);
+  if (confirmations.length === 0) return po.receivedAt;
+  if (confirmations.some((c) => c.status !== 'signed' || !c.signedAt)) return null;
+  return confirmations.map((c) => c.signedAt!).sort().pop() ?? po.receivedAt;
+}
+
+/** A payment appears the moment its configured milestone genuinely fires, never before, and only once. Idempotent. */
+function syncSupplierPayments(now: number): void {
+  for (const po of supplierPurchaseOrders) {
+    if (po.status !== 'sent' || !po.supplierId || !po.paymentTerms) continue;
+    const total = poTotalOf(po.lineItems ?? []);
+    if (total <= 0) continue;
+    const retention = supplierRetentions.find((r) => r.poId === po.id && r.status === 'released');
+    const milestones = firedMilestones({
+      total,
+      paymentTerms: po.paymentTerms,
+      netDays: po.agreementTerms?.paymentTermsDays ?? null,
+      sentAt: po.sentAt,
+      acknowledgedAt: po.acknowledgedAt,
+      deliveredAt: paymentDeliveredAt(po),
+      retentionReleased: retention ? { amount: retention.amount, at: retention.decidedAt ?? retention.heldAt } : null,
+      now,
+    });
+    for (const m of milestones) {
+      if (supplierPayments.some((p) => p.poId === po.id && p.part === m.part)) continue;
+      supplierPaymentCounter += 1;
+      const created: SupplierPayment = {
+        id: `spay-new-${supplierPaymentCounter}`,
+        code: `AIEC-SP-${3100 + supplierPaymentCounter}`,
+        poId: po.id,
+        supplierId: po.supplierId,
+        dealId: po.dealId,
+        part: m.part,
+        trigger: m.trigger,
+        amount: m.amount,
+        triggeredAt: m.firedAt,
+        dueAt: m.dueAt,
+        status: 'pending_approval',
+        events: [],
+        isDemo: true,
+      };
+      created.events = [{ id: `${created.id}-e1`, kind: 'triggered', at: m.firedAt, byName: 'AIEC Assistant' }];
+      supplierPayments.push(created);
+      logAutomatedAction({
+        sourceKey: 'supplier_payment.due',
+        triggeringCondition: `The ${m.part} milestone on ${po.code} fired`,
+        actionTaken: `Queued ${created.code} (${formatINR(m.amount)}) for Admin's approval`,
+        affectedRecordId: created.id,
+        affectedRecordType: 'purchase_order',
+        subjectLabel: po.code,
+      });
+    }
+  }
+}
+
+/** Approved payments whose reversal window has closed are made. The one place money would actually move. */
+function executeSupplierPayments(now: number): void {
+  for (const p of [...supplierPayments]) {
+    if (p.status !== 'approved' || !p.reversibleUntil || new Date(p.reversibleUntil).getTime() > now) continue;
+    const at = new Date(now).toISOString();
+    patchInPlace(supplierPayments, p.id, { status: 'executed', executedAt: at, bankReference: bankReferenceFor(p.code), events: paymentEvents(p, 'executed', 'AIEC Assistant') });
+    logAutomatedAction({
+      sourceKey: 'supplier_payment.executed',
+      triggeringCondition: `The reversal window on ${p.code} closed with the approval standing`,
+      actionTaken: `Made ${formatINR(p.amount)} to ${byId(suppliers, p.supplierId)?.name ?? 'the supplier'}`,
+      affectedRecordId: p.id,
+      affectedRecordType: 'purchase_order',
+      subjectLabel: p.code,
+    });
+  }
+}
+
+/** Open reports on an order. Reports from before delivery checks were kept here name the order by its code. */
+function openReportsOnPo(poId: string): DeliveryDiscrepancyReport[] {
+  const code = byId(supplierPurchaseOrders, poId)?.code;
+  return discrepancyReports.filter((d) => d.status === 'open' && (d.poId === poId || (!!code && d.poId === code)));
+}
+
+function paymentFlags(p: SupplierPayment): PaymentFlag[] {
+  const supplier = byId(suppliers, p.supplierId);
+  const kinds: HoldFlagKind[] = [];
+  if (!supplier || !isSupplierEligibleForPO(supplier)) kinds.push('supplier_blocked');
+  if (openReportsOnPo(p.poId).length > 0) kinds.push('open_report');
+  const dealStatus = byId(deals, p.dealId)?.status;
+  if (dealStatus === 'lost' || dealStatus === 'cancelled') kinds.push('orphaned');
+  if (supplierOrderRatings.some((r) => r.poId === p.poId && r.dispute?.status === 'open')) kinds.push('rating_dispute');
+  if (p.amount > ROUTINE_LIMIT) kinds.push('high_value');
+  return FLAG_ORDER.filter((k) => kinds.includes(k)).map(flagOf);
+}
+
+function paymentEvidence(p: SupplierPayment): PaymentEvidence[] {
+  const po = byId(supplierPurchaseOrders, p.poId);
+  if (!po) return [];
+  const item = (kind: PaymentEvidence['kind'], at: string | null | undefined, by?: string | null, ref?: string | null, route?: string | null): PaymentEvidence => ({ kind, at: at ?? null, by: by ?? null, ref: ref ?? null, route: route ?? null });
+  const out: PaymentEvidence[] = [];
+  if (p.part === 'upfront') {
+    out.push(item('po_sent', po.sentAt, po.sentBy, po.code, '/orders'));
+    if (p.trigger === 'on_acknowledge') out.push(item('acknowledged', po.acknowledgedAt, po.acknowledgedBy, null, '/orders'));
+  } else if (p.part === 'balance') {
+    out.push(item('delivery_received', po.receivedAt, po.receivedBy, po.code, `/delivery-checklist?poId=${po.id}`));
+    for (const c of deliveryConfirmations.filter((x) => x.poId === po.id && x.status === 'signed')) out.push(item('delivery_signed', c.signedAt, c.signatures[0]?.name ?? null, c.code, `/delivery-confirmation?confirmation=${c.id}`));
+    if (po.paymentTerms?.termType === 'net') out.push(item('net_elapsed', p.dueAt, null, po.agreementTerms ? `${po.agreementTerms.paymentTermsDays}` : null));
+  } else {
+    const retention = supplierRetentions.find((r) => r.poId === po.id);
+    out.push(item('retention_released', retention?.decidedAt, retention?.decidedBy === 'system' ? null : (retention?.decidedBy ?? null), retention ? `${retention.pct}%` : null, '/admin/suppliers/payment-terms'));
+    const handover = jobs.filter((j) => j.dealId === po.dealId && j.status === 'completed' && j.completedAt).sort((a, b) => (a.completedAt! < b.completedAt! ? -1 : 1))[0];
+    if (handover) out.push(item('installation_handover', handover.completedAt, null, handover.code));
+  }
+  return out;
+}
+
+function paymentViewOf(p: SupplierPayment, now: number): SupplierPaymentView {
+  const po = byId(supplierPurchaseOrders, p.poId);
+  const supplier = byId(suppliers, p.supplierId);
+  const flags = paymentFlags(p);
+  return {
+    id: p.id,
+    code: p.code,
+    poId: p.poId,
+    poCode: po?.code ?? p.poId,
+    supplierId: p.supplierId,
+    supplierName: supplier?.name ?? '',
+    dealId: p.dealId,
+    siteName: shipmentSite(p.dealId)?.siteName ?? '',
+    part: p.part,
+    trigger: p.trigger,
+    amount: p.amount,
+    poTotal: po ? poTotalOf(po.lineItems ?? []) : 0,
+    paidOnOrder: supplierPayments.filter((x) => x.poId === p.poId && x.id !== p.id && (x.status === 'executed' || x.status === 'approved')).reduce((n, x) => n + x.amount, 0),
+    status: p.status,
+    triggeredAt: p.triggeredAt,
+    dueAt: p.dueAt,
+    overdueDays: overdueDays(p, now),
+    evidence: paymentEvidence(p),
+    flags,
+    reports: openReportsOnPo(p.poId).map((d) => ({ id: d.id, code: d.code, itemCount: d.items.length, rush: d.rush, resolution: d.resolution })),
+    routine: isRoutine(flags, p.amount),
+    heldReason: p.heldReason ?? null,
+    heldAt: p.heldAt ?? null,
+    heldByName: p.heldByName ?? null,
+    approvedAt: p.approvedAt ?? null,
+    approvedByName: p.approvedByName ?? null,
+    reversibleUntil: p.reversibleUntil ?? null,
+    executedAt: p.executedAt ?? null,
+    bankReference: p.bankReference ?? null,
+    events: p.events,
+  };
+}
+
+function approvePaymentNow(p: SupplierPayment, actor: User, acknowledged: boolean, now: number): SupplierPayment {
+  if (p.status !== 'pending_approval') throw new RepositoryError('invalid_state');
+  const gate = approvalGate(paymentFlags(p), acknowledged);
+  if (gate === 'blocked') throw new RepositoryError('supplier_blocked');
+  if (gate === 'needs_acknowledgement') throw new RepositoryError('flags_unacknowledged');
+  return patchInPlace(supplierPayments, p.id, {
+    status: 'approved',
+    approvedAt: new Date(now).toISOString(),
+    approvedByName: actor.name,
+    reversibleUntil: new Date(now + REVERSAL_WINDOW).toISOString(),
+    events: paymentEvents(p, 'approved', actor.name),
+  });
+}
+
 /* ============================================ Delivery SOP (107) */
 
 function sopTemplateViewOf(t: DeliverySopTemplate, now: number): SopTemplateView {
@@ -4343,7 +4536,7 @@ function settleRetentions(now: number): void {
     const action = retentionAction(r, jobs.filter((j) => j.dealId === r.dealId), rating);
     if (action.kind === 'none') continue;
     // A part still in question on this order (108) keeps its retention held: the supplier is not paid over an open fault.
-    if (action.kind === 'release' && discrepancyReports.some((d) => d.poId === r.poId && d.status === 'open')) continue;
+    if (action.kind === 'release' && openReportsOnPo(r.poId).length > 0) continue;
     const po = byId(supplierPurchaseOrders, r.poId);
     const at = new Date(now).toISOString();
     if (action.kind === 'release') {
@@ -7875,6 +8068,106 @@ export const memoryRepository: Repository = {
       patchInPlace(conversations, conversation.id, { lastMessageAt: at });
       patchInPlace(discrepancyReports, r.id, { customerNotifiedAt: at, events: reportEvent(r, 'customer_told', actor.name) });
       return { notified: true };
+    }),
+
+  /* --------------------------------------------- Supplier payments (111) */
+  getSupplierPaymentQueue: (byUserId) =>
+    simulateRead((): SupplierPaymentQueue => {
+      adminOnly(byUserId);
+      const now = Date.now();
+      syncSupplierPayments(now);
+      executeSupplierPayments(now);
+      const views = supplierPayments.map((p) => paymentViewOf(p, now));
+      const byDue = (a: SupplierPaymentView, b: SupplierPaymentView) => (a.dueAt < b.dueAt ? -1 : 1);
+      const toApprove = views.filter((v) => v.status === 'pending_approval').sort(byDue);
+      const held = views.filter((v) => v.status === 'held').sort(byDue);
+      const cutoff = now - 14 * 86_400_000;
+      const recent = views
+        .filter((v) => v.status === 'approved' || (v.status === 'executed' && !!v.executedAt && new Date(v.executedAt).getTime() >= cutoff))
+        .sort((a, b) => ((a.approvedAt ?? '') < (b.approvedAt ?? '') ? 1 : -1));
+      const routine = toApprove.filter((v) => v.routine);
+      return {
+        toApprove,
+        held,
+        recent,
+        totals: { toApproveAmount: toApprove.reduce((n, v) => n + v.amount, 0), heldAmount: held.reduce((n, v) => n + v.amount, 0), routineCount: routine.length, routineAmount: routine.reduce((n, v) => n + v.amount, 0) },
+        limits: { routineLimit: ROUTINE_LIMIT, reversalMinutes: REVERSAL_WINDOW / 60_000 },
+      };
+    }),
+
+  approveSupplierPayment: (paymentId, input, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const now = Date.now();
+      const approved = approvePaymentNow(paymentOrThrow(paymentId), actor, !!input.acknowledgeFlags, now);
+      syncCommitments(now);
+      return paymentViewOf(approved, now);
+    }),
+
+  holdSupplierPayment: (paymentId, reason, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const p = paymentOrThrow(paymentId);
+      if (p.status !== 'pending_approval') throw new RepositoryError('invalid_state');
+      if (reason.trim().length < HOLD_REASON_MIN) throw new RepositoryError('note_required');
+      const now = Date.now();
+      const held = patchInPlace(supplierPayments, p.id, { status: 'held', heldReason: reason.trim(), heldAt: new Date(now).toISOString(), heldByName: actor.name, events: paymentEvents(p, 'held', actor.name, reason) });
+      syncCommitments(now);
+      return paymentViewOf(held, now);
+    }),
+
+  releaseSupplierPaymentHold: (paymentId, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const p = paymentOrThrow(paymentId);
+      if (p.status !== 'held') throw new RepositoryError('invalid_state');
+      const now = Date.now();
+      // Back in the queue; the fact it was held is kept on its record.
+      const back = patchInPlace(supplierPayments, p.id, { status: 'pending_approval', events: paymentEvents(p, 'hold_released', actor.name) });
+      syncCommitments(now);
+      return paymentViewOf(back, now);
+    }),
+
+  reverseSupplierPaymentApproval: (paymentId, reason, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const p = paymentOrThrow(paymentId);
+      const now = Date.now();
+      if (p.status === 'executed') throw new RepositoryError('window_closed');
+      if (p.status !== 'approved') throw new RepositoryError('invalid_state');
+      if (!p.reversibleUntil || new Date(p.reversibleUntil).getTime() <= now) throw new RepositoryError('window_closed');
+      if (reason.trim().length < HOLD_REASON_MIN) throw new RepositoryError('note_required');
+      const back = patchInPlace(supplierPayments, p.id, { status: 'pending_approval', approvedAt: undefined, approvedByName: undefined, reversibleUntil: undefined, events: paymentEvents(p, 'reversed', actor.name, reason) });
+      syncCommitments(now);
+      return paymentViewOf(back, now);
+    }),
+
+  approveSupplierPaymentsBatch: (paymentIds, byUserId) =>
+    simulateWrite((): BatchApproveResult => {
+      const actor = adminOnly(byUserId);
+      const now = Date.now();
+      const approved: string[] = [];
+      const skipped: BatchApproveResult['skipped'] = [];
+      for (const id of [...new Set(paymentIds)]) {
+        const p = byId(supplierPayments, id);
+        if (!p) {
+          skipped.push({ id, reason: 'not_found' });
+          continue;
+        }
+        if (p.status !== 'pending_approval') {
+          skipped.push({ id, reason: 'not_pending' });
+          continue;
+        }
+        // A batch is for the routine only: anything flagged, or large, is looked at by itself.
+        if (!isRoutine(paymentFlags(p), p.amount)) {
+          skipped.push({ id, reason: 'not_routine' });
+          continue;
+        }
+        approvePaymentNow(p, actor, false, now);
+        approved.push(id);
+      }
+      syncCommitments(now);
+      return { approved, skipped };
     }),
 
   /* --------------------------------------------- Delivery analytics (110) */

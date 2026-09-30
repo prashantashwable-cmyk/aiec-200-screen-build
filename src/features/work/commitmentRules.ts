@@ -28,6 +28,7 @@ import type {
   DeliveryDelayCase,
   DeliveryDiscrepancyReport,
   DeliveryPartner,
+  SupplierPayment,
 } from '@/data/types';
 import { remainingBalance } from '@/features/payments/aging';
 import { days, hours, minutes } from '@/features/sla/clock';
@@ -84,6 +85,7 @@ export interface CommitmentSources {
   delayCases: DeliveryDelayCase[];
   discrepancyReports: DeliveryDiscrepancyReport[];
   deliveryPartners: DeliveryPartner[];
+  supplierPayments: SupplierPayment[];
   /** Deals where someone paused payment reminders by hand (083). */
   pausedDealIds: Set<string>;
 }
@@ -1028,6 +1030,73 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
           actionRoute: `/delivery-partners?partner=${p.id}`,
           oversightRoute: `/delivery-partners?partner=${p.id}`,
         }));
+    },
+  },
+  {
+    // A supplier payment that has fallen due is Admin's to approve or hold (111). Approving is the last human
+    // step before money moves, so an unanswered one is chased, then becomes an Alert like any other stuck promise.
+    kind: 'supplier_payment_approve',
+    nudgeBefore: hours(12),
+    escalateAfter: days(1),
+    escalates: true,
+    raisesAlert: true,
+    alertCategory: 'payment',
+    collect(src) {
+      const admin = adminId(src);
+      const out: Obligation[] = [];
+      for (const p of src.supplierPayments) {
+        // Payments made before approval was kept here are history, not something anyone was ever chased for.
+        if (p.status !== 'pending_approval' && !p.id.startsWith('spay-new-')) continue;
+        const po = src.purchaseOrders.find((x) => x.id === p.poId);
+        const supplier = src.suppliers.find((x) => x.id === p.supplierId);
+        const acted = p.status !== 'pending_approval';
+        out.push({
+          ...base('supplier_payment_approve', 'supplier_payment', p.id),
+          ownerUserId: admin,
+          titleKey: 'work.title.supplier_payment_approve',
+          titleParams: { supplier: supplier?.name ?? '', code: po?.code ?? '' },
+          amount: p.amount,
+          dueAt: plus(p.triggeredAt, days(2)),
+          state: acted ? ('done' as const) : ('open' as const),
+          paused: false,
+          completedAt: acted ? (p.heldAt ?? p.approvedAt) : undefined,
+          actionRoute: `/supplier-payments?payment=${p.id}`,
+          oversightRoute: `/supplier-payments?payment=${p.id}`,
+        });
+      }
+      return out;
+    },
+  },
+  {
+    // "Not yet" is a decision with a reason, not a place to lose money owed. A held payment comes back.
+    kind: 'supplier_payment_hold_review',
+    nudgeBefore: days(1),
+    escalateAfter: days(2),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'payment',
+    collect(src) {
+      const admin = adminId(src);
+      return src.supplierPayments
+        .filter((p) => p.heldAt && p.id.startsWith('spay-new-'))
+        .map((p) => {
+          const po = src.purchaseOrders.find((x) => x.id === p.poId);
+          const supplier = src.suppliers.find((x) => x.id === p.supplierId);
+          const held = p.status === 'held';
+          return {
+            ...base('supplier_payment_hold_review', 'supplier_payment', p.id),
+            ownerUserId: admin,
+            titleKey: 'work.title.supplier_payment_hold_review',
+            titleParams: { supplier: supplier?.name ?? '', code: po?.code ?? '' },
+            amount: p.amount,
+            dueAt: plus(p.heldAt!, days(7)),
+            state: held ? ('open' as const) : ('done' as const),
+            paused: false,
+            completedAt: held ? undefined : (p.events.filter((e) => e.kind === 'hold_released' || e.kind === 'approved').map((e) => e.at).sort().pop() ?? p.heldAt),
+            actionRoute: `/supplier-payments?payment=${p.id}`,
+            oversightRoute: `/supplier-payments?payment=${p.id}`,
+          };
+        });
     },
   },
   {

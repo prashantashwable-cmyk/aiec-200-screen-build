@@ -65,6 +65,9 @@ import type {
   PartnerTripRecord,
   DeliveryDisruption,
   DeliveryDiscrepancyReport,
+  SupplierPayment,
+  SupplierPaymentPart,
+  SupplierPaymentTrigger,
   ShipmentMilestone,
   ShipmentMilestoneEvent,
   DeliverySchedule,
@@ -1867,7 +1870,7 @@ export const seedDiscrepancyReports: DeliveryDiscrepancyReport[] = (
     ['h2', 'sp-2', 'AIEC-PO-7206', 'dl-h1', 'cabin', 'Cabin panel scratched in transit', 'damaged', 46_000, 'transport', 60, 1, 'resolved'],
     ['h3', 'sp-1', 'AIEC-PO-8101', 'dl-h1', 'controller', 'Controller model not the one ordered', 'wrong_spec', 90_000, 'supplier', 97, 0, 'credited'],
     ['h4', 'sp-4', 'AIEC-PO-7407', 'dl-h2', 'guide_rails', 'Fishplates missing from the rail set', 'count', 12_000, 'supplier', 64, 0, 'resolved'],
-    ['h5', 'sp-3', 'AIEC-PO-8105', 'dl-h3', 'vfd', 'Drive keypad cracked while unloading', 'damaged', 40_000, 'installation', 61, 1, 'resolved'],
+    ['h5', 'sp-3', 'AIEC-PO-8105', 'dl-h3', 'vfd', 'Drive keypad cracked while unloading', 'damaged', 40_000, 'installation', 61, 1, 'open'],
     ['h6', 'sp-2', 'AIEC-PO-7208', 'dl-h2', 'guide_rails', 'Guide rail set one bracket short', 'count', 22_000, 'supplier', 43, 3, 'resolved'],
     ['h7', 'sp-4', 'AIEC-PO-7410', 'dl-h2', 'brackets', 'Bracket holes mis-drilled', 'damaged', 26_000, 'supplier', 22, 2, 'resolved'],
     ['h8', 'sp-3', 'AIEC-PO-8106', 'dl-h3', 'controller', 'Drive board burnt out on commissioning', 'damaged', 40_000, 'supplier', 27, 2, 'resolved'],
@@ -1888,6 +1891,58 @@ export const seedDeliveryDisruptions: DeliveryDisruption[] = [
     createdAt: daysAgo(6),
     isDemo: true,
   },
+];
+
+
+/* ------------------------------------------ Supplier payments (111) */
+
+/** A payment already made, from before approval was kept here. Nothing is pending on these: the queue
+ *  holds only what has fallen due since, which the app derives from each order's own terms. */
+const paidSupplierPayment = (n: number, poId: string, supplierId: string, dealId: string, part: SupplierPaymentPart, trigger: SupplierPaymentTrigger, amount: number, firedDaysAgo: number, paidDaysAgo: number): SupplierPayment => {
+  const code = `AIEC-SP-${3000 + n}`;
+  const fired = daysAgo(firedDaysAgo);
+  const paid = daysAgo(paidDaysAgo);
+  return {
+    id: `spay-${n}`,
+    code,
+    poId,
+    supplierId,
+    dealId,
+    part,
+    trigger,
+    amount,
+    triggeredAt: fired,
+    dueAt: fired,
+    status: 'executed',
+    approvedAt: paid,
+    approvedByName: 'Prashant Vasant Wable',
+    reversibleUntil: paid,
+    executedAt: paid,
+    bankReference: `AIEC-TRF-${3000 + n}`,
+    events: [
+      { id: `spay-${n}-e1`, kind: 'triggered', at: fired, byName: 'AIEC Assistant' },
+      { id: `spay-${n}-e2`, kind: 'approved', at: paid, byName: 'Prashant Vasant Wable' },
+      { id: `spay-${n}-e3`, kind: 'executed', at: paid, byName: 'AIEC Assistant' },
+    ],
+    isDemo: true,
+  };
+};
+
+/** Everything already paid on the six finished orders. Retention on two is still held and on one is paused,
+ *  so those are correctly absent. */
+export const seedSupplierPayments: SupplierPayment[] = [
+  paidSupplierPayment(1, 'spo-h1', 'sp-1', 'dl-h1', 'balance', 'after_delivery', 273_600, 49, 48),
+  paidSupplierPayment(2, 'spo-h1', 'sp-1', 'dl-h1', 'retention', 'on_handover', 14_400, 40, 39),
+  paidSupplierPayment(3, 'spo-h2', 'sp-1', 'dl-h2', 'balance', 'after_delivery', 152_000, 8, 7),
+  paidSupplierPayment(4, 'spo-h3', 'sp-2', 'dl-h1', 'upfront', 'on_acknowledge', 11_100, 89, 88),
+  paidSupplierPayment(5, 'spo-h3', 'sp-2', 'dl-h1', 'balance', 'after_delivery', 41_625, 79, 78),
+  paidSupplierPayment(6, 'spo-h3', 'sp-2', 'dl-h1', 'retention', 'on_handover', 2_775, 40, 38),
+  paidSupplierPayment(7, 'spo-h4', 'sp-2', 'dl-h2', 'upfront', 'on_acknowledge', 32_000, 59, 58),
+  paidSupplierPayment(8, 'spo-h4', 'sp-2', 'dl-h2', 'balance', 'after_delivery', 120_000, 46, 45),
+  paidSupplierPayment(9, 'spo-h5', 'sp-3', 'dl-h3', 'upfront', 'on_acknowledge', 8_000, 68, 66),
+  paidSupplierPayment(10, 'spo-h5', 'sp-3', 'dl-h3', 'balance', 'after_delivery', 30_000, 49, 48),
+  paidSupplierPayment(11, 'spo-h6', 'sp-3', 'dl-h3', 'upfront', 'on_acknowledge', 17_600, 44, 43),
+  paidSupplierPayment(12, 'spo-h6', 'sp-3', 'dl-h3', 'balance', 'after_delivery', 66_000, 28, 27),
 ];
 
 /* ------------------------------------------ Supplier payment terms (100) */

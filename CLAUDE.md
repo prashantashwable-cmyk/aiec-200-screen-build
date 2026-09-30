@@ -109,8 +109,30 @@ the module's section to `BUILD_README.md`.
   Job — moved from 6 to 10 days overdue (and the stale `al-2` alert text updated to match).
 - **Module 11 Material Logistics & Delivery is done, including its checkpoint** (`101`–`110`, see
   BUILD_README's Module 11 section). Admin has a "Logistics" nav tab; every delivery screen declares
-  `tab: 'logistics'` for Admin. **Next: Module 12, screen `111`.** Module 12's supplier payments should
-  read `heldLineIds` (108) and `supplierPaymentDueDate` (098).
+  `tab: 'logistics'` for Admin.
+- **Module 12 Supplier Payment Processing in progress:** `111` built. **Next: `112`**.
+  111 facts:
+  - `SupplierPayment` is the one record every Module 12 screen reads: `part` (`upfront` / `balance` /
+    `retention`, 100's schedule), the `trigger` that made it due, `amount` (frozen when it fired),
+    `triggeredAt` / `dueAt`, `status` (`pending_approval` → `held` | `approved` → `executed`) and append-only
+    `events`. `@/features/suppliers/supplierPayments` holds the rules: `firedMilestones` (a payment exists
+    only once its configured milestone has truly fired: upfront on send or on acknowledgement, balance on
+    signed delivery, or after the agreement's net days for `net` terms, retention once 100 released it),
+    `approvalGate`, `isRoutine`, `REVERSAL_WINDOW` (10 min), `ROUTINE_LIMIT` (₹1,00,000).
+  - `syncSupplierPayments` (heartbeat and every queue read, idempotent, `logAutomatedAction`
+    `supplier_payment.due`) creates them; `executeSupplierPayments` makes an approved one when its
+    reversal window closes (`supplier_payment.executed`, `bankReference` stands in for a real rail).
+    Approving never moves money by itself; reversing inside the window puts it back in the queue.
+  - Hold-consideration flags are computed on read, not stored: `supplier_blocked` (cannot approve),
+    `open_report` (108, matched by PO id or code) and `orphaned` (106; approvable only after an explicit
+    acknowledgement), `rating_dispute` and `high_value` (informational). A payment with any flag, or above
+    the limit, is never "routine" and is refused in a batch (`approveSupplierPaymentsBatch` skips, never
+    approves it). The batch sheet always lists what is being approved.
+  - Commitments: `supplier_payment_approve` (Admin, due 2 days after it fires, escalates to an Alert) and
+    `supplier_payment_hold_review` (a held payment comes back after 7 days). Payments made before approval
+    was kept (`spay-1`..`spay-12`) are history and generate no commitments.
+  - 111 owns the shared `supplierPayment.part.*`, `.trigger.*`, `.status.*`, `.flag.*` translations that
+    112–120 should reuse. `/supplier-payments` is Admin only, reached from 091's hub.
   110 facts:
   - `@/features/logistics/deliveryAnalytics` is the maths (`trendOf`, `transitSummary`, `costOf`,
     `isRising`, `inDisruption`); `computeDeliveryAnalytics` (memoryRepository) assembles it from ratings

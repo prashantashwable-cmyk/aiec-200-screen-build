@@ -94,6 +94,10 @@ import type {
   DeliverySopStep,
   DeliverySopVersion,
   DeliveryDiscrepancyReport,
+  SupplierPaymentEvent,
+  SupplierPaymentPart,
+  SupplierPaymentStatus,
+  SupplierPaymentTrigger,
   DeliveryPartnerLane,
   PartnerEvent,
   PurchaseOrderOrphanResolution,
@@ -123,6 +127,7 @@ import type {
 import type { SlotDay } from '@/features/logistics/deliverySlots';
 import type { ArrivalWindow, CapacityWeek, ReadinessStatus } from '@/features/logistics/transit';
 import type { SopVersionStatus } from '@/features/logistics/deliverySop';
+import type { PaymentFlag } from '@/features/suppliers/supplierPayments';
 import type { Bucket, Direction, TransitSummary, TrendTone } from '@/features/logistics/deliveryAnalytics';
 import type { PartnerStats, PartnerUnavailable, Responsibility, TrackingMode } from '@/features/logistics/partnerPerformance';
 
@@ -1126,6 +1131,83 @@ export interface AdvanceResolutionInput {
   replacementEta?: string;
   creditAmount?: number;
   note?: string;
+}
+
+/* ---------------------------------- Supplier payment approval (111) */
+
+export type PaymentEvidenceKind = 'po_sent' | 'acknowledged' | 'delivery_received' | 'delivery_signed' | 'net_elapsed' | 'retention_released' | 'installation_handover';
+
+/** What made a payment due, attached so Admin can check it in one glance. */
+export interface PaymentEvidence {
+  kind: PaymentEvidenceKind;
+  at: string | null;
+  by: string | null;
+  /** A code to read out, such as a confirmation number. */
+  ref: string | null;
+  /** Where the record itself lives. */
+  route: string | null;
+}
+
+export interface PaymentReportLink {
+  id: string;
+  code: string;
+  itemCount: number;
+  rush: boolean;
+  resolution: string;
+}
+
+export interface SupplierPaymentView {
+  id: string;
+  code: string;
+  poId: string;
+  poCode: string;
+  supplierId: string;
+  supplierName: string;
+  dealId: string;
+  siteName: string;
+  part: SupplierPaymentPart;
+  trigger: SupplierPaymentTrigger;
+  amount: number;
+  /** The whole order and what has already gone out on it, so a part is read against its whole. */
+  poTotal: number;
+  paidOnOrder: number;
+  status: SupplierPaymentStatus;
+  triggeredAt: string;
+  dueAt: string;
+  overdueDays: number;
+  evidence: PaymentEvidence[];
+  flags: PaymentFlag[];
+  reports: PaymentReportLink[];
+  /** Nothing here needs judging: small and clean, so it may be approved in a batch. */
+  routine: boolean;
+  heldReason: string | null;
+  heldAt: string | null;
+  heldByName: string | null;
+  approvedAt: string | null;
+  approvedByName: string | null;
+  reversibleUntil: string | null;
+  executedAt: string | null;
+  bankReference: string | null;
+  events: SupplierPaymentEvent[];
+}
+
+export interface SupplierPaymentQueue {
+  toApprove: SupplierPaymentView[];
+  held: SupplierPaymentView[];
+  /** Approved and still reversible, then executed in the last two weeks. */
+  recent: SupplierPaymentView[];
+  totals: { toApproveAmount: number; heldAmount: number; routineCount: number; routineAmount: number };
+  limits: { routineLimit: number; reversalMinutes: number };
+}
+
+export interface ApprovePaymentInput {
+  /** Admin has read the hold-suggested flags and approves anyway. */
+  acknowledgeFlags?: boolean;
+}
+
+export interface BatchApproveResult {
+  approved: string[];
+  skipped: { id: string; reason: 'not_routine' | 'not_pending' | 'not_found' }[];
 }
 
 /* ---------------------------------- Delivery analytics (110) */
@@ -2697,6 +2779,18 @@ export interface Repository {
   completeDeliveryChecklist(checklistId: string, input: CompleteChecklistInput, byUserId: string): Promise<CompleteChecklistResult>;
   /** Abandons an unfinished checklist started by mistake. */
   cancelDeliveryChecklist(checklistId: string, byUserId: string): Promise<void>;
+
+  /* Supplier payment approval (111) — the deliberate last human step before money moves */
+  getSupplierPaymentQueue(byUserId: string): Promise<SupplierPaymentQueue>;
+  /** Approving starts the reversal window; the transfer is made when it closes. */
+  approveSupplierPayment(paymentId: string, input: ApprovePaymentInput, byUserId: string): Promise<SupplierPaymentView>;
+  /** Not yet, with a reason. The payment leaves the queue and comes back for review. */
+  holdSupplierPayment(paymentId: string, reason: string, byUserId: string): Promise<SupplierPaymentView>;
+  releaseSupplierPaymentHold(paymentId: string, byUserId: string): Promise<SupplierPaymentView>;
+  /** Takes an approval back while the window is still open. */
+  reverseSupplierPaymentApproval(paymentId: string, reason: string, byUserId: string): Promise<SupplierPaymentView>;
+  /** Routine payments only, and only the ones listed: never "approve everything". */
+  approveSupplierPaymentsBatch(paymentIds: string[], byUserId: string): Promise<BatchApproveResult>;
 
   /* Delivery analytics (110) — read off what the checklists, reports, alerts and trips already recorded */
   getDeliveryAnalytics(months: AnalyticsMonths, byUserId: string): Promise<DeliveryAnalytics>;
