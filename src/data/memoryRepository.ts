@@ -144,6 +144,8 @@ import type {
   DelayRow,
   DeliverySopBoard,
   SopTemplateView,
+  DiscrepancyReportView,
+  ReportItemView,
   TransitBoard,
   TransitLine,
   TransitTotals,
@@ -203,6 +205,8 @@ import type {
   SiteReadiness,
   SupplierDispatchAvailability,
   SupplierMessage,
+  SupplierMessageChannel,
+  ReportEvent,
   SupplierMessageAuthor,
   SupplierThread,
   SupplierPaymentTermsConfig,
@@ -292,6 +296,7 @@ import { computeTotalReceivable, daysOverdue, isOutstanding, receivedAmountOf, r
 import { isSupplierEligibleForPO } from '@/features/suppliers/eligibility';
 import { buildAlert, findOpenAlertFor } from '@/features/attention/raiseAlert';
 import { isReceived, kindsOf, problemWith, progressOf, verdictOf } from '@/features/logistics/deliveryChecklist';
+import { canMoveTo, impactLevel, isClosedResolution } from '@/features/logistics/discrepancy';
 import { checkSteps, MASTER_CATEGORY, resolveSopSteps, statusOf, versionInForce as sopVersionInForce } from '@/features/logistics/deliverySop';
 import { KNOWN_PART_CATEGORIES } from '@/features/suppliers/catalogRules';
 import type { AttentionAlertInput } from '@/features/attention/raiseAlert';
@@ -1971,6 +1976,7 @@ function commitmentSources(now: number): CommitmentSources {
     deliveryConfirmations,
     deliveryChecklists,
     delayCases,
+    discrepancyReports,
     pausedDealIds: new Set(paymentReminderPauses.filter((p) => p.paused).map((p) => p.dealId)),
   };
 }
@@ -2959,9 +2965,10 @@ function syncDiscrepancyReport(checklist: DeliveryChecklist, actor: User): void 
     note: i.note,
     photoCount: i.photos.length,
   }));
-  let report = reportOfChecklist(checklist.id);
+  const existingReport = reportOfChecklist(checklist.id);
+  let report: DeliveryDiscrepancyReport;
   const now = new Date().toISOString();
-  if (!report) {
+  if (!existingReport) {
     if (items.length === 0) return;
     discrepancyCounter += 1;
     report = {
@@ -2973,13 +2980,17 @@ function syncDiscrepancyReport(checklist: DeliveryChecklist, actor: User): void 
       checklistId: checklist.id,
       items,
       status: 'open',
+      resolution: 'reported',
+      possibleCauses: [],
+      rush: false,
+      events: [{ id: `ddr-new-${discrepancyCounter}-e1`, kind: 'raised', at: now, byName: actor.name }],
       createdAt: now,
       createdByName: actor.name,
       isDemo: true,
     };
     discrepancyReports.push(report);
   } else {
-    report = patchInPlace(discrepancyReports, report.id, { items, status: items.length > 0 ? 'open' : 'withdrawn' });
+    report = patchInPlace(discrepancyReports, existingReport.id, { items, status: items.length > 0 ? (existingReport.status === 'resolved' ? 'resolved' : 'open') : 'withdrawn' });
   }
   const alertOf = () => alerts.find((a) => a.relatedId === report!.id && a.titleKey === 'deliveryChecklist.alert.discrepancy' && a.status !== 'resolved');
   if (report.status === 'open') {
@@ -2991,7 +3002,7 @@ function syncDiscrepancyReport(checklist: DeliveryChecklist, actor: User): void 
       severity: stops ? 'high' : 'medium',
       category: 'quality',
       relatedId: report.id,
-      sourceRoute: `/delivery-checklist?poId=${checklist.poId}`,
+      sourceRoute: `/damaged-parts?report=${report.id}`,
     });
   } else {
     const open = alertOf();
@@ -3308,6 +3319,164 @@ function delayRowOf(c: DeliveryDelayCase, now: number): DelayRow {
     customerPreview: message.body,
     threadId: thread?.id ?? null,
   };
+}
+
+/* ================================ Damaged / missing parts report (108) */
+
+function reportActorOf(byUserId: string): User {
+  const actor = catalogActor(byUserId);
+  if (actor.role !== 'admin' && actor.role !== 'technician') throw new RepositoryError('forbidden');
+  return actor;
+}
+
+function reportOrThrow(reportId: string, actor: User): DeliveryDiscrepancyReport {
+  const r = byId(discrepancyReports, reportId);
+  if (!r || !checklistDealVisible(r.dealId, actor)) throw new RepositoryError('not_found');
+  return r;
+}
+
+const reportChecklist = (r: DeliveryDiscrepancyReport) => byId(deliveryChecklists, r.checklistId);
+
+function reportEvent(r: DeliveryDiscrepancyReport, kind: ReportEvent['kind'], byName: string, note?: string): ReportEvent[] {
+  return [...r.events, { id: `${r.id}-e${r.events.length + 1}`, kind, at: new Date().toISOString(), byName, note }];
+}
+
+function reportSummary(r: DeliveryDiscrepancyReport): string {
+  const po = byId(supplierPurchaseOrders, r.poId);
+  const word: Record<string, string> = { damaged: 'damaged', count: 'count does not match', wrong_spec: 'wrong model or spec' };
+  const parts = r.items.map((i) => `${i.description}: ${i.kinds.map((k) => word[k]).join(', ')} (expected ${i.expectedQty}, received ${i.receivedQty})${i.note ? `, “${i.note}”` : ''}`);
+  return `Delivery problem on ${po?.code ?? r.poId} (${r.code}) at ${shipmentSite(r.dealId)?.siteName ?? r.dealId}. ${parts.join('. ')}.`;
+}
+
+function reportPhotoNames(r: DeliveryDiscrepancyReport): string[] {
+  const checklist = reportChecklist(r);
+  return r.items.flatMap((i) => (checklist?.items.find((c) => c.lineItemId === i.lineItemId)?.photos ?? []).map((p) => p.fileName));
+}
+
+/** Puts the report, with its evidence, into the order's own thread with the supplier. A supplier with no
+ *  login cannot read an app message, so that one is left for Admin to phone or email and log. */
+function routeReportToSupplier(r: DeliveryDiscrepancyReport, actor: User, channel: SupplierMessageChannel, follow?: string): { threadId: string } {
+  const supplier = byId(suppliers, r.supplierId);
+  if (!supplier) throw new RepositoryError('not_found');
+  if (channel === 'in_app' && !supplierUserFor(supplier)) throw new RepositoryError('no_portal');
+  const thread = ensureSupplierThread(supplier.id, r.poId);
+  const at = new Date().toISOString();
+  const names = reportPhotoNames(r);
+  pushSupplierMessage(thread, {
+    author: 'aiec',
+    authorName: actor.name,
+    authorUserId: actor.id,
+    body: `${follow ?? reportSummary(r)}${r.rush ? ` URGENT: a replacement is needed${r.neededBy ? ` by ${r.neededBy.slice(0, 10)}` : ' as soon as possible'}, to protect a booked installation.` : ''} Photographs attached. Please confirm how and when you will replace or credit it.`,
+    channel,
+    at,
+    loggedBy: channel === 'in_app' ? undefined : actor.name,
+    expectsReply: true,
+    poRef: r.poId,
+    attachmentName: names[0],
+    evidenceNames: names,
+    urgent: r.rush || undefined,
+    readAt: channel === 'in_app' ? undefined : at,
+  });
+  patchInPlace(discrepancyReports, r.id, { routedToSupplierAt: r.routedToSupplierAt ?? at, events: reportEvent(byId(discrepancyReports, r.id)!, 'routed', actor.name) });
+  return { threadId: thread.id };
+}
+
+/** Whose it is, once Admin has said, becomes a defect on the order's rating (097): only the supplier's own
+ *  marks down its quality, but transport and installation causes are still recorded. Never logged twice. */
+function syncReportDefect(r: DeliveryDiscrepancyReport): void {
+  if (!r.attribution) return;
+  const rating = supplierOrderRatings.find((x) => x.poId === r.poId);
+  if (!rating) return;
+  const existing = rating.defects.find((d) => d.sourceReportId === r.id);
+  if (existing) {
+    if (existing.attribution === r.attribution) return;
+    patchInPlace(supplierOrderRatings, rating.id, {
+      defects: rating.defects.map((d) => (d.id === existing.id ? { ...d, attribution: r.attribution!, attributedBefore: d.attributedBefore ?? d.attribution, reattributedBy: r.attributedByName, reattributedAt: r.attributedAt, reattributionNote: r.attributionNote } : d)),
+    });
+  } else {
+    ratingCounter += 1;
+    patchInPlace(supplierOrderRatings, rating.id, {
+      defects: [...rating.defects, { id: `${rating.id}-d-new-${ratingCounter}`, note: `${r.code}: ${r.items.map((i) => i.description).join(', ')}`, loggedBy: r.attributedByName ?? 'AIEC', loggedAt: r.attributedAt ?? new Date().toISOString(), attribution: r.attribution, sourceReportId: r.id }],
+    });
+  }
+  recomputeSupplierMetrics(rating.supplierId);
+}
+
+function reportViewOf(r: DeliveryDiscrepancyReport, actor: User, now: number): DiscrepancyReportView {
+  const po = byId(supplierPurchaseOrders, r.poId);
+  const checklist = reportChecklist(r);
+  const supplier = byId(suppliers, r.supplierId);
+  const deal = byId(deals, r.dealId);
+  const lead = deal ? resolveLead(deal.leadId) : null;
+  const job = pendingJobFor(r.dealId);
+  const installStart = job && !job.startedAt ? job.scheduledFor : null;
+  const items: ReportItemView[] = r.items.map((i) => {
+    const line = (po?.lineItems ?? []).find((l) => l.id === i.lineItemId);
+    return {
+      lineItemId: i.lineItemId,
+      description: i.description,
+      kinds: i.kinds,
+      expectedQty: i.expectedQty,
+      receivedQty: i.receivedQty,
+      note: i.note ?? null,
+      photos: (checklist?.items.find((c) => c.lineItemId === i.lineItemId)?.photos ?? []).map((p) => ({ id: p.id, fileName: p.fileName, previewUrl: p.previewUrl ?? null })),
+      value: (line?.agreedUnitPrice ?? 0) * (line?.quantity ?? 1),
+    };
+  });
+  const thread = supplierThreads.find((t) => t.supplierId === r.supplierId && t.relatedPoId === r.poId);
+  const template = templateInGroup('tpl-parts-notice', lead?.preferredLanguage ?? 'en') ?? templateInGroup('tpl-parts-notice', 'en');
+  const language = lead?.preferredLanguage ?? 'en';
+  const original = po ? (promisedDeliveryOf(po) ?? checklist?.completedAt ?? r.createdAt) : r.createdAt;
+  const etaForNote = r.replacementEta ?? installStart ?? original;
+  const impact = r.status === 'open' ? impactLevel(installStart, r.replacementEta ?? null) : 'none';
+  return {
+    id: r.id,
+    code: r.code,
+    status: r.status,
+    resolution: r.resolution,
+    poId: r.poId,
+    poCode: po?.code ?? r.poId,
+    dealId: r.dealId,
+    siteName: lead?.siteName ?? deal?.code ?? r.dealId,
+    customerName: lead?.contactName ?? '',
+    supplierId: r.supplierId,
+    supplierName: supplier?.name ?? '',
+    supplierHasLogin: !!supplier && !!supplierUserFor(supplier),
+    checklistId: r.checklistId,
+    checklistCompleted: checklist?.status === 'completed',
+    items,
+    affectedValue: items.reduce((sum, i) => sum + i.value, 0),
+    possibleCauses: r.possibleCauses,
+    causeNote: r.causeNote ?? null,
+    rush: r.rush,
+    neededBy: r.neededBy ?? null,
+    attribution: r.attribution ?? null,
+    attributionNote: r.attributionNote ?? null,
+    attributedByName: r.attributedByName ?? null,
+    attributedAt: r.attributedAt ?? null,
+    replacementEta: r.replacementEta ?? null,
+    creditAmount: r.creditAmount ?? null,
+    routedToSupplierAt: r.routedToSupplierAt ?? null,
+    customerNotifiedAt: r.customerNotifiedAt ?? null,
+    threadId: thread?.id ?? null,
+    reporterName: r.createdByName,
+    createdAt: r.createdAt,
+    events: r.events,
+    impact: { level: impact, installStart, installCode: job && !job.startedAt ? job.code : null, replacementEta: r.replacementEta ?? null },
+    needsJudgement: !r.attribution && r.status === 'open',
+    customerPreview: template
+      ? renderTemplateBody(template.body, {
+          customerName: lead?.contactName,
+          buildingName: lead?.siteName,
+          partsLabel: r.items.map((i) => i.description.toLowerCase()).join(', '),
+          etaDate: formatDate(etaForNote, language),
+        })
+      : '',
+    customerOptedOut: !!lead && !!template && isOptedOutSync(lead.contactPhone, template.channel),
+    canJudge: actor.role === 'admin' && checklist?.status === 'completed' && r.status === 'open',
+    canEditDetails: r.status === 'open',
+  };
+  void now;
 }
 
 /* ============================================ Delivery SOP (107) */
@@ -3716,6 +3885,8 @@ function createOrderRating(po: SupplierPurchaseOrder, deliveredAt: string): void
     defects: [],
     isDemo: true,
   });
+  // 108: a report Admin already attributed becomes a defect on the rating the moment it exists.
+  for (const r of discrepancyReports.filter((x) => x.poId === po.id && x.attribution)) syncReportDefect(r);
   recomputeSupplierMetrics(po.supplierId);
 }
 
@@ -6926,6 +7097,19 @@ export const memoryRepository: Repository = {
         completedByUserId: actor.id,
       });
       syncDiscrepancyReport(done, actor);
+      // 108: a report goes to the supplier the moment the delivery is closed, with the photos, so nobody has to remember to.
+      const raised = reportOfChecklist(done.id);
+      if (raised && raised.status === 'open' && !raised.routedToSupplierAt && po.supplierId && supplierUserFor(byId(suppliers, po.supplierId)!)) {
+        routeReportToSupplier(raised, actor, 'in_app');
+        logAutomatedAction({
+          sourceKey: 'discrepancy.routed',
+          triggeringCondition: `Delivery ${po.code} closed with ${raised.items.length} part(s) in question`,
+          actionTaken: `Sent report ${raised.code}, with photos, to ${byId(suppliers, po.supplierId)?.name ?? 'the supplier'}`,
+          affectedRecordId: raised.id,
+          affectedRecordType: 'other',
+          subjectLabel: raised.code,
+        });
+      }
       // Ready to be signed: the checklist is the working document, this its clean summary.
       const confirmation = createDeliveryConfirmation(done);
 
@@ -7020,6 +7204,158 @@ export const memoryRepository: Repository = {
       if (materialsComplete) anchorMaterialPayments(confirmation.dealId, signedAt);
       syncCommitments(now);
       return confirmationViewOf(signed, actor);
+    }),
+
+  /* ------------------------ Damaged / missing parts report (108) */
+  getDiscrepancyReports: (byUserId) =>
+    simulateRead((): DiscrepancyReportView[] => {
+      const actor = reportActorOf(byUserId);
+      const now = Date.now();
+      return discrepancyReports
+        .filter((r) => r.status !== 'withdrawn' && checklistDealVisible(r.dealId, actor))
+        .map((r) => reportViewOf(r, actor, now))
+        .sort((a, b) => Number(a.status === 'resolved') - Number(b.status === 'resolved') || Number(b.rush) - Number(a.rush) || (a.createdAt < b.createdAt ? 1 : -1));
+    }),
+
+  updateDiscrepancyReport: (reportId, input, byUserId) =>
+    simulateWrite(() => {
+      const actor = reportActorOf(byUserId);
+      const r = reportOrThrow(reportId, actor);
+      if (r.status !== 'open') throw new RepositoryError('invalid_state');
+      const causes = [...new Set(input.possibleCauses)];
+      if (causes.length === 0 && !(input.causeNote ?? '').trim()) throw new RepositoryError('cause_required');
+      if (input.rush && input.neededBy && Number.isNaN(new Date(input.neededBy).getTime())) throw new RepositoryError('invalid_input');
+      const becameRush = input.rush && !r.rush;
+      let updated = patchInPlace(discrepancyReports, r.id, {
+        possibleCauses: causes,
+        causeNote: input.causeNote?.trim() || undefined,
+        rush: input.rush,
+        neededBy: input.rush && input.neededBy ? new Date(input.neededBy).toISOString() : undefined,
+        events: reportEvent(r, becameRush ? 'rush' : 'details', actor.name, input.causeNote?.trim() || undefined),
+      });
+      if (becameRush) {
+        // A rush is an installation at stake: the alert is raised a level, and a supplier already told hears again, urgently.
+        const alert = alerts.find((a) => a.relatedId === r.id && a.titleKey === 'deliveryChecklist.alert.discrepancy' && a.status !== 'resolved');
+        if (alert) patchInPlace(alerts, alert.id, { severity: 'critical' });
+        const supplier = byId(suppliers, r.supplierId);
+        if (updated.routedToSupplierAt && supplier && supplierUserFor(supplier)) {
+          routeReportToSupplier(updated, actor, 'in_app', `Update on ${updated.code}: this is now urgent.`);
+          updated = byId(discrepancyReports, r.id)!;
+        }
+      }
+      syncCommitments(Date.now());
+      return reportViewOf(updated, actor, Date.now());
+    }),
+
+  attributeDiscrepancyReport: (reportId, input, byUserId) =>
+    simulateWrite(() => {
+      const actor = reportActorOf(byUserId);
+      if (actor.role !== 'admin') throw new RepositoryError('forbidden');
+      const r = reportOrThrow(reportId, actor);
+      if (r.status !== 'open') throw new RepositoryError('invalid_state');
+      // The delivery is signed for first: what is being judged is what could be verified at that moment.
+      if (reportChecklist(r)?.status !== 'completed') throw new RepositoryError('checklist_open');
+      if (input.note.trim().length < 4) throw new RepositoryError('note_required');
+      const at = new Date().toISOString();
+      const updated = patchInPlace(discrepancyReports, r.id, {
+        attribution: input.attribution,
+        attributionNote: input.note.trim(),
+        attributedByName: actor.name,
+        attributedAt: at,
+        events: reportEvent(r, 'attributed', actor.name, input.note.trim()),
+      });
+      syncReportDefect(updated);
+      syncCommitments(Date.now());
+      return reportViewOf(updated, actor, Date.now());
+    }),
+
+  advanceDiscrepancyResolution: (reportId, input, byUserId) =>
+    simulateWrite(() => {
+      const actor = reportActorOf(byUserId);
+      if (actor.role !== 'admin') throw new RepositoryError('forbidden');
+      const r = reportOrThrow(reportId, actor);
+      if (r.status !== 'open') throw new RepositoryError('invalid_state');
+      if (reportChecklist(r)?.status !== 'completed') throw new RepositoryError('checklist_open');
+      if (!canMoveTo(r.resolution, input.resolution)) throw new RepositoryError('invalid_transition');
+      const now = Date.now();
+      const eta = input.replacementEta ? new Date(input.replacementEta).getTime() : null;
+      if (eta !== null && (Number.isNaN(eta) || eta < now - 86_400_000)) throw new RepositoryError('invalid_input');
+      if (input.resolution === 'replacement_requested' || input.resolution === 'replacement_shipped') {
+        // A replacement with no date cannot be planned around.
+        if (eta === null && !r.replacementEta) throw new RepositoryError('eta_required');
+      }
+      let credit: number | undefined;
+      if (input.resolution === 'credited') {
+        const value = reportViewOf(r, actor, now).affectedValue;
+        credit = input.creditAmount;
+        if (credit === undefined || !Number.isFinite(credit) || credit <= 0 || credit > value) throw new RepositoryError('credit_invalid');
+      }
+      const closed = isClosedResolution(input.resolution);
+      const at = new Date(now).toISOString();
+      const updated = patchInPlace(discrepancyReports, r.id, {
+        resolution: input.resolution,
+        status: closed ? 'resolved' : 'open',
+        replacementEta: eta !== null ? new Date(eta).toISOString() : r.replacementEta,
+        creditAmount: credit ?? r.creditAmount,
+        events: reportEvent(r, 'resolution', actor.name, `${input.resolution}${input.note?.trim() ? `: ${input.note.trim()}` : ''}`),
+      });
+      if (closed) {
+        const alert = alerts.find((a) => a.relatedId === r.id && a.titleKey === 'deliveryChecklist.alert.discrepancy' && a.status !== 'resolved');
+        if (alert) patchInPlace(alerts, alert.id, { status: 'resolved', resolvedAt: at, resolvedBy: actor.name, resolutionNote: input.resolution === 'credited' ? 'Credited by the supplier.' : 'Resolved.' });
+        // Nothing left in question on the deal: the installation can be scheduled.
+        if (dealMaterialsOnSite(r.dealId)) {
+          const job = pendingJobFor(r.dealId);
+          if (job && job.status === 'materials_pending') patchInPlace(jobs, job.id, { status: 'scheduled' });
+        }
+      } else if (input.resolution === 'replacement_requested') {
+        // Ask the supplier plainly, in the thread, when the replacement will land.
+        const supplier = byId(suppliers, r.supplierId);
+        if (supplier && supplierUserFor(supplier)) {
+          routeReportToSupplier(updated, actor, 'in_app', `Replacement requested for ${updated.code}: ${updated.items.map((i) => i.description).join(', ')}. We expect it by ${(updated.replacementEta ?? '').slice(0, 10)}.`);
+        }
+      }
+      syncCommitments(now);
+      return reportViewOf(byId(discrepancyReports, r.id)!, actor, now);
+    }),
+
+  sendReportToSupplier: (reportId, channel, byUserId) =>
+    simulateWrite(() => {
+      const actor = reportActorOf(byUserId);
+      if (actor.role !== 'admin') throw new RepositoryError('forbidden');
+      const r = reportOrThrow(reportId, actor);
+      if (r.status !== 'open') throw new RepositoryError('invalid_state');
+      const routed = routeReportToSupplier(r, actor, channel);
+      syncCommitments(Date.now());
+      return routed;
+    }),
+
+  notifyCustomerOfReport: (reportId, byUserId) =>
+    simulateWrite(() => {
+      const actor = reportActorOf(byUserId);
+      if (actor.role !== 'admin') throw new RepositoryError('forbidden');
+      const r = reportOrThrow(reportId, actor);
+      if (r.status !== 'open') throw new RepositoryError('invalid_state');
+      // An honest updated timeline needs a date in it.
+      if (!r.replacementEta) throw new RepositoryError('eta_required');
+      const view = reportViewOf(r, actor, Date.now());
+      const deal = byId(deals, r.dealId);
+      const lead = deal ? resolveLead(deal.leadId) : null;
+      const template = templateInGroup('tpl-parts-notice', lead?.preferredLanguage ?? 'en') ?? templateInGroup('tpl-parts-notice', 'en');
+      if (!lead || !template) return { notified: false, skipped: 'no_contact' as const };
+      if (r.customerNotifiedAt) return { notified: false, skipped: 'already_told' as const };
+      if (view.customerOptedOut) return { notified: false, skipped: 'opted_out' as const };
+      const at = new Date().toISOString();
+      let conversation = conversations.find((cv) => cv.leadId === lead.id) ?? null;
+      if (!conversation) {
+        conversationCounter += 1;
+        conversation = { id: `conv-new-${conversationCounter}`, leadId: lead.id, lastMessageAt: at, isDemo: true };
+        conversations.push(conversation);
+      }
+      messageCounter += 1;
+      commMessages.push({ id: `cm-new-${messageCounter}`, conversationId: conversation.id, channel: template.channel, sender: 'agent', body: view.customerPreview, templateGroupId: template.groupId, status: 'sent', at, handled: true });
+      patchInPlace(conversations, conversation.id, { lastMessageAt: at });
+      patchInPlace(discrepancyReports, r.id, { customerNotifiedAt: at, events: reportEvent(r, 'customer_told', actor.name) });
+      return { notified: true };
     }),
 
   /* --------------------------------------------- Delivery SOP (107) */

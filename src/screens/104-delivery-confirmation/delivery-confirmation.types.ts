@@ -63,6 +63,7 @@ export const DELIVERY_CONFIRMATION_KEYS = {
     pendingBodyCustomer: 'deliveryConfirmation.doc.pendingBodyCustomer',
     reportOpen: 'deliveryConfirmation.doc.reportOpen',
     reportWithdrawn: 'deliveryConfirmation.doc.reportWithdrawn',
+    reportResolved: 'deliveryConfirmation.doc.reportResolved',
     receivedBy: 'deliveryConfirmation.doc.receivedBy',
     signedHeading: 'deliveryConfirmation.doc.signedHeading',
     role: {

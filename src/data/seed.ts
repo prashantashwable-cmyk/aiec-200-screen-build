@@ -2678,6 +2678,18 @@ const templateSeeds: TemplateSeed[] = [
     },
   },
   {
+    groupId: 'tpl-parts-notice',
+    name: 'Damaged Parts Notice',
+    channel: 'whatsapp',
+    associatedStage: 'won',
+    mergeFields: ['customerName', 'buildingName', 'partsLabel', 'etaDate'],
+    body: {
+      en: 'Hi {{customerName}}, a quick and honest update: when your delivery for {{buildingName}} was checked, the {{partsLabel}} arrived damaged or not as ordered. We have asked the supplier to replace it and now expect the new one around {{etaDate}}. We are on it and will tell you the moment that changes.',
+      hi: 'नमस्ते {{customerName}}, एक सच्ची और सीधी जानकारी: {{buildingName}} की आपकी डिलीवरी जाँची गई तो {{partsLabel}} टूटा हुआ या ऑर्डर के मुताबिक नहीं निकला। हमने सप्लायर से इसे बदलने को कहा है और अब नया लगभग {{etaDate}} तक पहुँचने की उम्मीद है। हम इस पर लगे हैं और जैसे ही कुछ बदलेगा आपको बताएँगे।',
+      mr: 'नमस्कार {{customerName}}, एक स्पष्ट आणि खरी माहिती: {{buildingName}} ची तुमची डिलिव्हरी तपासली तेव्हा {{partsLabel}} तुटलेला किंवा ऑर्डरप्रमाणे नसलेला निघाला. आम्ही पुरवठादाराला तो बदलून द्यायला सांगितलं आहे आणि नवा साधारण {{etaDate}} पर्यंत पोहोचेल अशी अपेक्षा आहे. आम्ही त्यावर काम करत आहोत आणि काही बदललं की लगेच कळवू.',
+    },
+  },
+  {
     groupId: 'tpl-delay-external',
     name: 'Delivery Delay Notice (shared cause)',
     channel: 'whatsapp',

@@ -723,6 +723,8 @@ export interface OrderDefect {
   reattributionNote?: string;
   /** Who carried the blame when it was first logged, so the history stays honest. */
   attributedBefore?: DefectAttribution;
+  /** The delivery discrepancy report (108) this came from, so it is never logged twice. */
+  sourceReportId?: string;
 }
 
 /** A supplier's challenge to one order's rating. Raising it changes
@@ -994,9 +996,22 @@ export interface DiscrepancyReportItem {
   photoCount: number;
 }
 
-/** Raised the instant a checked item is found wrong, one per delivery
- *  (never one per item). Screen 108 owns what happens next; this is the
- *  record it starts from. */
+/** Where a report has got to with the supplier. Only Admin moves it, and only forward:
+ *  `credited` is money back instead of a replacement, both end the report. */
+export type ReportResolution = 'reported' | 'replacement_requested' | 'replacement_shipped' | 'resolved' | 'credited';
+
+/** Append-only account of what happened to a report and who did it. */
+export interface ReportEvent {
+  id: string;
+  kind: 'raised' | 'details' | 'routed' | 'attributed' | 'resolution' | 'customer_told' | 'rush';
+  at: string;
+  byName: string;
+  note?: string;
+}
+
+/** Raised the instant a checked item is found wrong (103), one per delivery
+ *  (never one per item). 108 owns it from there: what happened, whose it is,
+ *  the supplier told with the evidence, and the road to a replacement or a credit. */
 export interface DeliveryDiscrepancyReport {
   id: string;
   code: string;
@@ -1005,8 +1020,27 @@ export interface DeliveryDiscrepancyReport {
   supplierId: string;
   checklistId: string;
   items: DiscrepancyReportItem[];
-  /** `withdrawn` when every item was corrected before the checklist closed. */
-  status: 'open' | 'withdrawn';
+  /** `withdrawn` when every item was corrected before the checklist closed;
+   *  `resolved` once the resolution is `resolved` or `credited`. */
+  status: 'open' | 'withdrawn' | 'resolved';
+  resolution: ReportResolution;
+  /** What the person at the tailgate honestly thinks could have caused it. Several are allowed: it is
+   *  Admin, not the technician, who decides whose it is. */
+  possibleCauses: DefectAttribution[];
+  causeNote?: string;
+  /** A replacement is needed urgently to protect a booked installation. */
+  rush: boolean;
+  neededBy?: string;
+  /** Admin's judgement. Only `supplier` marks down the supplier's quality (097). */
+  attribution?: DefectAttribution;
+  attributionNote?: string;
+  attributedByName?: string;
+  attributedAt?: string;
+  replacementEta?: string;
+  creditAmount?: number;
+  routedToSupplierAt?: string;
+  customerNotifiedAt?: string;
+  events: ReportEvent[];
   createdAt: string;
   createdByName: string;
   isDemo: boolean;
@@ -1169,7 +1203,7 @@ export interface DeliveryConfirmation {
   /** The discrepancy reports (103) this delivery raised. */
   reportIds: string[];
   /** Their state at the moment of signing: an unresolved one does not block the signature. */
-  reportsAtSigning?: { id: string; code: string; status: 'open' | 'withdrawn' }[];
+  reportsAtSigning?: { id: string; code: string; status: DeliveryDiscrepancyReport['status'] }[];
   /** Whether signing this finished every part ordered for the deal, which is what fires a
    *  "due on material delivery" payment stage. */
   materialsComplete?: boolean;
@@ -1292,6 +1326,10 @@ export interface SupplierMessage {
   poRef?: string;
   /** A document attached by name (this build has no file storage). */
   attachmentName?: string;
+  /** Photographs and files sent as evidence, by name (108). */
+  evidenceNames?: string[];
+  /** Needs an answer sooner than the usual day (a rush replacement). */
+  urgent?: boolean;
   /** When the other side first opened it (the read receipt). */
   readAt?: string;
   /** Put on the supplier's formal record as a 097 context note. */
@@ -2428,8 +2466,10 @@ export type CommitmentKind =
   | 'delivery_receive'
   | 'shipment_status_update'
   | 'delivery_confirmation_sign'
+  | 'discrepancy_report_review'
   | 'delivery_delay_action'
   | 'orphaned_po_decision'
+  | 'discrepancy_report_review'
   | 'alert_acknowledge'
   | 'follow_up_task'
   | 'lead_revisit';

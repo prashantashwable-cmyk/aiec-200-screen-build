@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Camera, CheckCircle, Trash, Warning } from '@phosphor-icons/react';
 import { Badge, Button, Card } from '@/design-system';
@@ -37,6 +37,15 @@ interface DocumentSlotProps {
   skipQualityCheck?: boolean;
 }
 
+function readAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
 export function DocumentSlot({
   label,
   hint,
@@ -53,14 +62,8 @@ export function DocumentSlot({
   const [rejection, setRejection] = useState<ImageQualityVerdict | null>(null);
   const [unsupported, setUnsupported] = useState(false);
 
-  // Object URLs leak until revoked; tie them to the slot's lifetime.
-  const urlRef = useRef<string | null>(null);
-  useEffect(
-    () => () => {
-      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-    },
-    [],
-  );
+  // The preview is a data URL, not an object URL: evidence (a delivery photo) is kept and shown by
+  // other screens long after this slot has unmounted, and an object URL would be revoked with it.
 
   const pick = useCallback(
     async (file: File) => {
@@ -82,9 +85,7 @@ export function DocumentSlot({
             return;
           }
         }
-        if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-        const previewUrl = isImage ? URL.createObjectURL(file) : '';
-        urlRef.current = previewUrl || null;
+        const previewUrl = isImage ? await readAsDataUrl(file) : '';
         onChange({ fileName: file.name, capturedAt: new Date().toISOString(), previewUrl });
       } catch {
         setRejection('unreadable');
@@ -96,8 +97,6 @@ export function DocumentSlot({
   );
 
   const remove = useCallback(() => {
-    if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-    urlRef.current = null;
     setRejection(null);
     onChange(null);
   }, [onChange]);

@@ -253,8 +253,8 @@ function Document({ s, c, t, lang, report }: { s: DeliveryConfirmationState; c: 
                 const now = c.reports.find((x) => x.id === r.id);
                 return (
                   <p key={r.id} className="t-xs t-muted">
-                    {t(r.status === 'open' ? K.doc.reportOpen : K.doc.reportWithdrawn, { code: r.code })}
-                    {signed && now && now.status !== r.status ? ` → ${t(now.status === 'open' ? K.doc.reportOpen : K.doc.reportWithdrawn, { code: now.code })}` : ''}
+                    {t(reportKey(r.status), { code: r.code })}
+                    {signed && now && now.status !== r.status ? ` → ${t(reportKey(now.status), { code: now.code })}` : ''}
                   </p>
                 );
               })}
@@ -298,6 +298,8 @@ function Document({ s, c, t, lang, report }: { s: DeliveryConfirmationState; c: 
     </Screen>
   );
 }
+
+const reportKey = (status: string) => (status === 'open' ? K.doc.reportOpen : status === 'resolved' ? K.doc.reportResolved : K.doc.reportWithdrawn);
 
 function DocRow({ label, value }: { label: string; value: string }) {
   return (

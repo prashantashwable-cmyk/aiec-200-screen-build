@@ -565,6 +565,11 @@ function ResultCard({ s, t }: { s: DeliveryChecklistState; t: T }) {
           <Button size="sm" onClick={() => navigate(`/delivery-confirmation?confirmation=${r.confirmationId}`)}>
             {t(K.done.sign)}
           </Button>
+          {r.checklist.report?.status === 'open' && (
+            <Button size="sm" variant="secondary" onClick={() => navigate(`/damaged-parts?report=${r.checklist.report!.id}`)}>
+              {t(K.done.openReport)}
+            </Button>
+          )}
           <Button size="sm" variant="ghost" onClick={s.closeChecklist}>
             {t(K.done.back)}
           </Button>

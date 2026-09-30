@@ -63,6 +63,8 @@ export const SUPPLIER_MESSAGES_KEYS = {
     onRecord: 'supplierMessages.bubble.onRecord',
     addToRecord: 'supplierMessages.bubble.addToRecord',
     viewOrder: 'supplierMessages.bubble.viewOrder',
+    urgent: 'supplierMessages.bubble.urgent',
+    photos: 'supplierMessages.bubble.photos',
     channel: {
       in_app: 'supplierMessages.bubble.channel.in_app',
       phone: 'supplierMessages.bubble.channel.phone',

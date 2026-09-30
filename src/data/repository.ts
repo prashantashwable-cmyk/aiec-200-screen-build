@@ -73,6 +73,7 @@ import type {
   CatalogPriceChange,
   PoFulfilmentStage,
   DefectAttribution,
+  DiscrepancyKind,
   SupplierOrderRating,
   SupplierScoreContextNote,
   SupplierAgreementStatus,
@@ -88,6 +89,8 @@ import type {
   DelaySeverity,
   DeliveryChecklist,
   DeliveryConfirmation,
+  ReportEvent,
+  ReportResolution,
   DeliverySopStep,
   DeliverySopVersion,
   DeliveryDiscrepancyReport,
@@ -1039,6 +1042,85 @@ export interface CompleteChecklistResult {
   confirmationId: string;
 }
 
+/* ------------------------------ Damaged / missing parts report (108) */
+
+export type ReportImpactLevel = 'none' | 'unknown' | 'ok' | 'tight' | 'blocks';
+
+export interface ReportItemView {
+  lineItemId: string;
+  description: string;
+  kinds: DiscrepancyKind[];
+  expectedQty: number;
+  receivedQty: number;
+  note: string | null;
+  /** The photographs taken at the tailgate, from the checklist (103). */
+  photos: { id: string; fileName: string; previewUrl: string | null }[];
+  value: number;
+}
+
+export interface DiscrepancyReportView {
+  id: string;
+  code: string;
+  status: DeliveryDiscrepancyReport['status'];
+  resolution: ReportResolution;
+  poId: string;
+  poCode: string;
+  dealId: string;
+  siteName: string;
+  customerName: string;
+  supplierId: string;
+  supplierName: string;
+  supplierHasLogin: boolean;
+  checklistId: string;
+  /** The delivery has been signed off, so the report can be judged and resolved. */
+  checklistCompleted: boolean;
+  items: ReportItemView[];
+  affectedValue: number;
+  possibleCauses: DefectAttribution[];
+  causeNote: string | null;
+  rush: boolean;
+  neededBy: string | null;
+  attribution: DefectAttribution | null;
+  attributionNote: string | null;
+  attributedByName: string | null;
+  attributedAt: string | null;
+  replacementEta: string | null;
+  creditAmount: number | null;
+  routedToSupplierAt: string | null;
+  customerNotifiedAt: string | null;
+  threadId: string | null;
+  reporterName: string;
+  createdAt: string;
+  events: ReportEvent[];
+  /** What it does to the deal's installation, computed on read. */
+  impact: { level: ReportImpactLevel; installStart: string | null; installCode: string | null; replacementEta: string | null };
+  /** More than one possible cause and no judgement yet: Admin's call, not the technician's. */
+  needsJudgement: boolean;
+  customerPreview: string;
+  customerOptedOut: boolean;
+  canJudge: boolean;
+  canEditDetails: boolean;
+}
+
+export interface UpdateReportInput {
+  possibleCauses: DefectAttribution[];
+  causeNote?: string;
+  rush: boolean;
+  neededBy?: string;
+}
+
+export interface AttributeReportInput {
+  attribution: DefectAttribution;
+  note: string;
+}
+
+export interface AdvanceResolutionInput {
+  resolution: ReportResolution;
+  replacementEta?: string;
+  creditAmount?: number;
+  note?: string;
+}
+
 /* ---------------------------------- Delivery SOP checklist (107) */
 
 export interface SopVersionView extends DeliverySopVersion {
@@ -1252,7 +1334,7 @@ export interface DeliveryConfirmationView extends DeliveryConfirmation {
   /** Who stood at the tailgate, from the checklist. */
   receiver: DeliveryReceiver | null;
   /** The reports as they stand now (at signing they are in `reportsAtSigning`). */
-  reports: { id: string; code: string; status: 'open' | 'withdrawn'; itemCount: number }[];
+  reports: { id: string; code: string; status: DeliveryDiscrepancyReport['status']; itemCount: number }[];
   poFullyDelivered: boolean;
   /** Whether the signed-in person may sign it now. */
   canSign: boolean;
@@ -2352,6 +2434,19 @@ export interface Repository {
   completeDeliveryChecklist(checklistId: string, input: CompleteChecklistInput, byUserId: string): Promise<CompleteChecklistResult>;
   /** Abandons an unfinished checklist started by mistake. */
   cancelDeliveryChecklist(checklistId: string, byUserId: string): Promise<void>;
+
+  /* Damaged / missing parts (108) — one report, three consequences */
+  getDiscrepancyReports(byUserId: string): Promise<DiscrepancyReportView[]>;
+  /** What happened, honestly, and whether it is urgent. Anyone at the delivery may add it. */
+  updateDiscrepancyReport(reportId: string, input: UpdateReportInput, byUserId: string): Promise<DiscrepancyReportView>;
+  /** Admin's judgement of whose it is. Only `supplier` counts against the supplier's quality (097). */
+  attributeDiscrepancyReport(reportId: string, input: AttributeReportInput, byUserId: string): Promise<DiscrepancyReportView>;
+  /** Replacement requested, shipped, resolved or credited: forward only. */
+  advanceDiscrepancyResolution(reportId: string, input: AdvanceResolutionInput, byUserId: string): Promise<DiscrepancyReportView>;
+  /** Puts the report and its evidence into the order's supplier thread (or logs the call). */
+  sendReportToSupplier(reportId: string, channel: 'in_app' | 'phone' | 'email' | 'whatsapp' | 'in_person', byUserId: string): Promise<{ threadId: string }>;
+  /** A proactive, honest word to the customer, in their language, when the installation is affected. */
+  notifyCustomerOfReport(reportId: string, byUserId: string): Promise<{ notified: boolean; skipped?: 'opted_out' | 'no_contact' | 'already_told' }>;
 
   /* Delivery SOP (107) — the one place a delivery checklist's steps are defined */
   getDeliverySopBoard(byUserId: string): Promise<DeliverySopBoard>;

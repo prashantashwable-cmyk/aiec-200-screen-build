@@ -120,6 +120,7 @@ const translations: ScreenTranslations = {
         jobReady: 'Every part for this site is here, so its installation job is now scheduled.',
         back: 'Back to deliveries',
         sign: 'Sign the confirmation',
+        openReport: 'Open the parts report',
         signHint: 'The delivery is recorded. The formal confirmation is the last step: a signature that locks it.',
       },
       record: {
@@ -270,6 +271,7 @@ const translations: ScreenTranslations = {
         jobReady: 'इस साइट के सारे पार्ट्स आ गए हैं, इसलिए इसकी इंस्टॉलेशन जॉब अब शेड्यूल हो गई है।',
         back: 'डिलीवरी पर लौटें',
         sign: 'कन्फ़र्मेशन पर दस्तख़त करें',
+        openReport: 'पार्ट्स की रिपोर्ट खोलें',
         signHint: 'डिलीवरी दर्ज हो गई। औपचारिक कन्फ़र्मेशन आख़िरी चरण है: एक दस्तख़त जो इसे लॉक कर देता है।',
       },
       record: {
@@ -420,6 +422,7 @@ const translations: ScreenTranslations = {
         jobReady: 'या साइटचे सर्व पार्ट्स आले आहेत, म्हणून तिची इन्स्टॉलेशन जॉब आता शेड्यूल झाली आहे.',
         back: 'डिलिव्हरीकडे परत',
         sign: 'कन्फर्मेशनवर सही करा',
+        openReport: 'पार्ट्सचा अहवाल उघडा',
         signHint: 'डिलिव्हरीची नोंद झाली. औपचारिक कन्फर्मेशन हा शेवटचा टप्पा आहे: एक सही जी ते लॉक करते.',
       },
       record: {

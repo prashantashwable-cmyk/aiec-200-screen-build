@@ -53,6 +53,9 @@ const translations: ScreenTranslations = {
         onRecord: 'On record',
         addToRecord: 'Add to supplier record',
         viewOrder: 'Order {{code}}',
+        urgent: 'Urgent',
+        photos_one: '{{count}} photograph attached',
+        photos_other: '{{count}} photographs attached',
         channel: {
           in_app: 'In app',
           phone: 'Phone call',
@@ -182,6 +185,9 @@ const translations: ScreenTranslations = {
         onRecord: 'रिकॉर्ड में',
         addToRecord: 'सप्लायर रिकॉर्ड में जोड़ें',
         viewOrder: 'ऑर्डर {{code}}',
+        urgent: 'ज़रूरी',
+        photos_one: '{{count}} फ़ोटो संलग्न',
+        photos_other: '{{count}} फ़ोटो संलग्न',
         channel: {
           in_app: 'ऐप में',
           phone: 'फ़ोन कॉल',
@@ -311,6 +317,9 @@ const translations: ScreenTranslations = {
         onRecord: 'नोंदीत',
         addToRecord: 'पुरवठादाराच्या नोंदीत जोडा',
         viewOrder: 'ऑर्डर {{code}}',
+        urgent: 'तातडीचं',
+        photos_one: '{{count}} फोटो जोडला',
+        photos_other: '{{count}} फोटो जोडले',
         channel: {
           in_app: 'अ‍ॅपमध्ये',
           phone: 'फोन कॉल',

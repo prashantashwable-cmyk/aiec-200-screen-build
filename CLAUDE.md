@@ -107,9 +107,35 @@ the module's section to `BUILD_README.md`.
   (dl-1) was seeded one day short of the reminder cadence's own exhaustion threshold, so no real
   payment could ever reach 089's escalation queue while also belonging to a deal with an active
   Job — moved from 6 to 10 days overdue (and the stale `al-2` alert text updated to match).
-- **Module 11 in progress:** `101`–`107` built. **Next: `108`**. At its checkpoint (after 110),
+- **Module 11 in progress:** `101`–`108` built. **Next: `109`**. At its checkpoint (after 110),
   add an Admin logistics entry point: 101 and 102 are reachable for Admin only from 091's hub and
   095's header (and 101's/102's own PO links).
+  108 facts:
+  - `DeliveryDiscrepancyReport` (created by 103's `syncDiscrepancyReport`, one per checklist) is now
+    owned here: `status` `open` / `withdrawn` / `resolved`, `resolution` `reported` →
+    `replacement_requested` → `replacement_shipped` → `resolved` | `credited` (forward only,
+    `@/features/logistics/discrepancy`: `canMoveTo`, `impactLevel`, `heldLineIds`), append-only
+    `events`. **Module 12's supplier payment approval should read `heldLineIds(reports, poId)`**:
+    a line named in a still-open report holds its payment.
+  - Anyone at the delivery says what happened (`possibleCauses`, several allowed, plus `rush` and
+    `neededBy`); only Admin judges `attribution` (`supplier` / `transport` / `installation`, note
+    required, only once the checklist is signed). Attribution becomes an `OrderDefect`
+    (`sourceReportId`) on the PO's 097 rating via `syncReportDefect`, or is added when the rating
+    is created later (`createOrderRating`). Only `supplier` counts against the score.
+  - Closing 103's checklist sends the report to the supplier's 099 thread automatically, photos
+    named in `evidenceNames`, `expectsReply`, and `urgent` when rush (4 h reply window, not 24 h)
+    (`logAutomatedAction` `discrepancy.routed`; a supplier with no login is left for Admin to phone
+    and log). Marking rush later raises the alert to critical and chases the supplier again.
+  - Commitment `discrepancy_report_review`: Admin, due 24 h (4 h rush) after the report; done when
+    judged and moved past `reported`, or closed.
+  - Customer message is its own template `tpl-parts-notice`, sent once and only when there is a
+    replacement date (`replacementEta`); impact on the installation is `none / unknown / ok / tight
+    (within 2 days) / blocks`, computed on read. Closing the last open report with everything on site
+    moves the deal's job to `scheduled`.
+  - `DocumentSlot` previews are now data URLs (not object URLs), so delivery photos still show on
+    other screens after the slot unmounts.
+  - `/damaged-parts` serves Admin and Technician (`?report=`), reached from 103's result card and
+    091's hub.
   107 facts:
   - `DeliverySopTemplate` / `DeliverySopVersion` (memoryRepository `deliverySops`) are the only definition of a
     delivery checklist's steps: 103 has no hardcoded list. `all` is the master template every part follows;

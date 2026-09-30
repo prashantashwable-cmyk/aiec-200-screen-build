@@ -26,6 +26,7 @@ import type {
   DeliveryChecklist,
   DeliveryConfirmation,
   DeliveryDelayCase,
+  DeliveryDiscrepancyReport,
 } from '@/data/types';
 import { remainingBalance } from '@/features/payments/aging';
 import { days, hours, minutes } from '@/features/sla/clock';
@@ -80,6 +81,7 @@ export interface CommitmentSources {
   deliveryConfirmations: DeliveryConfirmation[];
   deliveryChecklists: DeliveryChecklist[];
   delayCases: DeliveryDelayCase[];
+  discrepancyReports: DeliveryDiscrepancyReport[];
   /** Deals where someone paused payment reminders by hand (083). */
   pausedDealIds: Set<string>;
 }
@@ -748,7 +750,7 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
                 ? 'work.title.supplier_thread_reply'
                 : 'work.title.supplier_thread_reply_proxy',
             titleParams: { supplier: supplier?.name ?? '', code },
-            dueAt: plus(m.at, SUPPLIER_REPLY_WINDOW),
+            dueAt: plus(m.at, m.urgent ? hours(4) : SUPPLIER_REPLY_WINDOW),
             state: answer ? 'done' : superseded ? 'cancelled' : 'open',
             paused: false,
             completedAt: answer?.at,
@@ -963,6 +965,40 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
           oversightRoute: `/delivery-confirmation?confirmation=${c.id}`,
         };
       });
+    },
+  },
+  {
+    // A wrong or missing part is reported the moment it is found (103). Admin owns
+    // judging whose fault it was and getting it put right (108); a rush order is
+    // chased in hours, not a day.
+    kind: 'discrepancy_report_review',
+    nudgeBefore: hours(2),
+    escalateAfter: hours(12),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'quality',
+    collect(src) {
+      const admin = adminId(src);
+      return src.discrepancyReports
+        .filter((r) => r.status !== 'withdrawn')
+        .map((r) => {
+          const po = src.purchaseOrders.find((p) => p.id === r.poId);
+          const deal = src.deals.find((d) => d.id === r.dealId);
+          const site = src.leads.find((l) => l.id === deal?.leadId)?.siteName ?? '';
+          const settled = r.status === 'resolved' || (!!r.attribution && r.resolution !== 'reported');
+          return {
+            ...base('discrepancy_report_review', 'delivery', r.id),
+            ownerUserId: admin,
+            titleKey: 'work.title.discrepancy_report_review',
+            titleParams: { code: r.code, site, po: po?.code ?? '' },
+            dueAt: plus(r.createdAt, r.rush ? hours(4) : hours(24)),
+            state: settled ? ('done' as const) : ('open' as const),
+            paused: false,
+            completedAt: settled ? (r.events.filter((e) => e.kind === 'resolution' || e.kind === 'attributed').map((e) => e.at).sort().pop() ?? r.createdAt) : undefined,
+            actionRoute: `/damaged-parts?report=${r.id}`,
+            oversightRoute: `/damaged-parts?report=${r.id}`,
+          };
+        });
     },
   },
   {

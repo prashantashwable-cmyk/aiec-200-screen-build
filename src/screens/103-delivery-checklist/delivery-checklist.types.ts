@@ -138,6 +138,7 @@ export const DELIVERY_CHECKLIST_KEYS = {
     jobReady: 'deliveryChecklist.done.jobReady',
     back: 'deliveryChecklist.done.back',
     sign: 'deliveryChecklist.done.sign',
+    openReport: 'deliveryChecklist.done.openReport',
     signHint: 'deliveryChecklist.done.signHint',
   },
   record: {

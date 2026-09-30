@@ -396,10 +396,17 @@ function Bubble({ m, s, t, lang, onOrder }: { m: SupplierMessage; s: SupplierMes
             <Package size={12} aria-hidden="true" /> {t(K.bubble.viewOrder, { code: poCode })}
           </button>
         )}
-        {m.attachmentName && (
+        {m.urgent && <Badge tone="error">{t(K.bubble.urgent)}</Badge>}
+        {(m.evidenceNames?.length ?? 0) > 1 ? (
           <span className="ds-bubble__tag">
-            <Paperclip size={12} aria-hidden="true" /> {m.attachmentName}
+            <Paperclip size={12} aria-hidden="true" /> {t(K.bubble.photos, { count: m.evidenceNames!.length })}
           </span>
+        ) : (
+          m.attachmentName && (
+            <span className="ds-bubble__tag">
+              <Paperclip size={12} aria-hidden="true" /> {m.attachmentName}
+            </span>
+          )
         )}
         <span className="ds-bubble__meta">
           {m.flaggedNoteId && (
