@@ -33,6 +33,8 @@ import { APPROVAL_KEYS as K, QUEUE_FILTERS } from './supplier-payment-approval.t
 type T = ReturnType<typeof useTranslation>['t'];
 type Report = (r: ActionResult, success?: string, params?: Record<string, unknown>) => void;
 
+/** A due payment held up by a missing or unmatched invoice reads as waiting, not as a decision for Admin. */
+const statusKey = (p: SupplierPaymentView) => (p.status === 'pending_approval' && p.flags.some((f) => f.kind === 'invoice_unmatched') ? K.totals.waiting : K.status[p.status]);
 const errorKey = (code?: string) => (code && code in K.problem ? K.problem[code as keyof typeof K.problem] : K.problem.generic);
 const FLAG_TONE: Record<FlagSeverity, BadgeTone> = { block: 'error', hold: 'warning', care: 'neutral' };
 const STATUS_TONE: Record<SupplierPaymentView['status'], BadgeTone> = { pending_approval: 'warning', held: 'neutral', approved: 'accent', executed: 'success' };
@@ -100,6 +102,7 @@ export function SupplierPaymentApprovalView() {
       <div className="grid-auto mb-3">
         <StatTile label={t(K.totals.toApprove)} value={formatINR(q.totals.toApproveAmount)} caption={t(K.totals.count, { count: q.toApprove.length })} large />
         <StatTile label={t(K.totals.routine)} value={formatINR(q.totals.routineAmount)} caption={t(K.totals.count, { count: q.totals.routineCount })} />
+        <StatTile label={t(K.totals.waiting)} value={formatINR(q.totals.waitingAmount)} caption={t(K.totals.count, { count: q.waiting.length })} />
         <StatTile label={t(K.totals.held)} value={formatINR(q.totals.heldAmount)} caption={t(K.totals.count, { count: q.held.length })} />
       </div>
 
@@ -166,7 +169,7 @@ function Empty({ s, t }: { s: SupplierPaymentApprovalState; t: T }) {
   if (s.query.trim() !== '' && s.counts[s.filter] > 0) {
     return <EmptyState icon={<Wallet size={28} />} title={t(K.list.emptySearchTitle)} body={t(K.list.emptySearchBody)} actionLabel={t(K.list.clear)} onAction={() => s.setQuery('')} />;
   }
-  const key = s.filter === 'toApprove' ? ['emptyTitle', 'emptyBody'] : s.filter === 'held' ? ['emptyHeldTitle', 'emptyHeldBody'] : ['emptyRecentTitle', 'emptyRecentBody'];
+  const key = s.filter === 'toApprove' ? ['emptyTitle', 'emptyBody'] : s.filter === 'waiting' ? ['emptyWaitingTitle', 'emptyWaitingBody'] : s.filter === 'held' ? ['emptyHeldTitle', 'emptyHeldBody'] : ['emptyRecentTitle', 'emptyRecentBody'];
   return <EmptyState icon={<CheckCircle size={32} />} title={t(K.list[key[0] as 'emptyTitle'])} body={t(K.list[key[1] as 'emptyBody'])} />;
 }
 
@@ -227,7 +230,7 @@ function PaymentRow({ p, s, t, lang, report, selecting }: { p: SupplierPaymentVi
         </span>
         <span className="stack" style={{ alignItems: 'flex-end', flexShrink: 0 }}>
           <strong style={{ fontVariantNumeric: 'tabular-nums' }}>{formatINR(p.amount)}</strong>
-          <Badge tone={STATUS_TONE[p.status]}>{t(K.status[p.status])}</Badge>
+          <Badge tone={STATUS_TONE[p.status]}>{t(statusKey(p))}</Badge>
         </span>
       </button>
       {reversible && remaining > 0 && (
@@ -258,7 +261,7 @@ function DetailSheet({ s, t, lang, report }: { s: SupplierPaymentApprovalState; 
           <div className="stack gap-1">
             <div className="row between gap-2 wrap" style={{ alignItems: 'baseline' }}>
               <strong style={{ fontSize: '1.5rem', fontVariantNumeric: 'tabular-nums' }}>{formatINR(p.amount)}</strong>
-              <Badge tone={STATUS_TONE[p.status]}>{t(K.status[p.status])}</Badge>
+              <Badge tone={STATUS_TONE[p.status]}>{t(statusKey(p))}</Badge>
             </div>
             <span className="t-sm">
               {t(K.part[p.part])} · {t(K.trigger[p.trigger])}
@@ -283,7 +286,7 @@ function DetailSheet({ s, t, lang, report }: { s: SupplierPaymentApprovalState; 
                     <Badge tone={FLAG_TONE[f.severity]}>
                       <WarningOctagon size={12} aria-hidden="true" /> {t(K.flag[f.kind])}
                     </Badge>
-                    <span className="t-sm">{t(K.flagBody[f.kind])}</span>
+                    <span className="t-sm">{f.kind === 'invoice_unmatched' && f.detail ? t(K.invoiceGate[f.detail as keyof typeof K.invoiceGate]) : t(K.flagBody[f.kind])}</span>
                   </div>
                 </Card>
               ))}
@@ -346,13 +349,20 @@ function DetailSheet({ s, t, lang, report }: { s: SupplierPaymentApprovalState; 
               {p.heldAuto ? t(K.detail.heldAuto) : t(K.detail.heldBecause, { reason: p.heldReason, name: p.heldByName ?? '' })}
             </p>
           )}
-          <Button size="sm" variant="ghost" onClick={() => navigate(`/supplier-payment-release?payment=${p.id}`)}>
-            {t(K.detail.seeChain)}
-          </Button>
+          <div className="row gap-2 wrap">
+            <Button size="sm" variant="ghost" onClick={() => navigate(`/supplier-payment-release?payment=${p.id}`)}>
+              {t(K.detail.seeChain)}
+            </Button>
+            {p.part === 'balance' && (
+              <Button size="sm" variant="ghost" onClick={() => navigate(`/supplier-invoices?po=${p.poId}`)}>
+                {t(K.detail.seeInvoices)}
+              </Button>
+            )}
+          </div>
           {p.status === 'executed' && p.bankReference && <p className="t-sm">{t(K.detail.reference, { ref: p.bankReference })}</p>}
 
           {p.status === 'pending_approval' && gateHold && !blocked && <Checkbox checked={s.acknowledged} onChange={s.setAcknowledged} label={<span className="t-sm">{t(K.detail.acknowledge)}</span>} />}
-          {blocked && p.status === 'pending_approval' && <p className="t-sm t-error">{t(K.detail.blockedNote)}</p>}
+          {blocked && p.status === 'pending_approval' && <p className="t-sm t-error">{t(p.flags.some((f) => f.kind === 'invoice_unmatched') ? K.detail.invoiceNote : K.detail.blockedNote)}</p>}
 
           {p.status === 'pending_approval' && (
             <div className="row gap-2 wrap">

@@ -9,14 +9,14 @@ export type SupplierPaymentApprovalStatus = 'loading' | 'ready' | 'error';
 /** How often the queue re-reads while open. */
 export const POLL_MS = 20_000;
 
-export type QueueFilter = 'toApprove' | 'held' | 'recent';
-export const QUEUE_FILTERS: QueueFilter[] = ['toApprove', 'held', 'recent'];
+export type QueueFilter = 'toApprove' | 'waiting' | 'held' | 'recent';
+export const QUEUE_FILTERS: QueueFilter[] = ['toApprove', 'waiting', 'held', 'recent'];
 
 export const PARTS: SupplierPaymentPart[] = ['upfront', 'balance', 'retention'];
 export const TRIGGERS: SupplierPaymentTrigger[] = ['on_send', 'on_acknowledge', 'after_delivery', 'on_handover'];
 export const STATUSES: SupplierPaymentStatus[] = ['pending_approval', 'held', 'approved', 'executed'];
-export const FLAG_KINDS: HoldFlagKind[] = ['supplier_blocked', 'open_report', 'orphaned', 'rating_dispute', 'high_value', 'early_release'];
-export const EVIDENCE_KINDS: PaymentEvidenceKind[] = ['manual_override', 'po_sent', 'acknowledged', 'delivery_received', 'delivery_signed', 'net_elapsed', 'retention_released', 'installation_handover'];
+export const FLAG_KINDS: HoldFlagKind[] = ['invoice_unmatched', 'supplier_blocked', 'open_report', 'orphaned', 'rating_dispute', 'high_value', 'early_release'];
+export const EVIDENCE_KINDS: PaymentEvidenceKind[] = ['invoice_matched', 'manual_override', 'po_sent', 'acknowledged', 'delivery_received', 'delivery_signed', 'net_elapsed', 'retention_released', 'installation_handover'];
 export const EVENT_KINDS: SupplierPaymentEventKind[] = ['triggered', 'held', 'hold_released', 'approved', 'reversed', 'executed', 'amount_changed'];
 
 const rec = <T extends string>(ns: string, keys: readonly T[]) => Object.fromEntries(keys.map((k) => [k, `${ns}.${k}`])) as Record<T, string>;
@@ -28,6 +28,8 @@ export const SUPPLIER_PAYMENT_SHARED = {
   status: rec('supplierPayment.status', STATUSES),
   flag: rec('supplierPayment.flag', FLAG_KINDS),
   flagBody: rec('supplierPayment.flagBody', FLAG_KINDS),
+  /** Why an order's invoice is not clean yet, by 113's gate. Owned here because the flag is. */
+  invoiceGate: rec('supplierPayment.invoiceGate', ['no_invoice', 'mismatch', 'incomplete', 'awaiting_delivery'] as const),
 } as const;
 
 export const APPROVAL_KEYS = {
@@ -37,6 +39,7 @@ export const APPROVAL_KEYS = {
   error: { title: 'supplierPaymentApproval.error.title', body: 'supplierPaymentApproval.error.body' },
   totals: {
     toApprove: 'supplierPaymentApproval.totals.toApprove',
+    waiting: 'supplierPaymentApproval.totals.waiting',
     held: 'supplierPaymentApproval.totals.held',
     routine: 'supplierPaymentApproval.totals.routine',
     count: 'supplierPaymentApproval.totals.count',
@@ -45,6 +48,8 @@ export const APPROVAL_KEYS = {
   list: {
     emptyTitle: 'supplierPaymentApproval.list.emptyTitle',
     emptyBody: 'supplierPaymentApproval.list.emptyBody',
+    emptyWaitingTitle: 'supplierPaymentApproval.list.emptyWaitingTitle',
+    emptyWaitingBody: 'supplierPaymentApproval.list.emptyWaitingBody',
     emptyHeldTitle: 'supplierPaymentApproval.list.emptyHeldTitle',
     emptyHeldBody: 'supplierPaymentApproval.list.emptyHeldBody',
     emptyRecentTitle: 'supplierPaymentApproval.list.emptyRecentTitle',
@@ -69,6 +74,7 @@ export const APPROVAL_KEYS = {
   status: SUPPLIER_PAYMENT_SHARED.status,
   flag: SUPPLIER_PAYMENT_SHARED.flag,
   flagBody: SUPPLIER_PAYMENT_SHARED.flagBody,
+  invoiceGate: SUPPLIER_PAYMENT_SHARED.invoiceGate,
   detail: {
     title: 'supplierPaymentApproval.detail.title',
     amount: 'supplierPaymentApproval.detail.amount',
@@ -93,6 +99,8 @@ export const APPROVAL_KEYS = {
     seeChain: 'supplierPaymentApproval.detail.seeChain',
     reference: 'supplierPaymentApproval.detail.reference',
     blockedNote: 'supplierPaymentApproval.detail.blockedNote',
+    invoiceNote: 'supplierPaymentApproval.detail.invoiceNote',
+    seeInvoices: 'supplierPaymentApproval.detail.seeInvoices',
   },
   evidence: {
     ...rec('supplierPaymentApproval.evidence', EVIDENCE_KINDS),
@@ -151,6 +159,7 @@ export const APPROVAL_KEYS = {
     not_found: 'supplierPaymentApproval.problem.not_found',
     invalid_state: 'supplierPaymentApproval.problem.invalid_state',
     supplier_blocked: 'supplierPaymentApproval.problem.supplier_blocked',
+    invoice_unmatched: 'supplierPaymentApproval.problem.invoice_unmatched',
     flags_unacknowledged: 'supplierPaymentApproval.problem.flags_unacknowledged',
     note_required: 'supplierPaymentApproval.problem.note_required',
     window_closed: 'supplierPaymentApproval.problem.window_closed',

@@ -917,6 +917,66 @@ export interface ShipmentLeg {
   isDemo: boolean;
 }
 
+/* ------------------------------------ Supplier invoice matching (113) */
+
+/** A price the supplier is invoicing that differs from the order, with the approved change that explains it. */
+export interface InvoiceAdjustmentRef {
+  /** The approved price change (093) accepted as the basis for the difference. */
+  changeId: string;
+  toPrice: number;
+  acceptedBy: string;
+  acceptedAt: string;
+  note?: string;
+}
+
+export interface SupplierInvoiceLine {
+  /** The order line it bills. Null for an item that is not on the order at all. */
+  lineItemId: string | null;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  adjustment?: InvoiceAdjustmentRef;
+}
+
+export type SupplierInvoiceEventKind = 'submitted' | 'adjustment_accepted' | 'rejected' | 'withdrawn' | 'mismatch_notified';
+
+export interface SupplierInvoiceEvent {
+  id: string;
+  kind: SupplierInvoiceEventKind;
+  at: string;
+  byName: string;
+  note?: string;
+}
+
+/** A supplier's invoice for an order. What matched is never stored: it is read each time from the order's own
+ *  prices and the confirmed delivery quantities, so it can never drift from either. */
+export interface SupplierInvoice {
+  id: string;
+  code: string;
+  poId: string;
+  supplierId: string;
+  /** The supplier's own number for it. Unique per supplier among invoices not rejected. */
+  invoiceNumber: string;
+  /** `yyyy-mm-dd` on the document. */
+  invoiceDate: string;
+  /** The document's file name. There is no storage bucket here, so only the name is kept. */
+  documentName?: string;
+  lines: SupplierInvoiceLine[];
+  submittedAt: string;
+  submittedByName: string;
+  submittedByRole: 'supplier' | 'admin';
+  status: 'open' | 'rejected';
+  rejectedReason?: string;
+  rejectedByName?: string;
+  rejectedAt?: string;
+  /** The supplier took it back themselves to correct it, rather than Admin sending it back. */
+  withdrawnBySupplier?: boolean;
+  /** The supplier was told, and Admin alerted, about a mismatch on this invoice: once, never repeatedly. */
+  mismatchNotifiedAt?: string;
+  events: SupplierInvoiceEvent[];
+  isDemo: boolean;
+}
+
 /* ------------------------------------ Supplier payment processing (111) */
 
 /** The three parts a supplier order can be paid in (100's schedule). */
@@ -2635,6 +2695,8 @@ export type CommitmentKind =
   | 'partner_feed_restore'
   | 'supplier_payment_approve'
   | 'supplier_payment_hold_review'
+  | 'supplier_invoice_submit'
+  | 'supplier_invoice_mismatch_review'
   | 'delivery_delay_action'
   | 'orphaned_po_decision'
   | 'discrepancy_report_review'
@@ -2661,7 +2723,8 @@ export type CommitmentSubjectType =
   | 'delivery'
   | 'shipment'
   | 'delivery_partner'
-  | 'supplier_payment';
+  | 'supplier_payment'
+  | 'supplier_invoice';
 
 /**
  * 0 nothing sent yet · 1 owner nudged before due · 2 owner told it's overdue

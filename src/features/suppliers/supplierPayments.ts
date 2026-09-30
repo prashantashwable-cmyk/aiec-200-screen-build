@@ -24,12 +24,13 @@ export const HOLD_REASON_MIN = 4;
 export const PARTS: SupplierPaymentPart[] = ['upfront', 'balance', 'retention'];
 export const TRIGGERS: SupplierPaymentTrigger[] = ['on_send', 'on_acknowledge', 'after_delivery', 'on_handover'];
 
-export type HoldFlagKind = 'supplier_blocked' | 'open_report' | 'orphaned' | 'rating_dispute' | 'high_value' | 'early_release';
+export type HoldFlagKind = 'invoice_unmatched' | 'supplier_blocked' | 'open_report' | 'orphaned' | 'rating_dispute' | 'high_value' | 'early_release';
 /** `block`: cannot be approved at all. `hold`: a reason to hold, approvable only after acknowledging it.
  *  `care`: worth a look, no gate. */
 export type FlagSeverity = 'block' | 'hold' | 'care';
 
 export const FLAG_SEVERITY: Record<HoldFlagKind, FlagSeverity> = {
+  invoice_unmatched: 'block',
   supplier_blocked: 'block',
   open_report: 'hold',
   orphaned: 'hold',
@@ -38,14 +39,16 @@ export const FLAG_SEVERITY: Record<HoldFlagKind, FlagSeverity> = {
   early_release: 'care',
 };
 
-export const FLAG_ORDER: HoldFlagKind[] = ['supplier_blocked', 'open_report', 'orphaned', 'rating_dispute', 'high_value', 'early_release'];
+export const FLAG_ORDER: HoldFlagKind[] = ['invoice_unmatched', 'supplier_blocked', 'open_report', 'orphaned', 'rating_dispute', 'high_value', 'early_release'];
 
 export interface PaymentFlag {
   kind: HoldFlagKind;
   severity: FlagSeverity;
+  /** Why, where the kind has more than one reason (an invoice gate). */
+  detail?: string;
 }
 
-export const flagOf = (kind: HoldFlagKind): PaymentFlag => ({ kind, severity: FLAG_SEVERITY[kind] });
+export const flagOf = (kind: HoldFlagKind, detail?: string): PaymentFlag => ({ kind, severity: FLAG_SEVERITY[kind], ...(detail ? { detail } : {}) });
 
 /** Routine means nothing here needs judging: small, and no flag at all. Only these may be approved in a batch. */
 export const isRoutine = (flags: PaymentFlag[], amount: number): boolean => flags.length === 0 && amount <= ROUTINE_LIMIT;

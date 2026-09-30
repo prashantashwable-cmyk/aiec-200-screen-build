@@ -61,6 +61,7 @@ import {
   seedShipmentLegs,
   seedDeliveryPartners,
   seedSupplierPayments,
+  seedSupplierInvoices,
   seedPaymentDeviations,
   seedDiscrepancyReports,
   seedDeliveryDisruptions,
@@ -153,6 +154,11 @@ import type {
   DiscrepancyReportView,
   AnalyticsMonths,
   BatchApproveResult,
+  SupplierInvoiceBoard,
+  SupplierInvoiceLineView,
+  SupplierInvoiceView,
+  WaitingForInvoice,
+  SubmittablePo,
   PaymentChainNodeView,
   PaymentChainSummary,
   PaymentChainView,
@@ -243,6 +249,9 @@ import type {
   SupplierMessageChannel,
   ReportEvent,
   DeliveryDisruption,
+  SupplierInvoice,
+  SupplierInvoiceEvent,
+  InvoiceAdjustmentRef,
   SupplierPayment,
   SupplierPaymentEvent,
   SupplierPaymentPart,
@@ -396,6 +405,8 @@ import {
 import { compareDelays, etaMovedSince, judgeDelay } from '@/features/logistics/delay';
 import { capacityWeeks, categoryPatterns, readinessStatus, weekStartOf, windowOf } from '@/features/logistics/transit';
 import type { ReadinessStatus } from '@/features/logistics/transit';
+import { INVOICE_MIN_ITEMS, explainsInvoicePrice, gateOf, matchLine, overallOf } from '@/features/suppliers/invoiceMatch';
+import type { GateLine, InvoiceGate, InvoiceMatchStatus } from '@/features/suppliers/invoiceMatch';
 import { ACK_EXPECTED_AFTER, DEVIATION_REASON_MIN, deviationIncreasesRisk, HANDOVER_AFTER_START, chainAnomalies, chainKinds, checkDeviation, firedAtOf, splitOf } from '@/features/suppliers/paymentChain';
 import type { ChainNodeFacts, ChainNodeKind, ChainNodeState } from '@/features/suppliers/paymentChain';
 import { FLAG_ORDER, HOLD_REASON_MIN, REVERSAL_WINDOW, ROUTINE_LIMIT, approvalGate, bankReferenceFor, firedMilestones, flagOf, isRoutine, overdueDays } from '@/features/suppliers/supplierPayments';
@@ -2045,6 +2056,22 @@ function commitmentSources(now: number): CommitmentSources {
     discrepancyReports,
     deliveryPartners,
     supplierPayments,
+    invoiceGates: supplierPurchaseOrders
+      .filter((po) => po.status === 'sent' && !!po.supplierId && (po.lineItems ?? []).length > 0)
+      .map((po) => ({ po, deliveredAt: paymentDeliveredAt(po) }))
+      .filter((x): x is { po: SupplierPurchaseOrder; deliveredAt: string } => !!x.deliveredAt)
+      .map(({ po, deliveredAt }) => ({ poId: po.id, supplierId: po.supplierId!, deliveredAt, gate: invoiceGateOfPo(po) })),
+    invoiceMismatches: supplierInvoices
+      .filter((i) => !!i.mismatchNotifiedAt)
+      .map((i) => ({
+        invoiceId: i.id,
+        poId: i.poId,
+        supplierId: i.supplierId,
+        invoiceNumber: i.invoiceNumber,
+        notifiedAt: i.mismatchNotifiedAt!,
+        stillMismatched: i.status === 'open' && evaluateInvoice(i).status === 'mismatch',
+        resolvedAt: i.rejectedAt ?? i.events.filter((e) => e.kind === 'adjustment_accepted').map((e) => e.at).sort().pop(),
+      })),
     pausedDealIds: new Set(paymentReminderPauses.filter((p) => p.paused).map((p) => p.dealId)),
   };
 }
@@ -2234,6 +2261,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   syncSupplierPayments(now);
   executeSupplierPayments(now);
   syncPaymentAnomalies(now);
+  syncInvoiceMismatches(now);
   advanceShipments(now);
   // 105: a delivery running late is noticed, and one that caught up is cleared, without anyone looking.
   syncDelayCases(now);
@@ -4135,6 +4163,10 @@ function openReportsOnPo(poId: string): DeliveryDiscrepancyReport[] {
 function paymentFlags(p: SupplierPayment): PaymentFlag[] {
   const supplier = byId(suppliers, p.supplierId);
   const kinds: HoldFlagKind[] = [];
+  // A delivery balance is paid against a clean three-way match, never an unverified invoice (113). A portion Admin released
+  // early, with a reason (112), is that decision and is flagged as such instead.
+  const po = byId(supplierPurchaseOrders, p.poId);
+  const gate = p.part === 'balance' && p.origin !== 'override' && po && (p.status === 'pending_approval' || p.status === 'held') ? invoiceGateOfPo(po) : 'ok';
   if (!supplier || !isSupplierEligibleForPO(supplier)) kinds.push('supplier_blocked');
   if (openReportsOnPo(p.poId).length > 0) kinds.push('open_report');
   const dealStatus = byId(deals, p.dealId)?.status;
@@ -4142,7 +4174,8 @@ function paymentFlags(p: SupplierPayment): PaymentFlag[] {
   if (supplierOrderRatings.some((r) => r.poId === p.poId && r.dispute?.status === 'open')) kinds.push('rating_dispute');
   if (p.amount > ROUTINE_LIMIT) kinds.push('high_value');
   if (p.origin === 'override') kinds.push('early_release');
-  return FLAG_ORDER.filter((k) => kinds.includes(k)).map(flagOf);
+  const flags = FLAG_ORDER.filter((k) => kinds.includes(k)).map((k) => flagOf(k));
+  return gate === 'ok' ? flags : [flagOf('invoice_unmatched', gate), ...flags];
 }
 
 function paymentEvidence(p: SupplierPayment): PaymentEvidence[] {
@@ -4157,6 +4190,7 @@ function paymentEvidence(p: SupplierPayment): PaymentEvidence[] {
     if (p.trigger === 'on_acknowledge') out.push(item('acknowledged', po.acknowledgedAt, po.acknowledgedBy, null, '/orders'));
   } else if (p.part === 'balance') {
     out.push(item('delivery_received', po.receivedAt, po.receivedBy, po.code, `/delivery-checklist?poId=${po.id}`));
+    for (const inv of supplierInvoices.filter((x) => x.poId === po.id && x.status === 'open' && evaluateInvoice(x).status === 'matched')) out.push(item('invoice_matched', inv.submittedAt, inv.submittedByName, inv.invoiceNumber, `/supplier-invoices?invoice=${inv.id}`));
     for (const c of deliveryConfirmations.filter((x) => x.poId === po.id && x.status === 'signed')) out.push(item('delivery_signed', c.signedAt, c.signatures[0]?.name ?? null, c.code, `/delivery-confirmation?confirmation=${c.id}`));
     if (po.paymentTerms?.termType === 'net') out.push(item('net_elapsed', p.dueAt, null, po.agreementTerms ? `${po.agreementTerms.paymentTermsDays}` : null));
   } else {
@@ -4210,7 +4244,7 @@ function paymentViewOf(p: SupplierPayment, now: number): SupplierPaymentView {
 function approvePaymentNow(p: SupplierPayment, actor: User, acknowledged: boolean, now: number): SupplierPayment {
   if (p.status !== 'pending_approval') throw new RepositoryError('invalid_state');
   const gate = approvalGate(paymentFlags(p), acknowledged);
-  if (gate === 'blocked') throw new RepositoryError('supplier_blocked');
+  if (gate === 'blocked') throw new RepositoryError(paymentFlags(p).find((f) => f.severity === 'block')?.kind ?? 'supplier_blocked');
   if (gate === 'needs_acknowledgement') throw new RepositoryError('flags_unacknowledged');
   return patchInPlace(supplierPayments, p.id, {
     status: 'approved',
@@ -4402,6 +4436,150 @@ function chainPoOrThrow(poId: string): SupplierPurchaseOrder {
   const po = byId(supplierPurchaseOrders, poId);
   if (!po || po.status !== 'sent' || !po.supplierId || !po.paymentTerms) throw new RepositoryError('not_found');
   return po;
+}
+
+/* ============================== Supplier invoice matching (113) */
+
+const supplierInvoices: SupplierInvoice[] = seedSupplierInvoices.map((i) => ({ ...i, lines: i.lines.map((l) => ({ ...l })), events: [...i.events] }));
+let supplierInvoiceCounter = 100;
+
+/** What the delivery checks accepted for an order line: arrived and fine, or arrived short (a count problem).
+ *  Damaged or wrong-spec parts are not accepted until they are replaced. */
+function acceptedQtyOf(po: SupplierPurchaseOrder, line: PurchaseOrderLineItem): number {
+  const items = deliveryChecklists.filter((c) => c.poId === po.id && c.status === 'completed').flatMap((c) => c.items.filter((i) => i.lineItemId === line.id));
+  if (items.length === 0) return lineStageOf(po, line) === 'delivered' ? line.quantity : 0;
+  return items.reduce((n, i) => {
+    if (i.verdict === 'ok') return n + (i.receivedQty ?? i.expectedQty);
+    if (i.verdict === 'discrepancy') return n + (i.kinds.includes('damaged') || i.kinds.includes('wrong_spec') ? 0 : (i.receivedQty ?? 0));
+    return n;
+  }, 0);
+}
+
+function evaluateInvoice(inv: SupplierInvoice): { lines: SupplierInvoiceLineView[]; status: InvoiceMatchStatus } {
+  const po = byId(supplierPurchaseOrders, inv.poId);
+  const earlier = supplierInvoices.filter((o) => o.poId === inv.poId && o.id !== inv.id && o.status === 'open' && o.submittedAt < inv.submittedAt);
+  const lines = inv.lines.map((l, index): SupplierInvoiceLineView => {
+    const poLine = l.lineItemId ? (po?.lineItems ?? []).find((x) => x.id === l.lineItemId) : undefined;
+    const billedElsewhere = l.lineItemId ? earlier.flatMap((o) => o.lines).filter((x) => x.lineItemId === l.lineItemId).reduce((n, x) => n + x.quantity, 0) : 0;
+    const delivered = po && poLine ? acceptedQtyOf(po, poLine) : 0;
+    const m = matchLine({ order: poLine ? { quantity: poLine.quantity, price: poLine.agreedUnitPrice } : null, delivered, billedElsewhere, invoiced: { quantity: l.quantity, unitPrice: l.unitPrice, adjustmentPrice: l.adjustment?.toPrice } });
+    const applicable =
+      m.priceCheck === 'fail' && po
+        ? catalogPriceChanges
+            .filter((c) => explainsInvoicePrice(c, inv.supplierId, po.sentAt, l.unitPrice))
+            .map((c) => ({ id: c.id, toPrice: c.toPrice, requestedAt: c.requestedAt, requestedBy: c.requestedBy }))
+        : [];
+    return {
+      index,
+      lineItemId: l.lineItemId,
+      description: l.description,
+      orderedQty: poLine?.quantity ?? null,
+      orderedPrice: poLine?.agreedUnitPrice ?? null,
+      deliveredQty: delivered,
+      billedElsewhere,
+      invoicedQty: l.quantity,
+      invoicedPrice: l.unitPrice,
+      verdict: m.verdict,
+      issues: m.issues,
+      quantityCheck: m.quantityCheck,
+      priceCheck: m.priceCheck,
+      priceGap: m.priceGap,
+      unlocked: m.unlocked,
+      adjustment: l.adjustment ?? null,
+      applicableChanges: applicable,
+    };
+  });
+  return { lines, status: inv.status === 'rejected' ? 'rejected' : overallOf(lines.map((l) => l.verdict)) };
+}
+
+/** Whether an order's payment can proceed on the invoices submitted for it. */
+function invoiceGateOfPo(po: SupplierPurchaseOrder): InvoiceGate {
+  const open = supplierInvoices.filter((i) => i.poId === po.id && i.status === 'open');
+  const evaluated = open.map((i) => ({ i, e: evaluateInvoice(i) }));
+  const lines: GateLine[] = (po.lineItems ?? []).map((pl) => ({
+    ordered: pl.quantity,
+    unlocked: evaluated.flatMap(({ i, e }) => i.lines.map((l, idx) => ({ l, v: e.lines[idx] }))).filter(({ l, v }) => l.lineItemId === pl.id && v.unlocked).reduce((n, { l }) => n + l.quantity, 0),
+  }));
+  return gateOf(open.length > 0, evaluated.some(({ e }) => e.status === 'mismatch'), evaluated.some(({ e }) => e.status === 'awaiting_delivery'), lines);
+}
+
+function invoiceViewOf(inv: SupplierInvoice): SupplierInvoiceView {
+  const po = byId(supplierPurchaseOrders, inv.poId);
+  const e = evaluateInvoice(inv);
+  return {
+    id: inv.id,
+    code: inv.code,
+    poId: inv.poId,
+    poCode: po?.code ?? inv.poId,
+    supplierId: inv.supplierId,
+    supplierName: byId(suppliers, inv.supplierId)?.name ?? '',
+    siteName: po ? (shipmentSite(po.dealId)?.siteName ?? '') : '',
+    invoiceNumber: inv.invoiceNumber,
+    invoiceDate: inv.invoiceDate,
+    documentName: inv.documentName ?? null,
+    submittedAt: inv.submittedAt,
+    submittedByName: inv.submittedByName,
+    submittedByRole: inv.submittedByRole,
+    status: e.status,
+    subtotal: inv.lines.reduce((n, l) => n + l.quantity * l.unitPrice, 0),
+    lines: e.lines,
+    rejectedReason: inv.rejectedReason ?? null,
+    rejectedByName: inv.rejectedByName ?? null,
+    withdrawn: !!inv.withdrawnBySupplier,
+    gate: po ? invoiceGateOfPo(po) : 'no_invoice',
+    events: inv.events,
+  };
+}
+
+function invoiceEvents(inv: SupplierInvoice, kind: SupplierInvoiceEvent['kind'], byName: string, note?: string): SupplierInvoiceEvent[] {
+  return [...inv.events, { id: `${inv.id}-e${inv.events.length + 1}`, kind, at: new Date().toISOString(), byName, note: note?.trim() || undefined }];
+}
+
+/** Tells the supplier in the order's thread (when they have a login) and Admin by alert. Once per invoice, never repeatedly:
+ *  a mismatch routes to reconciliation instead of proceeding on an unverified invoice. */
+function syncInvoiceMismatches(now: number): void {
+  const at = new Date(now).toISOString();
+  for (const inv of [...supplierInvoices]) {
+    if (inv.status !== 'open') continue;
+    const status = evaluateInvoice(inv).status;
+    const alert = alerts.find((a) => a.relatedId === inv.id && a.titleKey === 'supplierInvoiceMatching.alert.mismatch' && a.status !== 'resolved');
+    if (status === 'mismatch' && !inv.mismatchNotifiedAt) {
+      const po = byId(supplierPurchaseOrders, inv.poId);
+      const supplier = byId(suppliers, inv.supplierId);
+      const view = invoiceViewOf(inv);
+      const bad = view.lines.filter((l) => l.verdict === 'mismatch');
+      raiseAlert({
+        titleKey: 'supplierInvoiceMatching.alert.mismatch',
+        context: `${inv.code} · ${po?.code ?? ''} · ${supplier?.name ?? ''}`,
+        severity: 'medium',
+        category: 'payment',
+        relatedId: inv.id,
+        sourceRoute: `/supplier-invoices?invoice=${inv.id}`,
+      });
+      if (po && supplier && supplierUserFor(supplier)) {
+        pushSupplierMessage(ensureSupplierThread(supplier.id, po.id), {
+          author: 'aiec',
+          authorName: 'AIEC Assistant',
+          body: `Invoice ${inv.invoiceNumber} for ${po.code} does not match the order: ${bad.map((l) => `${l.description} (${l.issues.join(', ').replace(/_/g, ' ')})`).join('; ')}. Please send a corrected invoice, or tell us the basis for the difference.`,
+          channel: 'in_app',
+          at,
+          expectsReply: true,
+          poRef: po.id,
+        });
+      }
+      patchInPlace(supplierInvoices, inv.id, { mismatchNotifiedAt: at, events: invoiceEvents(inv, 'mismatch_notified', 'AIEC Assistant') });
+      logAutomatedAction({
+        sourceKey: 'supplier_invoice.mismatch',
+        triggeringCondition: `Invoice ${inv.invoiceNumber} did not match ${po?.code ?? 'the order'}`,
+        actionTaken: `Held its payment, raised an alert${supplier && supplierUserFor(supplier) ? ' and told the supplier' : ''}`,
+        affectedRecordId: inv.id,
+        affectedRecordType: 'purchase_order',
+        subjectLabel: inv.code,
+      });
+    } else if (status !== 'mismatch' && alert) {
+      patchInPlace(alerts, alert.id, { status: 'resolved', resolvedAt: at, resolvedBy: 'system', resolutionNote: 'The invoice now matches.' });
+    }
+  }
 }
 
 /* ============================================ Delivery SOP (107) */
@@ -8293,6 +8471,141 @@ export const memoryRepository: Repository = {
       return { notified: true };
     }),
 
+  /* --------------------------------------------- Supplier invoice matching (113) */
+  getSupplierInvoiceBoard: (byUserId) =>
+    simulateRead((): SupplierInvoiceBoard => {
+      const viewer = threadViewer(byUserId);
+      const now = Date.now();
+      syncInvoiceMismatches(now);
+      const mine = (supplierId: string) => !viewer.supplierId || viewer.supplierId === supplierId;
+      const invoices = supplierInvoices
+        .filter((i) => mine(i.supplierId))
+        .map(invoiceViewOf)
+        .sort((a, b) => Number(b.status === 'mismatch') - Number(a.status === 'mismatch') || (a.submittedAt < b.submittedAt ? 1 : -1));
+      const sentPos = supplierPurchaseOrders.filter((po) => po.status === 'sent' && !!po.supplierId && mine(po.supplierId) && (po.lineItems ?? []).length > 0);
+      const waiting: WaitingForInvoice[] = sentPos
+        .map((po) => ({ po, deliveredAt: paymentDeliveredAt(po), gate: invoiceGateOfPo(po) }))
+        .filter((x): x is { po: SupplierPurchaseOrder; deliveredAt: string; gate: InvoiceGate } => !!x.deliveredAt && (x.gate === 'no_invoice' || x.gate === 'incomplete'))
+        .map(({ po, deliveredAt, gate }) => ({ poId: po.id, poCode: po.code, supplierId: po.supplierId!, supplierName: byId(suppliers, po.supplierId!)?.name ?? '', siteName: shipmentSite(po.dealId)?.siteName ?? '', deliveredAt, gate }));
+      const submittable: SubmittablePo[] = sentPos
+        .map((po) => ({
+          poId: po.id,
+          poCode: po.code,
+          siteName: shipmentSite(po.dealId)?.siteName ?? '',
+          supplierId: po.supplierId!,
+          supplierName: byId(suppliers, po.supplierId!)?.name ?? '',
+          lines: (po.lineItems ?? []).map((l) => ({
+            id: l.id,
+            description: l.description,
+            orderedQty: l.quantity,
+            orderPrice: l.agreedUnitPrice,
+            deliveredQty: acceptedQtyOf(po, l),
+            billedQty: supplierInvoices.filter((i) => i.poId === po.id && i.status === 'open').flatMap((i) => i.lines).filter((x) => x.lineItemId === l.id).reduce((n, x) => n + x.quantity, 0),
+          })),
+        }))
+        .filter((p) => p.lines.some((l) => l.billedQty < l.orderedQty));
+      return { invoices, waiting, submittable, viewer: viewer.supplierId ? 'supplier' : 'admin' };
+    }),
+
+  submitSupplierInvoice: (input, byUserId) =>
+    simulateWrite(() => {
+      const viewer = threadViewer(byUserId);
+      const po = byId(supplierPurchaseOrders, input.poId);
+      if (!po || po.status !== 'sent' || !po.supplierId) throw new RepositoryError('not_found');
+      if (viewer.supplierId && po.supplierId !== viewer.supplierId) throw new RepositoryError('forbidden');
+      const number = input.invoiceNumber.trim();
+      if (number.length < 2) throw new RepositoryError('number_required');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(input.invoiceDate) || new Date(input.invoiceDate).getTime() > Date.now() + 86_400_000) throw new RepositoryError('invalid_date');
+      if (input.lines.length < INVOICE_MIN_ITEMS || input.lines.some((l) => !(l.quantity > 0) || !(l.unitPrice > 0) || !Number.isFinite(l.quantity) || !Number.isFinite(l.unitPrice) || l.description.trim().length < 2)) throw new RepositoryError('invalid_lines');
+      // The same number twice from one supplier is the same invoice sent again, not a new one.
+      if (supplierInvoices.some((i) => i.supplierId === po.supplierId && i.status === 'open' && i.invoiceNumber.toLowerCase() === number.toLowerCase())) throw new RepositoryError('duplicate_invoice');
+      const now = new Date().toISOString();
+      supplierInvoiceCounter += 1;
+      const created: SupplierInvoice = {
+        id: `sinv-new-${supplierInvoiceCounter}`,
+        code: `AIEC-SI-${2100 + supplierInvoiceCounter}`,
+        poId: po.id,
+        supplierId: po.supplierId,
+        invoiceNumber: number,
+        invoiceDate: input.invoiceDate,
+        documentName: input.documentName?.trim() || undefined,
+        lines: input.lines.map((l) => ({ lineItemId: l.lineItemId && (po.lineItems ?? []).some((x) => x.id === l.lineItemId) ? l.lineItemId : null, description: l.description.trim(), quantity: l.quantity, unitPrice: l.unitPrice })),
+        submittedAt: now,
+        submittedByName: viewer.actor.name,
+        submittedByRole: viewer.supplierId ? 'supplier' : 'admin',
+        status: 'open',
+        events: [],
+        isDemo: true,
+      };
+      created.events = [{ id: `${created.id}-e1`, kind: 'submitted', at: now, byName: viewer.actor.name }];
+      supplierInvoices.push(created);
+      syncInvoiceMismatches(Date.now());
+      syncCommitments(Date.now());
+      return invoiceViewOf(byId(supplierInvoices, created.id)!);
+    }),
+
+  acceptInvoiceAdjustment: (invoiceId, input, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const inv = byId(supplierInvoices, invoiceId);
+      if (!inv) throw new RepositoryError('not_found');
+      if (inv.status !== 'open') throw new RepositoryError('invalid_state');
+      const line = inv.lines[input.lineIndex];
+      if (!line) throw new RepositoryError('not_found');
+      const po = byId(supplierPurchaseOrders, inv.poId);
+      const change = catalogPriceChanges.find((c) => c.id === input.changeId);
+      if (!po || !change || !explainsInvoicePrice(change, inv.supplierId, po.sentAt, line.unitPrice)) throw new RepositoryError('adjustment_invalid');
+      const ref: InvoiceAdjustmentRef = { changeId: change.id, toPrice: change.toPrice, acceptedBy: actor.name, acceptedAt: new Date().toISOString(), note: input.note?.trim() || undefined };
+      const updated = patchInPlace(supplierInvoices, inv.id, {
+        lines: inv.lines.map((l, i) => (i === input.lineIndex ? { ...l, adjustment: ref } : l)),
+        events: invoiceEvents(inv, 'adjustment_accepted', actor.name, input.note),
+      });
+      syncInvoiceMismatches(Date.now());
+      syncCommitments(Date.now());
+      return invoiceViewOf(updated);
+    }),
+
+  rejectSupplierInvoice: (invoiceId, reason, byUserId) =>
+    simulateWrite(() => {
+      const viewer = threadViewer(byUserId);
+      const inv = byId(supplierInvoices, invoiceId);
+      if (!inv) throw new RepositoryError('not_found');
+      // Admin sends any open invoice back. A supplier may only take back their own, and only while it does not match.
+      const own = !!viewer.supplierId && viewer.supplierId === inv.supplierId;
+      if (viewer.supplierId ? !own : viewer.actor.role !== 'admin') throw new RepositoryError('forbidden');
+      if (inv.status !== 'open') throw new RepositoryError('invalid_state');
+      if (own && evaluateInvoice(inv).status !== 'mismatch') throw new RepositoryError('invalid_state');
+      if (reason.trim().length < 4) throw new RepositoryError('note_required');
+      const at = new Date().toISOString();
+      const actor = viewer.actor;
+      const updated = patchInPlace(supplierInvoices, inv.id, {
+        status: 'rejected',
+        rejectedReason: reason.trim(),
+        rejectedByName: actor.name,
+        rejectedAt: at,
+        withdrawnBySupplier: own || undefined,
+        events: invoiceEvents(inv, own ? 'withdrawn' : 'rejected', actor.name, reason),
+      });
+      const po = byId(supplierPurchaseOrders, inv.poId);
+      const supplier = byId(suppliers, inv.supplierId);
+      if (!own && po && supplier && supplierUserFor(supplier)) {
+        pushSupplierMessage(ensureSupplierThread(supplier.id, po.id), {
+          author: 'aiec',
+          authorName: actor.name,
+          authorUserId: actor.id,
+          body: `We could not accept invoice ${inv.invoiceNumber} for ${po.code}: ${reason.trim()} Please send a corrected invoice.`,
+          channel: 'in_app',
+          at,
+          expectsReply: true,
+          poRef: po.id,
+        });
+      }
+      const alert = alerts.find((a) => a.relatedId === inv.id && a.titleKey === 'supplierInvoiceMatching.alert.mismatch' && a.status !== 'resolved');
+      if (alert) patchInPlace(alerts, alert.id, { status: 'resolved', resolvedAt: at, resolvedBy: actor.name, resolutionNote: own ? 'Withdrawn by the supplier to correct it.' : 'Sent back to the supplier.' });
+      syncCommitments(Date.now());
+      return invoiceViewOf(updated);
+    }),
+
   /* --------------------------------------------- Payment release (112) */
   getSupplierPaymentChains: (byUserId) =>
     simulateRead((): PaymentChainSummary[] => {
@@ -8422,7 +8735,9 @@ export const memoryRepository: Repository = {
       executeSupplierPayments(now);
       const views = supplierPayments.map((p) => paymentViewOf(p, now));
       const byDue = (a: SupplierPaymentView, b: SupplierPaymentView) => (a.dueAt < b.dueAt ? -1 : 1);
-      const toApprove = views.filter((v) => v.status === 'pending_approval').sort(byDue);
+      const pending = views.filter((v) => v.status === 'pending_approval').sort(byDue);
+      const toApprove = pending.filter((v) => !v.flags.some((f) => f.severity === 'block'));
+      const waiting = pending.filter((v) => v.flags.some((f) => f.severity === 'block'));
       const held = views.filter((v) => v.status === 'held').sort(byDue);
       const cutoff = now - 14 * 86_400_000;
       const recent = views
@@ -8431,9 +8746,10 @@ export const memoryRepository: Repository = {
       const routine = toApprove.filter((v) => v.routine);
       return {
         toApprove,
+        waiting,
         held,
         recent,
-        totals: { toApproveAmount: toApprove.reduce((n, v) => n + v.amount, 0), heldAmount: held.reduce((n, v) => n + v.amount, 0), routineCount: routine.length, routineAmount: routine.reduce((n, v) => n + v.amount, 0) },
+        totals: { toApproveAmount: toApprove.reduce((n, v) => n + v.amount, 0), waitingAmount: waiting.reduce((n, v) => n + v.amount, 0), heldAmount: held.reduce((n, v) => n + v.amount, 0), routineCount: routine.length, routineAmount: routine.reduce((n, v) => n + v.amount, 0) },
         limits: { routineLimit: ROUTINE_LIMIT, reversalMinutes: REVERSAL_WINDOW / 60_000 },
       };
     }),

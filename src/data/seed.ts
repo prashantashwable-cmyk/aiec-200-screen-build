@@ -65,6 +65,7 @@ import type {
   PartnerTripRecord,
   DeliveryDisruption,
   DeliveryDiscrepancyReport,
+  SupplierInvoice,
   SupplierPayment,
   SupplierPaymentPart,
   SupplierPaymentTrigger,
@@ -1173,7 +1174,7 @@ export const seedSuppliers: Supplier[] = [
  *  information. sci-1 has a supplier-submitted hike waiting on Admin. */
 export const seedSupplierCatalogItems: SupplierCatalogItem[] = [
   { id: 'sci-1', supplierId: 'sp-1', category: 'traction_machine', description: 'Geared/gearless traction machine unit', specification: '1000 kg, 1.5 m/s, 7.5 kW', driveTypes: ['geared_traction', 'gearless_traction'], unitPrice: 210_000, leadTimeDays: 28, status: 'active', pendingPrice: 248_000, pendingPriceChangeId: 'cpc-3', updatedAt: daysAgo(40), isDemo: true },
-  { id: 'sci-2', supplierId: 'sp-1', category: 'controller', description: 'Microprocessor lift controller', specification: 'Up to 20 stops, ARD-ready', driveTypes: [], unitPrice: 95_000, leadTimeDays: 21, status: 'active', updatedAt: daysAgo(64), isDemo: true },
+  { id: 'sci-2', supplierId: 'sp-1', category: 'controller', description: 'Microprocessor lift controller', specification: 'Up to 20 stops, ARD-ready', driveTypes: [], unitPrice: 97_500, leadTimeDays: 21, status: 'active', updatedAt: daysAgo(3), isDemo: true },
   { id: 'sci-3', supplierId: 'sp-1', category: 'cabin', description: 'Passenger cabin, standard finish', specification: '8 persons, SS hairline', driveTypes: [], unitPrice: 165_000, leadTimeDays: 35, status: 'active', updatedAt: daysAgo(90), isDemo: true },
   { id: 'sci-4', supplierId: 'sp-1', category: 'door_operator', description: 'Automatic door operator', specification: 'Centre-opening, 800 mm', driveTypes: [], unitPrice: 52_000, leadTimeDays: 14, status: 'active', updatedAt: daysAgo(90), isDemo: true },
   { id: 'sci-5', supplierId: 'sp-2', category: 'cabin', description: 'Passenger cabin, standard finish', specification: '8 persons, painted MS', driveTypes: [], unitPrice: 158_000, leadTimeDays: 30, status: 'active', updatedAt: daysAgo(55), isDemo: true },
@@ -1198,6 +1199,8 @@ export const seedCatalogPriceChanges: CatalogPriceChange[] = [
   { id: 'cpc-3', itemId: 'sci-1', supplierId: 'sp-1', fromPrice: 210_000, toPrice: 248_000, source: 'supplier', requestedBy: 'Vikram Anand', requestedAt: hoursAgo(5), status: 'pending', reviewReasonKeys: ['over_threshold'], isDemo: true },
   { id: 'cpc-4', itemId: 'sci-8', supplierId: 'sp-3', fromPrice: 88_000, toPrice: 92_000, source: 'supplier', requestedBy: 'Suresh Konark', requestedAt: daysAgo(30), status: 'applied', isDemo: true },
   { id: 'cpc-5', itemId: 'sci-5', supplierId: 'sp-2', fromPrice: 162_000, toPrice: 158_000, source: 'admin', requestedBy: 'Prashant Vasant Wable', requestedAt: daysAgo(55), status: 'applied', isDemo: true },
+  // Approved after AIEC-PO-8203 went out at the old price: the basis Vertex's invoice for it cites (113).
+  { id: 'cpc-6', itemId: 'sci-2', supplierId: 'sp-1', fromPrice: 95_000, toPrice: 97_500, source: 'supplier', requestedBy: 'Vikram Anand', requestedAt: daysAgo(3), status: 'applied', reviewedBy: 'Prashant Vasant Wable', reviewedAt: daysAgo(3), isDemo: true },
 ];
 
 /* ------------------------------------------ Supplier order fulfilment (095) */
@@ -1949,6 +1952,44 @@ export const seedSupplierPayments: SupplierPayment[] = [
  *  tier would have paid 20%. The reason is kept with the order so it is never mistaken for their standing terms. */
 export const seedPaymentDeviations: { poId: string; upfrontPct: number; retentionPct: number; reason: string; byName: string; at: string }[] = [
   { poId: 'spo-201', upfrontPct: 30, retentionPct: 5, reason: 'Sanghvi buys the cabin sheet steel against this order, so we agreed 30% up front on a call on 12 September.', byName: 'Prashant Vasant Wable', at: daysAgo(10) },
+];
+
+
+/* ------------------------------------------ Supplier invoices (113) */
+
+const histInvoice = (n: number, poId: string, supplierId: string, numberPrefix: string, lines: [lineItemId: string, description: string, price: number][], daysBack: number): SupplierInvoice => ({
+  id: `sinv-${n}`,
+  code: `AIEC-SI-${2000 + n}`,
+  poId,
+  supplierId,
+  invoiceNumber: `${numberPrefix}/${1000 + n}`,
+  invoiceDate: new Date(NOW - daysBack * DAY).toISOString().slice(0, 10),
+  documentName: `invoice-${numberPrefix.toLowerCase()}-${1000 + n}.pdf`,
+  lines: lines.map(([lineItemId, description, unitPrice]) => ({ lineItemId, description, quantity: 1, unitPrice })),
+  submittedAt: daysAgo(daysBack),
+  submittedByName: 'Supplier',
+  submittedByRole: 'supplier',
+  status: 'open',
+  events: [{ id: `sinv-${n}-e1`, kind: 'submitted', at: daysAgo(daysBack), byName: 'Supplier' }],
+  isDemo: true,
+});
+
+/** The six finished orders were invoiced and matched long ago. Vertex's invoice for the live controller order
+ *  arrived early and at a price ₹2,500 above the order, which an approved price change (cpc-6) explains. */
+export const seedSupplierInvoices: SupplierInvoice[] = [
+  histInvoice(1, 'spo-h1', 'sp-1', 'VEC', [['spo-h1-l1', 'Geared/gearless traction machine unit', 198_000], ['spo-h1-l2', 'Microprocessor lift controller', 90_000]], 55),
+  histInvoice(2, 'spo-h2', 'sp-1', 'VEC', [['spo-h2-l1', 'Passenger cabin, standard finish', 160_000]], 22),
+  histInvoice(3, 'spo-h3', 'sp-2', 'SLW', [['spo-h3-l1', 'T-section guide rail set', 37_000], ['spo-h3-l2', 'Steel suspension ropes, per set', 18_500]], 78),
+  histInvoice(4, 'spo-h4', 'sp-2', 'SLW', [['spo-h4-l1', 'Passenger cabin, standard finish', 160_000]], 44),
+  histInvoice(5, 'spo-h5', 'sp-3', 'KDC', [['spo-h5-l1', 'Variable frequency drive', 40_000]], 47),
+  histInvoice(6, 'spo-h6', 'sp-3', 'KDC', [['spo-h6-l1', 'Microprocessor lift controller', 88_000]], 26),
+  {
+    ...histInvoice(7, 'spo-203', 'sp-1', 'VEC', [['spo-203-l1', 'Microprocessor lift controller', 97_500]], 2),
+    invoiceNumber: 'VEC/26-27/0412',
+    documentName: 'vec-0412-controller.pdf',
+    submittedByName: 'Anil Mehta',
+    events: [{ id: 'sinv-7-e1', kind: 'submitted', at: daysAgo(2), byName: 'Anil Mehta' }],
+  },
 ];
 
 /* ------------------------------------------ Supplier payment terms (100) */

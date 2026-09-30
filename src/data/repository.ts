@@ -95,6 +95,8 @@ import type {
   DeliverySopVersion,
   DeliveryDiscrepancyReport,
   PaymentDeviation,
+  InvoiceAdjustmentRef,
+  SupplierInvoiceEvent,
   SupplierPaymentEvent,
   SupplierPaymentPart,
   SupplierPaymentStatus,
@@ -129,6 +131,7 @@ import type { SlotDay } from '@/features/logistics/deliverySlots';
 import type { ArrivalWindow, CapacityWeek, ReadinessStatus } from '@/features/logistics/transit';
 import type { SopVersionStatus } from '@/features/logistics/deliverySop';
 import type { PaymentFlag } from '@/features/suppliers/supplierPayments';
+import type { InvoiceGate, InvoiceMatchStatus, LineVerdict, MatchIssue } from '@/features/suppliers/invoiceMatch';
 import type { AnomalyKind, ChainNodeKind, ChainNodeState, ChainSource, SplitIssue } from '@/features/suppliers/paymentChain';
 import type { Bucket, Direction, TransitSummary, TrendTone } from '@/features/logistics/deliveryAnalytics';
 import type { PartnerStats, PartnerUnavailable, Responsibility, TrackingMode } from '@/features/logistics/partnerPerformance';
@@ -1135,6 +1138,118 @@ export interface AdvanceResolutionInput {
   note?: string;
 }
 
+/* ---------------------------------- Supplier invoice matching (113) */
+
+export interface InvoiceApplicableChange {
+  id: string;
+  toPrice: number;
+  requestedAt: string;
+  requestedBy: string;
+}
+
+/** One line of the three-way match: what the order says, what the invoice says, what was accepted on delivery. */
+export interface SupplierInvoiceLineView {
+  index: number;
+  lineItemId: string | null;
+  description: string;
+  orderedQty: number | null;
+  orderedPrice: number | null;
+  deliveredQty: number;
+  billedElsewhere: number;
+  invoicedQty: number;
+  invoicedPrice: number;
+  verdict: LineVerdict;
+  issues: MatchIssue[];
+  quantityCheck: 'ok' | 'awaiting' | 'fail';
+  priceCheck: 'ok' | 'explained' | 'fail';
+  priceGap: number;
+  unlocked: boolean;
+  adjustment: InvoiceAdjustmentRef | null;
+  /** Approved price changes that would explain this difference, for Admin to reference. */
+  applicableChanges: InvoiceApplicableChange[];
+}
+
+export interface SupplierInvoiceView {
+  id: string;
+  code: string;
+  poId: string;
+  poCode: string;
+  supplierId: string;
+  supplierName: string;
+  siteName: string;
+  invoiceNumber: string;
+  invoiceDate: string;
+  documentName: string | null;
+  submittedAt: string;
+  submittedByName: string;
+  submittedByRole: 'supplier' | 'admin';
+  status: InvoiceMatchStatus;
+  subtotal: number;
+  lines: SupplierInvoiceLineView[];
+  rejectedReason: string | null;
+  rejectedByName: string | null;
+  withdrawn: boolean;
+  /** Whether the order's payment can proceed on the invoices as they stand. */
+  gate: InvoiceGate;
+  events: SupplierInvoiceEvent[];
+}
+
+export interface WaitingForInvoice {
+  poId: string;
+  poCode: string;
+  supplierId: string;
+  supplierName: string;
+  siteName: string;
+  deliveredAt: string;
+  gate: InvoiceGate;
+}
+
+export interface SubmittablePoLine {
+  id: string;
+  description: string;
+  orderedQty: number;
+  orderPrice: number;
+  deliveredQty: number;
+  billedQty: number;
+}
+
+export interface SubmittablePo {
+  poId: string;
+  poCode: string;
+  siteName: string;
+  supplierId: string;
+  supplierName: string;
+  lines: SubmittablePoLine[];
+}
+
+export interface SupplierInvoiceBoard {
+  invoices: SupplierInvoiceView[];
+  waiting: WaitingForInvoice[];
+  submittable: SubmittablePo[];
+  viewer: 'admin' | 'supplier';
+}
+
+export interface SubmitInvoiceLineInput {
+  lineItemId: string | null;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+}
+
+export interface SubmitInvoiceInput {
+  poId: string;
+  invoiceNumber: string;
+  invoiceDate: string;
+  documentName?: string;
+  lines: SubmitInvoiceLineInput[];
+}
+
+export interface AcceptAdjustmentInput {
+  lineIndex: number;
+  changeId: string;
+  note?: string;
+}
+
 /* ---------------------------------- Milestone-linked payment release (112) */
 
 export interface PaymentChainNodeView {
@@ -1233,7 +1348,7 @@ export type AdjustSplitProblem = SplitIssue | 'part_locked' | 'risk_unconfirmed'
 
 /* ---------------------------------- Supplier payment approval (111) */
 
-export type PaymentEvidenceKind = 'manual_override' | 'po_sent' | 'acknowledged' | 'delivery_received' | 'delivery_signed' | 'net_elapsed' | 'retention_released' | 'installation_handover';
+export type PaymentEvidenceKind = 'invoice_matched' | 'manual_override' | 'po_sent' | 'acknowledged' | 'delivery_received' | 'delivery_signed' | 'net_elapsed' | 'retention_released' | 'installation_handover';
 
 /** What made a payment due, attached so Admin can check it in one glance. */
 export interface PaymentEvidence {
@@ -1293,10 +1408,12 @@ export interface SupplierPaymentView {
 
 export interface SupplierPaymentQueue {
   toApprove: SupplierPaymentView[];
+  /** Due, but something blocks approval: no clean invoice yet, or a supplier not cleared. Never asked of Admin as a decision. */
+  waiting: SupplierPaymentView[];
   held: SupplierPaymentView[];
   /** Approved and still reversible, then executed in the last two weeks. */
   recent: SupplierPaymentView[];
-  totals: { toApproveAmount: number; heldAmount: number; routineCount: number; routineAmount: number };
+  totals: { toApproveAmount: number; waitingAmount: number; heldAmount: number; routineCount: number; routineAmount: number };
   limits: { routineLimit: number; reversalMinutes: number };
 }
 
@@ -2879,6 +2996,16 @@ export interface Repository {
   completeDeliveryChecklist(checklistId: string, input: CompleteChecklistInput, byUserId: string): Promise<CompleteChecklistResult>;
   /** Abandons an unfinished checklist started by mistake. */
   cancelDeliveryChecklist(checklistId: string, byUserId: string): Promise<void>;
+
+  /* Supplier invoice matching (113) — the order, the invoice and the delivery, compared before payment can proceed */
+  getSupplierInvoiceBoard(byUserId: string): Promise<SupplierInvoiceBoard>;
+  /** A supplier submits their own for their own orders; Admin may enter one on their behalf. */
+  submitSupplierInvoice(input: SubmitInvoiceInput, byUserId: string): Promise<SupplierInvoiceView>;
+  /** Accepts a price difference on one line, on the strength of an approved price change. */
+  acceptInvoiceAdjustment(invoiceId: string, input: AcceptAdjustmentInput, byUserId: string): Promise<SupplierInvoiceView>;
+  /** Admin sends it back: the supplier is told why and can submit a corrected one. A supplier may withdraw their own invoice
+   *  while it does not match, to correct it. */
+  rejectSupplierInvoice(invoiceId: string, reason: string, byUserId: string): Promise<SupplierInvoiceView>;
 
   /* Milestone-linked payment release (112) — one order's full chain, drilled into from the queue or the schedule */
   getSupplierPaymentChains(byUserId: string): Promise<PaymentChainSummary[]>;

@@ -66,7 +66,7 @@ export function useSupplierPaymentApproval() {
   /* ------------------------------------------------------------- filters */
   const [filter, setFilter] = useState<QueueFilter>('toApprove');
   const [query, setQuery] = useState('');
-  const counts = useMemo(() => ({ toApprove: queue?.toApprove.length ?? 0, held: queue?.held.length ?? 0, recent: queue?.recent.length ?? 0 }), [queue]);
+  const counts = useMemo(() => ({ toApprove: queue?.toApprove.length ?? 0, waiting: queue?.waiting.length ?? 0, held: queue?.held.length ?? 0, recent: queue?.recent.length ?? 0 }), [queue]);
   const base: SupplierPaymentView[] = useMemo(() => (queue ? queue[filter] : []), [queue, filter]);
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -74,7 +74,7 @@ export function useSupplierPaymentApproval() {
   }, [base, query]);
 
   /* -------------------------------------------------------------- detail */
-  const all = useMemo(() => (queue ? [...queue.toApprove, ...queue.held, ...queue.recent] : []), [queue]);
+  const all = useMemo(() => (queue ? [...queue.toApprove, ...queue.waiting, ...queue.held, ...queue.recent] : []), [queue]);
   const current = useMemo(() => all.find((p) => p.id === paymentParam) ?? null, [all, paymentParam]);
   const openPayment = (id: string) => setSearchParams({ payment: id }, { replace: false });
   const closePayment = () => {

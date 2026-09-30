@@ -110,7 +110,40 @@ the module's section to `BUILD_README.md`.
 - **Module 11 Material Logistics & Delivery is done, including its checkpoint** (`101`–`110`, see
   BUILD_README's Module 11 section). Admin has a "Logistics" nav tab; every delivery screen declares
   `tab: 'logistics'` for Admin.
-- **Module 12 Supplier Payment Processing in progress:** `111`–`112` built. **Next: `113`**.
+- **Module 12 Supplier Payment Processing in progress:** `111`–`113` built. **Next: `114`**.
+  113 facts:
+  - `SupplierInvoice` (memoryRepository `supplierInvoices`) stores only what the supplier sent: lines (`lineItemId` or
+    null for an item not on the order, quantity, unit price, optional `adjustment`), number, date, document *name*
+    (no storage bucket), `status: open | rejected`. **What matched is never stored.** `evaluateInvoice` reads it each
+    time from the PO's `agreedUnitPrice`/`quantity` and `acceptedQtyOf` (what the delivery checks accepted, else the
+    line's `delivered` stage), so it cannot drift from either. `@/features/suppliers/invoiceMatch` is the pure logic
+    (`matchLine`, `overallOf`, `gateOf`, `explainsInvoicePrice`).
+  - Per line: `matched` / `partial` / `adjusted` / `awaiting_delivery` / `mismatch`. Quantities are matched against the
+    total billed on the supplier's earlier open invoices for that line, so billing in instalments against partial
+    delivery works. Billing ahead of delivery is `awaiting_delivery` (not wrong yet), never `mismatch`.
+  - An approved exception is a real reference: a price difference is only explained by a 093 `CatalogPriceChange`
+    that is `applied`, for that supplier, and came in after the PO was sent (`applicableChanges`). Admin accepts it
+    with `acceptInvoiceAdjustment`; the invoice keeps the change id, who accepted and when. An unexplained
+    difference stays a mismatch.
+  - `invoiceGateOfPo(po)` (`ok` / `no_invoice` / `mismatch` / `incomplete` / `awaiting_delivery`) is the one gate.
+    **111's `paymentFlags` prepends an `invoice_unmatched` block flag (its `detail` is the gate) to a pending or held
+    `balance` payment that is not a 112 early-release override**; `approvePaymentNow` refuses it, and
+    `getSupplierPaymentQueue` puts such payments in a new `waiting` list (`totals.waitingAmount`), never in `toApprove`.
+    Evidence `invoice_matched` is added to a balance payment once its invoice matches. Later screens that
+    create a supplier payment must go through the same flags.
+  - The heartbeat's `syncInvoiceMismatches` acts once per invoice on a mismatch: a `payment` alert
+    (`supplierInvoiceMatching.alert.mismatch`, `sourceRoute` `/supplier-invoices?invoice=`), a message in the order's 099
+    thread when the supplier has a login, and `logAutomatedAction`; the alert resolves itself when it stops mismatching.
+  - Commitments: `supplier_invoice_submit` (delivery confirmed, nothing or not enough billed; owner the supplier's
+    portal user, else Admin by proxy; due 3 days after delivery; done when the gate leaves `no_invoice`/`incomplete`)
+    and `supplier_invoice_mismatch_review` (Admin, 3 days after the mismatch was noticed; done when it stops
+    mismatching or is sent back).
+  - A supplier submits their own for their own POs; Admin may enter one for a supplier (`submittedByRole: 'admin'`).
+    The same number twice from one supplier is refused (`duplicate_invoice`). Admin sends an invoice back
+    (`rejectSupplierInvoice`, reason required, the supplier is told); a supplier may withdraw their own, only while it
+    mismatches. Rejected invoices stop counting as billed.
+  - `/supplier-invoices` serves Admin (`?po=` / `?invoice=`, reached from 091's hub, 111's detail and the commitments)
+    and Supplier (new nav tab "Invoices").
   112 facts:
   - `@/features/suppliers/paymentChain` is the chain's pure logic: `chainKinds` (the nodes an order's terms
     pass through: order sent, supplier confirmed, delivery confirmed, net period, retention release, final

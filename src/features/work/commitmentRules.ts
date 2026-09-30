@@ -37,6 +37,7 @@ import { RENEWAL_NOTICE, agreementState, promisedDeliveryOf, versionsOf } from '
 import { SUPPLIER_REPLY_WINDOW, byAt } from '@/features/suppliers/threads';
 import { RETENTION_DECISION_WINDOW, RETENTION_REVIEW_AFTER } from '@/features/suppliers/paymentTerms';
 import { windowEndsAt } from '@/features/logistics/deliverySlots';
+import type { InvoiceGate } from '@/features/suppliers/invoiceMatch';
 import { MANUAL_UPDATE_EVERY } from '@/features/logistics/shipmentTracking';
 
 /**
@@ -86,6 +87,10 @@ export interface CommitmentSources {
   discrepancyReports: DeliveryDiscrepancyReport[];
   deliveryPartners: DeliveryPartner[];
   supplierPayments: SupplierPayment[];
+  /** Sent orders whose delivery is confirmed, with whether the supplier's invoice clears them for payment (113). */
+  invoiceGates: { poId: string; supplierId: string; deliveredAt: string; gate: InvoiceGate }[];
+  /** Invoices that ever failed the three-way match, with whether they still do (113). */
+  invoiceMismatches: { invoiceId: string; poId: string; supplierId: string; invoiceNumber: string; notifiedAt: string; stillMismatched: boolean; resolvedAt?: string }[];
   /** Deals where someone paused payment reminders by hand (083). */
   pausedDealIds: Set<string>;
 }
@@ -1097,6 +1102,68 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
             oversightRoute: `/supplier-payments?payment=${p.id}`,
           };
         });
+    },
+  },
+  {
+    // Delivery is confirmed but the supplier has not billed for it (113). Nothing can be paid on a missing document, so the
+    // supplier owes the invoice, or Admin does by proxy when they have no login, and it is chased before the payment is.
+    kind: 'supplier_invoice_submit',
+    nudgeBefore: hours(12),
+    escalateAfter: days(1),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'payment',
+    collect(src) {
+      const admin = adminId(src);
+      const out: Obligation[] = [];
+      for (const g of src.invoiceGates) {
+        const po = src.purchaseOrders.find((x) => x.id === g.poId);
+        if (!po || isOrphaned(src, po)) continue;
+        const supplier = src.suppliers.find((s) => s.id === g.supplierId);
+        const portalUser = supplierUser(src, g.supplierId);
+        const done = g.gate !== 'no_invoice' && g.gate !== 'incomplete';
+        out.push({
+          ...base('supplier_invoice_submit', 'purchase_order', po.id),
+          ownerUserId: portalUser?.id ?? admin,
+          titleKey: portalUser ? 'work.title.supplier_invoice_submit' : 'work.title.supplier_invoice_submit_proxy',
+          titleParams: { code: po.code, supplier: supplier?.name ?? '' },
+          dueAt: plus(g.deliveredAt, days(3)),
+          state: done ? ('done' as const) : ('open' as const),
+          paused: false,
+          completedAt: done ? g.deliveredAt : undefined,
+          actionRoute: '/supplier-invoices?po=' + po.id,
+          oversightRoute: '/supplier-invoices?po=' + po.id,
+        });
+      }
+      return out;
+    },
+  },
+  {
+    // An invoice that does not match the order or the delivery goes to reconciliation, never quietly through (113).
+    kind: 'supplier_invoice_mismatch_review',
+    nudgeBefore: hours(12),
+    escalateAfter: days(2),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'payment',
+    collect(src) {
+      const admin = adminId(src);
+      return src.invoiceMismatches.map((m) => {
+        const po = src.purchaseOrders.find((x) => x.id === m.poId);
+        const supplier = src.suppliers.find((s) => s.id === m.supplierId);
+        return {
+          ...base('supplier_invoice_mismatch_review', 'supplier_invoice', m.invoiceId),
+          ownerUserId: admin,
+          titleKey: 'work.title.supplier_invoice_mismatch_review',
+          titleParams: { number: m.invoiceNumber, supplier: supplier?.name ?? '', code: po?.code ?? '' },
+          dueAt: plus(m.notifiedAt, days(3)),
+          state: m.stillMismatched ? ('open' as const) : ('done' as const),
+          paused: false,
+          completedAt: m.stillMismatched ? undefined : m.resolvedAt ?? m.notifiedAt,
+          actionRoute: `/supplier-invoices?invoice=${m.invoiceId}`,
+          oversightRoute: `/supplier-invoices?invoice=${m.invoiceId}`,
+        };
+      });
     },
   },
   {
