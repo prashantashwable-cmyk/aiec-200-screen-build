@@ -94,7 +94,7 @@ the module's section to `BUILD_README.md`.
 
 ## Current status (as of 2026-09-28)
 
-- Modules 1–12 (`001`–`120`) are built. Modules 5–12 are checkpoint-verified. Module 13 (`121`–`130`) is built; its checkpoint is next.
+- Modules 1–12 (`001`–`120`) are built. Modules 5–12 are checkpoint-verified. Module 13 (`121`–`130`) is built and checkpoint-verified.
 - **Module 9 Payments & Financing is done**, including its checkpoint (all 10 screens clicked
   through as both Admin and Customer, 4 earlier-module screens spot-checked, nothing regressed —
   see `BUILD_README.md`'s Module 9 section for the full writeup, including the shared aging
@@ -110,7 +110,7 @@ the module's section to `BUILD_README.md`.
 - **Module 11 Material Logistics & Delivery is done, including its checkpoint** (`101`–`110`, see
   BUILD_README's Module 11 section). Admin has a "Logistics" nav tab; every delivery screen declares
   `tab: 'logistics'` for Admin.
-- **Module 13 Installation & Technician: `121`–`130` built. Next: the Module 13 checkpoint** (click through 121–130, spot-check earlier modules, add BUILD_README's Module 13 section), then Module 14, `131`.
+- **Module 13 Installation & Technician is done, including its checkpoint** (`121`–`130`, see BUILD_README's Module 13 section). **Next: Module 14, `131`.**
   130 facts:
   - **Lead authority is one pure rule** (`@/features/technician/jobs`: `leadIdsOf`, `delegationActive`, `roleOf`): the lead (`Job.technicianId`) plus whoever holds a `JobLeadDelegation` (crew member only, up to 30 days, lead or Admin hands it over, ends by itself the day after `until` via heartbeat `syncLeadDelegations`, or on request). `roleOf` returns `lead` for both, so every screen that asks "is this the lead?" (SOP, material log, sign-off) honours a delegation with no other change; `ownStepIds` gives the delegate the whole job.
   - **Sign-off**: on a job with more than one person, `sopFinishIfDone` sends it to QC only once `Job.leadSignOff` exists; the lead (or delegate) finishing the last step is that sign-off, anyone else finishing it leaves the job waiting (`awaitingLead`, commitment `lead_signoff`, lead, due 12 h); `signOffForQuality` is the explicit action. The safety checklist (126) and Admin's evidence exceptions still gate the move to QC after sign-off.
