@@ -110,7 +110,23 @@ the module's section to `BUILD_README.md`.
 - **Module 11 Material Logistics & Delivery is done, including its checkpoint** (`101`–`110`, see
   BUILD_README's Module 11 section). Admin has a "Logistics" nav tab; every delivery screen declares
   `tab: 'logistics'` for Admin.
-- **Module 12 Supplier Payment Processing in progress:** `111`–`118` built. **Next: `119`**.
+- **Module 12 Supplier Payment Processing in progress:** `111`–`119` built. **Next: `120`**, then the Module 12 checkpoint.
+  119 facts:
+  - Keeps no data of its own. `computeSupplierPaymentAnalytics(months, now)` (memoryRepository) reads executed `SupplierPayment`s
+    (net of 115's adjustments, by the month paid), `SupplierRetention`s and `SupplierDispute`s; `@/features/suppliers/paymentAnalytics`
+    is the pure logic (`spikeOf`, `allocateByLines`, `daysToPay`, `reviewReasons`, `heldAt`). `getSupplierPaymentAnalytics(months)` is Admin only.
+  - Days to pay = milestone fired (`triggeredAt`) to `executedAt`; target is 111's `APPROVAL_DUE_AFTER` (2 days), never a second constant.
+    A supplier with fewer than `MIN_PAYMENTS` (3) payments is an "early look" and its payments are set aside from the overall average
+    by default (a toggle; both figures are returned). Dispute-rate flags need 3 orders and 2 disputes so one event is never a pattern.
+  - A month is a spike at 1.8× the median of the other months and at least ₹1,00,000 (placeholder). If one order made 50%+ of it the
+    screen says so ("reads as a single large purchase"); Admin may also explain a month (`SupplierSpendNote`, `saveSpendNote`), which
+    explains a number and never changes it. Category spend shares a payment across the order's lines by value.
+  - Review flag: `reviewReasons` (`high_rate` 2× the rest, `halt_threat`, `slow_resolution` over 117's target, `repeat_rounds`).
+    `syncSupplierReviewFlags` (heartbeat) raises one `supplierPaymentAnalytics.alert.review` per supplier for the reasons other than
+    `halt_threat` (117 already has that beacon) and resolves it when they clear. Seed sd-4 (Konark's second dispute) makes it fire.
+  - Fixed an 118 bug found here: the advance-exposure alert's title key did not match its translation.
+  - `/supplier-payment-analytics` is Admin only (`?tab=spend|speed|retention|disputes`, `?months=`, `?supplier=`), reached from 091's hub;
+    the export's columns are the spec's `metric_name`, `supplier_id`, `period`, `metric_value`, `trend_direction`.
   118 facts:
   - `@/features/suppliers/exposure` is the pure logic (`readAdvance`, `readRetention`, `batchSkipReason`, `RECOVERY_AFTER` 14 days,
     `RECOVERY_CHASE_EVERY` 7 days). Nothing is stored about readiness: a retention is `ready` / `installing` / `awaiting_qc` /
@@ -124,7 +140,7 @@ the module's section to `BUILD_README.md`.
     releases what a person should look at. Single Release/Withhold takes a reason, kept in the record.
   - Advance recovery (`AdvanceRecovery`, `startAdvanceRecovery`, `recordAdvanceRecovered`, `writeOffAdvance`): money coming back
     is recorded as a 115 `credit` adjustment beside the original payment, never by editing it. `advance_recovery_followup`
-    commitment chases every 7 days; `syncAdvanceExposure` raises the `advanceExposure.alert.exposure` alert.
+    commitment chases every 7 days; `syncAdvanceExposure` raises the `advanceRetention.alert.exposure` alert.
   - The link to the installation record is the job code only; a full installation screen comes with a later module.
   - `/advance-retention` is Admin only, reached from 091's hub.
   117 facts:

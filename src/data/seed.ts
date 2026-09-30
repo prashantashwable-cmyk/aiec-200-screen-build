@@ -2072,6 +2072,30 @@ export const seedSupplierDisputes: SupplierDispute[] = [
     processFlag: { area: 'invoice_matching', note: 'The invoice screen never asks whether freight is billed separately.', byName: 'Prashant Vasant Wable', at: daysAgo(6), status: 'open' },
     isDemo: true,
   },
+  // Konark's second in three orders, upheld after twelve days: the pattern 119 shows next to the open one that threatens a halt.
+  {
+    id: 'sd-4',
+    code: 'AIEC-SD-5991',
+    supplierId: 'sp-3',
+    poId: 'spo-h6',
+    kind: 'amount',
+    paymentId: 'spay-12',
+    position: 'Packing charges of ₹4,000 were on our delivery note but not in the amount paid.',
+    claimedAmount: 4_000,
+    threatensHalt: false,
+    raisedByRole: 'supplier',
+    raisedByName: 'Suresh Konark',
+    raisedAt: daysAgo(27),
+    status: 'resolved',
+    round: 1,
+    roundStartedAt: daysAgo(27),
+    decisions: [{ id: 'sd-4-d1', decision: 'uphold', amount: 0, note: 'Packing is included in the agreed unit price on the order, as the agreement says.', byName: 'Prashant Vasant Wable', at: daysAgo(15), correction: 'none', correctionRef: null }],
+    events: [
+      { id: 'sd-4-e1', kind: 'raised', at: daysAgo(27), byName: 'Suresh Konark' },
+      { id: 'sd-4-e2', kind: 'decided', at: daysAgo(15), byName: 'Prashant Vasant Wable', note: 'Packing is included in the agreed unit price on the order, as the agreement says.' },
+    ],
+    isDemo: true,
+  },
 ];
 
 /** Vertex's cabin balance (AIEC-SP-3003) was later corrected: a damaged panel was credited (108) after it had been paid. */

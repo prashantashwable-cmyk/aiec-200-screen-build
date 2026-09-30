@@ -3,6 +3,7 @@ import type {
   JobStatus,
   AlertSeverity,
   SupplierDispute,
+  SupplierSpendNote,
   SupplierDisputeKind,
   SupplierDisputeDecision,
   SupplierDisputeEvent,
@@ -1221,6 +1222,163 @@ export interface AdvanceRetentionBoard {
 export interface ReleaseBatchResult {
   released: string[];
   skipped: { id: string; reason: BatchSkip }[];
+}
+
+/* ---------------------------------- Supplier payment analytics (119) */
+
+export interface SpendNoteView {
+  id: string;
+  month: string;
+  label: string;
+  note: string | null;
+  byName: string;
+  at: string;
+}
+
+export interface SpendSpikeView {
+  /** The month against a typical one. */
+  ratio: number;
+  typical: number;
+  /** The single largest payment that month, when there was one. */
+  largest: { paymentCode: string; poCode: string; supplierName: string; amount: number; sharePct: number } | null;
+  /** That one order alone explains most of the month: an unusual event, not a general rise in cost. */
+  oneOrder: boolean;
+}
+
+export interface SpendMonthView {
+  key: string;
+  total: number;
+  payments: number;
+  spike: SpendSpikeView | null;
+  note: SpendNoteView | null;
+}
+
+export interface SpendRowView {
+  id: string;
+  name: string;
+  total: number;
+  sharePct: number;
+  previous: number;
+  /** Percent against the same length of time before, null with nothing before it. */
+  changePct: number | null;
+  byMonth: number[];
+  payments: number;
+}
+
+export interface PaySpeedRowView {
+  id: string;
+  name: string;
+  payments: number;
+  avgDays: number | null;
+  withinTargetPct: number | null;
+  /** Too few payments so far for the average to be a rhythm: shown, flagged as an early look. */
+  rated: boolean;
+}
+
+export interface SlowPaymentView {
+  id: string;
+  code: string;
+  poCode: string;
+  supplierName: string;
+  amount: number;
+  days: number;
+  paidAt: string;
+  settling: boolean;
+}
+
+export interface PaySpeedMonthView {
+  key: string;
+  avgDays: number | null;
+  avgDaysExcl: number | null;
+  count: number;
+}
+
+export interface PaySpeedView {
+  kpi: KpiFigure;
+  /** The same with each new relationship's payments set aside. */
+  kpiExcl: KpiFigure;
+  medianDays: number | null;
+  withinTargetPct: number | null;
+  targetDays: number;
+  payments: number;
+  settling: number;
+  months: PaySpeedMonthView[];
+  suppliers: PaySpeedRowView[];
+  slowest: SlowPaymentView[];
+  /** Due and still waiting for AIEC: what would make the next average worse. */
+  waiting: { count: number; amount: number; oldestDays: number | null; overTarget: number; heldCount: number };
+}
+
+export interface RetentionMonthView {
+  key: string;
+  held: number;
+  released: number;
+  withheld: number;
+}
+
+export interface RetentionAnalyticsView {
+  kpi: KpiFigure;
+  heldNow: number;
+  heldCount: number;
+  pausedNow: number;
+  releasedInWindow: number;
+  withheldInWindow: number;
+  oldestHeldDays: number | null;
+  months: RetentionMonthView[];
+}
+
+export type ReviewReasonView = 'high_rate' | 'halt_threat' | 'slow_resolution' | 'repeat_rounds';
+
+export interface DisputeAnalyticsRowView {
+  id: string;
+  name: string;
+  orders: number;
+  disputes: number;
+  ratePct: number | null;
+  open: number;
+  resolved: number;
+  avgResolutionDays: number | null;
+  maxRound: number;
+  rated: boolean;
+  reasons: ReviewReasonView[];
+  /** The dispute to open to look into it, when there is one. */
+  latestDisputeId: string | null;
+}
+
+export interface DisputeAnalyticsView {
+  kpi: KpiFigure;
+  resolutionKpi: KpiFigure;
+  disputes: number;
+  orders: number;
+  open: number;
+  ratePct: number | null;
+  avgResolutionDays: number | null;
+  targetDays: number;
+  suppliers: DisputeAnalyticsRowView[];
+  reviewCount: number;
+  processFlags: number;
+}
+
+export interface SupplierPaymentAnalytics {
+  months: string[];
+  spend: {
+    kpi: KpiFigure;
+    total: number;
+    typicalMonth: number | null;
+    byMonth: SpendMonthView[];
+    suppliers: SpendRowView[];
+    categories: SpendRowView[];
+  };
+  speed: PaySpeedView;
+  retention: RetentionAnalyticsView;
+  disputes: DisputeAnalyticsView;
+  notes: SpendNoteView[];
+}
+
+export interface SpendNoteInput {
+  month: string;
+  label: string;
+  note?: string;
 }
 
 /* ---------------------------------- Supplier dispute resolution (117) */
@@ -3463,6 +3621,12 @@ export interface Repository {
   /** Money came back: recorded as a credit beside the advance in Payment History. */
   recordAdvanceRecovered(recoveryId: string, amount: number, note: string | undefined, byUserId: string): Promise<AdvanceRecoveryView>;
   writeOffAdvance(recoveryId: string, note: string, byUserId: string): Promise<AdvanceRecoveryView>;
+
+  /* Supplier payment analytics (119) — a synthesis of the payment, retention and dispute records; nothing here is stored as a figure */
+  getSupplierPaymentAnalytics(months: AnalyticsMonths, byUserId: string): Promise<SupplierPaymentAnalytics>;
+  /** Explains a month that stands out, so a one-off is not mistaken for a general rise. One note per month. */
+  saveSpendNote(input: SpendNoteInput, byUserId: string): Promise<SpendNoteView>;
+  removeSpendNote(noteId: string, byUserId: string): Promise<void>;
 
   /* Supplier dispute resolution (117) — supplier-raised payment disputes, decided with real downstream corrections */
   getSupplierDisputeBoard(byUserId: string): Promise<SupplierDisputeBoard>;

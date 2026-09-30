@@ -197,6 +197,15 @@ import type {
   SupplierPaymentView,
   BookablePo,
   DeliveryAnalytics,
+  DisputeAnalyticsRowView,
+  PaySpeedMonthView,
+  PaySpeedRowView,
+  RetentionMonthView,
+  SlowPaymentView,
+  SpendMonthView,
+  SpendNoteView,
+  SpendRowView,
+  SupplierPaymentAnalytics,
   DisruptionView,
   IncidentCostRowView,
   IncidentMonthView,
@@ -287,6 +296,7 @@ import type {
   GstPeriodHandover,
   AdvanceRecovery,
   SupplierDispute,
+  SupplierSpendNote,
   SupplierDisputeDecision,
   SupplierDisputeDecisionRecord,
   SupplierDisputeEvent,
@@ -449,7 +459,8 @@ import { ACK_EXPECTED_AFTER, DEVIATION_REASON_MIN, deviationIncreasesRisk, HANDO
 import type { ChainNodeFacts, ChainNodeKind, ChainNodeState } from '@/features/suppliers/paymentChain';
 import { RECOVERY_REASON_MIN, batchSkipReason, readAdvance, readRetention } from '@/features/suppliers/exposure';
 import type { RetentionHold } from '@/features/suppliers/exposure';
-import { NOTE_MIN, POSITION_MIN, REOPEN_WINDOW, canPartial, decisionProblem, dueAtOf, maxAmountOf, slaOf } from '@/features/suppliers/disputes';
+import { DISPUTE_TARGET, NOTE_MIN, POSITION_MIN, REOPEN_WINDOW, canPartial, decisionProblem, dueAtOf, maxAmountOf, slaOf } from '@/features/suppliers/disputes';
+import { NOTE_LABEL_MIN, PAYMENT_TARGET, PAYMENT_TARGET_DAYS, alertingReasons, allocateByLines, average, daysToPay, endOfMonth, fleetRate, heldAt, isRatedSupplier, median, oneDecimal, oneOrderExplains, ratePct, reviewReasons, spikeOf, withinTarget } from '@/features/suppliers/paymentAnalytics';
 import { CHECK_STALE_AFTER, ZERO_SPLIT, addSplit, creditStatus, gstOn, handoverDueAt, periodOf, recentPeriods, shiftPeriod, splitTax, supplierRisk, supplyType } from '@/features/tax/gst';
 import type { CreditStatus, SupplierRisk, SupplierRiskKind } from '@/features/tax/gst';
 import { outflowTotals, slipDays as slipDaysOf } from '@/features/suppliers/paymentSchedule';
@@ -2347,6 +2358,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   syncInvoiceMismatches(now);
   syncGstCompliance(now);
   syncSupplierDisputes(now);
+  syncSupplierReviewFlags(now);
   syncAdvanceExposure(now);
   advanceShipments(now);
   // 105: a delivery running late is noticed, and one that caught up is cleared, without anyone looking.
@@ -4727,7 +4739,7 @@ function syncGstCompliance(now: number): void {
 
 const advanceRecoveries: AdvanceRecovery[] = [];
 let recoveryCounter = 0;
-const ADVANCE_ALERT = 'advanceExposure.alert.exposure';
+const ADVANCE_ALERT = 'advanceRetention.alert.exposure';
 
 const recoveryEvents = (r: AdvanceRecovery, kind: AdvanceRecovery['events'][number]['kind'], byName: string, extra: { amount?: number; note?: string } = {}) => [
   ...r.events,
@@ -4994,6 +5006,267 @@ function disputeMessage(d: SupplierDispute, author: 'aiec' | 'supplier', authorN
 }
 
 const DECISION_WORDS: Record<SupplierDisputeDecision, string> = { uphold: 'AIEC has upheld the original', supplier_favor: 'AIEC has decided in your favour', partial: 'AIEC has adjusted in part' };
+
+/* ============================== Supplier payment analytics (119) */
+
+const spendNotes: SupplierSpendNote[] = [];
+let spendNoteCounter = 0;
+const REVIEW_ALERT = 'supplierPaymentAnalytics.alert.review';
+
+const spendNoteView = (n: SupplierSpendNote): SpendNoteView => ({ id: n.id, month: n.month, label: n.label, note: n.note ?? null, byName: n.createdByName, at: n.createdAt });
+
+/** Every figure is read off the payments, retentions and disputes already recorded; none of it is stored. */
+function computeSupplierPaymentAnalytics(months: AnalyticsMonths, now: number): SupplierPaymentAnalytics {
+  const keys = monthKeys(months, now);
+  const from = windowStart(months, now);
+  const before = previousWindow(months, now);
+  const neutral = (k: KpiFigure): KpiFigure => ({ ...k, tone: 'neutral' });
+  const paidAtOf = (p: SupplierPayment) => new Date(p.executedAt as string).getTime();
+  const paid = supplierPayments.filter((p) => p.status === 'executed' && p.executedAt);
+  const inWindow = paid.filter((p) => paidAtOf(p) >= from && paidAtOf(p) <= now);
+  const inBefore = paid.filter((p) => paidAtOf(p) >= before.from && paidAtOf(p) < before.to);
+  const net = (p: SupplierPayment) => historyEntryOf(p).netAmount;
+  const supplierName = (id: string) => byId(suppliers, id)?.name ?? id;
+
+  /* ---- spend */
+  const monthTotals = keys.map((key) => {
+    const rows = inWindow.filter((p) => monthKey(p.executedAt as string) === key);
+    return { key, total: rows.reduce((n, p) => n + net(p), 0), rows };
+  });
+  const spendMonths: SpendMonthView[] = monthTotals.map((m) => {
+    const reading = spikeOf(m.key, monthTotals);
+    let spike: SpendMonthView['spike'] = null;
+    if (reading) {
+      const perPo = new Map<string, { amount: number; top: SupplierPayment }>();
+      for (const p of m.rows) {
+        const cur = perPo.get(p.poId);
+        perPo.set(p.poId, { amount: (cur?.amount ?? 0) + net(p), top: cur && net(cur.top) >= net(p) ? cur.top : p });
+      }
+      const big = [...perPo.entries()].sort((a, b) => b[1].amount - a[1].amount)[0];
+      spike = {
+        ratio: reading.ratio,
+        typical: Math.round(reading.typical),
+        largest: big
+          ? { paymentCode: big[1].top.code, poCode: byId(supplierPurchaseOrders, big[0])?.code ?? big[0], supplierName: supplierName(big[1].top.supplierId), amount: big[1].amount, sharePct: Math.round((big[1].amount / m.total) * 100) }
+          : null,
+        oneOrder: !!big && oneOrderExplains(big[1].amount, m.total),
+      };
+    }
+    const note = spendNotes.find((n) => n.month === m.key);
+    return { key: m.key, total: m.total, payments: m.rows.length, spike, note: note ? spendNoteView(note) : null };
+  });
+  const spendTotal = monthTotals.reduce((n, m) => n + m.total, 0);
+  const spendBefore = inBefore.reduce((n, p) => n + net(p), 0);
+  const typicalMonth = median(monthTotals.filter((m) => m.total > 0).map((m) => m.total));
+
+  const rowsFor = (group: (p: SupplierPayment) => Record<string, number>, nameOf: (id: string) => string): SpendRowView[] => {
+    const now_: Record<string, { total: number; byMonth: number[]; payments: number }> = {};
+    for (const p of inWindow) {
+      const idx = keys.indexOf(monthKey(p.executedAt as string));
+      for (const [id, amount] of Object.entries(group(p))) {
+        const r = (now_[id] ??= { total: 0, byMonth: keys.map(() => 0), payments: 0 });
+        r.total += amount;
+        if (idx >= 0) r.byMonth[idx] += amount;
+        r.payments += 1;
+      }
+    }
+    const prior: Record<string, number> = {};
+    for (const p of inBefore) for (const [id, amount] of Object.entries(group(p))) prior[id] = (prior[id] ?? 0) + amount;
+    return Object.entries(now_)
+      .map(([id, r]) => ({ id, name: nameOf(id), total: r.total, sharePct: spendTotal > 0 ? Math.round((r.total / spendTotal) * 100) : 0, previous: prior[id] ?? 0, changePct: prior[id] ? Math.round(((r.total - prior[id]) / prior[id]) * 100) : null, byMonth: r.byMonth, payments: r.payments }))
+      .sort((a, b) => b.total - a.total);
+  };
+  const categoryOf = (p: SupplierPayment): Record<string, number> => {
+    const po = byId(supplierPurchaseOrders, p.poId);
+    return allocateByLines(net(p), (po?.lineItems ?? []).map((l) => ({ category: l.category, value: l.agreedUnitPrice * l.quantity })));
+  };
+
+  /* ---- speed: from the milestone firing to the money leaving */
+  const paidCount = (supplierId: string) => paid.filter((p) => p.supplierId === supplierId).length;
+  const facts = (list: SupplierPayment[]) => list.map((p) => ({ p, d: daysToPay(p.triggeredAt, p.executedAt as string), settling: !isRatedSupplier(paidCount(p.supplierId)) }));
+  const nowFacts = facts(inWindow);
+  const beforeFacts = facts(inBefore);
+  const avgOf = (list: { d: number }[]) => oneDecimal(average(list.map((f) => f.d)));
+  const pctWithin = (list: { d: number }[]) => (list.length === 0 ? null : Math.round((list.filter((f) => withinTarget(f.d)).length / list.length) * 100));
+  const speedMonths: PaySpeedMonthView[] = keys.map((key) => {
+    const list = nowFacts.filter((f) => monthKey(f.p.executedAt as string) === key);
+    return { key, avgDays: avgOf(list), avgDaysExcl: avgOf(list.filter((f) => !f.settling)), count: list.length };
+  });
+  const speedSuppliers: PaySpeedRowView[] = [...new Set(nowFacts.map((f) => f.p.supplierId))]
+    .map((id) => {
+      const list = nowFacts.filter((f) => f.p.supplierId === id);
+      return { id, name: supplierName(id), payments: list.length, avgDays: avgOf(list), withinTargetPct: pctWithin(list), rated: isRatedSupplier(paidCount(id)) };
+    })
+    .sort((a, b) => (b.avgDays ?? 0) - (a.avgDays ?? 0));
+  const slowest: SlowPaymentView[] = [...nowFacts]
+    .sort((a, b) => b.d - a.d)
+    .slice(0, 5)
+    .map((f) => ({ id: f.p.id, code: f.p.code, poCode: byId(supplierPurchaseOrders, f.p.poId)?.code ?? f.p.poId, supplierName: supplierName(f.p.supplierId), amount: net(f.p), days: oneDecimal(f.d) ?? 0, paidAt: f.p.executedAt as string, settling: f.settling }));
+  const queue = supplierPayments.filter((p) => p.status === 'pending_approval' || p.status === 'approved');
+  const waitingAges = queue.map((p) => (now - new Date(p.triggeredAt).getTime()) / DAY_MS);
+  const speed: SupplierPaymentAnalytics['speed'] = {
+    kpi: kpiOf(avgOf(nowFacts), avgOf(beforeFacts), 'lower', 0.2),
+    kpiExcl: kpiOf(avgOf(nowFacts.filter((f) => !f.settling)), avgOf(beforeFacts.filter((f) => !f.settling)), 'lower', 0.2),
+    medianDays: oneDecimal(median(nowFacts.map((f) => f.d))),
+    withinTargetPct: pctWithin(nowFacts),
+    targetDays: PAYMENT_TARGET_DAYS,
+    payments: nowFacts.length,
+    settling: nowFacts.filter((f) => f.settling).length,
+    months: speedMonths,
+    suppliers: speedSuppliers,
+    slowest,
+    waiting: {
+      count: queue.length,
+      amount: queue.reduce((n, p) => n + p.amount, 0),
+      oldestDays: waitingAges.length ? Math.floor(Math.max(...waitingAges)) : null,
+      overTarget: queue.filter((p) => p.status === 'pending_approval' && now - new Date(p.triggeredAt).getTime() > PAYMENT_TARGET).length,
+      heldCount: supplierPayments.filter((p) => p.status === 'held').length,
+    },
+  };
+
+  /* ---- retention: held against released over time */
+  const inMonth = (iso: string | undefined, key: string) => !!iso && monthKey(iso) === key;
+  const retentionMonths: RetentionMonthView[] = keys.map((key) => ({
+    key,
+    held: heldAt(supplierRetentions, endOfMonth(key, now)),
+    released: supplierRetentions.filter((r) => r.status === 'released' && inMonth(r.decidedAt, key)).reduce((n, r) => n + r.amount, 0),
+    withheld: supplierRetentions.filter((r) => r.status === 'withheld' && inMonth(r.decidedAt, key)).reduce((n, r) => n + r.amount, 0),
+  }));
+  const holding = supplierRetentions.filter((r) => r.status === 'held' || r.status === 'paused');
+  const heldNow = holding.reduce((n, r) => n + r.amount, 0);
+  const retention: SupplierPaymentAnalytics['retention'] = {
+    kpi: neutral(kpiOf(heldNow, heldAt(supplierRetentions, from - 1), 'lower', 0.5, true)),
+    heldNow,
+    heldCount: holding.length,
+    pausedNow: supplierRetentions.filter((r) => r.status === 'paused').reduce((n, r) => n + r.amount, 0),
+    releasedInWindow: retentionMonths.reduce((n, m) => n + m.released, 0),
+    withheldInWindow: retentionMonths.reduce((n, m) => n + m.withheld, 0),
+    oldestHeldDays: holding.length ? Math.floor(Math.max(...holding.map((r) => (now - new Date(r.heldAt).getTime()) / DAY_MS))) : null,
+    months: retentionMonths,
+  };
+
+  /* ---- disputes: how often, and how long they take to settle */
+  const raisedIn = (d: SupplierDispute, a: number, b: number) => new Date(d.raisedAt).getTime() >= a && new Date(d.raisedAt).getTime() < b;
+  const decidedAt = (d: SupplierDispute) => (d.status === 'resolved' && d.decisions.length ? d.decisions[d.decisions.length - 1].at : null);
+  const resolvedIn = (d: SupplierDispute, a: number, b: number) => {
+    const at = decidedAt(d);
+    return !!at && new Date(at).getTime() >= a && new Date(at).getTime() < b;
+  };
+  const resolutionDaysOf = (d: SupplierDispute) => (new Date(decidedAt(d) as string).getTime() - new Date(d.raisedAt).getTime()) / DAY_MS;
+  const ordersIn = (supplierId: string | null, a: number, b: number) => {
+    const ids = new Set<string>();
+    for (const po of supplierPurchaseOrders) if (po.supplierId && (!supplierId || po.supplierId === supplierId) && po.sentAt && new Date(po.sentAt).getTime() >= a && new Date(po.sentAt).getTime() < b) ids.add(po.id);
+    for (const p of paid) if ((!supplierId || p.supplierId === supplierId) && paidAtOf(p) >= a && paidAtOf(p) < b) ids.add(p.poId);
+    for (const d of supplierDisputes) if ((!supplierId || d.supplierId === supplierId) && raisedIn(d, a, b)) ids.add(d.poId);
+    return ids.size;
+  };
+  const supplierIds = [...new Set([...supplierDisputes.map((d) => d.supplierId), ...nowFacts.map((f) => f.p.supplierId)])];
+  const disputeFacts = supplierIds.map((id) => {
+    const mine = supplierDisputes.filter((d) => d.supplierId === id);
+    const raised = mine.filter((d) => raisedIn(d, from, now + 1));
+    const open = mine.filter((d) => d.status === 'open');
+    const resolved = mine.filter((d) => resolvedIn(d, from, now + 1));
+    return {
+      id,
+      orders: ordersIn(id, from, now + 1),
+      disputes: raised.length,
+      raised,
+      open,
+      resolved,
+      facts: {
+        orders: ordersIn(id, from, now + 1),
+        disputes: raised.length,
+        openThreatensHalt: open.some((d) => d.threatensHalt),
+        openAgesDays: open.map((d) => (now - new Date(d.roundStartedAt).getTime()) / DAY_MS).sort((a, b) => b - a),
+        resolutionDays: resolved.map(resolutionDaysOf),
+        maxRound: Math.max(1, ...[...raised, ...open].map((d) => d.round)),
+      },
+    };
+  });
+  const disputeRows: DisputeAnalyticsRowView[] = disputeFacts
+    .filter((r) => r.orders > 0 || r.disputes > 0 || r.open.length > 0)
+    .map((r) => {
+      const others = fleetRate(disputeFacts.filter((o) => o.id !== r.id).map((o) => ({ orders: o.orders, disputes: o.disputes })));
+      const latest = [...r.raised, ...r.open].sort((a, b) => b.raisedAt.localeCompare(a.raisedAt))[0];
+      return {
+        id: r.id,
+        name: supplierName(r.id),
+        orders: r.orders,
+        disputes: r.disputes,
+        ratePct: ratePct(r.disputes, r.orders),
+        open: r.open.length,
+        resolved: r.resolved.length,
+        avgResolutionDays: oneDecimal(average(r.facts.resolutionDays)),
+        maxRound: r.facts.maxRound,
+        rated: r.orders >= 3,
+        reasons: reviewReasons(r.facts, others),
+        latestDisputeId: latest?.id ?? null,
+      };
+    })
+    .sort((a, b) => b.reasons.length - a.reasons.length || (b.ratePct ?? 0) - (a.ratePct ?? 0));
+  const disputesNow = supplierDisputes.filter((d) => raisedIn(d, from, now + 1)).length;
+  const disputesBefore = supplierDisputes.filter((d) => raisedIn(d, before.from, before.to)).length;
+  const ordersNow = ordersIn(null, from, now + 1);
+  const ordersBefore = ordersIn(null, before.from, before.to);
+  const resolutionNow = oneDecimal(average(supplierDisputes.filter((d) => resolvedIn(d, from, now + 1)).map(resolutionDaysOf)));
+  const resolutionBefore = oneDecimal(average(supplierDisputes.filter((d) => resolvedIn(d, before.from, before.to)).map(resolutionDaysOf)));
+  const disputes: SupplierPaymentAnalytics['disputes'] = {
+    kpi: kpiOf(ratePct(disputesNow, ordersNow), ratePct(disputesBefore, ordersBefore), 'lower', 0.5),
+    resolutionKpi: kpiOf(resolutionNow, resolutionBefore, 'lower', 0.2),
+    disputes: disputesNow,
+    orders: ordersNow,
+    open: supplierDisputes.filter((d) => d.status === 'open').length,
+    ratePct: ratePct(disputesNow, ordersNow),
+    avgResolutionDays: resolutionNow,
+    targetDays: Math.round(DISPUTE_TARGET / DAY_MS),
+    suppliers: disputeRows,
+    reviewCount: disputeRows.filter((r) => r.reasons.length > 0).length,
+    processFlags: supplierDisputes.filter((d) => d.processFlag?.status === 'open').length,
+  };
+
+  return {
+    months: keys,
+    spend: {
+      kpi: neutral(kpiOf(spendTotal, spendBefore, 'lower', 0.5, true)),
+      total: spendTotal,
+      typicalMonth: typicalMonth === null ? null : Math.round(typicalMonth),
+      byMonth: spendMonths,
+      suppliers: rowsFor((p) => ({ [p.supplierId]: net(p) }), supplierName),
+      categories: rowsFor(categoryOf, (id) => id),
+    },
+    speed,
+    retention,
+    disputes,
+    notes: spendNotes.map(spendNoteView).sort((a, b) => b.month.localeCompare(a.month)),
+  };
+}
+
+/** A relationship worth a review, on the screen and as one alert, so the suspend/review consideration in 091 is not left to
+ *  someone remembering to look. It resolves itself when the reasons clear. A stated intention to halt already has its own (117). */
+function syncSupplierReviewFlags(now: number): void {
+  const at = new Date(now).toISOString();
+  const flagged = new Map(computeSupplierPaymentAnalytics(6, now).disputes.suppliers.map((r) => [r.id, alertingReasons(r.reasons)]));
+  for (const [supplierId, reasons] of flagged) {
+    const open = alerts.find((a) => a.relatedId === supplierId && a.titleKey === REVIEW_ALERT && a.status !== 'resolved');
+    if (reasons.length > 0 && !open) {
+      const name = byId(suppliers, supplierId)?.name ?? '';
+      raiseAlert({ titleKey: REVIEW_ALERT, context: name, severity: 'medium', category: 'supplier', relatedId: supplierId, sourceRoute: `/supplier-payment-analytics?tab=disputes&supplier=${supplierId}` });
+      logAutomatedAction({
+        sourceKey: 'supplier_payment_analytics.review_flag',
+        triggeringCondition: `${name}'s disputes stand out against the other suppliers (${reasons.join(', ')})`,
+        actionTaken: 'Raised an alert suggesting a review of the supplier relationship',
+        affectedRecordId: supplierId,
+        affectedRecordType: 'other',
+        subjectLabel: name,
+      });
+    } else if (reasons.length === 0 && open) {
+      patchInPlace(alerts, open.id, { status: 'resolved', resolvedAt: at, resolvedBy: 'system', resolutionNote: 'The disputes no longer stand out.' });
+    }
+  }
+  for (const a of alerts.filter((x) => x.titleKey === REVIEW_ALERT && x.status !== 'resolved' && !flagged.has(x.relatedId ?? ''))) {
+    patchInPlace(alerts, a.id, { status: 'resolved', resolvedAt: at, resolvedBy: 'system', resolutionNote: 'The disputes no longer stand out.' });
+  }
+}
 
 /* ============================== Supplier payment history (115) */
 
@@ -10128,6 +10401,39 @@ export const memoryRepository: Repository = {
       }
       syncCommitments(now);
       return { approved, skipped };
+    }),
+
+  /* --------------------------------- Supplier payment analytics (119) */
+  getSupplierPaymentAnalytics: (months, byUserId) =>
+    simulateRead((): SupplierPaymentAnalytics => {
+      adminOnly(byUserId);
+      const now = Date.now();
+      syncSupplierPayments(now);
+      syncSupplierReviewFlags(now);
+      return computeSupplierPaymentAnalytics(months, now);
+    }),
+
+  saveSpendNote: (input, byUserId) =>
+    simulateWrite((): SpendNoteView => {
+      const actor = adminOnly(byUserId);
+      const label = input.label.trim();
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(input.month) || label.length < NOTE_LABEL_MIN) throw new RepositoryError('invalid_input');
+      const now = Date.now();
+      if (input.month > monthKey(new Date(now).toISOString())) throw new RepositoryError('in_future');
+      if (!supplierPayments.some((p) => p.status === 'executed' && p.executedAt && monthKey(p.executedAt) === input.month)) throw new RepositoryError('no_spend');
+      if (spendNotes.some((n) => n.month === input.month)) throw new RepositoryError('duplicate');
+      spendNoteCounter += 1;
+      const created: SupplierSpendNote = { id: `sn-new-${spendNoteCounter}`, month: input.month, label, note: input.note?.trim() || undefined, createdByName: actor.name, createdAt: new Date(now).toISOString(), isDemo: true };
+      spendNotes.push(created);
+      return spendNoteView(created);
+    }),
+
+  removeSpendNote: (noteId, byUserId) =>
+    simulateWrite(() => {
+      adminOnly(byUserId);
+      const index = spendNotes.findIndex((n) => n.id === noteId);
+      if (index === -1) throw new RepositoryError('not_found');
+      spendNotes.splice(index, 1);
     }),
 
   /* --------------------------------------------- Delivery analytics (110) */

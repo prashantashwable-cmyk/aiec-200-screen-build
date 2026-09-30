@@ -983,6 +983,19 @@ export interface SupplierInvoice {
 
 export type AdvanceRecoveryEventKind = 'started' | 'recovered' | 'written_off';
 
+/** Admin's own explanation of a month of supplier spending that stands out (119), so a spike caused by something unusual (a bulk
+ *  order, a one-off purchase) is understood, not misread as a cost-control problem. It explains a number and never changes it. */
+export interface SupplierSpendNote {
+  id: string;
+  /** `yyyy-mm`. One note per month. */
+  month: string;
+  label: string;
+  note?: string;
+  createdByName: string;
+  createdAt: string;
+  isDemo: boolean;
+}
+
 /** AIEC asking a supplier to return an advance for goods that never came. The advance itself is never edited: what comes back
  *  is a credit beside the payment (115), so the ledger shows both. */
 export interface AdvanceRecovery {
