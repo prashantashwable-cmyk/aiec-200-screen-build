@@ -7,7 +7,7 @@ const route: ScreenRoute = {
   roles: ['admin'],
   titleKey: 'deliveryPartners.title',
   Component: DeliveryPartnerManagementView,
-  tab: 'suppliers',
+  tab: 'logistics',
 };
 
 export default route;

@@ -107,9 +107,25 @@ the module's section to `BUILD_README.md`.
   (dl-1) was seeded one day short of the reminder cadence's own exhaustion threshold, so no real
   payment could ever reach 089's escalation queue while also belonging to a deal with an active
   Job — moved from 6 to 10 days overdue (and the stale `al-2` alert text updated to match).
-- **Module 11 in progress:** `101`–`109` built. **Next: `110`**. At its checkpoint (after 110),
-  add an Admin logistics entry point: 101 and 102 are reachable for Admin only from 091's hub and
-  095's header (and 101's/102's own PO links).
+- **Module 11 Material Logistics & Delivery is done, including its checkpoint** (`101`–`110`, see
+  BUILD_README's Module 11 section). Admin has a "Logistics" nav tab; every delivery screen declares
+  `tab: 'logistics'` for Admin. **Next: Module 12, screen `111`.** Module 12's supplier payments should
+  read `heldLineIds` (108) and `supplierPaymentDueDate` (098).
+  110 facts:
+  - `@/features/logistics/deliveryAnalytics` is the maths (`trendOf`, `transitSummary`, `costOf`,
+    `isRising`, `inDisruption`); `computeDeliveryAnalytics` (memoryRepository) assembles it from ratings
+    (097), carrier trips (109), reports (108), delay cases (105) and retentions (100). No analytics data
+    is stored. `getDeliveryAnalytics(months)` is Admin only; `getTransitEstimate(city)` is open to any role.
+  - `DeliveryDisruption` is the only new record: an Admin-annotated spell (max 90 days, not in the future)
+    that "Set aside outside events" leaves out of on-time rates. Delay cases tagged `external_event` with a
+    label (105) also show as disruptions, read-only. Ratings tagged `delayCause: 'external_event'` are set
+    aside too.
+  - One incident, one cost: a report is costed once; an old rating defect for an order a report already
+    covers is not counted again; retention held over the same fault is shown but never added.
+  - `DiscrepancyReportItem` now snapshots `category` and `value`; `DeliveryDiscrepancyReport` has
+    `scheduleDelayDays`. Ten historical reports are seeded (`checklistId: ''`, treated as history: no
+    commitment, no checklist needed to judge them).
+  - `/delivery-analytics` is Admin only, reached from 091's hub; 077's next steps show the city estimate.
   109 facts:
   - `DeliveryPartner` is a different role from a `Supplier`: a third-party carrier AIEC books when the
     supplier doesn't deliver itself (`serviceAreas` = cities, `liveTrackingSupported`, `feedStatus`

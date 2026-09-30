@@ -49,6 +49,8 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
     { id: 'quotes', labelKey: 'nav.quotes', path: '/admin/quotes', icon: <Receipt size={ICON_SIZE} /> },
     { id: 'deals', labelKey: 'nav.deals', path: '/admin/deals/bot-config', icon: <Handshake size={ICON_SIZE} /> },
     { id: 'suppliers', labelKey: 'nav.suppliers', path: '/admin/suppliers', icon: <Storefront size={ICON_SIZE} /> },
+    // Every delivery screen (101–110) lives here for Admin; suppliers and technicians reach their own from their own tabs.
+    { id: 'logistics', labelKey: 'nav.logistics', path: '/shipments', icon: <Truck size={ICON_SIZE} /> },
     {
       id: 'analytics',
       labelKey: 'nav.analytics',

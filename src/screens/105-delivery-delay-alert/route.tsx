@@ -7,7 +7,7 @@ const route: ScreenRoute = {
   roles: ['admin'],
   titleKey: 'deliveryDelay.title',
   Component: DeliveryDelayAlertView,
-  tab: 'suppliers',
+  tab: 'logistics',
 };
 
 export default route;

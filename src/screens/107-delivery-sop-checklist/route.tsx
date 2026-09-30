@@ -7,7 +7,7 @@ const route: ScreenRoute = {
   roles: ['admin'],
   titleKey: 'deliverySop.title',
   Component: DeliverySopChecklistView,
-  tab: 'suppliers',
+  tab: 'logistics',
 };
 
 export default route;

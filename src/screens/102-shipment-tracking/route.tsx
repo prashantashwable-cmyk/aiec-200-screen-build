@@ -7,7 +7,7 @@ const route: ScreenRoute = {
   roles: ['admin', 'customer', 'technician', 'supplier'],
   titleKey: 'shipmentTracking.title',
   Component: ShipmentTrackingView,
-  tab: { admin: 'suppliers', supplier: 'orders', customer: 'shipments', technician: 'shipments' },
+  tab: { admin: 'logistics', supplier: 'orders', customer: 'shipments', technician: 'shipments' },
 };
 
 export default route;

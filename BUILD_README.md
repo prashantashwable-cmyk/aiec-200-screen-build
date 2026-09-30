@@ -889,3 +889,67 @@ Fixes made at the checkpoint:
   Home on every `/admin/...` page and ignored each route's declared tab, so deep screens like
   `/admin/analytics/collections` never lit Analytics. The shell now decides alone: the declared tab
   first, else an exact or sub-path match (never for Home).
+
+## Module 11 — Material Logistics & Delivery (`101`–`110`, checkpoint-verified)
+
+The physical bridge between a sent Purchase Order and a technician who can start installing. Every
+screen reads the one true PO status (`movePoLinesSync`, 095) and the one delivery model; none keeps a
+parallel status of its own.
+
+| # | Screen | What it owns |
+|---|---|---|
+| 101 | Delivery Scheduling | Booked day and window per PO, site readiness, supplier dispatch availability, dependency order |
+| 102 | Shipment Tracking | `ShipmentLeg` per vehicle, deterministic live position, milestones, feed loss, manual updates |
+| 103 | Site Delivery Checklist | Part-by-part receipt with photos; the only path to `delivered`; the discrepancy report is raised here |
+| 104 | Delivery Confirmation | The signed, locked summary; offline signature queue; fires "due on material delivery" |
+| 105 | Delivery Delay Alert | `judgeDelay` (computed on read), `DeliveryDelayCase`, root cause, one-tap supplier/customer/escalate |
+| 106 | Stock in Transit | Parts en route by site (never a warehouse), capacity by week, orphaned orders for cancelled deals |
+| 107 | Delivery SOP Checklist | Central, versioned, pinned-per-checklist procedure steps per part category |
+| 108 | Damaged/Missing Parts Report | What happened, Admin's judgement, supplier told with photos, replacement or credit, impact on the install |
+| 109 | Delivery Partner Management | Third-party carriers, rate cards, live-tracking integration, performance against their own estimate |
+| 110 | Delivery Analytics | On-time, transit by region, damage trend, cost of issues: all read off the above |
+
+**Shared vocabulary worth knowing before building on this module**
+
+- One late delivery is judged once. `judgeDelay` (105) says whether it is late; `latenessOf`
+  (`@/features/logistics/partnerPerformance`, 109) says whose fault: arrival − promise = (carrier's
+  `etaAt` − promise, the supplier's late hand-over) + (arrival − `etaAt`, the carrier's slow transit),
+  additive and exact. External events (a 105 tag or an annotated 110 disruption) are nobody's fault.
+- A carrier is held to its **own** estimate at dispatch; a supplier to the date on the order. New
+  carriers and thin regions read "not rated yet" / "emerging", never a false figure
+  (`MIN_RATED_TRIPS` and `MIN_SAMPLE` are both 5).
+- `heldLineIds` (`@/features/logistics/discrepancy`) names parts still in question. Module 12's
+  supplier payment approval should hold payment for those lines. Retention already honours it: an open
+  report on an order keeps that order's retention held.
+- 110's cost is per incident, once: parts (only when the fault was not the supplier's), the return
+  visit, and priced installation delay. Retention held over the same fault is shown beside, never
+  added. Two rates are assumptions, stated on screen: `REVISIT_COST` and `SCHEDULE_DELAY_COST_PER_DAY`
+  in `deliveryAnalytics.ts`. **These are business decisions Admin should set.**
+- 110 closes the loop into sales: 077's next steps now say how long parts really take to reach the
+  site's city (`getTransitEstimate`), or that it is too early to promise.
+
+**Honest limits.** GPS and carrier tracking are simulated (a function of the clock and the leg's own
+times); a real integration would replace `legSnapshotOf` and `syncPartnerFeeds`. Photos are kept as
+data URLs for the session (no storage bucket). Delivery cost inputs for old incidents are snapshots
+seeded by hand. Customer messages go through the Communication Engine templates, in the customer's
+language, and skip anyone who has opted out.
+
+**Module 11 checkpoint (passed):**
+
+- Clicked through all 10 screens as Admin at 390px, and each of 101–110 again at 820 and 1440px:
+  no console errors beyond blocked map tiles, no horizontal overflow.
+- Exercised the paths each spec names: an offline signature queued and locked at its capture time; a
+  supplier-attributed defect feeding 097's score while a transport one does not; a rush report raising
+  the alert and chasing the supplier again; a carrier's feed outage dropping in-flight legs to
+  milestones together and back; a booking refused for a site a carrier does not serve; a thin region
+  shown as emerging; an annotated disruption set aside from the trend.
+- Spot-checked 028 (the "In transit to sites" tile), 091, 095, 097, 099 and 077 from earlier modules.
+
+Fixes made at the checkpoint:
+
+- **Admin's Logistics tab.** 101 and 102 were reachable for Admin only from 091's hub and 095's header.
+  Admin now has a "Logistics" nav tab and every delivery screen declares it.
+- **Retention over an open fault.** `settleRetentions` no longer releases a retention while a
+  damaged-parts report is open on that order.
+- **Photo evidence.** `DocumentSlot` previews are data URLs, so a delivery photo still shows on the
+  report after the capture screen is gone.

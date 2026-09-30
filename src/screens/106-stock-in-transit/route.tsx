@@ -7,7 +7,7 @@ const route: ScreenRoute = {
   roles: ['admin'],
   titleKey: 'stockInTransit.title',
   Component: StockInTransitView,
-  tab: 'suppliers',
+  tab: 'logistics',
 };
 
 export default route;

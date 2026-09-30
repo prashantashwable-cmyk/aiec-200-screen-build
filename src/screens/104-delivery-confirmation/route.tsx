@@ -7,7 +7,7 @@ const route: ScreenRoute = {
   roles: ['admin', 'technician', 'customer'],
   titleKey: 'deliveryConfirmation.title',
   Component: DeliveryConfirmationView,
-  tab: { admin: 'suppliers', technician: 'shipments', customer: 'shipments' },
+  tab: { admin: 'logistics', technician: 'shipments', customer: 'shipments' },
 };
 
 export default route;
