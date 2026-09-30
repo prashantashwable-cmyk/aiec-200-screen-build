@@ -110,7 +110,21 @@ the module's section to `BUILD_README.md`.
 - **Module 11 Material Logistics & Delivery is done, including its checkpoint** (`101`–`110`, see
   BUILD_README's Module 11 section). Admin has a "Logistics" nav tab; every delivery screen declares
   `tab: 'logistics'` for Admin.
-- **Module 12 Supplier Payment Processing in progress:** `111`–`114` built. **Next: `115`**.
+- **Module 12 Supplier Payment Processing in progress:** `111`–`115` built. **Next: `116`**.
+  115 facts:
+  - The ledger is `SupplierPayment`s with `status: 'executed'`, nothing copied: `historyEntryOf` adds the PO, the site, the
+    open invoice numbers and adjustments on read. A later correction is a `SupplierPaymentAdjustment` (`credit` | `top_up`,
+    append-only, reason ≥ 8 chars, a credit never more than the payment now stands at) that points at the payment; `netAmount` is
+    the payment plus its adjustments and the original `amount` is never edited. `recordPaymentAdjustment` is Admin only and tells
+    a supplier with a login in the order's 099 thread. Seeded: a ₹6,000 credit on AIEC-SP-3003.
+  - `PaymentHistoryDetail.basis` is the objective answer to "why this amount": the PO total, the terms it was sent on
+    (`po.paymentTerms`, `chainFactsOf`), the part's share and whether the amount `reconciles` with them; plus the PO's invoice-match
+    records (113) and 111's `paymentEvidence`. A supplier's `queryPayment` (own payments only) is a `SupplierPaymentQuery` and a
+    message in the order's thread with `expectsReply`, so the existing `supplier_thread_reply` commitment chases Admin.
+  - `getSupplierPaymentHistory(filter, userId)` filters server-side (supplier, part, date range on the day paid, text over PO code /
+    payment code / invoice number / bank reference / site) and pages by `offset`/`limit` (screen uses 20; `limit: 0` returns
+    everything, used by the CSV export). A supplier can only ever see their own; the supplier filter is ignored for them.
+  - `/supplier-payment-history` serves Admin (`?payment=`, from 091's hub and 111's executed-payment sheet) and Supplier (nav tab "Payments").
   114 facts:
   - The schedule is a read, never a plan: `supplierScheduleOf(now)` walks every sent PO's `paymentChainOf` (112) and emits one
     `SupplierPaymentScheduleItem` per unpaid part. A part with a `SupplierPayment` is real (`owed` / `waiting` on a block flag /

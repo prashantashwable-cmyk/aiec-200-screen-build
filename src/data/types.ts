@@ -977,6 +977,32 @@ export interface SupplierInvoice {
   isDemo: boolean;
 }
 
+/* ------------------------------------ Supplier payment history (115) */
+
+/** A correction made after a payment went out. The payment itself is never edited: this is a separate entry that
+ *  points at it, so the ledger shows the original and what changed it, side by side. */
+export interface SupplierPaymentAdjustment {
+  id: string;
+  paymentId: string;
+  /** `credit`: money back to AIEC (a credit note, a partial reversal). `top_up`: a further amount paid on the same entry. */
+  direction: 'credit' | 'top_up';
+  amount: number;
+  reason: string;
+  byName: string;
+  at: string;
+  isDemo: boolean;
+}
+
+/** A supplier asking about a payment they were sent. It also lands in the order's 099 thread. */
+export interface SupplierPaymentQuery {
+  id: string;
+  paymentId: string;
+  note: string;
+  byName: string;
+  at: string;
+  isDemo: boolean;
+}
+
 /* ------------------------------------ Supplier payment processing (111) */
 
 /** The three parts a supplier order can be paid in (100's schedule). */

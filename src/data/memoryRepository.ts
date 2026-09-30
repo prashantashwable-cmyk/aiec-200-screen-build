@@ -61,6 +61,7 @@ import {
   seedShipmentLegs,
   seedDeliveryPartners,
   seedSupplierPayments,
+  seedSupplierPaymentAdjustments,
   seedSupplierInvoices,
   seedPaymentDeviations,
   seedDiscrepancyReports,
@@ -169,6 +170,11 @@ import type {
   PaymentEvidence,
   SupplierPaymentQueue,
   SupplierPaymentSchedule,
+  PaymentHistoryBasis,
+  PaymentHistoryDetail,
+  PaymentHistoryEntry,
+  PaymentHistoryFilter,
+  PaymentHistoryPage,
   SupplierPaymentScheduleItem,
   SupplierPaymentView,
   BookablePo,
@@ -257,6 +263,8 @@ import type {
   SupplierPayment,
   SupplierPaymentEvent,
   SupplierPaymentPart,
+  SupplierPaymentAdjustment,
+  SupplierPaymentQuery,
   SupplierPaymentTrigger,
   PaymentDeviation,
   DeliveryPartner,
@@ -4408,6 +4416,105 @@ function paymentChainOf(po: SupplierPurchaseOrder, focusPaymentId: string | null
   };
 }
 
+/* ============================== Supplier payment history (115) */
+
+const supplierPaymentAdjustments: SupplierPaymentAdjustment[] = seedSupplierPaymentAdjustments.map((a) => ({ ...a }));
+const supplierPaymentQueries: SupplierPaymentQuery[] = [];
+let paymentAdjustmentCounter = 100;
+let paymentQueryCounter = 0;
+
+const adjustmentDelta = (a: SupplierPaymentAdjustment) => (a.direction === 'credit' ? -a.amount : a.amount);
+
+function historyEntryOf(p: SupplierPayment): PaymentHistoryEntry {
+  const po = byId(supplierPurchaseOrders, p.poId);
+  const adj = supplierPaymentAdjustments.filter((a) => a.paymentId === p.id);
+  const total = adj.reduce((n, a) => n + adjustmentDelta(a), 0);
+  return {
+    id: p.id,
+    code: p.code,
+    poId: p.poId,
+    poCode: po?.code ?? p.poId,
+    supplierId: p.supplierId,
+    supplierName: byId(suppliers, p.supplierId)?.name ?? '',
+    siteName: po ? (shipmentSite(po.dealId)?.siteName ?? '') : '',
+    part: p.part,
+    trigger: p.trigger,
+    amount: p.amount,
+    adjustmentsTotal: total,
+    netAmount: p.amount + total,
+    paidAt: p.executedAt ?? p.approvedAt ?? p.triggeredAt,
+    bankReference: p.bankReference ?? null,
+    adjustmentCount: adj.length,
+    queried: supplierPaymentQueries.some((q) => q.paymentId === p.id),
+    invoiceNumbers: supplierInvoices.filter((i) => i.poId === p.poId && i.status === 'open').map((i) => i.invoiceNumber),
+  };
+}
+
+function historyDetailOf(p: SupplierPayment, viewer: { supplierId: string | null }): PaymentHistoryDetail {
+  const entry = historyEntryOf(p);
+  const po = byId(supplierPurchaseOrders, p.poId);
+  let basis: PaymentHistoryBasis = { poTotal: 0, pct: null, expected: null, reconciles: null, difference: 0, termType: null, tier: null, netDays: null, custom: false };
+  if (po) {
+    const total = paymentTotalOf(po);
+    basis = { ...basis, poTotal: total };
+    if (po.paymentTerms && total > 0) {
+      const facts = chainFactsOf(po, Date.now());
+      const expected = facts.parts.find((x) => x.kind === p.part)?.amount ?? null;
+      basis = {
+        poTotal: total,
+        pct: splitOf(total, po.paymentTerms).find((x) => x.part === p.part)?.pct ?? null,
+        expected,
+        reconciles: expected === null ? null : Math.abs(expected - p.amount) <= 1,
+        difference: expected === null ? 0 : p.amount - expected,
+        termType: po.paymentTerms.termType,
+        tier: po.paymentTerms.tier,
+        netDays: facts.netDays,
+        custom: po.paymentTerms.custom || (po.paymentTerms.deviations?.length ?? 0) > 0,
+      };
+    }
+  }
+  return {
+    ...entry,
+    basis,
+    invoices: supplierInvoices
+      .filter((i) => i.poId === p.poId && i.status === 'open')
+      .map((i) => ({ id: i.id, number: i.invoiceNumber, date: i.invoiceDate, subtotal: i.lines.reduce((n, l) => n + l.quantity * l.unitPrice, 0), status: evaluateInvoice(i).status })),
+    adjustments: supplierPaymentAdjustments
+      .filter((a) => a.paymentId === p.id)
+      .sort((a, b) => (a.at < b.at ? -1 : 1))
+      .map((a) => ({ id: a.id, direction: a.direction, amount: a.amount, reason: a.reason, byName: a.byName, at: a.at })),
+    queries: supplierPaymentQueries.filter((q) => q.paymentId === p.id).map((q) => ({ id: q.id, note: q.note, byName: q.byName, at: q.at })),
+    events: p.events,
+    evidence: paymentEvidence(p),
+    approvedByName: p.approvedByName ?? null,
+    canAdjust: !viewer.supplierId,
+    canQuery: !!viewer.supplierId && viewer.supplierId === p.supplierId,
+  };
+}
+
+/** Executed payments visible to the viewer and matching the filter, newest first. */
+function historyMatching(filter: PaymentHistoryFilter, viewer: { supplierId: string | null }): PaymentHistoryEntry[] {
+  const q = filter.query?.trim().toLowerCase();
+  return supplierPayments
+    .filter((p) => p.status === 'executed' && (viewer.supplierId ? p.supplierId === viewer.supplierId : !filter.supplierId || p.supplierId === filter.supplierId))
+    .filter((p) => !filter.part || p.part === filter.part)
+    .map(historyEntryOf)
+    .filter((e) => {
+      const day = dateKey(new Date(e.paidAt));
+      if (filter.from && day < filter.from) return false;
+      if (filter.to && day > filter.to) return false;
+      return !q || [e.poCode, e.code, e.bankReference ?? '', e.siteName, ...e.invoiceNumbers].some((v) => v.toLowerCase().includes(q));
+    })
+    .sort((a, b) => (a.paidAt < b.paidAt ? 1 : a.paidAt > b.paidAt ? -1 : a.code < b.code ? 1 : -1));
+}
+
+function executedPaymentOrThrow(paymentId: string, viewer: { supplierId: string | null }): SupplierPayment {
+  const p = byId(supplierPayments, paymentId);
+  if (!p || p.status !== 'executed') throw new RepositoryError('not_found');
+  if (viewer.supplierId && p.supplierId !== viewer.supplierId) throw new RepositoryError('not_found');
+  return p;
+}
+
 /* ============================== Supplier payment schedule (114) */
 
 /** Every unpaid part of every live sent order, as the payment it already is or the one its milestone trajectory expects.
@@ -8541,6 +8648,95 @@ export const memoryRepository: Repository = {
       patchInPlace(conversations, conversation.id, { lastMessageAt: at });
       patchInPlace(discrepancyReports, r.id, { customerNotifiedAt: at, events: reportEvent(r, 'customer_told', actor.name) });
       return { notified: true };
+    }),
+
+  /* --------------------------------------------- Supplier payment history (115) */
+  getSupplierPaymentHistory: (filter, byUserId) =>
+    simulateRead((): PaymentHistoryPage => {
+      const viewer = threadViewer(byUserId);
+      const now = Date.now();
+      syncSupplierPayments(now);
+      executeSupplierPayments(now);
+      const all = historyMatching(filter, viewer);
+      const offset = Math.max(0, filter.offset ?? 0);
+      const page = filter.limit && filter.limit > 0 ? all.slice(offset, offset + filter.limit) : all.slice(offset);
+      const scope = supplierPayments.filter((p) => p.status === 'executed' && (!viewer.supplierId || p.supplierId === viewer.supplierId));
+      const seen = new Map<string, string>();
+      for (const p of scope) seen.set(p.supplierId, byId(suppliers, p.supplierId)?.name ?? '');
+      return {
+        entries: page,
+        matched: all.length,
+        totals: {
+          gross: all.reduce((n, e) => n + e.amount, 0),
+          adjustments: all.reduce((n, e) => n + e.adjustmentsTotal, 0),
+          net: all.reduce((n, e) => n + e.netAmount, 0),
+        },
+        hasMore: filter.limit && filter.limit > 0 ? offset + filter.limit < all.length : false,
+        suppliers: [...seen].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)),
+        viewer: viewer.supplierId ? 'supplier' : 'admin',
+      };
+    }),
+
+  getSupplierPaymentHistoryEntry: (paymentId, byUserId) =>
+    simulateRead((): PaymentHistoryDetail => {
+      const viewer = threadViewer(byUserId);
+      return historyDetailOf(executedPaymentOrThrow(paymentId, viewer), viewer);
+    }),
+
+  recordPaymentAdjustment: (paymentId, input, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const p = executedPaymentOrThrow(paymentId, { supplierId: null });
+      if (!Number.isFinite(input.amount) || !(input.amount > 0)) throw new RepositoryError('invalid_amount');
+      if (input.reason.trim().length < 8) throw new RepositoryError('note_required');
+      const entry = historyEntryOf(p);
+      // A credit can only give back what the payment still stands at.
+      if (input.direction === 'credit' && input.amount > entry.netAmount) throw new RepositoryError('exceeds_payment');
+      const at = new Date().toISOString();
+      paymentAdjustmentCounter += 1;
+      supplierPaymentAdjustments.push({ id: `spadj-new-${paymentAdjustmentCounter}`, paymentId: p.id, direction: input.direction, amount: input.amount, reason: input.reason.trim(), byName: actor.name, at, isDemo: true });
+      const po = byId(supplierPurchaseOrders, p.poId);
+      const supplier = byId(suppliers, p.supplierId);
+      // The supplier sees the correction beside the payment, and is told in the order's thread when they have a login.
+      if (po && supplier && supplierUserFor(supplier)) {
+        pushSupplierMessage(ensureSupplierThread(supplier.id, po.id), {
+          author: 'aiec',
+          authorName: actor.name,
+          authorUserId: actor.id,
+          body: `${input.direction === 'credit' ? 'Credit' : 'Additional payment'} of ${formatINR(input.amount)} recorded against payment ${p.code} for ${po.code}: ${input.reason.trim()}`,
+          channel: 'in_app',
+          at,
+          expectsReply: false,
+          poRef: po.id,
+        });
+      }
+      return historyDetailOf(p, { supplierId: null });
+    }),
+
+  queryPayment: (paymentId, note, byUserId) =>
+    simulateWrite(() => {
+      const viewer = threadViewer(byUserId);
+      if (!viewer.supplierId) throw new RepositoryError('forbidden');
+      const p = executedPaymentOrThrow(paymentId, viewer);
+      if (note.trim().length < 8) throw new RepositoryError('note_required');
+      const po = byId(supplierPurchaseOrders, p.poId);
+      const at = new Date().toISOString();
+      paymentQueryCounter += 1;
+      supplierPaymentQueries.push({ id: `spq-${paymentQueryCounter}`, paymentId: p.id, note: note.trim(), byName: viewer.actor.name, at, isDemo: true });
+      if (po) {
+        pushSupplierMessage(ensureSupplierThread(p.supplierId, po.id), {
+          author: 'supplier',
+          authorName: viewer.actor.name,
+          authorUserId: viewer.actor.id,
+          body: `Question about payment ${p.code} (${formatINR(p.amount)}) for ${po.code}: ${note.trim()}`,
+          channel: 'in_app',
+          at,
+          expectsReply: true,
+          poRef: po.id,
+        });
+      }
+      syncCommitments(Date.now());
+      return historyDetailOf(p, viewer);
     }),
 
   /* --------------------------------------------- Supplier payment schedule (114) */

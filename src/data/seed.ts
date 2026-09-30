@@ -66,6 +66,7 @@ import type {
   DeliveryDisruption,
   DeliveryDiscrepancyReport,
   SupplierInvoice,
+  SupplierPaymentAdjustment,
   SupplierPayment,
   SupplierPaymentPart,
   SupplierPaymentTrigger,
@@ -1954,6 +1955,11 @@ export const seedPaymentDeviations: { poId: string; upfrontPct: number; retentio
   { poId: 'spo-201', upfrontPct: 30, retentionPct: 5, reason: 'Sanghvi buys the cabin sheet steel against this order, so we agreed 30% up front on a call on 12 September.', byName: 'Prashant Vasant Wable', at: daysAgo(10) },
 ];
 
+
+/** Vertex's cabin balance (AIEC-SP-3003) was later corrected: a damaged panel was credited (108) after it had been paid. */
+export const seedSupplierPaymentAdjustments: SupplierPaymentAdjustment[] = [
+  { id: 'spadj-1', paymentId: 'spay-3', direction: 'credit', amount: 6_000, reason: 'Credit note VEC/CN/0091 for one dented cabin panel found after the balance was paid.', byName: 'Prashant Vasant Wable', at: daysAgo(4), isDemo: true },
+];
 
 /* ------------------------------------------ Supplier invoices (113) */
 

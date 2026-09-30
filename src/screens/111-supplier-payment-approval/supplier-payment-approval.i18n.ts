@@ -99,6 +99,7 @@ const translations: ScreenTranslations = {
         blockedNote: 'This payment cannot be approved until the supplier is cleared again.',
         invoiceNote: 'This cannot be approved until the invoice is matched.',
         seeInvoices: 'See the invoices for this order',
+        seeHistory: 'Open in payment history',
       },
       evidence: {
         invoice_matched: 'Invoice matched to the order and delivery',
@@ -267,6 +268,7 @@ const translations: ScreenTranslations = {
         blockedNote: 'सप्लायर के फिर से मंज़ूर होने तक यह भुगतान मंज़ूर नहीं हो सकता।',
         invoiceNote: 'इनवॉइस मिलने तक यह मंज़ूर नहीं हो सकता।',
         seeInvoices: 'इस ऑर्डर के इनवॉइस देखें',
+        seeHistory: 'भुगतान इतिहास में खोलें',
       },
       evidence: {
         invoice_matched: 'इनवॉइस ऑर्डर और डिलीवरी से मिला',
@@ -435,6 +437,7 @@ const translations: ScreenTranslations = {
         blockedNote: 'पुरवठादार पुन्हा मंजूर होईपर्यंत हे पेमेंट मंजूर करता येणार नाही.',
         invoiceNote: 'इनव्हॉइस जुळेपर्यंत हे मंजूर करता येणार नाही.',
         seeInvoices: 'या ऑर्डरची इनव्हॉइस पहा',
+        seeHistory: 'पेमेंट इतिहासात उघडा',
       },
       evidence: {
         invoice_matched: 'इनव्हॉइस ऑर्डर आणि डिलिव्हरीशी जुळलं',

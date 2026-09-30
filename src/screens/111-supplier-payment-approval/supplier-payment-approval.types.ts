@@ -101,6 +101,7 @@ export const APPROVAL_KEYS = {
     blockedNote: 'supplierPaymentApproval.detail.blockedNote',
     invoiceNote: 'supplierPaymentApproval.detail.invoiceNote',
     seeInvoices: 'supplierPaymentApproval.detail.seeInvoices',
+    seeHistory: 'supplierPaymentApproval.detail.seeHistory',
   },
   evidence: {
     ...rec('supplierPaymentApproval.evidence', EVIDENCE_KINDS),

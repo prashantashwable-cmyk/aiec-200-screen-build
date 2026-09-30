@@ -1139,6 +1139,107 @@ export interface AdvanceResolutionInput {
   note?: string;
 }
 
+/* ---------------------------------- Supplier payment history (115) */
+
+export interface PaymentHistoryFilter {
+  /** Admin only: a supplier's own view is always its own. */
+  supplierId?: string;
+  part?: SupplierPaymentPart;
+  /** `yyyy-mm-dd`, inclusive, on the day the payment went out. */
+  from?: string;
+  to?: string;
+  /** Matches the order code, the payment code, an invoice number, the bank reference or the site. */
+  query?: string;
+  offset?: number;
+  /** Omit or 0 for everything that matches (an export). */
+  limit?: number;
+}
+
+export interface PaymentHistoryEntry {
+  id: string;
+  code: string;
+  poId: string;
+  poCode: string;
+  supplierId: string;
+  supplierName: string;
+  siteName: string;
+  part: SupplierPaymentPart;
+  trigger: SupplierPaymentTrigger;
+  /** What went out when the payment was made. */
+  amount: number;
+  /** Credits (negative) and top-ups (positive) since, added up. */
+  adjustmentsTotal: number;
+  /** What the payment stands at now: amount plus adjustments. */
+  netAmount: number;
+  paidAt: string;
+  bankReference: string | null;
+  adjustmentCount: number;
+  queried: boolean;
+  invoiceNumbers: string[];
+}
+
+export interface PaymentAdjustmentView {
+  id: string;
+  direction: 'credit' | 'top_up';
+  amount: number;
+  reason: string;
+  byName: string;
+  at: string;
+}
+
+export interface PaymentHistoryInvoice {
+  id: string;
+  number: string;
+  date: string;
+  subtotal: number;
+  status: InvoiceMatchStatus;
+}
+
+/** How the amount was worked out, from the order's own records: the objective basis for any question about it. */
+export interface PaymentHistoryBasis {
+  poTotal: number;
+  /** This part's share of the order under the terms it was sent on. */
+  pct: number | null;
+  expected: number | null;
+  /** The payment agrees with what the terms give. Null when the order has no terms on record. */
+  reconciles: boolean | null;
+  difference: number;
+  termType: 'net' | 'milestone' | 'advance' | null;
+  tier: string | null;
+  netDays: number | null;
+  custom: boolean;
+}
+
+export interface PaymentHistoryDetail extends PaymentHistoryEntry {
+  basis: PaymentHistoryBasis;
+  invoices: PaymentHistoryInvoice[];
+  adjustments: PaymentAdjustmentView[];
+  queries: { id: string; note: string; byName: string; at: string }[];
+  events: SupplierPaymentEvent[];
+  evidence: PaymentEvidence[];
+  approvedByName: string | null;
+  /** Admin may record a further adjustment. */
+  canAdjust: boolean;
+  /** The supplier may ask about it. */
+  canQuery: boolean;
+}
+
+export interface PaymentHistoryPage {
+  entries: PaymentHistoryEntry[];
+  /** How many match in all, not just on this page. */
+  matched: number;
+  totals: { gross: number; adjustments: number; net: number };
+  hasMore: boolean;
+  suppliers: { id: string; name: string }[];
+  viewer: 'admin' | 'supplier';
+}
+
+export interface RecordAdjustmentInput {
+  direction: 'credit' | 'top_up';
+  amount: number;
+  reason: string;
+}
+
 /* ---------------------------------- Supplier payment schedule (114) */
 
 /** One supplier payment, real or expected, on the forward view. Never a plan of its own: read from 111's payments and 112's chain. */
@@ -3037,6 +3138,14 @@ export interface Repository {
   completeDeliveryChecklist(checklistId: string, input: CompleteChecklistInput, byUserId: string): Promise<CompleteChecklistResult>;
   /** Abandons an unfinished checklist started by mistake. */
   cancelDeliveryChecklist(checklistId: string, byUserId: string): Promise<void>;
+
+  /* Supplier payment history (115) — the permanent ledger of what was paid, read from the payments themselves */
+  getSupplierPaymentHistory(filter: PaymentHistoryFilter, byUserId: string): Promise<PaymentHistoryPage>;
+  getSupplierPaymentHistoryEntry(paymentId: string, byUserId: string): Promise<PaymentHistoryDetail>;
+  /** Admin only. Adds a correction beside a payment; the payment itself is never edited. */
+  recordPaymentAdjustment(paymentId: string, input: RecordAdjustmentInput, byUserId: string): Promise<PaymentHistoryDetail>;
+  /** A supplier asks about one of their own payments. It also goes into the order's thread. */
+  queryPayment(paymentId: string, note: string, byUserId: string): Promise<PaymentHistoryDetail>;
 
   /* Supplier payment schedule (114) — the forward view, read from the same milestone data as 111 and 112 */
   getSupplierPaymentSchedule(byUserId: string): Promise<SupplierPaymentSchedule>;

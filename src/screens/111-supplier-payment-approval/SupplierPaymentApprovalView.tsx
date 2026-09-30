@@ -353,6 +353,11 @@ function DetailSheet({ s, t, lang, report }: { s: SupplierPaymentApprovalState; 
             <Button size="sm" variant="ghost" onClick={() => navigate(`/supplier-payment-release?payment=${p.id}`)}>
               {t(K.detail.seeChain)}
             </Button>
+            {p.status === 'executed' && (
+              <Button size="sm" variant="ghost" onClick={() => navigate(`/supplier-payment-history?payment=${p.id}`)}>
+                {t(K.detail.seeHistory)}
+              </Button>
+            )}
             {p.part === 'balance' && (
               <Button size="sm" variant="ghost" onClick={() => navigate(`/supplier-invoices?po=${p.poId}`)}>
                 {t(K.detail.seeInvoices)}
