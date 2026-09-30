@@ -1023,3 +1023,10 @@ select.ds-input {
   background: var(--color-accent-secondary);
   color: var(--color-bg);
 }
+
+/* A larger button for gloved hands and bright sun (field checklists). */
+.ds-btn--big {
+  min-height: 56px;
+  font-size: var(--fs-md, 1rem);
+  font-weight: 600;
+}

@@ -4,6 +4,7 @@ const translations: ScreenTranslations = {
   en: {
     installSop: {
       title: 'Installation checklist',
+      safetyChecks: 'Safety checks',
       loading: 'Loading the checklist',
       back: 'Job details',
       error: { title: 'Could not load the checklist', body: 'Check your connection and try again.' },
@@ -35,7 +36,9 @@ const translations: ScreenTranslations = {
         gear: 'Safety gear',
         alarm: 'Emergency alarm',
         ard: 'Automatic rescue device',
-        load: 'Load test',
+        noload: 'No-load trial run',
+        overload: 'Overload / load-weighing device',
+        load: 'Full-load trial run',
         final: 'Levelling at the floors',
       },
       sync: {
@@ -117,6 +120,8 @@ const translations: ScreenTranslations = {
         title: 'Every step is done',
         body: 'The job is ready for QC. Every safety-critical step has its photos.',
         local: 'Every step is done on this phone. The job goes to QC as soon as this has synced.',
+        safety_one: 'Every step is done, but {{count}} safety check has not passed yet. The job goes to QC once every safety check has passed.',
+        safety_other: 'Every step is done, but {{count}} safety checks have not passed yet. The job goes to QC once every safety check has passed.',
         admin: 'Every step is done, but a safety capture could not be made. Admin has been told and has to accept your explanation before the job goes to QC.',
       },
       toast: { started: 'Installation started' },
@@ -147,6 +152,7 @@ const translations: ScreenTranslations = {
   hi: {
     installSop: {
       title: 'इंस्टॉलेशन चेकलिस्ट',
+      safetyChecks: 'सुरक्षा जाँचें',
       loading: 'चेकलिस्ट लोड हो रही है',
       back: 'काम का ब्योरा',
       error: { title: 'चेकलिस्ट लोड नहीं हो सकी', body: 'अपना कनेक्शन जाँचें और फिर कोशिश करें।' },
@@ -178,7 +184,9 @@ const translations: ScreenTranslations = {
         gear: 'सेफ़्टी गियर',
         alarm: 'आपात अलार्म',
         ard: 'ऑटोमैटिक रेस्क्यू डिवाइस',
-        load: 'लोड टेस्ट',
+        noload: 'बिना भार का ट्रायल रन',
+        overload: 'ओवरलोड / लोड-वेइंग डिवाइस',
+        load: 'पूरे भार का ट्रायल रन',
         final: 'मंज़िलों पर लेवलिंग',
       },
       sync: {
@@ -260,6 +268,8 @@ const translations: ScreenTranslations = {
         title: 'सारे चरण पूरे हैं',
         body: 'काम QC के लिए तैयार है। हर सुरक्षा-अहम चरण की फ़ोटो लगी है।',
         local: 'सारे चरण इस फ़ोन पर पूरे हैं। सिंक होते ही काम QC में जाएगा।',
+        safety_one: 'सारे चरण पूरे हैं, पर {{count}} सुरक्षा जाँच अभी पास नहीं हुई है। हर सुरक्षा जाँच पास होने पर काम QC में जाएगा।',
+        safety_other: 'सारे चरण पूरे हैं, पर {{count}} सुरक्षा जाँचें अभी पास नहीं हुई हैं। हर सुरक्षा जाँच पास होने पर काम QC में जाएगा।',
         admin: 'सारे चरण पूरे हैं, पर एक सुरक्षा कैप्चर नहीं लिया जा सका। एडमिन को बता दिया गया है, और काम QC में जाने से पहले उन्हें आपका कारण स्वीकार करना होगा।',
       },
       toast: { started: 'इंस्टॉलेशन शुरू हुआ' },
@@ -290,6 +300,7 @@ const translations: ScreenTranslations = {
   mr: {
     installSop: {
       title: 'इन्स्टॉलेशन चेकलिस्ट',
+      safetyChecks: 'सुरक्षा तपासण्या',
       loading: 'चेकलिस्ट लोड होत आहे',
       back: 'कामाचा तपशील',
       error: { title: 'चेकलिस्ट लोड करता आली नाही', body: 'तुमचं कनेक्शन तपासा आणि पुन्हा प्रयत्न करा.' },
@@ -321,7 +332,9 @@ const translations: ScreenTranslations = {
         gear: 'सेफ्टी गिअर',
         alarm: 'आणीबाणी अलार्म',
         ard: 'ऑटोमॅटिक रेस्क्यू डिव्हाइस',
-        load: 'लोड टेस्ट',
+        noload: 'बिना भाराची चाचणी फेरी',
+        overload: 'ओव्हरलोड / लोड-वेइंग डिव्हाइस',
+        load: 'पूर्ण भाराची चाचणी फेरी',
         final: 'मजल्यांवर लेव्हलिंग',
       },
       sync: {
@@ -403,6 +416,8 @@ const translations: ScreenTranslations = {
         title: 'सर्व टप्पे पूर्ण आहेत',
         body: 'काम QC साठी तयार आहे. प्रत्येक सुरक्षा-महत्त्वाच्या टप्प्याचे फोटो जोडलेले आहेत.',
         local: 'सर्व टप्पे या फोनवर पूर्ण आहेत. सिंक होताच काम QC ला जाईल.',
+        safety_one: 'सर्व टप्पे पूर्ण आहेत, पण {{count}} सुरक्षा तपासणी अजून पास झालेली नाही. प्रत्येक सुरक्षा तपासणी पास झाल्यावर काम QC ला जाईल.',
+        safety_other: 'सर्व टप्पे पूर्ण आहेत, पण {{count}} सुरक्षा तपासण्या अजून पास झालेल्या नाहीत. प्रत्येक सुरक्षा तपासणी पास झाल्यावर काम QC ला जाईल.',
         admin: 'सर्व टप्पे पूर्ण आहेत, पण एक सुरक्षा कॅप्चर घेता आला नाही. अ‍ॅडमिनला कळवले आहे आणि काम QC ला जाण्यापूर्वी त्यांना तुमचे कारण स्वीकारावे लागेल.',
       },
       toast: { started: 'इन्स्टॉलेशन सुरू झालं' },

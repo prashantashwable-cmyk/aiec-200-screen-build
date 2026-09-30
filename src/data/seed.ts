@@ -1,4 +1,7 @@
 import type {
+  JobSafetyTest,
+  SafetyAttempt,
+  SafetyStateItem,
   SiteCheckIn,
   ActivityEvent,
   Alert,
@@ -1007,7 +1010,7 @@ export const seedInstallSopVersions: InstallSopVersion[] = [
         dependsOn: ['s6', 's7'],
         canBeNotApplicable: false,
       },
-      { id: 's9', labelKey: 'job.step.loadTest', phase: 'safety', safetyCritical: true, slots: [slot('s9.load', 'installSop.slot.load', true)], dependsOn: ['s8'], canBeNotApplicable: false },
+      { id: 's9', labelKey: 'job.step.loadTest', phase: 'safety', safetyCritical: true, slots: [slot('s9.noload', 'installSop.slot.noload', true, undefined, 'video'), slot('s9.overload', 'installSop.slot.overload', true), slot('s9.load', 'installSop.slot.load', true)], dependsOn: ['s8'], canBeNotApplicable: false },
       { id: 's10', labelKey: 'job.step.finishHandover', phase: 'final', safetyCritical: false, slots: [slot('s10.final', 'installSop.slot.final', true)], dependsOn: ['s9'], canBeNotApplicable: false },
     ],
   },
@@ -4004,4 +4007,50 @@ export const seedSiteCheckIns: SiteCheckIn[] = [
   // j-8 Om Sai, on hold: days before it stopped, and yesterday's visit never closed.
   ...daysOn('j-8', 'u-tech-3', 'Ajay Nikam', SITE_J8, [12, 11, 10, 9, 8, 5]),
   visit('j-8', 'u-tech-3', 'Ajay Nikam', SITE_J8, 1, [9, 15], null),
+];
+
+/* ------------------------------------------ Safety compliance checklist (126) */
+
+/** An example of the state's own requirement Admin adds on top of the standard list. It is a stand-in that shows how it works: AIEC's
+ *  qualified engineer replaces it with what the state's Lift Act actually asks for. */
+export const seedSafetyStateItems: SafetyStateItem[] = [
+  {
+    id: 'ssi-1',
+    state: 'Maharashtra',
+    label: 'Machine room: fire extinguisher fitted and in date',
+    method: 'Check that a suitable fire extinguisher is fitted in the machine room, that it is in date, and that the machine room can be locked and is clear of stored items. Example requirement: replace it with the state’s own.',
+    requiresReading: true,
+    active: true,
+    createdByName: 'Prashant Wable',
+    createdAt: daysAgo(40),
+    isDemo: true,
+  },
+];
+
+let attemptSeed = 0;
+const attempt = (n: number, result: SafetyAttempt['result'], daysBack: number, by: [string, string], extra: Partial<SafetyAttempt> = {}): SafetyAttempt => {
+  attemptSeed += 1;
+  return { id: `sat-${attemptSeed}`, n, result, at: localAt(daysBack, 11, (attemptSeed * 7) % 50), byUserId: by[0], byName: by[1], ...(result === 'fail' ? { note: extra.note ?? 'Out of tolerance on the first test.' } : { measured: extra.measured ?? 'Within tolerance' }), ...extra };
+};
+let testSeed = 0;
+const test = (jobId: string, itemId: string, attempts: SafetyAttempt[], extra: Partial<JobSafetyTest> = {}): JobSafetyTest => {
+  testSeed += 1;
+  return { id: `jst-${testSeed}`, jobId, itemId, attempts, holds: [], isDemo: true, ...extra };
+};
+const STANDARD_IDS = ['wiring', 'sensors', 'governor', 'buffers', 'alarm', 'ard', 'overload', 'noload', 'fullload'];
+const allPassed = (jobId: string, by: [string, string], daysBack: number): JobSafetyTest[] => STANDARD_IDS.map((id, i) => test(jobId, id, [attempt(1, 'pass', daysBack - Math.floor(i / 4), by)]));
+
+/** What was tested on the installations already under way or done. j-1 has only the early checks so far; j-8 is on hold over a governor
+ *  that failed and needs rework, which Admin has to look at. */
+export const seedJobSafetyTests: JobSafetyTest[] = [
+  test('j-1', 'wiring', [attempt(1, 'pass', 8, ['u-tech-1', 'Santosh Kale'], { measured: 'Insulation resistance 2.4 MΩ, earth continuity good' })]),
+  test('j-1', 'sensors', [attempt(1, 'pass', 12, ['u-tech-2', 'Vishal More'], { measured: 'Door stops and reverses on the beam, 3 of 3 tries' })]),
+  ...allPassed('j-5', ['u-tech-2', 'Vishal More'], 40),
+  ...allPassed('j-7', ['u-tech-1', 'Santosh Kale'], 8).filter((t) => t.itemId !== 'governor' && t.itemId !== 'alarm'),
+  // j-7: the governor failed on the first test, a part was replaced, and it passed on the retest: the cycle, kept for the inspector.
+  test('j-7', 'governor', [attempt(1, 'fail', 7, ['u-tech-1', 'Santosh Kale'], { note: 'Overspeed switch tripped late, above the permitted speed.', fix: { kind: 'part_replaced', note: 'Replaced the overspeed switch and reset the tension weight.', at: localAt(7, 14, 20), byName: 'Santosh Kale' } }), attempt(2, 'pass', 7, ['u-tech-1', 'Santosh Kale'], { measured: 'Tripped at the set speed, safety gear caught the car' })]),
+  test('j-7', 'alarm', [attempt(1, 'fail', 8, ['u-tech-1', 'Santosh Kale'], { note: 'Alarm bell was faint from inside the car.', fix: { kind: 'minor_adjustment', note: 'Refixed the bell bracket and re-terminated the cable.', at: localAt(8, 12, 40), byName: 'Santosh Kale' } }), attempt(2, 'pass', 8, ['u-tech-1', 'Santosh Kale'], { measured: 'Bell clearly audible at the landing' })]),
+  ...allPassed('j-2', ['u-tech-2', 'Vishal More'], 16),
+  // j-8 Om Sai (on hold): governor out of tolerance, a fundamental fault, held for Admin.
+  test('j-8', 'governor', [attempt(1, 'fail', 3, ['u-tech-3', 'Ajay Nikam'], { note: 'Safety gear test was out of tolerance: the car slid before the gear caught.', fix: { kind: 'needs_rework', note: 'The governor rope groove is worn; it needs replacing, not adjusting.', at: localAt(3, 15, 10), byName: 'Ajay Nikam' } })], { holds: [{ reason: 'needs_rework', at: localAt(3, 15, 10) }] }),
 ];

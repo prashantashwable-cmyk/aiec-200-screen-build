@@ -177,6 +177,9 @@ export function TrackTechnicianView() {
                 <Badge tone={s.data.job.status === 'on_hold' ? 'warning' : 'emerald'}>
                   {t(`status.${s.data.job.status === 'in_progress' ? 'inProgress' : s.data.job.status === 'on_hold' ? 'onHold' : 'scheduled'}`)}
                 </Badge>
+                <Button size="sm" variant="secondary" onClick={() => navigate(`/safety-checklist/${s.data?.job?.id}`)}>
+                  {t(K.safety)}
+                </Button>
               </div>
             </Card>
 

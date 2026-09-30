@@ -4,6 +4,14 @@ import type {
   JobEvidence,
   JobEvidenceException,
   SiteLeaveReason,
+  SafetyAttempt,
+  SafetyDisagreement,
+  SafetyFixKind,
+  SafetyHold,
+  SafetyItemKind,
+  SafetyOverride,
+  SafetyResult,
+  SafetyStateItem,
   JobStep,
   JobStatus,
   AlertSeverity,
@@ -1433,6 +1441,8 @@ export interface InstallationSopView {
   readOnly: boolean;
   /** Safety-critical evidence that could not be captured and that Admin has not yet acknowledged: the job waits for them before QC. */
   awaitingAdmin: { stepId: string; slotId: string }[];
+  /** Safety checks (126) not yet passed or accepted: the job does not reach quality check while there are any. */
+  safetyOpen: number;
   /** Captures shown as "a problem found" on this job (124), so the technician can carry them into a blocker report. */
   findings: number;
 }
@@ -1531,6 +1541,79 @@ export interface CheckOutInput {
   /** Required when steps of the person's own are still open: they say why, so Admin hears it from them. */
   leaveReason?: SiteLeaveReason;
   note?: string;
+}
+
+/* --------------------------- Safety compliance checklist (126) */
+
+export type SafetyItemState = 'not_tested' | 'passed' | 'failed' | 'retest_due' | 'held' | 'in_review' | 'overridden';
+
+export interface SafetySlotView {
+  id: string;
+  labelKey: string;
+  kind: 'photo' | 'video';
+  /** The step it belongs to, for the inline capture. */
+  stepId: string;
+  proof: JobEvidence | null;
+  /** The technician explained why it could not be captured (124). */
+  excepted: boolean;
+}
+
+export interface SafetyItemView {
+  id: string;
+  kind: SafetyItemKind;
+  /** Standard checks are named by translation key; a state's own item is shown as Admin wrote it. */
+  label: string | null;
+  method: string | null;
+  stepId: string | null;
+  state: SafetyItemState;
+  attempts: SafetyAttempt[];
+  fails: number;
+  slots: SafetySlotView[];
+  missingSlotIds: string[];
+  /** The checks that come first and are not cleared yet, by id. */
+  waitingFor: string[];
+  requiresReading: boolean;
+  hold: SafetyHold | null;
+  disagreement: SafetyDisagreement | null;
+  override: SafetyOverride | null;
+  /** This person may record results for this check right now. */
+  canRecord: boolean;
+  /** Why a pass cannot be recorded right now, or null when it can. */
+  passProblem: 'evidence_missing' | 'depends_on' | 'reading_required' | null;
+}
+
+export interface SafetyChecklistView {
+  job: { id: string; code: string; siteName: string; status: Job['status']; role: 'lead' | 'assistant' | null };
+  items: SafetyItemView[];
+  progress: { cleared: number; total: number };
+  /** Anything not cleared blocks the job from reaching quality check. */
+  blocksQc: boolean;
+  /** The state's own requirements added on top, or that none are configured and the national baseline applies. */
+  state: { name: string | null; fallback: boolean; configured: number };
+  summaries: { id: string; version: number; generatedAt: string; generatedByName: string; ready: boolean }[];
+  isAdmin: boolean;
+  /** Nothing can be recorded: the job is with quality check, on hold or finished. */
+  readOnly: boolean;
+}
+
+export interface SafetyResultInput {
+  result: SafetyResult;
+  measured?: string;
+  note?: string;
+  /** When the test was done: a result recorded without signal keeps its own time. */
+  capturedAt?: string;
+}
+
+export interface PreInspectionSummaryView {
+  id: string | null;
+  job: { code: string; siteName: string; address: string };
+  version: number | null;
+  generatedAt: string | null;
+  generatedByName: string | null;
+  ready: boolean;
+  state: string | null;
+  stateFallback: boolean;
+  lines: { itemId: string; label: string | null; labelKey: string | null; state: SafetyItemState; attempts: number; fixes: number; lastResult: SafetyResult | null; overriddenBy: string | null }[];
 }
 
 /* ---------------------------------- Auto-reconciliation (120) */
@@ -4065,6 +4148,26 @@ export interface Repository {
   pingSiteLocation(technicianId: string, point: GeoPoint, at?: string): Promise<void>;
   /** Picks which step to do next, when the site does not allow the suggested order. Only steps whose prerequisites are done. */
   focusSopStep(jobId: string, stepId: string, technicianId: string): Promise<InstallationSopView>;
+
+  /* Safety compliance checklist (126) */
+  getSafetyChecklist(jobId: string, userId: string): Promise<SafetyChecklistView>;
+  recordSafetyResult(jobId: string, itemId: string, input: SafetyResultInput, technicianId: string): Promise<SafetyChecklistView>;
+  /** What was done about a failure, before it is tested again. */
+  recordSafetyFix(jobId: string, itemId: string, kind: SafetyFixKind, note: string, technicianId: string): Promise<SafetyChecklistView>;
+  /** The technician disagrees with how a check is done: it goes to Admin for a qualified review. */
+  raiseSafetyDisagreement(jobId: string, itemId: string, note: string, technicianId: string): Promise<SafetyChecklistView>;
+  /** Admin only: decides a disagreement and says why. */
+  resolveSafetyDisagreement(jobId: string, itemId: string, decision: 'method_stands' | 'method_changed', note: string, adminId: string): Promise<SafetyChecklistView>;
+  /** Admin only: a check held for review may be tried again. */
+  releaseSafetyHold(jobId: string, itemId: string, note: string, adminId: string): Promise<SafetyChecklistView>;
+  /** Admin only, with a named qualified engineer: accepts a failed check as it stands. Never available to a technician. */
+  overrideSafetyItem(jobId: string, itemId: string, engineerName: string, reason: string, adminId: string): Promise<SafetyChecklistView>;
+  listSafetyStateItems(adminId: string): Promise<SafetyStateItem[]>;
+  addSafetyStateItem(input: { state: string; label: string; method: string; requiresReading: boolean }, adminId: string): Promise<SafetyStateItem>;
+  setSafetyStateItemActive(id: string, active: boolean, adminId: string): Promise<SafetyStateItem>;
+  /** What the readiness summary would say right now, or the stored one when `summaryId` is given. */
+  getPreInspectionSummary(jobId: string, userId: string, summaryId?: string): Promise<PreInspectionSummaryView>;
+  generatePreInspectionSummary(jobId: string, userId: string): Promise<PreInspectionSummaryView>;
 
   /* Auto-reconciliation (120) — the bank's statement against the app's own records of money in and out */
   getReconciliationBoard(byUserId: string): Promise<ReconBoard>;

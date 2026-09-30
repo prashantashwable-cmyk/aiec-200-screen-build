@@ -67,6 +67,8 @@ import {
   seedSiteNotes,
   seedInstallSopVersions,
   seedSiteCheckIns,
+  seedJobSafetyTests,
+  seedSafetyStateItems,
   seedSupplierDisputes,
   seedSupplierInvoices,
   seedPaymentDeviations,
@@ -205,6 +207,11 @@ import type {
   FieldSosView,
   InstallationSopView,
   SiteTimeView,
+  SafetyChecklistView,
+  SafetyItemView,
+  SafetyItemState,
+  SafetyResultInput,
+  PreInspectionSummaryView,
   SiteVisitView,
   SitePersonView,
   SiteOpenStep,
@@ -327,6 +334,11 @@ import type {
   JobEvidenceException,
   SiteCheckIn,
   SiteLeaveReason,
+  JobSafetyTest,
+  PreInspectionSummary,
+  SafetyAttempt,
+  SafetyFixKind,
+  SafetyStateItem,
   JobStep,
   BankFeed,
   FieldSosAttempt,
@@ -501,6 +513,7 @@ import { DISPUTE_TARGET, NOTE_MIN, POSITION_MIN, REOPEN_WINDOW, canPartial, deci
 import { SOS_CANCEL_WINDOW_MS, SOS_SAME_INCIDENT } from '@/features/safety/sos';
 import { capturedAtProblem, completionProblem, isDone, missingSlots, naProblem, qcReadiness, slotsFor, stepApplies, suggestedNext, unmetDependencies, versionInForce as installVersionInForce } from '@/features/technician/installSop';
 import type { SpecFacts } from '@/features/technician/installSop';
+import { MAX_FAILS, SAFETY_ITEMS, defOf as safetyDefOf, disagreementProblem, failCount, fixProblem, isCleared, itemsFor as safetyItemsForSpec, overrideProblem, readiness as safetyReadiness, resultProblem, safetyState, DISAGREEMENT_NOTE_MIN, RESOLUTION_NOTE_MIN } from '@/features/technician/safety';
 import { LEAVE_NOTE_MIN, MIN_TYPICAL_JOBS, OVERRIDE_REASON_MIN, daysOf, isStale, jobVisitProblem, leaveSeverity, leaveTimeProblem, medianOf, radiusFor, readPresence, timeOf, visitMinutes } from '@/features/technician/presence';
 import { FINDING_SLOT, activeProofOf, evidenceProblem, exceptionKey, exceptionOf, exceptionProblem, findingKey, historyOf } from '@/features/technician/evidence';
 import { SOS_FOLLOW, actionOf, bucketOf, clashesOf, dayKey, isActiveJob, isOnJob, ownStepIds, peopleOn, roleOf, sameMonth } from '@/features/technician/jobs';
@@ -2160,6 +2173,7 @@ function commitmentSources(now: number): CommitmentSources {
     shipmentLegs,
     deliveryConfirmations,
     siteCheckIns,
+    jobSafetyTests,
     deliveryChecklists,
     delayCases,
     discrepancyReports,
@@ -2411,6 +2425,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   syncReconciliation(now);
   sendDueSos(now);
   syncTechnicianClashes(now);
+  syncSafetyAlerts(true, now);
   syncSopHandoff();
   syncAdvanceExposure(now);
   advanceShipments(now);
@@ -5293,6 +5308,200 @@ function siteTimeOrThrow(at: string | undefined, now: number): string {
   return new Date(t).toISOString();
 }
 
+/* ============================== Safety compliance checklist (126) */
+
+const jobSafetyTests: JobSafetyTest[] = seedJobSafetyTests.map((t) => ({ ...t, attempts: t.attempts.map((a) => ({ ...a })), holds: t.holds.map((h) => ({ ...h })) }));
+const safetyStateItems: SafetyStateItem[] = seedSafetyStateItems.map((i) => ({ ...i }));
+const preInspectionSummaries: PreInspectionSummary[] = [];
+let safetyCounter = 100;
+
+const SAFETY_REVIEW_WINDOW = hours(24);
+/** A job's state, the way the contract (075) finds it. */
+const jobStateOf = (job: Job): string | null => {
+  const lead = resolveLead(byId(deals, job.dealId)?.leadId ?? '');
+  return lead ? deriveStateFromCity(lead.city) : null;
+};
+
+interface SafetyEntry {
+  id: string;
+  kind: 'device' | 'trial' | 'state';
+  def: (typeof SAFETY_ITEMS)[number] | null;
+  stateItem: SafetyStateItem | null;
+}
+
+/** The checks that apply to this job: the standard ones for its configuration, and the state's own that Admin has added. A state item
+ *  added after a job reached quality check is not asked of it retroactively. */
+function safetyEntriesOf(job: Job): SafetyEntry[] {
+  const standard = safetyItemsForSpec(sopSpecOf(job)).map<SafetyEntry>((d) => ({ id: d.id, kind: d.kind, def: d, stateItem: null }));
+  const state = jobStateOf(job);
+  const beforeQc = job.status === 'scheduled' || job.status === 'materials_pending' || job.status === 'in_progress';
+  const own = safetyStateItems
+    .filter((i) => state !== null && i.state === state && (i.active ? beforeQc || jobSafetyTests.some((t) => t.jobId === job.id && t.itemId === i.id) : jobSafetyTests.some((t) => t.jobId === job.id && t.itemId === i.id)))
+    .map<SafetyEntry>((i) => ({ id: i.id, kind: 'state', def: null, stateItem: i }));
+  return [...standard, ...own];
+}
+
+const safetyTestOf = (jobId: string, itemId: string) => jobSafetyTests.find((t) => t.jobId === jobId && t.itemId === itemId);
+
+/** Everything on the checklist that is not yet passed or accepted: what stops the job reaching quality check. */
+function safetyBlocking(job: Job): string[] {
+  const entries = safetyEntriesOf(job);
+  return safetyReadiness(entries.map((e) => e.id), jobSafetyTests.filter((t) => t.jobId === job.id)).open;
+}
+
+function safetyItemViewOf(job: Job, entry: SafetyEntry, userId: string, all: SafetyEntry[]): SafetyItemView {
+  const t = safetyTestOf(job.id, entry.id);
+  const state = safetyState(t);
+  const version = sopVersionOf(job);
+  const slots = (entry.def?.slots ?? []).flatMap((slotId) => {
+    const step = job.steps.find((x) => x.id === slotId.split('.')[0]);
+    const def = version.steps.flatMap((d) => d.slots).find((sl) => sl.id === slotId);
+    if (!step || !def) return [];
+    return [{ id: slotId, labelKey: def.labelKey, kind: def.kind, stepId: step.id, proof: activeProofOf(step, slotId), excepted: !!exceptionOf(step, slotId) }];
+  });
+  const missing = slots.filter((sl) => !sl.proof && !sl.excepted).map((sl) => sl.id);
+  const unmet = (entry.def?.dependsOn ?? []).filter((id) => all.some((e) => e.id === id) && !isCleared(safetyState(safetyTestOf(job.id, id))));
+  const own = ownStepIds(job, userId);
+  const isAdmin = byId(users, userId)?.role === 'admin';
+  const mine = !isAdmin && isOnJob(job, userId) && (own === null || (entry.def ? own.includes(entry.def.stepId) : false) || (entry.kind === 'state' && own === null));
+  const requiresReading = !!entry.stateItem?.requiresReading;
+  const problem = resultProblem(t, 'pass', {}, { missingSlots: missing, unmetDeps: unmet, requiresReading });
+  return {
+    id: entry.id,
+    kind: entry.kind,
+    label: entry.stateItem?.label ?? null,
+    method: entry.stateItem?.method ?? null,
+    stepId: entry.def?.stepId ?? null,
+    state: state as SafetyItemState,
+    attempts: (t?.attempts ?? []).map((a) => ({ ...a })),
+    fails: failCount(t),
+    slots,
+    missingSlotIds: missing,
+    waitingFor: unmet,
+    requiresReading,
+    hold: t?.holds.find((h) => !h.releasedAt) ?? null,
+    disagreement: t?.disagreement ?? null,
+    override: t?.override ?? null,
+    canRecord: mine && job.status === 'in_progress',
+    passProblem: problem === 'evidence_missing' || problem === 'depends_on' || problem === 'reading_required' ? problem : null,
+  };
+}
+
+function safetyViewOf(job: Job, userId: string): SafetyChecklistView {
+  const entries = safetyEntriesOf(job);
+  const items = entries.map((e) => safetyItemViewOf(job, e, userId, entries));
+  const cleared = items.filter((i) => isCleared(i.state)).length;
+  const state = jobStateOf(job);
+  const configured = state ? safetyStateItems.filter((i) => i.active && i.state === state).length : 0;
+  const user = byId(users, userId);
+  return {
+    job: { id: job.id, code: job.code, siteName: job.siteName, status: job.status, role: roleOf(job, userId) },
+    items,
+    progress: { cleared, total: items.length },
+    blocksQc: cleared < items.length,
+    state: { name: state, fallback: configured === 0, configured },
+    summaries: preInspectionSummaries.filter((x) => x.jobId === job.id).sort((a, b) => b.version - a.version).map((x) => ({ id: x.id, version: x.version, generatedAt: x.generatedAt, generatedByName: x.generatedByName, ready: x.ready })),
+    isAdmin: user?.role === 'admin',
+    readOnly: job.status !== 'in_progress',
+  };
+}
+
+/** Whoever asks must be on the job, or Admin. Admin reads everything and never records a technician's test. */
+function safetyActor(jobId: string, userId: string, mode: 'read' | 'technician' | 'admin'): { job: Job; user: User } {
+  const user = byId(users, userId);
+  const job = byId(jobs, jobId);
+  if (!user) throw new RepositoryError('forbidden');
+  if (!job) throw new RepositoryError('not_found');
+  if (mode === 'admin') {
+    if (user.role !== 'admin') throw new RepositoryError('forbidden');
+    return { job, user };
+  }
+  if (user.role === 'admin' && mode === 'read') return { job, user };
+  if (user.role !== 'technician' || !isOnJob(job, userId)) throw new RepositoryError('forbidden');
+  return { job, user };
+}
+
+/** A check waiting on Admin (a fundamental fault, repeated failures) or a technician's disagreement is Admin's to review: one alert each,
+ *  raised once and cleared by the same rule when it is released or decided. */
+function syncSafetyAlerts(automated: boolean, now: number): void {
+  const at = new Date(now).toISOString();
+  const live = new Set<string>();
+  for (const t of jobSafetyTests) {
+    const job = byId(jobs, t.jobId);
+    if (!job) continue;
+    const hold = t.holds.find((h) => !h.releasedAt);
+    const dis = t.disagreement && !t.disagreement.resolution ? t.disagreement : undefined;
+    const label = t.itemId;
+    const specs: { key: string; titleKey: string; severity: 'high' | 'critical'; on: boolean; context: string }[] = [
+      { key: `safety:${t.id}:hold`, titleKey: hold?.reason === 'too_many_fails' ? 'safetyChecklist.alert.repeatedFailure' : 'safetyChecklist.alert.rework', severity: hold?.reason === 'too_many_fails' ? 'critical' : 'high', on: !!hold, context: `${job.code} · ${job.siteName} · ${label}` },
+      { key: `safety:${t.id}:review`, titleKey: 'safetyChecklist.alert.disagreement', severity: 'high', on: !!dis, context: `${job.code} · ${job.siteName} · ${label}: ${dis?.note ?? ''}` },
+    ];
+    for (const sp of specs) {
+      if (!sp.on) continue;
+      live.add(sp.key);
+      if (alerts.some((a) => a.relatedId === sp.key && a.status !== 'resolved')) continue;
+      raiseAlert({ titleKey: sp.titleKey, context: sp.context, severity: sp.severity, category: 'safety', relatedId: sp.key, sourceRoute: `/safety-checklist/${job.id}` });
+      if (automated) {
+        logAutomatedAction({ sourceKey: 'safety.review_raised', triggeringCondition: `A safety check on ${job.code} is waiting for Admin`, actionTaken: 'Raised an alert so it is reviewed', affectedRecordId: t.id, affectedRecordType: 'other', subjectLabel: job.code });
+      }
+    }
+  }
+  for (const a of alerts) {
+    if (a.relatedId?.startsWith('safety:') && a.status !== 'resolved' && !live.has(a.relatedId)) patchInPlace(alerts, a.id, { status: 'resolved', resolvedAt: at, resolvedBy: 'system', resolutionNote: 'Reviewed.' });
+  }
+}
+
+function safetyTestFor(job: Job, itemId: string): JobSafetyTest {
+  const existing = safetyTestOf(job.id, itemId);
+  if (existing) return existing;
+  safetyCounter += 1;
+  const created: JobSafetyTest = { id: `jst-new-${safetyCounter}`, jobId: job.id, itemId, attempts: [], holds: [], isDemo: true };
+  jobSafetyTests.push(created);
+  return created;
+}
+
+function safetyEntryOrThrow(job: Job, itemId: string): SafetyEntry {
+  const entry = safetyEntriesOf(job).find((e) => e.id === itemId);
+  if (!entry) throw new RepositoryError('not_found');
+  return entry;
+}
+
+/** The readiness summary as it would read now, or as a stored one read when it was made. */
+function preInspectionViewOf(job: Job, stored?: PreInspectionSummary): PreInspectionSummaryView {
+  const lead = resolveLead(byId(deals, job.dealId)?.leadId ?? '');
+  if (stored) {
+    return {
+      id: stored.id,
+      job: { code: job.code, siteName: job.siteName, address: `${job.address}${lead ? `, ${lead.city}` : ''}` },
+      version: stored.version,
+      generatedAt: stored.generatedAt,
+      generatedByName: stored.generatedByName,
+      ready: stored.ready,
+      state: stored.state,
+      stateFallback: stored.stateFallback,
+      lines: stored.lines.map((l) => ({ ...l, state: l.state as SafetyItemState })),
+    };
+  }
+  const entries = safetyEntriesOf(job);
+  const state = jobStateOf(job);
+  const lines = entries.map((e) => {
+    const t = safetyTestOf(job.id, e.id);
+    return { itemId: e.id, label: e.stateItem?.label ?? null, labelKey: e.def ? `safetyChecklist.item.${e.id}.label` : null, state: safetyState(t) as SafetyItemState, attempts: t?.attempts.length ?? 0, fixes: (t?.attempts ?? []).filter((a) => a.fix).length, lastResult: t?.attempts.length ? t.attempts[t.attempts.length - 1].result : null, overriddenBy: t?.override ? `${t.override.engineerName} (${t.override.byName})` : null };
+  });
+  const configured = state ? safetyStateItems.filter((i) => i.active && i.state === state).length : 0;
+  return {
+    id: null,
+    job: { code: job.code, siteName: job.siteName, address: `${job.address}${lead ? `, ${lead.city}` : ''}` },
+    version: null,
+    generatedAt: null,
+    generatedByName: null,
+    ready: lines.every((l) => l.state === 'passed' || l.state === 'overridden'),
+    state,
+    stateFallback: configured === 0,
+    lines,
+  };
+}
+
 /* ============================== Installation SOP (123) */
 
 const installSopVersions: InstallSopVersion[] = seedInstallSopVersions.map((v) => ({ ...v, steps: v.steps.map((st) => ({ ...st, slots: st.slots.map((sl) => ({ ...sl })), dependsOn: [...st.dependsOn] })) }));
@@ -5409,6 +5618,7 @@ function installationSopViewOf(jobIn: Job, userId: string): InstallationSopView 
     currentStepId: steps.find((x) => x.status === 'current')?.id ?? null,
     qcReady: readiness.ready && awaitingAdmin.length === 0 && (job.status === 'qc_pending' || job.status === 'handover_pending' || job.status === 'completed'),
     awaitingAdmin,
+    safetyOpen: safetyBlocking(job).length,
     findings: job.steps.reduce((n, x) => n + (x.evidence ?? []).filter((e) => e.finding).length, 0),
     canStart: job.status === 'scheduled' && startProblem === null,
     startProblem: job.status === 'scheduled' || job.status === 'materials_pending' || job.status === 'on_hold' ? startProblem : null,
@@ -5445,6 +5655,8 @@ function sopFinishIfDone(job: Job, version: InstallSopVersion): Job {
   if (!qcReadiness(version.steps, job.steps, sopSpecOf(job)).ready) return job;
   // Evidence that could not be captured on a safety-critical step is Admin's to accept before the job is handed to QC.
   if (sopAwaitingAdmin(job, version).length > 0) return job;
+  // A safety check not passed (or accepted by Admin with a named engineer) stops the job here, with no way round for a technician alone.
+  if (safetyBlocking(job).length > 0) return job;
   return patchInPlace(jobs, job.id, { status: 'qc_pending' as const });
 }
 
@@ -5473,7 +5685,7 @@ function syncSopHandoff(): void {
     if (after.status === 'qc_pending') {
       logAutomatedAction({
         sourceKey: 'installation.qc_handoff',
-        triggeringCondition: `Admin acknowledged the last open evidence exception on ${job.code}`,
+        triggeringCondition: `The last thing holding ${job.code} back (an evidence exception or a safety check) was cleared`,
         actionTaken: 'Handed the finished installation checklist to quality check',
         affectedRecordId: job.id,
         affectedRecordType: 'other',
@@ -11422,6 +11634,155 @@ export const memoryRepository: Repository = {
       if (unmetDependencies(def as InstallSopStepDef, job.steps).length > 0) throw new RepositoryError('depends_on');
       const updated = patchInPlace(jobs, job.id, { steps: withCurrent(job.steps, sopVersionOf(job).steps, stepId) });
       return installationSopViewOf(updated, technicianId);
+    }),
+
+  /* --------------------------------- Safety compliance checklist (126) */
+  getSafetyChecklist: (jobId, userId) =>
+    simulateRead((): SafetyChecklistView => {
+      const { job } = safetyActor(jobId, userId, 'read');
+      return safetyViewOf(job, userId);
+    }),
+
+  recordSafetyResult: (jobId, itemId, input, technicianId) =>
+    simulateWrite((): SafetyChecklistView => {
+      const { job, user } = safetyActor(jobId, technicianId, 'technician');
+      if (job.status !== 'in_progress') throw new RepositoryError(job.status === 'on_hold' ? 'job_on_hold' : job.status === 'scheduled' || job.status === 'materials_pending' ? 'not_started' : 'read_only');
+      const entry = safetyEntryOrThrow(job, itemId);
+      const view = safetyItemViewOf(job, entry, technicianId, safetyEntriesOf(job));
+      if (!view.canRecord) throw new RepositoryError('not_yours');
+      const t = safetyTestFor(job, itemId);
+      const problem = resultProblem(t, input.result, { measured: input.measured, note: input.note }, { missingSlots: view.missingSlotIds, unmetDeps: view.waitingFor, requiresReading: view.requiresReading });
+      if (problem) throw new RepositoryError(problem);
+      const now = Date.now();
+      const at = input.capturedAt ? new Date(input.capturedAt).getTime() : now;
+      if (Number.isNaN(at)) throw new RepositoryError('captured_invalid');
+      if (at > now + 60_000) throw new RepositoryError('captured_in_future');
+      if (at < new Date(job.startedAt ?? job.scheduledFor).getTime()) throw new RepositoryError('captured_before_job');
+      const attempt: SafetyAttempt = { id: `sat-new-${(safetyCounter += 1)}`, n: t.attempts.length + 1, result: input.result, at: new Date(at).toISOString(), byUserId: user.id, byName: user.name, ...(input.measured?.trim() ? { measured: input.measured.trim() } : {}), ...(input.note?.trim() ? { note: input.note.trim() } : {}) };
+      const attempts = [...t.attempts, attempt];
+      const holds = [...t.holds];
+      // A check that has failed this many times is not one more fix away: Admin looks at it first.
+      if (input.result === 'fail' && attempts.filter((a) => a.result === 'fail').length >= MAX_FAILS) holds.push({ reason: 'too_many_fails', at: attempt.at });
+      patchInPlace(jobSafetyTests, t.id, { attempts, holds });
+      syncSafetyAlerts(false, now);
+      // Everything on the checklist done may be all a job was waiting for: it moves to quality check without anyone reopening it.
+      sopFinishIfDone(byId(jobs, job.id) as Job, sopVersionOf(job));
+      return safetyViewOf(byId(jobs, job.id) as Job, technicianId);
+    }),
+
+  recordSafetyFix: (jobId, itemId, kind, note, technicianId) =>
+    simulateWrite((): SafetyChecklistView => {
+      const { job, user } = safetyActor(jobId, technicianId, 'technician');
+      if (job.status !== 'in_progress') throw new RepositoryError(job.status === 'on_hold' ? 'job_on_hold' : 'read_only');
+      const entry = safetyEntryOrThrow(job, itemId);
+      const view = safetyItemViewOf(job, entry, technicianId, safetyEntriesOf(job));
+      if (!view.canRecord) throw new RepositoryError('not_yours');
+      const t = safetyTestFor(job, itemId);
+      const problem = fixProblem(t, note);
+      if (problem) throw new RepositoryError(problem);
+      const now = new Date().toISOString();
+      const attempts = t.attempts.map((a, i) => (i === t.attempts.length - 1 ? { ...a, fix: { kind, note: note.trim(), at: now, byName: user.name } } : a));
+      // A fundamental defect is not a fix-and-retest: it waits for Admin.
+      const holds = kind === 'needs_rework' ? [...t.holds, { reason: 'needs_rework' as const, at: now }] : t.holds;
+      patchInPlace(jobSafetyTests, t.id, { attempts, holds });
+      syncSafetyAlerts(false, Date.now());
+      return safetyViewOf(job, technicianId);
+    }),
+
+  raiseSafetyDisagreement: (jobId, itemId, note, technicianId) =>
+    simulateWrite((): SafetyChecklistView => {
+      const { job, user } = safetyActor(jobId, technicianId, 'technician');
+      const entry = safetyEntryOrThrow(job, itemId);
+      const view = safetyItemViewOf(job, entry, technicianId, safetyEntriesOf(job));
+      if (!view.canRecord) throw new RepositoryError('not_yours');
+      const t = safetyTestFor(job, itemId);
+      const problem = disagreementProblem(t, note);
+      if (problem) throw new RepositoryError(problem);
+      patchInPlace(jobSafetyTests, t.id, { disagreement: { note: note.trim(), raisedByName: user.name, at: new Date().toISOString() } });
+      syncSafetyAlerts(false, Date.now());
+      return safetyViewOf(job, technicianId);
+    }),
+
+  resolveSafetyDisagreement: (jobId, itemId, decision, note, adminId) =>
+    simulateWrite((): SafetyChecklistView => {
+      const { job, user } = safetyActor(jobId, adminId, 'admin');
+      const t = safetyTestOf(job.id, itemId);
+      if (!t?.disagreement || t.disagreement.resolution) throw new RepositoryError('nothing_to_review');
+      if (note.trim().length < RESOLUTION_NOTE_MIN) throw new RepositoryError('note_required');
+      patchInPlace(jobSafetyTests, t.id, { disagreement: { ...t.disagreement, resolution: { decision, note: note.trim(), byName: user.name, at: new Date().toISOString() } } });
+      syncSafetyAlerts(false, Date.now());
+      return safetyViewOf(job, adminId);
+    }),
+
+  releaseSafetyHold: (jobId, itemId, note, adminId) =>
+    simulateWrite((): SafetyChecklistView => {
+      const { job, user } = safetyActor(jobId, adminId, 'admin');
+      const t = safetyTestOf(job.id, itemId);
+      const hold = t?.holds.find((h) => !h.releasedAt);
+      if (!t || !hold) throw new RepositoryError('nothing_to_review');
+      if (note.trim().length < RESOLUTION_NOTE_MIN) throw new RepositoryError('note_required');
+      const now = new Date().toISOString();
+      // Released means it may be tested again: for a fundamental fault, the rework is done. The failed attempt's fix is kept as it was written.
+      const attempts = t.attempts.map((a, i) => (i === t.attempts.length - 1 && a.result === 'fail' && a.fix?.kind === 'needs_rework' ? { ...a, fix: { ...a.fix, kind: 'part_replaced' as SafetyFixKind, note: `${a.fix.note} — rework done: ${note.trim()}` } } : a));
+      patchInPlace(jobSafetyTests, t.id, { attempts, holds: t.holds.map((h) => (h === hold ? { ...h, releasedAt: now, releasedByName: user.name, releaseNote: note.trim() } : h)) });
+      syncSafetyAlerts(false, Date.now());
+      return safetyViewOf(job, adminId);
+    }),
+
+  overrideSafetyItem: (jobId, itemId, engineerName, reason, adminId) =>
+    simulateWrite((): SafetyChecklistView => {
+      const { job, user } = safetyActor(jobId, adminId, 'admin');
+      safetyEntryOrThrow(job, itemId);
+      const t = safetyTestFor(job, itemId);
+      const problem = overrideProblem(t, reason, engineerName);
+      if (problem) throw new RepositoryError(problem);
+      patchInPlace(jobSafetyTests, t.id, { override: { byUserId: user.id, byName: user.name, engineerName: engineerName.trim(), reason: reason.trim(), at: new Date().toISOString() }, holds: t.holds.map((h) => (h.releasedAt ? h : { ...h, releasedAt: new Date().toISOString(), releasedByName: user.name, releaseNote: 'Accepted by override.' })) });
+      syncSafetyAlerts(false, Date.now());
+      sopFinishIfDone(byId(jobs, job.id) as Job, sopVersionOf(job));
+      return safetyViewOf(byId(jobs, job.id) as Job, adminId);
+    }),
+
+  listSafetyStateItems: (adminId) =>
+    simulateRead((): SafetyStateItem[] => {
+      adminOnly(adminId);
+      return safetyStateItems.map((i) => ({ ...i }));
+    }),
+
+  addSafetyStateItem: (input, adminId) =>
+    simulateWrite((): SafetyStateItem => {
+      const admin = adminOnly(adminId);
+      if (input.label.trim().length < 5 || input.method.trim().length < 15 || input.state.trim().length < 3) throw new RepositoryError('invalid_input');
+      safetyCounter += 1;
+      const created: SafetyStateItem = { id: `ssi-new-${safetyCounter}`, state: input.state.trim(), label: input.label.trim(), method: input.method.trim(), requiresReading: input.requiresReading, active: true, createdByName: admin.name, createdAt: new Date().toISOString(), isDemo: true };
+      safetyStateItems.push(created);
+      return { ...created };
+    }),
+
+  setSafetyStateItemActive: (id, active, adminId) =>
+    simulateWrite((): SafetyStateItem => {
+      adminOnly(adminId);
+      const found = byId(safetyStateItems, id);
+      if (!found) throw new RepositoryError('not_found');
+      return { ...patchInPlace(safetyStateItems, id, { active }) };
+    }),
+
+  getPreInspectionSummary: (jobId, userId, summaryId) =>
+    simulateRead((): PreInspectionSummaryView => {
+      const { job } = safetyActor(jobId, userId, 'read');
+      const stored = summaryId ? preInspectionSummaries.find((x) => x.id === summaryId && x.jobId === job.id) : undefined;
+      if (summaryId && !stored) throw new RepositoryError('not_found');
+      return preInspectionViewOf(job, stored);
+    }),
+
+  generatePreInspectionSummary: (jobId, userId) =>
+    simulateWrite((): PreInspectionSummaryView => {
+      const { job, user } = safetyActor(jobId, userId, 'read');
+      const live = preInspectionViewOf(job);
+      const version = preInspectionSummaries.filter((x) => x.jobId === job.id).length + 1;
+      safetyCounter += 1;
+      const created: PreInspectionSummary = { id: `pis-${safetyCounter}`, jobId: job.id, version, generatedAt: new Date().toISOString(), generatedByName: user.name, ready: live.ready, state: live.state, stateFallback: live.stateFallback, lines: live.lines.map((l) => ({ ...l })), isDemo: true };
+      preInspectionSummaries.push(created);
+      return preInspectionViewOf(job, created);
     }),
 
   /* --------------------------------- Site check-in / check-out (125) */

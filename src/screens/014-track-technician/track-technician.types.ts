@@ -65,6 +65,7 @@ export const TRACK_TECH_KEYS = {
   loading: 'trackTechnician.loading',
   mapLabel: 'trackTechnician.mapLabel',
   escalate: 'trackTechnician.escalate',
+  safety: 'trackTechnician.safety',
   openTimeline: 'trackTechnician.openTimeline',
   oneSourceNote: 'trackTechnician.oneSourceNote',
   stat: {

@@ -127,6 +127,7 @@ export const JOB_KEYS = {
     mine: 'technicianJob.action.mine',
     waiting: 'technicianJob.action.waiting',
     hold: 'technicianJob.action.hold',
+    safety: 'technicianJob.action.safety',
     waitingHint: 'technicianJob.action.waitingHint',
     holdHint: 'technicianJob.action.holdHint',
   },

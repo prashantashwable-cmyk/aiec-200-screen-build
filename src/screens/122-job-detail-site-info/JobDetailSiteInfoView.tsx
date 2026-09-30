@@ -113,6 +113,11 @@ export function JobDetailSiteInfoView() {
         <Button block disabled={blocked} onClick={() => navigate(sopPath(job.id))}>
           {blocked ? t(job.action === 'on_hold' ? K.action.hold : K.action.waiting) : t(assistant ? K.action.mine : K.action.sop)} {!blocked && <ArrowRight size={16} aria-hidden="true" />}
         </Button>
+        {!blocked && (
+          <Button block variant="secondary" className="mt-2" onClick={() => navigate(`/safety-checklist/${job.id}`)}>
+            {t(K.action.safety)}
+          </Button>
+        )}
       </ActionBar>
     </Screen>
   );

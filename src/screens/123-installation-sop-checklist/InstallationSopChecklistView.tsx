@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Camera, CheckCircle, CloudArrowUp, Images, Package, PauseCircle, ShieldWarning, VideoCamera, Warning, WifiSlash } from '@phosphor-icons/react';
+import { ArrowLeft, Camera, CheckCircle, CloudArrowUp, Images, ShieldCheck, Package, PauseCircle, ShieldWarning, VideoCamera, Warning, WifiSlash } from '@phosphor-icons/react';
 import { ActionBar, AscensionLine, Badge, Button, Card, EmptyState, ErrorState, Field, LoadingState, ProgressBar, Screen, ScreenHeader, Sheet, TextArea, formatDate, formatDateTime } from '@/design-system';
 import type { AscensionStep } from '@/design-system';
 import type { SopSlotView, SopStepView } from '@/data/repository';
@@ -61,6 +61,7 @@ export function InstallationSopChecklistView() {
   const working = v.job.status === 'in_progress';
   const notStarted = v.job.status === 'scheduled' || v.job.status === 'materials_pending' || v.job.status === 'on_hold';
   const waitingAdmin = working && v.awaitingAdmin.length > 0;
+  const waitingSafety = working && v.awaitingAdmin.length === 0 && v.safetyOpen > 0;
   const finished = v.qcReady || (s.local.doneHere && working);
 
   const rail: AscensionStep[] = v.steps.map((x) => ({
@@ -94,6 +95,9 @@ export function InstallationSopChecklistView() {
             <Button size="sm" variant="ghost" onClick={() => navigate(evidencePath(v.job.id))} icon={<Images size={16} aria-hidden="true" />}>
               {t(K.photo.gallery)}
             </Button>
+            <Button size="sm" variant="ghost" onClick={() => navigate(`/safety-checklist/${v.job.id}`)} icon={<ShieldCheck size={16} aria-hidden="true" />}>
+              {t(K.safetyChecks)}
+            </Button>
             <Button size="sm" variant="ghost" onClick={() => navigate(jobPath(v.job.id))} aria-label={t(K.back)}>
               <ArrowLeft size={16} aria-hidden="true" /> {t(K.back)}
             </Button>
@@ -125,12 +129,12 @@ export function InstallationSopChecklistView() {
       {notStarted && <StartCard s={s} t={t} lang={lang} onOpenJob={() => navigate(jobPath(v.job.id))} />}
 
       {finished && (
-        <Card className="mb-3" style={{ borderColor: waitingAdmin ? 'var(--color-warning)' : 'var(--color-success)' }}>
+        <Card className="mb-3" style={{ borderColor: waitingAdmin || waitingSafety ? 'var(--color-warning)' : 'var(--color-success)' }}>
           <div className="row-top gap-3">
             <CheckCircle size={24} color="var(--color-success)" weight="fill" aria-hidden="true" />
             <div className="stack gap-1">
               <strong className="t-md">{t(K.finished.title)}</strong>
-              <p className="t-sm">{t(waitingAdmin ? K.finished.admin : v.qcReady ? K.finished.body : K.finished.local)}</p>
+              <p className="t-sm">{waitingSafety ? t(K.finished.safety, { count: v.safetyOpen }) : t(waitingAdmin ? K.finished.admin : v.qcReady ? K.finished.body : K.finished.local)}</p>
             </div>
           </div>
         </Card>

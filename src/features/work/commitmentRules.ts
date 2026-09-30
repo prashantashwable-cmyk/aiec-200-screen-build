@@ -30,6 +30,7 @@ import type {
   DeliveryChecklist,
   DeliveryConfirmation,
   SiteCheckIn,
+  JobSafetyTest,
   DeliveryDelayCase,
   DeliveryDiscrepancyReport,
   DeliveryPartner,
@@ -93,6 +94,7 @@ export interface CommitmentSources {
   shipmentLegs: ShipmentLeg[];
   deliveryConfirmations: DeliveryConfirmation[];
   siteCheckIns: SiteCheckIn[];
+  jobSafetyTests: JobSafetyTest[];
   deliveryChecklists: DeliveryChecklist[];
   delayCases: DeliveryDelayCase[];
   discrepancyReports: DeliveryDiscrepancyReport[];
@@ -1031,6 +1033,44 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
             oversightRoute: `/admin/tracking/technician/${v.userId}`,
           };
         });
+    },
+  },
+  {
+    // A safety check that needs Admin (a fundamental fault, repeated failures, or a technician who disagrees with how it is tested) is
+    // reviewed within a day: the job cannot reach quality check until it is (126). Ordinary fail-fix-retest is the technician's own and
+    // is not chased here.
+    kind: 'safety_review',
+    nudgeBefore: hours(4),
+    escalateAfter: hours(12),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'safety',
+    collect(src) {
+      const admin = adminId(src);
+      return src.jobSafetyTests.flatMap((t) => {
+        const job = src.jobs.find((j) => j.id === t.jobId);
+        const hold = t.holds.find((h) => !h.releasedAt);
+        const heldAt = t.holds.length ? t.holds[t.holds.length - 1].at : undefined;
+        const dis = t.disagreement;
+        const openAt = hold ? hold.at : dis && !dis.resolution ? dis.at : undefined;
+        // Only what ever needed review is a commitment: an ordinary test is not.
+        if (!heldAt && !dis) return [];
+        const doneAt = !openAt ? [t.holds[t.holds.length - 1]?.releasedAt, dis?.resolution?.at].filter(Boolean).sort().pop() : undefined;
+        return [
+          {
+            ...base('safety_review', 'safety_test', t.id),
+            ownerUserId: admin,
+            titleKey: 'work.title.safety_review',
+            titleParams: { code: job?.code ?? '', site: job?.siteName ?? '', item: t.itemId },
+            dueAt: plus(openAt ?? heldAt ?? dis?.at ?? new Date(0).toISOString(), hours(24)),
+            state: openAt ? ('open' as const) : ('done' as const),
+            paused: false,
+            completedAt: doneAt,
+            actionRoute: `/safety-checklist/${t.jobId}`,
+            oversightRoute: `/safety-checklist/${t.jobId}`,
+          },
+        ];
+      });
     },
   },
   {

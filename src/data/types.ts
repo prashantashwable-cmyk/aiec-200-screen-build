@@ -2459,6 +2459,115 @@ export interface SiteCheckIn {
   isDemo: boolean;
 }
 
+/* ------------------------------------ Safety compliance checklist (126) */
+
+/** What kind of check a safety item is. `state` ones are added by Admin for a state's own Lift Act requirements. */
+export type SafetyItemKind = 'device' | 'trial' | 'state';
+export type SafetyResult = 'pass' | 'fail';
+/** What was done about a failure. A minor adjustment or a replaced part is fixed and retested on the spot; a fundamental defect
+ *  is rework, and Admin takes it from there. */
+export type SafetyFixKind = 'minor_adjustment' | 'part_replaced' | 'needs_rework';
+
+/** One safety check the procedure asks for on every installation, modelled on the state lift inspector's pre-commissioning checks. The
+ *  proof for it is the evidence already captured on the installation checklist (124): `slots` are the evidence slots that must have proof
+ *  before a pass can be recorded. */
+export interface SafetyItemDef {
+  id: string;
+  kind: 'device' | 'trial';
+  /** The installation step this belongs to, so an assistant may record the checks on their own steps. */
+  stepId: string;
+  slots: string[];
+  /** Other checks that come first, in the order the inspector takes them. */
+  dependsOn: string[];
+  appliesWhen?: InstallSopApplicability;
+}
+
+/** A requirement of one state's own Lift Act beyond the standard list, added by Admin. Shown as written. */
+export interface SafetyStateItem {
+  id: string;
+  state: string;
+  label: string;
+  method: string;
+  /** A pass needs a reading or note (8+ letters) as its record, since there is no evidence slot for it. */
+  requiresReading: boolean;
+  active: boolean;
+  createdByName: string;
+  createdAt: string;
+  isDemo: boolean;
+}
+
+export interface SafetyAttempt {
+  id: string;
+  /** 1 for the first test, 2 for the first retest, and so on. */
+  n: number;
+  result: SafetyResult;
+  /** The reading taken (trip speed, load, time): what makes a pass more than a tick. */
+  measured?: string;
+  /** What failed, required for a failure. */
+  note?: string;
+  at: string;
+  byUserId: string;
+  byName: string;
+  /** Recorded after a failure, before the next attempt. */
+  fix?: { kind: SafetyFixKind; note: string; at: string; byName: string };
+}
+
+/** The technician disagrees with how the check is to be done. It is heard by Admin, not decided by the technician and not dismissed. */
+export interface SafetyDisagreement {
+  note: string;
+  raisedByName: string;
+  at: string;
+  resolution?: { decision: 'method_stands' | 'method_changed'; note: string; byName: string; at: string };
+}
+
+/** A failed check cleared by someone with the standing to do so, never by the technician alone. */
+export interface SafetyOverride {
+  byUserId: string;
+  byName: string;
+  /** The qualified engineer who takes responsibility for accepting it. */
+  engineerName: string;
+  reason: string;
+  at: string;
+}
+
+/** Why a check waits for Admin before it can be retested. */
+export interface SafetyHold {
+  reason: 'needs_rework' | 'too_many_fails';
+  at: string;
+  releasedAt?: string;
+  releasedByName?: string;
+  releaseNote?: string;
+}
+
+/** One job's record of one safety check. Append-only: attempts are never edited, so the history of a check that failed and was fixed is
+ *  kept for the inspector, the certificate and any later dispute. */
+export interface JobSafetyTest {
+  id: string;
+  jobId: string;
+  /** A `SafetyItemDef` id, or a `SafetyStateItem` id. */
+  itemId: string;
+  attempts: SafetyAttempt[];
+  holds: SafetyHold[];
+  disagreement?: SafetyDisagreement;
+  override?: SafetyOverride;
+  isDemo: boolean;
+}
+
+/** A dated readiness summary for a job: what was tested, how it went and what is still open, kept as it stood when it was made. */
+export interface PreInspectionSummary {
+  id: string;
+  jobId: string;
+  version: number;
+  generatedAt: string;
+  generatedByName: string;
+  ready: boolean;
+  /** The state's requirements it was made under, and whether none were configured (the national baseline applied). */
+  state: string | null;
+  stateFallback: boolean;
+  lines: { itemId: string; labelKey: string | null; label: string | null; state: string; attempts: number; fixes: number; lastResult: SafetyResult | null; overriddenBy: string | null }[];
+  isDemo: boolean;
+}
+
 /* ------------------------------------ Installation SOP (123) */
 
 export type InstallSopPhase = 'preparation' | 'rails' | 'machine' | 'car' | 'wiring' | 'safety' | 'final';
@@ -3104,6 +3213,7 @@ export type CommitmentKind =
   | 'shipment_status_update'
   | 'delivery_confirmation_sign'
   | 'site_checkout_confirm'
+  | 'safety_review'
   | 'discrepancy_report_review'
   | 'partner_feed_restore'
   | 'supplier_payment_approve'
@@ -3126,6 +3236,7 @@ export type CommitmentKind =
   | 'lead_revisit';
 
 export type CommitmentSubjectType =
+  | 'safety_test'
   | 'site_checkin'
   | 'payment'
   | 'job'

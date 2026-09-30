@@ -75,7 +75,7 @@ export function slotState(slot: InstallSopSlot, step: JobStep): EvidenceState {
 /** How the framing guide is drawn over the viewfinder. Only a hint at what belongs in frame: it is never part of the picture. */
 export type FrameShape = 'wide' | 'close' | 'tall' | 'panel';
 const FRAMES: Record<string, FrameShape> = {
-  shaft: 'tall', pit: 'wide', alignment: 'tall', mount: 'close', frame: 'wide', sensors: 'tall', panel: 'panel', earthing: 'close', governor: 'close', buffers: 'close', gear: 'close', alarm: 'panel', ard: 'panel', load: 'panel', final: 'wide',
+  shaft: 'tall', pit: 'wide', alignment: 'tall', mount: 'close', frame: 'wide', sensors: 'tall', panel: 'panel', earthing: 'close', governor: 'close', buffers: 'close', gear: 'close', alarm: 'panel', ard: 'panel', noload: 'wide', overload: 'panel', load: 'panel', final: 'wide',
 };
 export const frameOf = (slotId: string): FrameShape => FRAMES[slotId.split('.').pop() ?? ''] ?? 'wide';
 

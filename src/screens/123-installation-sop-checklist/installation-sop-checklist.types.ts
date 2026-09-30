@@ -8,7 +8,7 @@ export { POLL_MS, queueKey } from '@/features/technician/useSopWork';
 
 export const PHASES: InstallSopPhase[] = ['preparation', 'rails', 'machine', 'car', 'wiring', 'safety', 'final'];
 export const STEP_IDS = ['s1', 's2', 's3', 's4', 's5', 's6', 's7', 's8', 's9', 's10'] as const;
-export const SLOT_IDS = ['shaft', 'pit', 'alignment', 'mount', 'frame', 'sensors', 'panel', 'earthing', 'governor', 'buffers', 'gear', 'alarm', 'ard', 'load', 'final'] as const;
+export const SLOT_IDS = ['shaft', 'pit', 'alignment', 'mount', 'frame', 'sensors', 'panel', 'earthing', 'governor', 'buffers', 'gear', 'alarm', 'ard', 'noload', 'overload', 'load', 'final'] as const;
 export const PROBLEMS = ['depends_on', 'evidence_missing', 'materials_not_confirmed', 'not_started', 'not_yours', 'read_only'] as const;
 /** The refusals this screen has words for; anything else reads as the generic one. */
 export const FINAL_ERRORS = [
@@ -100,7 +100,8 @@ export const SOP_KEYS = {
     hint: 'installSop.na.hint',
     confirm: 'installSop.na.confirm',
   },
-  finished: { title: 'installSop.finished.title', body: 'installSop.finished.body', local: 'installSop.finished.local', admin: 'installSop.finished.admin' },
+  finished: { title: 'installSop.finished.title', body: 'installSop.finished.body', local: 'installSop.finished.local', admin: 'installSop.finished.admin', safety: 'installSop.finished.safety' },
+  safetyChecks: 'installSop.safetyChecks',
   toast: { started: 'installSop.toast.started' },
   problem: rec('installSop.problem', [...FINAL_ERRORS, 'generic'] as const),
 } as const;

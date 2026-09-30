@@ -7,7 +7,7 @@ export type EvidenceStatus = 'loading' | 'ready' | 'error' | 'not_found';
 const rec = <T extends string>(ns: string, keys: readonly T[]) => Object.fromEntries(keys.map((k) => [k, `${ns}.${k}`])) as Record<T, string>;
 
 /** The last part of a slot id (`s8.governor` → `governor`): what its guidance is filed under. */
-export const SLOT_KEYS = ['shaft', 'pit', 'alignment', 'mount', 'frame', 'sensors', 'panel', 'earthing', 'governor', 'buffers', 'gear', 'alarm', 'ard', 'load', 'final'] as const;
+export const SLOT_KEYS = ['shaft', 'pit', 'alignment', 'mount', 'frame', 'sensors', 'panel', 'earthing', 'governor', 'buffers', 'gear', 'alarm', 'ard', 'noload', 'overload', 'load', 'final'] as const;
 export type SlotKey = (typeof SLOT_KEYS)[number];
 export const slotKeyOf = (slotId: string): SlotKey | null => {
   const last = slotId.split('.').pop() ?? '';
@@ -136,7 +136,7 @@ export const EVIDENCE_KEYS = {
     noVideo: 'installEvidence.lightbox.noVideo',
   },
   toast: { saved: 'installEvidence.toast.saved', savedProblem: 'installEvidence.toast.savedProblem', exception: 'installEvidence.toast.exception' },
-  guide: rec('installEvidence.guide', ['shaft', 'pit', 'alignment', 'mount', 'frame', 'sensors', 'panel', 'earthing', 'governor', 'buffers', 'gear', 'alarm', 'ard', 'load', 'final', 'other'] as const),
-  why: rec('installEvidence.why', ['shaft', 'pit', 'alignment', 'mount', 'frame', 'sensors', 'panel', 'earthing', 'governor', 'buffers', 'gear', 'alarm', 'ard', 'load', 'final', 'other'] as const),
+  guide: rec('installEvidence.guide', ['shaft', 'pit', 'alignment', 'mount', 'frame', 'sensors', 'panel', 'earthing', 'governor', 'buffers', 'gear', 'alarm', 'ard', 'noload', 'overload', 'load', 'final', 'other'] as const),
+  why: rec('installEvidence.why', ['shaft', 'pit', 'alignment', 'mount', 'frame', 'sensors', 'panel', 'earthing', 'governor', 'buffers', 'gear', 'alarm', 'ard', 'noload', 'overload', 'load', 'final', 'other'] as const),
   problem: rec('installEvidence.problem', [...PROBLEM_CODES, 'generic'] as const),
 } as const;
