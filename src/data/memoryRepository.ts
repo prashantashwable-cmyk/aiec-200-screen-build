@@ -62,6 +62,7 @@ import {
   seedDeliveryPartners,
   seedSupplierPayments,
   seedSupplierPaymentAdjustments,
+  seedSupplierGstChecks,
   seedSupplierInvoices,
   seedPaymentDeviations,
   seedDiscrepancyReports,
@@ -170,6 +171,12 @@ import type {
   PaymentEvidence,
   SupplierPaymentQueue,
   SupplierPaymentSchedule,
+  GstComplianceView,
+  GstDocument,
+  GstRateBucket,
+  GstSide,
+  SupplierGstCheckView,
+  SupplierGstView,
   PaymentHistoryBasis,
   PaymentHistoryDetail,
   PaymentHistoryEntry,
@@ -265,6 +272,8 @@ import type {
   SupplierPaymentPart,
   SupplierPaymentAdjustment,
   SupplierPaymentQuery,
+  SupplierGstCheck,
+  GstPeriodHandover,
   SupplierPaymentTrigger,
   PaymentDeviation,
   DeliveryPartner,
@@ -420,6 +429,8 @@ import { INVOICE_MIN_ITEMS, explainsInvoicePrice, gateOf, matchLine, overallOf }
 import type { GateLine, InvoiceGate, InvoiceMatchStatus } from '@/features/suppliers/invoiceMatch';
 import { ACK_EXPECTED_AFTER, DEVIATION_REASON_MIN, deviationIncreasesRisk, HANDOVER_AFTER_START, chainAnomalies, chainKinds, checkDeviation, firedAtOf, splitOf } from '@/features/suppliers/paymentChain';
 import type { ChainNodeFacts, ChainNodeKind, ChainNodeState } from '@/features/suppliers/paymentChain';
+import { CHECK_STALE_AFTER, ZERO_SPLIT, addSplit, creditStatus, gstOn, handoverDueAt, periodOf, recentPeriods, shiftPeriod, splitTax, supplierRisk, supplyType } from '@/features/tax/gst';
+import type { CreditStatus, SupplierRisk, SupplierRiskKind } from '@/features/tax/gst';
 import { outflowTotals, slipDays as slipDaysOf } from '@/features/suppliers/paymentSchedule';
 import type { ScheduleState, OutflowTotals } from '@/features/suppliers/paymentSchedule';
 import { FLAG_ORDER, HOLD_REASON_MIN, REVERSAL_WINDOW, ROUTINE_LIMIT, approvalGate, bankReferenceFor, firedMilestones, flagOf, isRoutine, overdueDays } from '@/features/suppliers/supplierPayments';
@@ -1862,6 +1873,12 @@ const CIVIL_WORK_PCT_OF_EQUIPMENT = 0.1;
  *  moment an Admin schedules it — every price computed on or after that
  *  date uses the new rate automatically, with no manual step at midnight
  *  and no mutation of the configured record (screen 070's own edge case). */
+/** The GST rate that applied on a given calendar day (`yyyy-mm-dd`), so a document is never restated at a rate that came later. */
+function gstRateOn(day: string): number {
+  const scheduled = pricingConfig.scheduledGstChange;
+  return scheduled && day >= scheduled.effectiveDate.slice(0, 10) ? scheduled.newRatePct : pricingConfig.gstRatePct;
+}
+
 function effectiveGstRatePct(pricing: PricingConfig): number {
   const scheduled = pricing.scheduledGstChange;
   if (scheduled && new Date(scheduled.effectiveDate).getTime() <= Date.now()) {
@@ -2085,8 +2102,35 @@ function commitmentSources(now: number): CommitmentSources {
         stillMismatched: i.status === 'open' && evaluateInvoice(i).status === 'mismatch',
         resolvedAt: i.rejectedAt ?? i.events.filter((e) => e.kind === 'adjustment_accepted').map((e) => e.at).sort().pop(),
       })),
+    gstPeriods: gstPeriodsOwed(now),
+    gstStatusChecks: gstStatusChecksOwed(),
     pausedDealIds: new Set(paymentReminderPauses.filter((p) => p.paused).map((p) => p.dealId)),
   };
+}
+
+/** The last three closed months that had any tax activity, and whether each has gone to the accountant. */
+function gstPeriodsOwed(now: number): { period: string; handedOver: boolean; handedOverAt?: string }[] {
+  ensureGstHandovers(now);
+  const docs = gstDocumentsOf(now);
+  return [1, 2, 3]
+    .map((n) => shiftPeriod(periodOf(now), -n))
+    .filter((period) => docs.some((d) => docPeriod(d.date) === period))
+    .map((period) => {
+      const h = gstHandovers.find((x) => x.period === period);
+      return { period, handedOver: !!h, handedOverAt: h?.handedOverAt };
+    });
+}
+
+/** Trading suppliers with a GSTIN whose standing has to be looked at again a month after the last look. */
+function gstStatusChecksOwed(): { supplierId: string; name: string; lastCheckedAt: string | null; since: string }[] {
+  const trade = gstTradeSupplierIds();
+  return suppliers
+    .filter((sp) => trade.has(sp.id) && !!sp.gstin)
+    .map((sp) => {
+      const last = latestGstCheck(sp.id);
+      const first = [...supplierInvoices.filter((i) => i.supplierId === sp.id).map((i) => i.submittedAt), ...supplierPurchaseOrders.filter((po) => po.supplierId === sp.id && po.sentAt).map((po) => po.sentAt!)].sort()[0];
+      return { supplierId: sp.id, name: sp.name, lastCheckedAt: last?.checkedAt ?? null, since: first ?? new Date().toISOString() };
+    });
 }
 
 function putCommitment(next: Commitment): Commitment {
@@ -2275,6 +2319,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   executeSupplierPayments(now);
   syncPaymentAnomalies(now);
   syncInvoiceMismatches(now);
+  syncGstCompliance(now);
   advanceShipments(now);
   // 105: a delivery running late is noticed, and one that caught up is cleared, without anyone looking.
   syncDelayCases(now);
@@ -4414,6 +4459,239 @@ function paymentChainOf(po: SupplierPurchaseOrder, focusPaymentId: string | null
     timeline,
     focusPaymentId,
   };
+}
+
+/* ============================== GST compliance (116) */
+
+const supplierGstChecks: SupplierGstCheck[] = seedSupplierGstChecks.map((c) => ({ ...c }));
+let gstCheckCounter = 100;
+const gstHandovers: GstPeriodHandover[] = [];
+let gstHandoverCounter = 0;
+let gstHandoversSeeded = false;
+
+const GST_ALERT = 'gstCompliance.alert.supplierRisk';
+const docPeriod = (iso: string): string => (iso.length === 10 ? iso.slice(0, 7) : periodOf(iso));
+
+function latestGstCheck(supplierId: string): SupplierGstCheck | null {
+  return supplierGstChecks.filter((c) => c.supplierId === supplierId).sort((a, b) => (a.checkedAt < b.checkedAt ? 1 : -1))[0] ?? null;
+}
+
+/** The suppliers AIEC actually trades with: an invoice from them, or an order sent to them. */
+function gstTradeSupplierIds(): Set<string> {
+  const ids = new Set<string>();
+  for (const i of supplierInvoices) ids.add(i.supplierId);
+  for (const po of supplierPurchaseOrders) if (po.status === 'sent' && po.supplierId) ids.add(po.supplierId);
+  return ids;
+}
+
+function gstRiskOf(supplier: Supplier, now: number): SupplierRisk {
+  const check = latestGstCheck(supplier.id);
+  return supplierRisk(supplier.gstin, check ? { standing: check.standing, lastReturnPeriod: check.lastReturnPeriod, effectiveFrom: check.effectiveFrom, checkedAt: check.checkedAt } : null, now);
+}
+
+/** Customer invoices are made from paid stages on demand, so the tax reading makes sure every paid stage has its one. */
+function backfillCustomerInvoices(): void {
+  for (const deal of deals) {
+    if (payments.some((p) => p.dealId === deal.id && (p.status === 'paid' || (p.status === 'disputed' && p.preDisputeStatus === 'paid')) && !invoices.some((inv) => inv.paymentId === p.id))) {
+      ensureStageInvoices(deal.id, deal, resolveLead(deal.leadId));
+    }
+  }
+}
+
+/** Every tax document AIEC has, both sides, each at the rate written on it. The consolidated final invoice restates its stage
+ *  invoices and a superseded invoice is replaced by its reissue, so neither counts again. */
+function gstDocumentsOf(now: number): GstDocument[] {
+  backfillCustomerInvoices();
+  const out: GstDocument[] = [];
+  for (const inv of invoices) {
+    if (inv.type === 'final' || invoices.some((o) => o.supersedesInvoiceId === inv.id)) continue;
+    const supply = supplyType(inv.customerGstin, inv.aiecGstin);
+    out.push({
+      id: inv.id,
+      side: 'output',
+      isCreditNote: inv.type === 'credit_note',
+      code: inv.code,
+      party: inv.customerName,
+      ref: byId(deals, inv.dealId)?.code ?? inv.dealId,
+      date: inv.issuedAt,
+      ratePct: inv.gstPercent,
+      taxable: inv.taxableValue,
+      gst: inv.gstAmount,
+      split: splitTax(inv.gstAmount, supply),
+      supply,
+      credit: null,
+      supplierId: null,
+      route: `/deals/${inv.dealId}/invoices`,
+    });
+  }
+  const risks = new Map<string, SupplierRisk>();
+  for (const inv of supplierInvoices) {
+    if (inv.status !== 'open') continue;
+    const supplier = byId(suppliers, inv.supplierId);
+    if (!supplier) continue;
+    if (!risks.has(supplier.id)) risks.set(supplier.id, gstRiskOf(supplier, now));
+    const taxable = inv.lines.reduce((n, l) => n + l.quantity * l.unitPrice, 0);
+    const gst = gstOn(taxable, inv.gstPercent);
+    const supply = supplyType(supplier.gstin, AIEC_GSTIN);
+    out.push({
+      id: inv.id,
+      side: 'input',
+      isCreditNote: false,
+      code: inv.invoiceNumber,
+      party: supplier.name,
+      ref: byId(supplierPurchaseOrders, inv.poId)?.code ?? inv.poId,
+      date: inv.invoiceDate,
+      ratePct: inv.gstPercent,
+      taxable,
+      gst,
+      split: splitTax(gst, supply),
+      supply,
+      credit: creditStatus(inv.invoiceDate, evaluateInvoice(inv).status === 'matched', risks.get(supplier.id)!),
+      supplierId: supplier.id,
+      route: `/supplier-invoices?invoice=${inv.id}`,
+    });
+  }
+  return out;
+}
+
+const signedGst = (d: GstDocument, n: number) => (d.isCreditNote ? -n : n);
+
+function gstSideOf(docs: GstDocument[]): GstSide {
+  const byRate = new Map<number, GstRateBucket>();
+  let split = ZERO_SPLIT;
+  let taxable = 0;
+  let gst = 0;
+  for (const d of docs) {
+    const t = signedGst(d, d.taxable);
+    const g = signedGst(d, d.gst);
+    taxable += t;
+    gst += g;
+    split = addSplit(split, { cgst: signedGst(d, d.split.cgst), sgst: signedGst(d, d.split.sgst), igst: signedGst(d, d.split.igst) });
+    const b = byRate.get(d.ratePct) ?? { ratePct: d.ratePct, taxable: 0, gst: 0 };
+    b.taxable += t;
+    b.gst += g;
+    byRate.set(d.ratePct, b);
+  }
+  return { taxable, gst, split, count: docs.length, byRate: [...byRate.values()].sort((a, b) => b.ratePct - a.ratePct) };
+}
+
+function gstFiguresOf(docs: GstDocument[], period: string) {
+  const inPeriod = docs.filter((d) => docPeriod(d.date) === period);
+  const out = inPeriod.filter((d) => d.side === 'output');
+  const inp = inPeriod.filter((d) => d.side === 'input');
+  const sumCredit = (c: CreditStatus) => inp.filter((d) => d.credit === c).reduce((n, d) => n + d.gst, 0);
+  const output = { ...gstSideOf(out), creditNotes: out.filter((d) => d.isCreditNote).reduce((n, d) => n + d.gst, 0) };
+  const input = { ...gstSideOf(inp), claimable: sumCredit('claimable'), pendingMatch: sumCredit('pending_match'), atRisk: sumCredit('at_risk') };
+  return { inPeriod, output, input, net: output.gst - input.claimable };
+}
+
+/** The two months just closed have already gone to the accountant; the demo starts from there. Later months are Admin's to hand over. */
+function ensureGstHandovers(now: number): void {
+  if (gstHandoversSeeded) return;
+  gstHandoversSeeded = true;
+  const docs = gstDocumentsOf(now);
+  for (const period of [shiftPeriod(periodOf(now), -2), shiftPeriod(periodOf(now), -1)]) {
+    if (gstHandovers.some((h) => h.period === period)) continue;
+    const f = gstFiguresOf(docs, period);
+    if (f.inPeriod.length === 0) continue;
+    gstHandoverCounter += 1;
+    gstHandovers.push({ id: `gsh-${gstHandoverCounter}`, period, handedOverAt: new Date(handoverDueAt(period)).toISOString(), byName: 'Prashant Vasant Wable', outputGst: f.output.gst, inputClaimable: f.input.claimable, atRisk: f.input.atRisk, isDemo: true });
+  }
+}
+
+function gstCheckViewOf(c: SupplierGstCheck): SupplierGstCheckView {
+  return { id: c.id, gstin: c.gstin, standing: c.standing, lastReturnPeriod: c.lastReturnPeriod, effectiveFrom: c.effectiveFrom ?? null, checkedAt: c.checkedAt, checkedByName: c.checkedByName, note: c.note ?? null };
+}
+
+function gstSupplierViews(docs: GstDocument[], period: string, now: number): SupplierGstView[] {
+  const handed = new Set(gstHandovers.map((h) => h.period));
+  const trade = gstTradeSupplierIds();
+  const weight: Record<SupplierRiskKind, number> = { restricted: 0, filing_late: 1, no_gstin: 2, invalid_gstin: 3, unverified: 4, ok: 5 };
+  return suppliers
+    .filter((sp) => trade.has(sp.id) || supplierGstChecks.some((c) => c.supplierId === sp.id))
+    .map((sp): SupplierGstView => {
+      const risk = gstRiskOf(sp, now);
+      const check = latestGstCheck(sp.id);
+      const mine = docs.filter((d) => d.side === 'input' && d.supplierId === sp.id);
+      return {
+        supplierId: sp.id,
+        name: sp.name,
+        gstin: sp.gstin ?? null,
+        risk: risk.kind,
+        riskSince: risk.since,
+        stale: risk.stale,
+        current: check ? gstCheckViewOf(check) : null,
+        history: supplierGstChecks.filter((c) => c.supplierId === sp.id).sort((a, b) => (a.checkedAt < b.checkedAt ? 1 : -1)).map(gstCheckViewOf),
+        inputThisPeriod: mine.filter((d) => docPeriod(d.date) === period).reduce((n, d) => n + d.gst, 0),
+        atRisk: mine.filter((d) => d.credit === 'at_risk').reduce((n, d) => n + d.gst, 0),
+        alreadyHandedOver: mine.filter((d) => d.credit === 'at_risk' && handed.has(docPeriod(d.date))).reduce((n, d) => n + d.gst, 0),
+      };
+    })
+    .sort((a, b) => weight[a.risk] - weight[b.risk] || Number(b.stale) - Number(a.stale) || a.name.localeCompare(b.name));
+}
+
+function gstComplianceOf(periodIn: string | null, now: number): GstComplianceView {
+  ensureGstHandovers(now);
+  const docs = gstDocumentsOf(now);
+  const period = periodIn && /^\d{4}-\d{2}$/.test(periodIn) ? periodIn : periodOf(now);
+  const f = gstFiguresOf(docs, period);
+  const prevPeriod = shiftPeriod(period, -1);
+  const pf = gstFiguresOf(docs, prevPeriod);
+  const suppliersView = gstSupplierViews(docs, period, now);
+  const snap = gstHandovers.find((h) => h.period === period);
+  const known = [...new Set([...docs.map((d) => docPeriod(d.date)), ...recentPeriods(now, 6)])];
+  return {
+    period,
+    periods: [...new Set([...recentPeriods(now, 6), ...known.filter((p) => p <= periodOf(now))])].sort().reverse().slice(0, 12),
+    aiecGstin: AIEC_GSTIN,
+    output: f.output,
+    input: f.input,
+    net: f.net,
+    previous: pf.inPeriod.length > 0 ? { outputGst: pf.output.gst, claimable: pf.input.claimable, net: pf.net } : null,
+    suppliers: suppliersView,
+    documents: f.inPeriod.sort((a, b) => (a.date < b.date ? 1 : -1)),
+    handover: snap
+      ? { at: snap.handedOverAt, byName: snap.byName, note: snap.note ?? null, outputGst: snap.outputGst, inputClaimable: snap.inputClaimable, changed: snap.outputGst !== f.output.gst || snap.inputClaimable !== f.input.claimable, outputDelta: f.output.gst - snap.outputGst, inputDelta: f.input.claimable - snap.inputClaimable }
+      : null,
+    exposure: {
+      atRisk: suppliersView.reduce((n, sp) => n + sp.atRisk, 0),
+      alreadyHandedOver: suppliersView.reduce((n, sp) => n + sp.alreadyHandedOver, 0),
+      suppliersAffected: suppliersView.filter((sp) => sp.atRisk > 0).length,
+      suppliersToCheck: suppliersView.filter((sp) => sp.risk !== 'ok' || sp.stale).length,
+    },
+  };
+}
+
+/** A supplier whose standing puts credit already assumed in doubt is put in front of Admin once, and the alert clears itself
+ *  when the doubt does. Idempotent: the heartbeat calls it every minute. */
+function syncGstCompliance(now: number): void {
+  ensureGstHandovers(now);
+  const docs = gstDocumentsOf(now);
+  const views = gstSupplierViews(docs, periodOf(now), now);
+  const at = new Date(now).toISOString();
+  for (const v of views) {
+    const open = alerts.find((a) => a.relatedId === v.supplierId && a.titleKey === GST_ALERT && a.status !== 'resolved');
+    if (v.atRisk > 0 && !open) {
+      raiseAlert({
+        titleKey: GST_ALERT,
+        context: `${v.name} · ${formatINR(v.atRisk)}${v.alreadyHandedOver > 0 ? ` (${formatINR(v.alreadyHandedOver)} already claimed)` : ''}`,
+        severity: v.alreadyHandedOver > 0 ? 'high' : 'medium',
+        category: 'payment',
+        relatedId: v.supplierId,
+        sourceRoute: `/gst-compliance?supplier=${v.supplierId}`,
+      });
+      logAutomatedAction({
+        sourceKey: 'gst.supplier_risk',
+        triggeringCondition: `${v.name}'s GST standing puts ${formatINR(v.atRisk)} of input credit in doubt`,
+        actionTaken: 'Raised an alert for Admin and the accountant',
+        affectedRecordId: v.supplierId,
+        affectedRecordType: 'other',
+        subjectLabel: v.name,
+      });
+    } else if (v.atRisk === 0 && open) {
+      patchInPlace(alerts, open.id, { status: 'resolved', resolvedAt: at, resolvedBy: 'system', resolutionNote: 'The supplier’s GST standing no longer puts credit in doubt.' });
+    }
+  }
 }
 
 /* ============================== Supplier payment history (115) */
@@ -8650,6 +8928,61 @@ export const memoryRepository: Repository = {
       return { notified: true };
     }),
 
+  /* --------------------------------------------- GST compliance (116) */
+  getGstCompliance: (period, byUserId) =>
+    simulateRead((): GstComplianceView => {
+      adminOnly(byUserId);
+      const now = Date.now();
+      syncGstCompliance(now);
+      return gstComplianceOf(period, now);
+    }),
+
+  recordSupplierGstCheck: (supplierId, input, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const supplier = byId(suppliers, supplierId);
+      if (!supplier) throw new RepositoryError('not_found');
+      if (!supplier.gstin) throw new RepositoryError('no_gstin');
+      const now = Date.now();
+      if (input.lastReturnPeriod !== null && (!/^\d{4}-\d{2}$/.test(input.lastReturnPeriod) || input.lastReturnPeriod > periodOf(now))) throw new RepositoryError('invalid_period');
+      if (input.standing !== 'active') {
+        if (!input.effectiveFrom || !/^\d{4}-\d{2}-\d{2}$/.test(input.effectiveFrom) || input.effectiveFrom > new Date(now).toISOString().slice(0, 10)) throw new RepositoryError('invalid_date');
+      }
+      gstCheckCounter += 1;
+      supplierGstChecks.push({
+        id: `gsc-new-${gstCheckCounter}`,
+        supplierId,
+        gstin: supplier.gstin,
+        standing: input.standing,
+        lastReturnPeriod: input.lastReturnPeriod,
+        effectiveFrom: input.standing !== 'active' ? input.effectiveFrom : undefined,
+        checkedAt: new Date(now).toISOString(),
+        checkedByName: actor.name,
+        note: input.note?.trim() || undefined,
+        isDemo: true,
+      });
+      syncGstCompliance(now);
+      syncCommitments(now);
+      const view = gstComplianceOf(null, now).suppliers.find((v) => v.supplierId === supplierId);
+      if (!view) throw new RepositoryError('not_found');
+      return view;
+    }),
+
+  handOverGstPeriod: (period, note, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const now = Date.now();
+      if (!/^\d{4}-\d{2}$/.test(period) || period >= periodOf(now)) throw new RepositoryError('period_open');
+      ensureGstHandovers(now);
+      if (gstHandovers.some((h) => h.period === period)) throw new RepositoryError('already_handed_over');
+      const view = gstComplianceOf(period, now);
+      if (view.documents.length === 0) throw new RepositoryError('nothing_to_hand_over');
+      gstHandoverCounter += 1;
+      gstHandovers.push({ id: `gsh-${gstHandoverCounter}`, period, handedOverAt: new Date(now).toISOString(), byName: actor.name, note: note?.trim() || undefined, outputGst: view.output.gst, inputClaimable: view.input.claimable, atRisk: view.input.atRisk, isDemo: true });
+      syncCommitments(now);
+      return gstComplianceOf(period, now);
+    }),
+
   /* --------------------------------------------- Supplier payment history (115) */
   getSupplierPaymentHistory: (filter, byUserId) =>
     simulateRead((): PaymentHistoryPage => {
@@ -8822,6 +9155,7 @@ export const memoryRepository: Repository = {
         supplierId: po.supplierId,
         invoiceNumber: number,
         invoiceDate: input.invoiceDate,
+        gstPercent: gstRateOn(input.invoiceDate),
         documentName: input.documentName?.trim() || undefined,
         lines: input.lines.map((l) => ({ lineItemId: l.lineItemId && (po.lineItems ?? []).some((x) => x.id === l.lineItemId) ? l.lineItemId : null, description: l.description.trim(), quantity: l.quantity, unitPrice: l.unitPrice })),
         submittedAt: now,

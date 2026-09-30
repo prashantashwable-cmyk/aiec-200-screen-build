@@ -110,7 +110,29 @@ the module's section to `BUILD_README.md`.
 - **Module 11 Material Logistics & Delivery is done, including its checkpoint** (`101`–`110`, see
   BUILD_README's Module 11 section). Admin has a "Logistics" nav tab; every delivery screen declares
   `tab: 'logistics'` for Admin.
-- **Module 12 Supplier Payment Processing in progress:** `111`–`115` built. **Next: `116`**.
+- **Module 12 Supplier Payment Processing in progress:** `111`–`116` built. **Next: `117`**.
+  116 facts:
+  - GST is read, never stored as a figure. `gstDocumentsOf` (memoryRepository) turns every customer `Invoice` (087; the consolidated
+    `final` invoice and any superseded one are skipped, credit notes subtract) and every open `SupplierInvoice` (113) into a
+    `GstDocument` at **the rate written on that document**: `SupplierInvoice.gstPercent` is snapshotted from `gstRateOn(invoiceDate)`
+    (070's scheduled change), so a rate change never restates an earlier document. `@/features/tax/gst` is the pure logic
+    (`supplyType` by GSTIN state code → CGST+SGST vs IGST, `splitTax`, `supplierRisk`, `creditStatus`, period helpers).
+  - Input credit per invoice is `claimable` (matched, supplier fine), `pending_match` (113 not matched) or `at_risk` (matched, but its
+    supplier is `restricted` / `filing_late` / has no or an invalid GSTIN and the invoice is dated from when that began). Output GST
+    less claimable credit is the "GST to pay" figure. **Later screens (Module 14 Financial Overview) that need GST should call
+    `getGstCompliance`, not recompute.**
+  - `SupplierGstCheck` is append-only: what the GST portal showed (standing, `lastReturnPeriod`, `effectiveFrom` for a suspension or
+    cancellation), recorded by Admin (`recordSupplierGstCheck`); the latest is the current standing. Filing lateness is derived
+    (`latestDueReturn`: returns fall due on the 20th). A check older than `CHECK_STALE_AFTER` (30 days) is "check due".
+  - `GstPeriodHandover` snapshots a closed month's output and claimable credit when Admin hands it to the accountant; the view then
+    shows if the month has moved since (`changed`, deltas). The two months just closed are seeded as already handed over
+    (`ensureGstHandovers`, lazily). Credit at risk in such a month is flagged as possibly needing reversal.
+  - Heartbeat `syncGstCompliance` raises one `payment` alert per supplier with credit in doubt (`gstCompliance.alert.supplierRisk`,
+    high when part is already handed over) and resolves it itself; `logAutomatedAction` `gst.supplier_risk`. Commitments:
+    `gst_period_handover` (Admin, due the 7th of the next month, last three closed months with activity) and `gst_status_check`
+    (Admin, a month after each trading supplier's last check).
+  - `/gst-compliance` is Admin only (`?period=`, `?supplier=`), reached from 091's hub and the commitments. Export is a CSV.
+    Placeholder decisions: 30-day recheck interval, 7th hand-over day.
   115 facts:
   - The ledger is `SupplierPayment`s with `status: 'executed'`, nothing copied: `historyEntryOf` adds the PO, the site, the
     open invoice numbers and adjustments on read. A later correction is a `SupplierPaymentAdjustment` (`credit` | `top_up`,

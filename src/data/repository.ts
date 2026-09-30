@@ -131,6 +131,7 @@ import type { SlotDay } from '@/features/logistics/deliverySlots';
 import type { ArrivalWindow, CapacityWeek, ReadinessStatus } from '@/features/logistics/transit';
 import type { SopVersionStatus } from '@/features/logistics/deliverySop';
 import type { HoldFlagKind, PaymentFlag } from '@/features/suppliers/supplierPayments';
+import type { CreditStatus, SupplierRiskKind, SupplyType, TaxSplit } from '@/features/tax/gst';
 import type { OutflowTotals, ScheduleState } from '@/features/suppliers/paymentSchedule';
 import type { InvoiceGate, InvoiceMatchStatus, LineVerdict, MatchIssue } from '@/features/suppliers/invoiceMatch';
 import type { AnomalyKind, ChainNodeKind, ChainNodeState, ChainSource, SplitIssue } from '@/features/suppliers/paymentChain';
@@ -1136,6 +1137,106 @@ export interface AdvanceResolutionInput {
   resolution: ReportResolution;
   replacementEta?: string;
   creditAmount?: number;
+  note?: string;
+}
+
+/* ---------------------------------- GST compliance (116) */
+
+export interface GstRateBucket {
+  ratePct: number;
+  taxable: number;
+  gst: number;
+}
+
+export interface GstDocument {
+  id: string;
+  side: 'output' | 'input';
+  /** A customer credit note reduces output GST. */
+  isCreditNote: boolean;
+  code: string;
+  party: string;
+  /** Deal or order the document belongs to. */
+  ref: string;
+  date: string;
+  ratePct: number;
+  taxable: number;
+  gst: number;
+  split: TaxSplit;
+  supply: SupplyType;
+  /** Input only: whether its GST can be counted. */
+  credit: CreditStatus | null;
+  supplierId: string | null;
+  route: string | null;
+}
+
+export interface SupplierGstCheckView {
+  id: string;
+  gstin: string;
+  standing: 'active' | 'suspended' | 'cancelled';
+  lastReturnPeriod: string | null;
+  effectiveFrom: string | null;
+  checkedAt: string;
+  checkedByName: string;
+  note: string | null;
+}
+
+export interface SupplierGstView {
+  supplierId: string;
+  name: string;
+  gstin: string | null;
+  risk: SupplierRiskKind;
+  riskSince: string | null;
+  /** No check recorded, or the last one is older than a month. */
+  stale: boolean;
+  current: SupplierGstCheckView | null;
+  history: SupplierGstCheckView[];
+  /** GST on this supplier's matched invoices, this period. */
+  inputThisPeriod: number;
+  /** GST in doubt across every period, and how much of that sits in a month already handed to the accountant. */
+  atRisk: number;
+  alreadyHandedOver: number;
+}
+
+export interface GstSide {
+  taxable: number;
+  gst: number;
+  split: TaxSplit;
+  count: number;
+  byRate: GstRateBucket[];
+}
+
+export interface GstHandoverView {
+  at: string;
+  byName: string;
+  note: string | null;
+  outputGst: number;
+  inputClaimable: number;
+  /** The month's figures now differ from what was handed over. */
+  changed: boolean;
+  outputDelta: number;
+  inputDelta: number;
+}
+
+export interface GstComplianceView {
+  period: string;
+  periods: string[];
+  aiecGstin: string;
+  output: GstSide & { creditNotes: number };
+  input: GstSide & { claimable: number; pendingMatch: number; atRisk: number };
+  /** Output GST less credit that can be claimed: what is expected to be paid. Negative is credit carried forward. */
+  net: number;
+  previous: { outputGst: number; claimable: number; net: number } | null;
+  suppliers: SupplierGstView[];
+  documents: GstDocument[];
+  handover: GstHandoverView | null;
+  /** Across every period, not only this one. */
+  exposure: { atRisk: number; alreadyHandedOver: number; suppliersAffected: number; suppliersToCheck: number };
+}
+
+export interface RecordGstCheckInput {
+  standing: 'active' | 'suspended' | 'cancelled';
+  lastReturnPeriod: string | null;
+  effectiveFrom?: string;
   note?: string;
 }
 
@@ -3138,6 +3239,13 @@ export interface Repository {
   completeDeliveryChecklist(checklistId: string, input: CompleteChecklistInput, byUserId: string): Promise<CompleteChecklistResult>;
   /** Abandons an unfinished checklist started by mistake. */
   cancelDeliveryChecklist(checklistId: string, byUserId: string): Promise<void>;
+
+  /* GST compliance (116) — input credit and output GST reconciled, with supplier standing */
+  getGstCompliance(period: string | null, byUserId: string): Promise<GstComplianceView>;
+  /** Records what the GST portal shows for a supplier today. Append-only. */
+  recordSupplierGstCheck(supplierId: string, input: RecordGstCheckInput, byUserId: string): Promise<SupplierGstView>;
+  /** Hands a month's figures to the accountant, keeping a snapshot to compare against later. */
+  handOverGstPeriod(period: string, note: string | undefined, byUserId: string): Promise<GstComplianceView>;
 
   /* Supplier payment history (115) — the permanent ledger of what was paid, read from the payments themselves */
   getSupplierPaymentHistory(filter: PaymentHistoryFilter, byUserId: string): Promise<PaymentHistoryPage>;

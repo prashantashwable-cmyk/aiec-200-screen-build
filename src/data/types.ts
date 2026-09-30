@@ -959,6 +959,8 @@ export interface SupplierInvoice {
   invoiceNumber: string;
   /** `yyyy-mm-dd` on the document. */
   invoiceDate: string;
+  /** GST rate on the document, snapshotted from the rate in force on `invoiceDate` (116). */
+  gstPercent: number;
   /** The document's file name. There is no storage bucket here, so only the name is kept. */
   documentName?: string;
   lines: SupplierInvoiceLine[];
@@ -974,6 +976,41 @@ export interface SupplierInvoice {
   /** The supplier was told, and Admin alerted, about a mismatch on this invoice: once, never repeatedly. */
   mismatchNotifiedAt?: string;
   events: SupplierInvoiceEvent[];
+  isDemo: boolean;
+}
+
+/* ------------------------------------ GST compliance (116) */
+
+export type SupplierGstStanding = 'active' | 'suspended' | 'cancelled';
+
+/** One recorded look at a supplier's GST standing, taken from the GST portal or on the accountant's word. The history is
+ *  append-only; the latest is the current standing, and an older one is never rewritten. */
+export interface SupplierGstCheck {
+  id: string;
+  supplierId: string;
+  /** The GSTIN as it was when checked, so a later change of number is visible. */
+  gstin: string;
+  standing: SupplierGstStanding;
+  /** The latest month (`yyyy-mm`) the supplier has filed its own return for. */
+  lastReturnPeriod: string | null;
+  /** For a suspension or cancellation: the day it took effect (`yyyy-mm-dd`). Credit from then on is in doubt. */
+  effectiveFrom?: string;
+  checkedAt: string;
+  checkedByName: string;
+  note?: string;
+  isDemo: boolean;
+}
+
+/** A month's figures handed to the accountant. The snapshot lets a later change to that month be seen as a difference. */
+export interface GstPeriodHandover {
+  id: string;
+  period: string;
+  handedOverAt: string;
+  byName: string;
+  note?: string;
+  outputGst: number;
+  inputClaimable: number;
+  atRisk: number;
   isDemo: boolean;
 }
 
@@ -2721,6 +2758,8 @@ export type CommitmentKind =
   | 'partner_feed_restore'
   | 'supplier_payment_approve'
   | 'supplier_payment_hold_review'
+  | 'gst_period_handover'
+  | 'gst_status_check'
   | 'supplier_invoice_submit'
   | 'supplier_invoice_mismatch_review'
   | 'delivery_delay_action'
@@ -2750,7 +2789,9 @@ export type CommitmentSubjectType =
   | 'shipment'
   | 'delivery_partner'
   | 'supplier_payment'
-  | 'supplier_invoice';
+  | 'supplier_invoice'
+  | 'gst_period'
+  | 'supplier_gst';
 
 /**
  * 0 nothing sent yet · 1 owner nudged before due · 2 owner told it's overdue

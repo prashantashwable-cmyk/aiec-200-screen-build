@@ -67,6 +67,7 @@ import type {
   DeliveryDiscrepancyReport,
   SupplierInvoice,
   SupplierPaymentAdjustment,
+  SupplierGstCheck,
   SupplierPayment,
   SupplierPaymentPart,
   SupplierPaymentTrigger,
@@ -1956,6 +1957,28 @@ export const seedPaymentDeviations: { poId: string; upfrontPct: number; retentio
 ];
 
 
+/* ------------------------------------------ Supplier GST standing (116) */
+
+/** What the GST portal showed when each supplier was last looked up. Konark was fine until three days ago, when its registration
+ *  turned out to have been suspended since mid-August: an invoice AIEC already claimed credit on falls inside that. */
+export const seedSupplierGstChecks: SupplierGstCheck[] = [
+  { id: 'gsc-1', supplierId: 'sp-1', gstin: '27AABCV1234A1Z5', standing: 'active', lastReturnPeriod: '2026-08', checkedAt: daysAgo(6), checkedByName: 'Prashant Vasant Wable', isDemo: true },
+  { id: 'gsc-2', supplierId: 'sp-2', gstin: '27AACFS9012C1Z8', standing: 'active', lastReturnPeriod: '2026-08', checkedAt: daysAgo(12), checkedByName: 'Prashant Vasant Wable', isDemo: true },
+  { id: 'gsc-3', supplierId: 'sp-3', gstin: '27AAECK3456D1Z1', standing: 'active', lastReturnPeriod: '2026-06', checkedAt: daysAgo(45), checkedByName: 'Prashant Vasant Wable', isDemo: true },
+  {
+    id: 'gsc-4',
+    supplierId: 'sp-3',
+    gstin: '27AAECK3456D1Z1',
+    standing: 'suspended',
+    lastReturnPeriod: '2026-06',
+    effectiveFrom: daysAgo(50).slice(0, 10),
+    checkedAt: daysAgo(3),
+    checkedByName: 'Prashant Vasant Wable',
+    note: 'GST portal shows the registration suspended for non-filing of returns.',
+    isDemo: true,
+  },
+];
+
 /** Vertex's cabin balance (AIEC-SP-3003) was later corrected: a damaged panel was credited (108) after it had been paid. */
 export const seedSupplierPaymentAdjustments: SupplierPaymentAdjustment[] = [
   { id: 'spadj-1', paymentId: 'spay-3', direction: 'credit', amount: 6_000, reason: 'Credit note VEC/CN/0091 for one dented cabin panel found after the balance was paid.', byName: 'Prashant Vasant Wable', at: daysAgo(4), isDemo: true },
@@ -1970,6 +1993,7 @@ const histInvoice = (n: number, poId: string, supplierId: string, numberPrefix: 
   supplierId,
   invoiceNumber: `${numberPrefix}/${1000 + n}`,
   invoiceDate: new Date(NOW - daysBack * DAY).toISOString().slice(0, 10),
+  gstPercent: 18,
   documentName: `invoice-${numberPrefix.toLowerCase()}-${1000 + n}.pdf`,
   lines: lines.map(([lineItemId, description, unitPrice]) => ({ lineItemId, description, quantity: 1, unitPrice })),
   submittedAt: daysAgo(daysBack),

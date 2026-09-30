@@ -38,6 +38,7 @@ import { SUPPLIER_REPLY_WINDOW, byAt } from '@/features/suppliers/threads';
 import { RETENTION_DECISION_WINDOW, RETENTION_REVIEW_AFTER } from '@/features/suppliers/paymentTerms';
 import { windowEndsAt } from '@/features/logistics/deliverySlots';
 import type { InvoiceGate } from '@/features/suppliers/invoiceMatch';
+import { CHECK_STALE_AFTER, handoverDueAt } from '@/features/tax/gst';
 import { MANUAL_UPDATE_EVERY } from '@/features/logistics/shipmentTracking';
 
 /**
@@ -91,6 +92,10 @@ export interface CommitmentSources {
   invoiceGates: { poId: string; supplierId: string; deliveredAt: string; gate: InvoiceGate }[];
   /** Invoices that ever failed the three-way match, with whether they still do (113). */
   invoiceMismatches: { invoiceId: string; poId: string; supplierId: string; invoiceNumber: string; notifiedAt: string; stillMismatched: boolean; resolvedAt?: string }[];
+  /** The last closed months with tax activity, and whether each was handed to the accountant (116). */
+  gstPeriods: { period: string; handedOver: boolean; handedOverAt?: string }[];
+  /** Trading suppliers with a GSTIN, and when their GST standing was last looked at (116). */
+  gstStatusChecks: { supplierId: string; name: string; lastCheckedAt: string | null; since: string }[];
   /** Deals where someone paused payment reminders by hand (083). */
   pausedDealIds: Set<string>;
 }
@@ -1102,6 +1107,57 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
             oversightRoute: `/supplier-payments?payment=${p.id}`,
           };
         });
+    },
+  },
+  {
+    // A month's GST figures are owed to the accountant by the 7th of the next month, ahead of the returns due on the 20th (116).
+    kind: 'gst_period_handover',
+    nudgeBefore: days(1),
+    escalateAfter: days(3),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'payment',
+    collect(src) {
+      const admin = adminId(src);
+      return src.gstPeriods.map((g) => ({
+        ...base('gst_period_handover', 'gst_period', g.period),
+        ownerUserId: admin,
+        titleKey: 'work.title.gst_period_handover',
+        titleParams: { period: g.period },
+        dueAt: handoverDueAt(g.period),
+        state: g.handedOver ? ('done' as const) : ('open' as const),
+        paused: false,
+        completedAt: g.handedOverAt,
+        actionRoute: `/gst-compliance?period=${g.period}`,
+        oversightRoute: `/gst-compliance?period=${g.period}`,
+      }));
+    },
+  },
+  {
+    // A supplier's GST standing can lapse at any time and put credit already assumed in doubt, so it is looked up again every month (116).
+    kind: 'gst_status_check',
+    nudgeBefore: days(3),
+    escalateAfter: days(5),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'payment',
+    collect(src) {
+      const admin = adminId(src);
+      return src.gstStatusChecks.map((c) => {
+        const later = c.lastCheckedAt !== null && Date.now() - new Date(c.lastCheckedAt).getTime() <= CHECK_STALE_AFTER;
+        return {
+          ...base('gst_status_check', 'supplier_gst', c.supplierId),
+          ownerUserId: admin,
+          titleKey: 'work.title.gst_status_check',
+          titleParams: { supplier: c.name },
+          dueAt: plus(c.lastCheckedAt ?? c.since, CHECK_STALE_AFTER),
+          state: later ? ('done' as const) : ('open' as const),
+          paused: false,
+          completedAt: later ? (c.lastCheckedAt ?? undefined) : undefined,
+          actionRoute: `/gst-compliance?supplier=${c.supplierId}`,
+          oversightRoute: `/gst-compliance?supplier=${c.supplierId}`,
+        };
+      });
     },
   },
   {
