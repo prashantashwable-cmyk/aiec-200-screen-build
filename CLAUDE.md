@@ -110,7 +110,20 @@ the module's section to `BUILD_README.md`.
 - **Module 11 Material Logistics & Delivery is done, including its checkpoint** (`101`–`110`, see
   BUILD_README's Module 11 section). Admin has a "Logistics" nav tab; every delivery screen declares
   `tab: 'logistics'` for Admin.
-- **Module 12 Supplier Payment Processing in progress:** `111`–`113` built. **Next: `114`**.
+- **Module 12 Supplier Payment Processing in progress:** `111`–`114` built. **Next: `115`**.
+  114 facts:
+  - The schedule is a read, never a plan: `supplierScheduleOf(now)` walks every sent PO's `paymentChainOf` (112) and emits one
+    `SupplierPaymentScheduleItem` per unpaid part. A part with a `SupplierPayment` is real (`owed` / `waiting` on a block flag /
+    `held` / `approved`); one without is `expected`, dated from the milestone's trajectory (`expectedDeliveryFor`, net days,
+    scheduled installation). A delayed delivery moves its balance and shows `slipDays` against `promisedDeliveryOf`; an order
+    whose deal is lost/cancelled drops its *unfired* parts (listed in `dropped`), while fired ones stay flagged `orphaned`.
+    A retention with no scheduled installation has `date: null` and is shown as "not yet datable".
+  - `@/features/suppliers/paymentSchedule` is the pure logic (`bucketize`, `outflowTotals`, `markHeavy`, `slipDays`).
+    **`getUpcomingSupplierOutflows` (`outflowTotals` of the same items) is the one figure the Financial Overview reads** for
+    upcoming supplier outflows; 028 shows it now as context (`next30`, `owedNow`, `later`). Module 14's Financial Overview must
+    read it, not recompute. Placeholder business decisions: a week is "heavy" at 2× the average week of the 8-week horizon and
+    at least ₹2,00,000 (`CONCENTRATION_*`).
+  - `/supplier-payment-schedule` is Admin only (Agenda default, Week, Month via the shared calendar), reached from 091's hub, 028's tile.
   113 facts:
   - `SupplierInvoice` (memoryRepository `supplierInvoices`) stores only what the supplier sent: lines (`lineItemId` or
     null for an item not on the order, quantity, unit price, optional `adjustment`), number, date, document *name*

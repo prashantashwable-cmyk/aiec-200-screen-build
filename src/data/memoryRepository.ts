@@ -168,6 +168,8 @@ import type {
   SplitPartState,
   PaymentEvidence,
   SupplierPaymentQueue,
+  SupplierPaymentSchedule,
+  SupplierPaymentScheduleItem,
   SupplierPaymentView,
   BookablePo,
   DeliveryAnalytics,
@@ -255,6 +257,7 @@ import type {
   SupplierPayment,
   SupplierPaymentEvent,
   SupplierPaymentPart,
+  SupplierPaymentTrigger,
   PaymentDeviation,
   DeliveryPartner,
   DeliveryPartnerLane,
@@ -409,6 +412,8 @@ import { INVOICE_MIN_ITEMS, explainsInvoicePrice, gateOf, matchLine, overallOf }
 import type { GateLine, InvoiceGate, InvoiceMatchStatus } from '@/features/suppliers/invoiceMatch';
 import { ACK_EXPECTED_AFTER, DEVIATION_REASON_MIN, deviationIncreasesRisk, HANDOVER_AFTER_START, chainAnomalies, chainKinds, checkDeviation, firedAtOf, splitOf } from '@/features/suppliers/paymentChain';
 import type { ChainNodeFacts, ChainNodeKind, ChainNodeState } from '@/features/suppliers/paymentChain';
+import { outflowTotals, slipDays as slipDaysOf } from '@/features/suppliers/paymentSchedule';
+import type { ScheduleState, OutflowTotals } from '@/features/suppliers/paymentSchedule';
 import { FLAG_ORDER, HOLD_REASON_MIN, REVERSAL_WINDOW, ROUTINE_LIMIT, approvalGate, bankReferenceFor, firedMilestones, flagOf, isRoutine, overdueDays } from '@/features/suppliers/supplierPayments';
 import type { HoldFlagKind, PaymentFlag } from '@/features/suppliers/supplierPayments';
 import { MIN_RISING_INCIDENTS, MIN_SAMPLE, REVISIT_COST, RISING_WINDOW_DAYS, SCHEDULE_DELAY_COST_PER_DAY, bucketsOf, costOf, inDisruption, inLast, inPriorWindow, isRising, monthKey, monthKeys, pctOf, previousWindow, transitSummary, trendOf, windowStart } from '@/features/logistics/deliveryAnalytics';
@@ -4401,6 +4406,73 @@ function paymentChainOf(po: SupplierPurchaseOrder, focusPaymentId: string | null
     timeline,
     focusPaymentId,
   };
+}
+
+/* ============================== Supplier payment schedule (114) */
+
+/** Every unpaid part of every live sent order, as the payment it already is or the one its milestone trajectory expects.
+ *  Recomputed on each read, so a delayed delivery moves its balance and a cancelled deal takes its unfired parts away. */
+function supplierScheduleOf(now: number): { items: SupplierPaymentScheduleItem[]; dropped: SupplierPaymentSchedule['dropped'] } {
+  const items: SupplierPaymentScheduleItem[] = [];
+  const dropped: SupplierPaymentSchedule['dropped'] = [];
+  for (const po of supplierPurchaseOrders) {
+    if (po.status !== 'sent' || !po.supplierId || !po.paymentTerms || paymentTotalOf(po) <= 0) continue;
+    const supplier = byId(suppliers, po.supplierId);
+    const chain = paymentChainOf(po, null, now);
+    const orphaned = isOrphanedPo(po);
+    const promised = promisedDeliveryOf(po);
+    const plannedOf = (part: SupplierPaymentPart): string | null => {
+      if (part === 'balance') return promised ? (chain.netDays !== null && chain.termType === 'net' ? new Date(new Date(promised).getTime() + chain.netDays * 86_400_000).toISOString() : promised) : null;
+      if (part === 'upfront' && po.sentAt && chain.parts.find((x) => x.part === 'upfront')?.trigger === 'on_acknowledge') return new Date(new Date(po.sentAt).getTime() + ACK_EXPECTED_AFTER).toISOString();
+      return null;
+    };
+    const waitingOnOf = (part: SupplierPaymentPart, trigger: SupplierPaymentTrigger): ChainNodeKind | null =>
+      part === 'upfront' ? (trigger === 'on_acknowledge' ? 'acknowledged' : null) : part === 'balance' ? (chain.termType === 'net' ? 'net_period' : 'delivery_confirmed') : 'retention_release';
+    let droppedAmount = 0;
+    for (const part of chain.parts) {
+      if (part.state === 'paid' || part.amount <= 0) continue;
+      if (part.state === 'not_due' && orphaned) {
+        droppedAmount += part.amount;
+        continue;
+      }
+      const payment = part.paymentId ? byId(supplierPayments, part.paymentId) : undefined;
+      const flags = payment ? paymentFlags(payment).map((f) => f) : [];
+      const state: ScheduleState = !payment
+        ? 'expected'
+        : payment.status === 'approved'
+          ? 'approved'
+          : payment.status === 'held'
+            ? 'held'
+            : flags.some((f) => f.severity === 'block')
+              ? 'waiting'
+              : 'owed';
+      const planned = payment ? null : plannedOf(part.part);
+      items.push({
+        id: `${po.id}:${part.part}`,
+        poId: po.id,
+        poCode: po.code,
+        supplierId: po.supplierId,
+        supplierName: supplier?.name ?? '',
+        siteName: chain.siteName,
+        part: part.part,
+        trigger: part.trigger,
+        amount: part.amount,
+        paymentId: part.paymentId,
+        paymentCode: part.paymentCode,
+        state,
+        date: part.dueAt ? dateKey(new Date(part.dueAt)) : null,
+        isExpected: !payment,
+        plannedAt: planned,
+        slipDays: payment ? 0 : slipDaysOf(planned, part.dueAt),
+        overdueDays: payment ? overdueDays(payment, now) : 0,
+        waitingOn: payment ? null : waitingOnOf(part.part, part.trigger),
+        flags: flags.map((f) => f.kind),
+        origin: part.origin,
+      });
+    }
+    if (droppedAmount > 0) dropped.push({ poId: po.id, poCode: po.code, supplierName: supplier?.name ?? '', amount: droppedAmount });
+  }
+  return { items, dropped };
 }
 
 /** An out-of-order milestone is never processed quietly: Admin is told once, and told again if it recurs. */
@@ -8469,6 +8541,32 @@ export const memoryRepository: Repository = {
       patchInPlace(conversations, conversation.id, { lastMessageAt: at });
       patchInPlace(discrepancyReports, r.id, { customerNotifiedAt: at, events: reportEvent(r, 'customer_told', actor.name) });
       return { notified: true };
+    }),
+
+  /* --------------------------------------------- Supplier payment schedule (114) */
+  getSupplierPaymentSchedule: (byUserId) =>
+    simulateRead((): SupplierPaymentSchedule => {
+      adminOnly(byUserId);
+      const now = Date.now();
+      syncSupplierPayments(now);
+      executeSupplierPayments(now);
+      const { items, dropped } = supplierScheduleOf(now);
+      const seen = new Map<string, string>();
+      for (const i of items) seen.set(i.supplierId, i.supplierName);
+      return {
+        items: items.sort((a, b) => (a.date ?? '9999') < (b.date ?? '9999') ? -1 : (a.date ?? '9999') > (b.date ?? '9999') ? 1 : b.amount - a.amount),
+        suppliers: [...seen].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)),
+        dropped,
+        totals: outflowTotals(items, now),
+      };
+    }),
+
+  getUpcomingSupplierOutflows: (byUserId) =>
+    simulateRead((): OutflowTotals => {
+      adminOnly(byUserId);
+      const now = Date.now();
+      syncSupplierPayments(now);
+      return outflowTotals(supplierScheduleOf(now).items, now);
     }),
 
   /* --------------------------------------------- Supplier invoice matching (113) */

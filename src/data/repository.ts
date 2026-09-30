@@ -130,7 +130,8 @@ import type {
 import type { SlotDay } from '@/features/logistics/deliverySlots';
 import type { ArrivalWindow, CapacityWeek, ReadinessStatus } from '@/features/logistics/transit';
 import type { SopVersionStatus } from '@/features/logistics/deliverySop';
-import type { PaymentFlag } from '@/features/suppliers/supplierPayments';
+import type { HoldFlagKind, PaymentFlag } from '@/features/suppliers/supplierPayments';
+import type { OutflowTotals, ScheduleState } from '@/features/suppliers/paymentSchedule';
 import type { InvoiceGate, InvoiceMatchStatus, LineVerdict, MatchIssue } from '@/features/suppliers/invoiceMatch';
 import type { AnomalyKind, ChainNodeKind, ChainNodeState, ChainSource, SplitIssue } from '@/features/suppliers/paymentChain';
 import type { Bucket, Direction, TransitSummary, TrendTone } from '@/features/logistics/deliveryAnalytics';
@@ -1136,6 +1137,46 @@ export interface AdvanceResolutionInput {
   replacementEta?: string;
   creditAmount?: number;
   note?: string;
+}
+
+/* ---------------------------------- Supplier payment schedule (114) */
+
+/** One supplier payment, real or expected, on the forward view. Never a plan of its own: read from 111's payments and 112's chain. */
+export interface SupplierPaymentScheduleItem {
+  /** `poId:part`, stable while a part moves from expected to owed. */
+  id: string;
+  poId: string;
+  poCode: string;
+  supplierId: string;
+  supplierName: string;
+  siteName: string;
+  part: SupplierPaymentPart;
+  trigger: SupplierPaymentTrigger;
+  amount: number;
+  paymentId: string | null;
+  paymentCode: string | null;
+  state: ScheduleState;
+  /** `yyyy-mm-dd`: when it is owed, or when its milestone is now expected. Null when that cannot be said yet. */
+  date: string | null;
+  /** The milestone has not happened yet, so the date is a trajectory, not a fact. */
+  isExpected: boolean;
+  /** Where the milestone was first expected, when that is known. */
+  plannedAt: string | null;
+  /** Days it has slipped past the first expectation. */
+  slipDays: number;
+  overdueDays: number;
+  /** What an expected date is waiting for. */
+  waitingOn: ChainNodeKind | null;
+  flags: HoldFlagKind[];
+  origin: 'event' | 'override' | null;
+}
+
+export interface SupplierPaymentSchedule {
+  items: SupplierPaymentScheduleItem[];
+  suppliers: { id: string; name: string }[];
+  /** Orders whose deal was lost or cancelled: what they would have paid has left the schedule. */
+  dropped: { poId: string; poCode: string; supplierName: string; amount: number }[];
+  totals: OutflowTotals;
 }
 
 /* ---------------------------------- Supplier invoice matching (113) */
@@ -2996,6 +3037,11 @@ export interface Repository {
   completeDeliveryChecklist(checklistId: string, input: CompleteChecklistInput, byUserId: string): Promise<CompleteChecklistResult>;
   /** Abandons an unfinished checklist started by mistake. */
   cancelDeliveryChecklist(checklistId: string, byUserId: string): Promise<void>;
+
+  /* Supplier payment schedule (114) — the forward view, read from the same milestone data as 111 and 112 */
+  getSupplierPaymentSchedule(byUserId: string): Promise<SupplierPaymentSchedule>;
+  /** What is owed and coming, the one figure the Financial Overview reads for upcoming supplier outflows. */
+  getUpcomingSupplierOutflows(byUserId: string): Promise<OutflowTotals>;
 
   /* Supplier invoice matching (113) — the order, the invoice and the delivery, compared before payment can proceed */
   getSupplierInvoiceBoard(byUserId: string): Promise<SupplierInvoiceBoard>;
