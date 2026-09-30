@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useData } from '@/data/DataProvider';
 import { useSession } from '@/session/SessionProvider';
-import type { DealClosureView } from '@/data/repository';
+import type { DealClosureView, TransitEstimate } from '@/data/repository';
 import type { User } from '@/data/types';
 import type { DealClosureConfirmationStatus } from './deal-closure-confirmation.types';
 
@@ -10,6 +10,8 @@ interface DealClosureConfirmationState {
   status: DealClosureConfirmationStatus;
   view: DealClosureView | null;
   contact: User | null;
+  /** How long parts really take to reach this site's city (110), so the timeline a customer hears is the real one. */
+  estimate: TransitEstimate | null;
 
   voidSheetOpen: boolean;
   openVoidSheet: () => void;
@@ -36,6 +38,7 @@ export function useDealClosureConfirmation(): DealClosureConfirmationState {
   const [status, setStatus] = useState<DealClosureConfirmationStatus>('loading');
   const [view, setView] = useState<DealClosureView | null>(null);
   const [contact, setContact] = useState<User | null>(null);
+  const [estimate, setEstimate] = useState<TransitEstimate | null>(null);
 
   const [voidSheetOpen, setVoidSheetOpen] = useState(false);
   const [voidReason, setVoidReason] = useState('');
@@ -61,6 +64,8 @@ export function useDealClosureConfirmation(): DealClosureConfirmationState {
         }
       }
       setView(result);
+      // The timeline shown is what deliveries to this city have really taken, not a guess.
+      if (user && result.lead.city) setEstimate(await repository.getTransitEstimate(result.lead.city, user.id).catch(() => null));
       if (result.lead.originalSurveyorId) {
         setContact(await repository.getUser(result.lead.originalSurveyorId));
       }
@@ -68,7 +73,7 @@ export function useDealClosureConfirmation(): DealClosureConfirmationState {
     } catch {
       setStatus((current) => (current === 'ready' ? current : 'error'));
     }
-  }, [repository, dealId]);
+  }, [repository, dealId, user]);
 
   useEffect(() => {
     void load();
@@ -99,6 +104,7 @@ export function useDealClosureConfirmation(): DealClosureConfirmationState {
     status,
     view,
     contact,
+    estimate,
     voidSheetOpen,
     openVoidSheet,
     closeVoidSheet,

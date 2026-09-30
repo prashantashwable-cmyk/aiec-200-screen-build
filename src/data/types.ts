@@ -917,6 +917,22 @@ export interface ShipmentLeg {
   isDemo: boolean;
 }
 
+/* ------------------------------------ Delivery analytics (110) */
+
+/** A stretch when something outside anyone's control (a flood, closed expressway, strike) hit deliveries
+ *  broadly. Annotated by Admin so a bad month is not misread as AIEC's own process failing. */
+export interface DeliveryDisruption {
+  id: string;
+  label: string;
+  note?: string;
+  /** `yyyy-mm-dd`, inclusive. */
+  startsOn: string;
+  endsOn: string;
+  createdByName: string;
+  createdAt: string;
+  isDemo: boolean;
+}
+
 /* ------------------------------------ Delivery partners (109) */
 
 /** One priced lane on a partner's rate card. */
@@ -1070,6 +1086,9 @@ export interface DiscrepancyReportItem {
   receivedQty: number;
   note?: string;
   photoCount: number;
+  /** Snapshots of the part's category and worth, so a report is still costed after its order is edited (110). */
+  category?: string;
+  value?: number;
 }
 
 /** Where a report has got to with the supplier. Only Admin moves it, and only forward:
@@ -1114,6 +1133,8 @@ export interface DeliveryDiscrepancyReport {
   attributedAt?: string;
   replacementEta?: string;
   creditAmount?: number;
+  /** Days the installation slipped because of it, when a replacement landed after it was due to start (110). */
+  scheduleDelayDays?: number;
   routedToSupplierAt?: string;
   customerNotifiedAt?: string;
   events: ReportEvent[];

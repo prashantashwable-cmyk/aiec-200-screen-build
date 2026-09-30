@@ -63,6 +63,8 @@ import type {
   ShipmentLeg,
   DeliveryPartner,
   PartnerTripRecord,
+  DeliveryDisruption,
+  DeliveryDiscrepancyReport,
   ShipmentMilestone,
   ShipmentMilestoneEvent,
   DeliverySchedule,
@@ -1359,7 +1361,9 @@ function ratingHistory(
   );
 }
 
-export const seedSupplierOrderRatings: SupplierOrderRating[] = [
+const EXPRESSWAY_LATE = new Set(['rt-sg-12', 'rt-sg-13', 'rt-sg-14']);
+
+const seedRatingsRaw: SupplierOrderRating[] = [
   // Vertex — reliable, with one late order and two genuine defects.
   ...ratingHistory('rt-vx', 'sp-1', 7101, 13, 30, 14, { 4: 3 }, {
     2: [['Controller display flickered on first power-up', 'supplier']],
@@ -1401,6 +1405,9 @@ export const seedSupplierOrderRatings: SupplierOrderRating[] = [
     9: [['Bracket holes mis-drilled', 'supplier'], ['Rust on delivery', 'supplier']],
   }),
 ];
+
+/** Sanghvi's three late September orders were the expressway closures, not their own doing. */
+export const seedSupplierOrderRatings: SupplierOrderRating[] = seedRatingsRaw.map((r) => (EXPRESSWAY_LATE.has(r.id) ? { ...r, delayCause: 'external_event' as const } : r));
 
 export const seedScoreContextNotes: SupplierScoreContextNote[] = [
   {
@@ -1809,6 +1816,78 @@ export const seedPartnerTrips: PartnerTripRecord[] = [
   tripRec('pt-38', 'dp-5', 'AIEC-PO-7945', 'Skyline Corporate Park', 'Pune → Pune', 92, 3, 20, 200),
   tripRec('pt-39', 'dp-5', 'AIEC-PO-7952', 'Shree Ram Heights', 'Pune → Pune', 70, 3, -2, 280),
   tripRec('pt-40', 'dp-5', 'AIEC-PO-7960', 'Pinnacle Aurum', 'Pune → Pimpri-Chinchwad', 54, 3, 14, 15),
+];
+
+
+/* ------------------------------------------------ Delivery analytics (110) */
+
+type HistReport = [id: string, supplierId: string, poId: string, dealId: string, category: string, description: string, kind: 'damaged' | 'count' | 'wrong_spec', value: number, attribution: 'supplier' | 'transport' | 'installation', daysBack: number, delayDays: number, end: 'resolved' | 'credited' | 'open'];
+
+const histReport = ([id, supplierId, poId, dealId, category, description, kind, value, attribution, daysBack, delayDays, end]: HistReport, index: number): DeliveryDiscrepancyReport => {
+  const created = daysAgo(daysBack);
+  const closed = end !== 'open';
+  return {
+    id: `ddr-${id}`,
+    code: `AIEC-DR-${4901 + index}`,
+    poId,
+    dealId,
+    supplierId,
+    // Before delivery checks were kept in the app: there is no checklist to point at.
+    checklistId: '',
+    items: [{ lineItemId: `ddr-${id}-i1`, description, kinds: [kind], expectedQty: 1, receivedQty: kind === 'count' ? 0 : 1, note: description, photoCount: 2, category, value }],
+    status: closed ? 'resolved' : 'open',
+    resolution: end === 'open' ? 'replacement_requested' : end === 'credited' ? 'credited' : 'resolved',
+    possibleCauses: [attribution],
+    rush: false,
+    attribution,
+    attributionNote: 'Judged from the photographs at the time.',
+    attributedByName: 'Prashant Vasant Wable',
+    attributedAt: created,
+    replacementEta: end === 'credited' ? undefined : end === 'open' ? daysAhead(5) : daysAgo(Math.max(0, daysBack - 6)),
+    creditAmount: end === 'credited' ? value : undefined,
+    scheduleDelayDays: delayDays || undefined,
+    routedToSupplierAt: created,
+    events: [
+      { id: `ddr-${id}-e1`, kind: 'raised', at: created, byName: 'Site technician' },
+      { id: `ddr-${id}-e2`, kind: 'attributed', at: created, byName: 'Prashant Vasant Wable', note: 'Judged from the photographs at the time.' },
+      ...(closed ? [{ id: `ddr-${id}-e3`, kind: 'resolution' as const, at: daysAgo(Math.max(0, daysBack - 8)), byName: 'Prashant Vasant Wable', note: end }] : []),
+    ],
+    createdAt: created,
+    createdByName: 'Site technician',
+    isDemo: true,
+  };
+};
+
+/** Ten past incidents across four suppliers over the last half year: enough for a rising trend to be
+ *  real (Deccan's brackets, guide rails), for one supplier's own retention to have been paused over the
+ *  same board (Konark), and for a mix of whose fault it was. Each carries its own cost inputs. */
+export const seedDiscrepancyReports: DeliveryDiscrepancyReport[] = (
+  [
+    ['h1', 'sp-4', 'AIEC-PO-7401', 'dl-h1', 'brackets', 'Brackets arrived bent', 'damaged', 32_000, 'supplier', 148, 0, 'resolved'],
+    ['h2', 'sp-2', 'AIEC-PO-7206', 'dl-h1', 'cabin', 'Cabin panel scratched in transit', 'damaged', 46_000, 'transport', 60, 1, 'resolved'],
+    ['h3', 'sp-1', 'AIEC-PO-8101', 'dl-h1', 'controller', 'Controller model not the one ordered', 'wrong_spec', 90_000, 'supplier', 97, 0, 'credited'],
+    ['h4', 'sp-4', 'AIEC-PO-7407', 'dl-h2', 'guide_rails', 'Fishplates missing from the rail set', 'count', 12_000, 'supplier', 64, 0, 'resolved'],
+    ['h5', 'sp-3', 'AIEC-PO-8105', 'dl-h3', 'vfd', 'Drive keypad cracked while unloading', 'damaged', 40_000, 'installation', 61, 1, 'resolved'],
+    ['h6', 'sp-2', 'AIEC-PO-7208', 'dl-h2', 'guide_rails', 'Guide rail set one bracket short', 'count', 22_000, 'supplier', 43, 3, 'resolved'],
+    ['h7', 'sp-4', 'AIEC-PO-7410', 'dl-h2', 'brackets', 'Bracket holes mis-drilled', 'damaged', 26_000, 'supplier', 22, 2, 'resolved'],
+    ['h8', 'sp-3', 'AIEC-PO-8106', 'dl-h3', 'controller', 'Drive board burnt out on commissioning', 'damaged', 40_000, 'supplier', 27, 2, 'resolved'],
+    ['h9', 'sp-2', 'AIEC-PO-7211', 'dl-h1', 'cabin', 'Car panel dented', 'damaged', 30_000, 'transport', 20, 1, 'resolved'],
+    ['h10', 'sp-4', 'AIEC-PO-7411', 'dl-h1', 'brackets', 'Rust on delivery', 'damaged', 24_000, 'supplier', 8, 0, 'open'],
+  ] as HistReport[]
+).map(histReport);
+
+/** The one macro disruption already known: the September expressway closures (see the Sanghvi score note). */
+export const seedDeliveryDisruptions: DeliveryDisruption[] = [
+  {
+    id: 'dis-1',
+    label: 'Pune–Mumbai expressway closures',
+    note: 'The expressway was closed for repairs for about two weeks. Deliveries from most suppliers on that route ran late.',
+    startsOn: new Date(NOW - 26 * DAY).toISOString().slice(0, 10),
+    endsOn: new Date(NOW - 12 * DAY).toISOString().slice(0, 10),
+    createdByName: 'Prashant Vasant Wable',
+    createdAt: daysAgo(6),
+    isDemo: true,
+  },
 ];
 
 /* ------------------------------------------ Supplier payment terms (100) */

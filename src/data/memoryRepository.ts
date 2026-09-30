@@ -60,6 +60,8 @@ import {
   seedDeliverySchedules,
   seedShipmentLegs,
   seedDeliveryPartners,
+  seedDiscrepancyReports,
+  seedDeliveryDisruptions,
   seedPartnerTrips,
   seedDeliverySops,
   seedDeliveryDelayCases,
@@ -147,7 +149,17 @@ import type {
   DeliverySopBoard,
   SopTemplateView,
   DiscrepancyReportView,
+  AnalyticsMonths,
   BookablePo,
+  DeliveryAnalytics,
+  DisruptionView,
+  IncidentCostRowView,
+  IncidentMonthView,
+  IncidentRowView,
+  KpiFigure,
+  OnTimeRowView,
+  TransitEstimate,
+  TransitRegionView,
   DelayAnalysis,
   LateDeliveryView,
   PartnerBoard,
@@ -217,6 +229,7 @@ import type {
   SupplierMessage,
   SupplierMessageChannel,
   ReportEvent,
+  DeliveryDisruption,
   DeliveryPartner,
   DeliveryPartnerLane,
   PartnerEvent,
@@ -365,6 +378,8 @@ import {
 import { compareDelays, etaMovedSince, judgeDelay } from '@/features/logistics/delay';
 import { capacityWeeks, categoryPatterns, readinessStatus, weekStartOf, windowOf } from '@/features/logistics/transit';
 import type { ReadinessStatus } from '@/features/logistics/transit';
+import { MIN_RISING_INCIDENTS, MIN_SAMPLE, REVISIT_COST, RISING_WINDOW_DAYS, SCHEDULE_DELAY_COST_PER_DAY, bucketsOf, costOf, inDisruption, inLast, inPriorWindow, isRising, monthKey, monthKeys, pctOf, previousWindow, transitSummary, trendOf, windowStart } from '@/features/logistics/deliveryAnalytics';
+import type { DeliveryFact } from '@/features/logistics/deliveryAnalytics';
 import { carriedOnTime, laneFor, latenessOf, serves, statsFor, tripOfRecord, trackingModeOf, unavailableFor } from '@/features/logistics/partnerPerformance';
 import type { Responsibility, TripFacts } from '@/features/logistics/partnerPerformance';
 import type { DelayFacts } from '@/features/logistics/delay';
@@ -496,7 +511,8 @@ let shipmentCounter = 100;
 /** 103: each arrival checked on site, and the report raised when one is wrong. */
 const deliveryChecklists: DeliveryChecklist[] = [];
 let checklistCounter = 100;
-const discrepancyReports: DeliveryDiscrepancyReport[] = [];
+const discrepancyReports: DeliveryDiscrepancyReport[] = [...seedDiscrepancyReports];
+const deliveryDisruptions: DeliveryDisruption[] = [...seedDeliveryDisruptions];
 let discrepancyCounter = 100;
 let checklistPhotoCounter = 100;
 
@@ -2984,6 +3000,9 @@ function syncDiscrepancyReport(checklist: DeliveryChecklist, actor: User): void 
     receivedQty: i.receivedQty ?? i.expectedQty,
     note: i.note,
     photoCount: i.photos.length,
+    // Kept on the report so its cost still reads the same after the order is edited (110).
+    category: (po?.lineItems ?? []).find((l) => l.id === i.lineItemId)?.category,
+    value: ((po?.lineItems ?? []).find((l) => l.id === i.lineItemId)?.agreedUnitPrice ?? 0) * ((po?.lineItems ?? []).find((l) => l.id === i.lineItemId)?.quantity ?? 1),
   }));
   const existingReport = reportOfChecklist(checklist.id);
   let report: DeliveryDiscrepancyReport;
@@ -3463,7 +3482,7 @@ function reportViewOf(r: DeliveryDiscrepancyReport, actor: User, now: number): D
     supplierName: supplier?.name ?? '',
     supplierHasLogin: !!supplier && !!supplierUserFor(supplier),
     checklistId: r.checklistId,
-    checklistCompleted: checklist?.status === 'completed',
+    checklistCompleted: checklist ? checklist.status === 'completed' : true,
     items,
     affectedValue: items.reduce((sum, i) => sum + i.value, 0),
     possibleCauses: r.possibleCauses,
@@ -3722,6 +3741,251 @@ function validatePartnerInput(input: PartnerInput): PartnerInput {
   if (areas.length === 0) throw new RepositoryError('area_required');
   if (input.rateCardRef.trim().length < 2) throw new RepositoryError('rate_card_required');
   return { ...input, name, contactName, phone, serviceAreas: areas, rateCardRef: input.rateCardRef.trim(), email: input.email?.trim() || undefined };
+}
+
+/* ============================================ Delivery analytics (110) */
+
+let disruptionCounter = 100;
+const DAY_MS = 86_400_000;
+const dayKeyOf = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+
+/** Everything Admin has annotated, plus outside-event delays already tagged in 105 that Admin has not written up. */
+function disruptionWindows(now: number): (DeliveryDisruption & { source: 'admin' | 'delay_alerts' })[] {
+  const own = deliveryDisruptions.map((d) => ({ ...d, source: 'admin' as const }));
+  const byLabel = new Map<string, { from: number; to: number }>();
+  for (const c of delayCases) {
+    if (c.rootCause !== 'external_event' || !c.externalLabel) continue;
+    const from = new Date(c.openedAt).getTime();
+    const to = c.recoveredAt ? new Date(c.recoveredAt).getTime() : now;
+    const prev = byLabel.get(c.externalLabel);
+    byLabel.set(c.externalLabel, { from: Math.min(prev?.from ?? from, from), to: Math.max(prev?.to ?? to, to) });
+  }
+  const derived = [...byLabel.entries()]
+    .filter(([label]) => !own.some((d) => d.label.trim().toLowerCase() === label.trim().toLowerCase()))
+    .map(([label, w], i) => ({
+      id: `dis-alert-${i}`,
+      label,
+      startsOn: dayKeyOf(w.from),
+      endsOn: dayKeyOf(w.to),
+      createdByName: 'Delay alerts',
+      createdAt: new Date(w.from).toISOString(),
+      isDemo: true,
+      source: 'delay_alerts' as const,
+    }));
+  return [...own, ...derived];
+}
+
+interface AnalyticsTrip {
+  city: string;
+  hours: number;
+  arrivedAt: string;
+}
+
+/** Every finished trip to a city: carriers' own, and vehicles a supplier sent itself. */
+function analyticsTrips(): AnalyticsTrip[] {
+  const out: AnalyticsTrip[] = [];
+  for (const r of partnerTripRecords) {
+    const city = r.laneLabel.split('→')[1]?.trim();
+    if (city) out.push({ city, hours: (new Date(r.arrivedAt).getTime() - new Date(r.dispatchedAt).getTime()) / 3_600_000, arrivedAt: r.arrivedAt });
+  }
+  for (const leg of shipmentLegs) {
+    const arrived = leg.milestones.find((m) => m.milestone === 'arrived');
+    const city = cityOfDeal(leg.dealId);
+    if (arrived && city) out.push({ city, hours: (new Date(arrived.at).getTime() - new Date(leg.dispatchedAt).getTime()) / 3_600_000, arrivedAt: arrived.at });
+  }
+  return out;
+}
+
+const sameOrder = (r: DeliveryDiscrepancyReport, rating: SupplierOrderRating) => r.poId === rating.poId || r.poId === rating.orderCode;
+
+interface IncidentFact {
+  key: string;
+  at: string;
+  supplierId: string;
+  supplierFault: boolean;
+  categories: string[];
+}
+
+/** One incident, once: a report, or a defect an old rating logged by hand for an order no report covers. */
+function incidentFacts(): IncidentFact[] {
+  const facts: IncidentFact[] = discrepancyReports
+    .filter((r) => r.status !== 'withdrawn')
+    .map((r) => ({ key: r.id, at: r.createdAt, supplierId: r.supplierId, supplierFault: r.attribution === 'supplier', categories: [...new Set(r.items.map((i) => i.category ?? '').filter(Boolean))] }));
+  for (const rating of supplierOrderRatings) {
+    // A report already speaks for its order: its defects (however they were logged) are the same incident.
+    if (discrepancyReports.some((r) => r.status !== 'withdrawn' && sameOrder(r, rating))) continue;
+    for (const d of rating.defects) {
+      if (d.sourceReportId) continue;
+      facts.push({ key: d.id, at: d.loggedAt, supplierId: rating.supplierId, supplierFault: d.attribution === 'supplier', categories: [] });
+    }
+  }
+  return facts;
+}
+
+const reportValue = (r: DeliveryDiscrepancyReport): number =>
+  r.items.reduce((sum, i) => {
+    if (i.value !== undefined) return sum + i.value;
+    const line = (byId(supplierPurchaseOrders, r.poId)?.lineItems ?? []).find((l) => l.id === i.lineItemId);
+    return sum + (line?.agreedUnitPrice ?? 0) * (line?.quantity ?? 1);
+  }, 0);
+
+function costRowOf(r: DeliveryDiscrepancyReport): IncidentCostRowView {
+  const cost = costOf({ value: reportValue(r), attribution: r.attribution ?? null, resolution: r.resolution, creditAmount: r.creditAmount, scheduleDelayDays: r.scheduleDelayDays, status: r.status });
+  return {
+    reportId: r.id,
+    code: r.code,
+    supplierName: byId(suppliers, r.supplierId)?.name ?? '',
+    category: r.items.find((i) => i.category)?.category ?? null,
+    at: r.createdAt,
+    attribution: r.attribution ?? null,
+    status: r.status === 'resolved' ? 'resolved' : 'open',
+    parts: cost.parts,
+    rework: cost.rework,
+    schedule: cost.schedule,
+    total: cost.total,
+    exposure: cost.exposure,
+  };
+}
+
+function kpiOf(value: number | null, previous: number | null, betterWhen: 'higher' | 'lower', flatBelow: number, pct = false): KpiFigure {
+  const t = trendOf(value, previous, betterWhen, flatBelow);
+  // A percentage against nothing is meaningless, so a zero base reads as "nothing earlier to compare".
+  const delta = t.delta === null || (pct && !previous) ? null : pct ? Math.round((t.delta / (previous as number)) * 100) : Math.round(t.delta * 10) / 10;
+  return { value, previous, direction: delta === null ? 'flat' : t.direction, tone: delta === null ? 'neutral' : t.tone, delta };
+}
+
+function computeDeliveryAnalytics(months: AnalyticsMonths, now: number): DeliveryAnalytics {
+  const keys = monthKeys(months, now);
+  const from = windowStart(months, now);
+  const prior = previousWindow(months, now);
+  const windows = disruptionWindows(now);
+  const inWin = (iso: string) => new Date(iso).getTime() >= from && new Date(iso).getTime() <= now;
+  const inPrev = (iso: string) => new Date(iso).getTime() >= prior.from && new Date(iso).getTime() < prior.to;
+
+  /* ------------------------------ on time: suppliers */
+  const supplierFacts = (supplierId: string | null): DeliveryFact[] =>
+    supplierOrderRatings
+      .filter((r) => supplierId === null || r.supplierId === supplierId)
+      .map((r) => ({ at: r.deliveredAt, onTime: r.timelinessDays <= 0, setAside: inDisruption(r.deliveredAt, windows) || (r.timelinessDays > 0 && r.delayCause === 'external_event') }));
+  const partnerFacts = (partnerId: string | null): DeliveryFact[] =>
+    deliveryPartners
+      .filter((p) => partnerId === null || p.id === partnerId)
+      .flatMap((p) => partnerTrips(p.id))
+      .map(({ facts }) => ({ at: facts.arrivedAt, onTime: carriedOnTime(facts), setAside: inDisruption(facts.arrivedAt, windows) || (!!facts.externalEvent && !carriedOnTime(facts)) }));
+
+  const rowOf = (id: string, name: string, kind: 'supplier' | 'partner', facts: DeliveryFact[]): OnTimeRowView => {
+    const cur = facts.filter((f) => inWin(f.at));
+    const prev = facts.filter((f) => inPrev(f.at));
+    const keep = (xs: DeliveryFact[]) => xs.filter((f) => !f.setAside);
+    return {
+      id,
+      name,
+      kind,
+      deliveries: cur.length,
+      rated: cur.length >= MIN_SAMPLE,
+      onTimePct: pctOf(cur.filter((f) => f.onTime).length, cur.length),
+      onTimePctExcl: pctOf(keep(cur).filter((f) => f.onTime).length, keep(cur).length),
+      previousPct: pctOf(prev.filter((f) => f.onTime).length, prev.length),
+      previousPctExcl: pctOf(keep(prev).filter((f) => f.onTime).length, keep(prev).length),
+      setAside: cur.length - keep(cur).length,
+      buckets: bucketsOf(facts, keys),
+    };
+  };
+  const suppliersRows = suppliers
+    .map((sp) => rowOf(sp.id, sp.name, 'supplier', supplierFacts(sp.id)))
+    .filter((r) => r.deliveries > 0)
+    .sort((a, b) => (b.onTimePct ?? -1) - (a.onTimePct ?? -1));
+  const partnerRows = deliveryPartners
+    .map((p) => rowOf(p.id, p.name, 'partner', partnerFacts(p.id)))
+    .filter((r) => r.deliveries > 0)
+    .sort((a, b) => (b.onTimePct ?? -1) - (a.onTimePct ?? -1));
+
+  /* ------------------------------ transit by region */
+  const trips = analyticsTrips();
+  const curTrips = trips.filter((t) => inWin(t.arrivedAt));
+  const prevTrips = trips.filter((t) => inPrev(t.arrivedAt));
+  const cities = new Map<string, string>();
+  for (const t of curTrips) cities.set(t.city.toLowerCase(), t.city);
+  const regions: TransitRegionView[] = [...cities.entries()].map(([key, city]) => {
+    const here = curTrips.filter((t) => t.city.toLowerCase() === key);
+    const before = prevTrips.filter((t) => t.city.toLowerCase() === key);
+    return {
+      city,
+      summary: transitSummary(here.map((t) => t.hours)),
+      previousAvgHours: before.length >= MIN_SAMPLE ? transitSummary(before.map((t) => t.hours)).avgHours : null,
+      lastArrivedAt: here.map((t) => t.arrivedAt).sort().pop() ?? null,
+    };
+  });
+  regions.sort((a, b) => Number(a.summary.emerging) - Number(b.summary.emerging) || b.summary.trips - a.summary.trips);
+  const transitNow = transitSummary(curTrips.map((t) => t.hours));
+  const transitBefore = transitSummary(prevTrips.map((t) => t.hours));
+
+  /* ------------------------------ incidents */
+  const incidents = incidentFacts();
+  const incWin = incidents.filter((i) => inWin(i.at));
+  const incPrev = incidents.filter((i) => inPrev(i.at));
+  const ratingsWin = supplierOrderRatings.filter((r) => inWin(r.deliveredAt));
+  const ratingsPrev = supplierOrderRatings.filter((r) => inPrev(r.deliveredAt));
+  const per100 = (n: number, d: number) => (d === 0 ? null : Math.round((n / d) * 1000) / 10);
+  const incidentRow = (id: string, name: string, mine: IncidentFact[], deliveries: number | null): IncidentRowView => {
+    const recent = mine.filter((i) => inLast(i.at, RISING_WINDOW_DAYS, now)).length;
+    const before = mine.filter((i) => inPriorWindow(i.at, RISING_WINDOW_DAYS, now)).length;
+    return {
+      id,
+      name,
+      incidents: mine.filter((i) => inWin(i.at)).length,
+      supplierFault: mine.filter((i) => inWin(i.at) && i.supplierFault).length,
+      deliveries,
+      per100: deliveries === null ? null : per100(mine.filter((i) => inWin(i.at)).length, deliveries),
+      recent,
+      prior: before,
+      rising: isRising(recent, before),
+      emerging: mine.length < MIN_RISING_INCIDENTS + 1,
+    };
+  };
+  const incidentSuppliers = suppliers
+    .map((sp) => incidentRow(sp.id, sp.name, incidents.filter((i) => i.supplierId === sp.id), ratingsWin.filter((r) => r.supplierId === sp.id).length))
+    .filter((r) => r.incidents > 0 || r.recent > 0 || r.prior > 0)
+    .sort((a, b) => Number(b.rising) - Number(a.rising) || b.incidents - a.incidents);
+  const cats = [...new Set(incidents.flatMap((i) => i.categories))];
+  const incidentCategories = cats
+    .map((c) => incidentRow(c, c, incidents.filter((i) => i.categories.includes(c)), null))
+    .sort((a, b) => Number(b.rising) - Number(a.rising) || b.incidents - a.incidents);
+  const incidentMonths: IncidentMonthView[] = keys.map((key) => ({ key, incidents: incidents.filter((i) => monthKey(i.at) === key).length, deliveries: supplierOrderRatings.filter((r) => monthKey(r.deliveredAt) === key).length }));
+
+  /* ------------------------------ cost: one incident, one cost */
+  const costRows = discrepancyReports.filter((r) => r.status !== 'withdrawn' && inWin(r.createdAt)).map(costRowOf).sort((a, b) => (a.at < b.at ? 1 : -1));
+  const costPrev = discrepancyReports.filter((r) => r.status !== 'withdrawn' && inPrev(r.createdAt)).map(costRowOf).reduce((n, r) => n + r.total, 0);
+  const sum = (k: 'parts' | 'rework' | 'schedule' | 'total' | 'exposure') => costRows.reduce((n, r) => n + r[k], 0);
+  // Retention already paused or withheld over these same faults is a different ledger: shown, never added to the cost.
+  const faultyOrders = new Set(discrepancyReports.filter((r) => r.status !== 'withdrawn' && r.attribution === 'supplier' && inWin(r.createdAt)).map((r) => r.poId));
+  const retentionHeld = supplierRetentions
+    .filter((ret) => (ret.status === 'paused' || ret.status === 'withheld') && (faultyOrders.has(ret.poId) || faultyOrders.has(byId(supplierPurchaseOrders, ret.poId)?.code ?? '')))
+    .reduce((n, ret) => n + ret.amount, 0);
+
+  const windowsView: DisruptionView[] = windows.map((w) => {
+    const startMs = new Date(`${w.startsOn}T00:00:00`).getTime();
+    const endMs = new Date(`${w.endsOn}T00:00:00`).getTime() + DAY_MS;
+    const affected = supplierOrderRatings.filter((r) => new Date(r.deliveredAt).getTime() >= startMs && new Date(r.deliveredAt).getTime() < endMs).length;
+    return { id: w.id, label: w.label, note: w.note ?? null, startsOn: w.startsOn, endsOn: w.endsOn, source: w.source, deliveriesAffected: affected };
+  });
+
+  return {
+    months: keys,
+    overall: rowOf('all', '', 'supplier', supplierFacts(null)),
+    suppliers: suppliersRows,
+    partners: partnerRows,
+    overallPartners: rowOf('all', '', 'partner', partnerFacts(null)),
+    transitKpi: kpiOf(transitNow.emerging ? null : transitNow.avgHours, transitBefore.emerging ? null : transitBefore.avgHours, 'lower', 0.5, true),
+    transit: regions,
+    incidentKpi: kpiOf(per100(incWin.length, ratingsWin.length), per100(incPrev.length, ratingsPrev.length), 'lower', 0.5),
+    incidentMonths,
+    incidentSuppliers,
+    incidentCategories,
+    costKpi: kpiOf(sum('total'), costPrev, 'lower', 1, true),
+    cost: { parts: sum('parts'), rework: sum('rework'), schedule: sum('schedule'), total: sum('total'), exposure: sum('exposure'), retentionHeld, incidents: costRows.length, rows: costRows, rates: { schedulePerDay: SCHEDULE_DELAY_COST_PER_DAY, revisit: REVISIT_COST } },
+    disruptions: windowsView,
+  };
 }
 
 /* ============================================ Delivery SOP (107) */
@@ -4078,6 +4342,8 @@ function settleRetentions(now: number): void {
     const rating = supplierOrderRatings.find((x) => x.poId === r.poId);
     const action = retentionAction(r, jobs.filter((j) => j.dealId === r.dealId), rating);
     if (action.kind === 'none') continue;
+    // A part still in question on this order (108) keeps its retention held: the supplier is not paid over an open fault.
+    if (action.kind === 'release' && discrepancyReports.some((d) => d.poId === r.poId && d.status === 'open')) continue;
     const po = byId(supplierPurchaseOrders, r.poId);
     const at = new Date(now).toISOString();
     if (action.kind === 'release') {
@@ -7499,7 +7765,7 @@ export const memoryRepository: Repository = {
       const r = reportOrThrow(reportId, actor);
       if (r.status !== 'open') throw new RepositoryError('invalid_state');
       // The delivery is signed for first: what is being judged is what could be verified at that moment.
-      if (reportChecklist(r)?.status !== 'completed') throw new RepositoryError('checklist_open');
+      { const kept = reportChecklist(r); if (kept && kept.status !== 'completed') throw new RepositoryError('checklist_open'); }
       if (input.note.trim().length < 4) throw new RepositoryError('note_required');
       const at = new Date().toISOString();
       const updated = patchInPlace(discrepancyReports, r.id, {
@@ -7520,7 +7786,7 @@ export const memoryRepository: Repository = {
       if (actor.role !== 'admin') throw new RepositoryError('forbidden');
       const r = reportOrThrow(reportId, actor);
       if (r.status !== 'open') throw new RepositoryError('invalid_state');
-      if (reportChecklist(r)?.status !== 'completed') throw new RepositoryError('checklist_open');
+      { const kept = reportChecklist(r); if (kept && kept.status !== 'completed') throw new RepositoryError('checklist_open'); }
       if (!canMoveTo(r.resolution, input.resolution)) throw new RepositoryError('invalid_transition');
       const now = Date.now();
       const eta = input.replacementEta ? new Date(input.replacementEta).getTime() : null;
@@ -7542,6 +7808,14 @@ export const memoryRepository: Repository = {
         status: closed ? 'resolved' : 'open',
         replacementEta: eta !== null ? new Date(eta).toISOString() : r.replacementEta,
         creditAmount: credit ?? r.creditAmount,
+        // A replacement landing after the installation was due to start is what the schedule cost is reckoned on (110).
+        scheduleDelayDays: (() => {
+          const job = pendingJobFor(r.dealId);
+          const start = job && !job.startedAt ? job.scheduledFor : null;
+          const landing = eta !== null ? new Date(eta).toISOString() : r.replacementEta;
+          if (!start || !landing) return r.scheduleDelayDays;
+          return Math.max(0, Math.ceil((new Date(landing).getTime() - new Date(start).getTime()) / 86_400_000));
+        })(),
         events: reportEvent(r, 'resolution', actor.name, `${input.resolution}${input.note?.trim() ? `: ${input.note.trim()}` : ''}`),
       });
       if (closed) {
@@ -7601,6 +7875,51 @@ export const memoryRepository: Repository = {
       patchInPlace(conversations, conversation.id, { lastMessageAt: at });
       patchInPlace(discrepancyReports, r.id, { customerNotifiedAt: at, events: reportEvent(r, 'customer_told', actor.name) });
       return { notified: true };
+    }),
+
+  /* --------------------------------------------- Delivery analytics (110) */
+  getDeliveryAnalytics: (months, byUserId) =>
+    simulateRead((): DeliveryAnalytics => {
+      adminOnly(byUserId);
+      const now = Date.now();
+      syncPartnerFeeds(now);
+      return computeDeliveryAnalytics(months, now);
+    }),
+
+  saveDeliveryDisruption: (input, byUserId) =>
+    simulateWrite(() => {
+      const actor = adminOnly(byUserId);
+      const label = input.label.trim();
+      const start = new Date(`${input.startsOn}T00:00:00`).getTime();
+      const end = new Date(`${input.endsOn}T00:00:00`).getTime();
+      if (label.length < 3 || Number.isNaN(start) || Number.isNaN(end)) throw new RepositoryError('invalid_input');
+      if (end < start) throw new RepositoryError('dates_reversed');
+      // A disruption is a spell, not a season: long ones would quietly hide a real decline.
+      if ((end - start) / DAY_MS > 90) throw new RepositoryError('too_long');
+      if (start > Date.now() + DAY_MS) throw new RepositoryError('in_future');
+      if (deliveryDisruptions.some((d) => d.label.toLowerCase() === label.toLowerCase() && d.startsOn === input.startsOn)) throw new RepositoryError('duplicate');
+      disruptionCounter += 1;
+      const created: DeliveryDisruption = { id: `dis-new-${disruptionCounter}`, label, note: input.note?.trim() || undefined, startsOn: input.startsOn, endsOn: input.endsOn, createdByName: actor.name, createdAt: new Date().toISOString(), isDemo: true };
+      deliveryDisruptions.push(created);
+      const view = computeDeliveryAnalytics(6, Date.now()).disruptions.find((d) => d.id === created.id);
+      return view ?? { id: created.id, label, note: created.note ?? null, startsOn: created.startsOn, endsOn: created.endsOn, source: 'admin' as const, deliveriesAffected: 0 };
+    }),
+
+  removeDeliveryDisruption: (disruptionId, byUserId) =>
+    simulateWrite(() => {
+      adminOnly(byUserId);
+      const index = deliveryDisruptions.findIndex((d) => d.id === disruptionId);
+      if (index === -1) throw new RepositoryError('not_found');
+      deliveryDisruptions.splice(index, 1);
+    }),
+
+  getTransitEstimate: (city, byUserId) =>
+    simulateRead((): TransitEstimate => {
+      catalogActor(byUserId);
+      const from = windowStart(12, Date.now());
+      const key = city.trim().toLowerCase();
+      const summary = transitSummary(analyticsTrips().filter((t) => t.city.toLowerCase() === key && new Date(t.arrivedAt).getTime() >= from).map((t) => t.hours));
+      return { city: city.trim(), trips: summary.trips, emerging: summary.emerging, suggestedDays: summary.suggestedDays, typicalHours: summary.medianHours };
     }),
 
   /* --------------------------------------------- Delivery partners (109) */

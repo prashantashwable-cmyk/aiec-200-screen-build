@@ -92,6 +92,14 @@ export function DealClosureConfirmationView() {
           <p className="t-sm t-muted mb-2">{t(K.nextSteps.subtitle)}</p>
           <Card>
             <div className="stack gap-3">
+              {s.estimate && (
+                <div className="stack gap-1" role="note">
+                  <span className="t-sm">{t(K.nextSteps.delivery, { city: s.estimate.city })}</span>
+                  <span className="t-xs t-muted">
+                    {s.estimate.suggestedDays !== null ? t(K.nextSteps.deliveryDays, { count: s.estimate.suggestedDays, trips: s.estimate.trips }) : t(K.nextSteps.deliveryEmerging, { count: s.estimate.trips, trips: s.estimate.trips })}
+                  </span>
+                </div>
+              )}
               {sortedPayments.map((p) => (
                 <div key={p.id} className="row between items-center gap-3">
                   <span className="t-sm">{t(`finance.paymentStage.${p.stage}`)}</span>

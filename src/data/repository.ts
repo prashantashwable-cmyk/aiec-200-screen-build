@@ -123,6 +123,7 @@ import type {
 import type { SlotDay } from '@/features/logistics/deliverySlots';
 import type { ArrivalWindow, CapacityWeek, ReadinessStatus } from '@/features/logistics/transit';
 import type { SopVersionStatus } from '@/features/logistics/deliverySop';
+import type { Bucket, Direction, TransitSummary, TrendTone } from '@/features/logistics/deliveryAnalytics';
 import type { PartnerStats, PartnerUnavailable, Responsibility, TrackingMode } from '@/features/logistics/partnerPerformance';
 
 /**
@@ -1125,6 +1126,137 @@ export interface AdvanceResolutionInput {
   replacementEta?: string;
   creditAmount?: number;
   note?: string;
+}
+
+/* ---------------------------------- Delivery analytics (110) */
+
+export type AnalyticsMonths = 3 | 6 | 12;
+
+/** One headline number and how it moved against the same length of time before. */
+export interface KpiFigure {
+  value: number | null;
+  previous: number | null;
+  direction: Direction;
+  tone: TrendTone;
+  /** Change: in points for a rate, in percent for an amount or a time. */
+  delta: number | null;
+}
+
+export interface OnTimeRowView {
+  id: string;
+  name: string;
+  kind: 'supplier' | 'partner';
+  deliveries: number;
+  /** Fewer than the minimum sample: shown, but flagged as an early look. */
+  rated: boolean;
+  onTimePct: number | null;
+  /** The same with disruption periods and externally caused delays set aside. */
+  onTimePctExcl: number | null;
+  previousPct: number | null;
+  previousPctExcl: number | null;
+  setAside: number;
+  buckets: Bucket[];
+}
+
+export interface TransitRegionView {
+  city: string;
+  summary: TransitSummary;
+  previousAvgHours: number | null;
+  lastArrivedAt: string | null;
+}
+
+export interface IncidentRowView {
+  id: string;
+  name: string;
+  incidents: number;
+  supplierFault: number;
+  /** Orders delivered in the window. Null for a category: there is no honest denominator for one. */
+  deliveries: number | null;
+  per100: number | null;
+  /** The latest 90 days against the 90 before, whatever period is chosen. */
+  recent: number;
+  prior: number;
+  rising: boolean;
+  /** Too few incidents to call a direction. */
+  emerging: boolean;
+}
+
+export interface IncidentMonthView {
+  key: string;
+  incidents: number;
+  deliveries: number;
+}
+
+export interface IncidentCostRowView {
+  reportId: string;
+  code: string;
+  supplierName: string;
+  category: string | null;
+  at: string;
+  attribution: 'supplier' | 'transport' | 'installation' | null;
+  status: 'open' | 'resolved';
+  parts: number;
+  rework: number;
+  schedule: number;
+  total: number;
+  exposure: number;
+}
+
+export interface CostSummaryView {
+  parts: number;
+  rework: number;
+  schedule: number;
+  total: number;
+  /** Unjudged and open: value at stake, never added into the total. */
+  exposure: number;
+  /** Retention already paused or withheld from suppliers over these same faults: shown, never added again. */
+  retentionHeld: number;
+  incidents: number;
+  rows: IncidentCostRowView[];
+  rates: { schedulePerDay: number; revisit: number };
+}
+
+export interface DisruptionView {
+  id: string;
+  label: string;
+  note: string | null;
+  startsOn: string;
+  endsOn: string;
+  /** Written by Admin here, or read from delay alerts Admin tagged to an outside event (105). */
+  source: 'admin' | 'delay_alerts';
+  deliveriesAffected: number;
+}
+
+export interface DeliveryAnalytics {
+  months: string[];
+  overall: OnTimeRowView;
+  suppliers: OnTimeRowView[];
+  partners: OnTimeRowView[];
+  overallPartners: OnTimeRowView;
+  transitKpi: KpiFigure;
+  transit: TransitRegionView[];
+  incidentKpi: KpiFigure;
+  incidentMonths: IncidentMonthView[];
+  incidentSuppliers: IncidentRowView[];
+  incidentCategories: IncidentRowView[];
+  costKpi: KpiFigure;
+  cost: CostSummaryView;
+  disruptions: DisruptionView[];
+}
+
+export interface TransitEstimate {
+  city: string;
+  trips: number;
+  emerging: boolean;
+  suggestedDays: number | null;
+  typicalHours: number | null;
+}
+
+export interface DisruptionInput {
+  label: string;
+  note?: string;
+  startsOn: string;
+  endsOn: string;
 }
 
 /* ---------------------------------- Delivery partner management (109) */
@@ -2565,6 +2697,14 @@ export interface Repository {
   completeDeliveryChecklist(checklistId: string, input: CompleteChecklistInput, byUserId: string): Promise<CompleteChecklistResult>;
   /** Abandons an unfinished checklist started by mistake. */
   cancelDeliveryChecklist(checklistId: string, byUserId: string): Promise<void>;
+
+  /* Delivery analytics (110) — read off what the checklists, reports, alerts and trips already recorded */
+  getDeliveryAnalytics(months: AnalyticsMonths, byUserId: string): Promise<DeliveryAnalytics>;
+  /** Marks a stretch when an outside event hit deliveries broadly, so its trend is not misread. */
+  saveDeliveryDisruption(input: DisruptionInput, byUserId: string): Promise<DisruptionView>;
+  removeDeliveryDisruption(disruptionId: string, byUserId: string): Promise<void>;
+  /** How long parts really take to reach a city, for the timeline a customer is promised. Any signed-in role. */
+  getTransitEstimate(city: string, byUserId: string): Promise<TransitEstimate>;
 
   /* Delivery partners (109) — third-party carriers, judged by their own promise */
   getPartnerBoard(byUserId: string): Promise<PartnerBoard>;

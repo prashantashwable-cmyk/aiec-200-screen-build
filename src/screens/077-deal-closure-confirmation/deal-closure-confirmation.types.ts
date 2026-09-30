@@ -22,6 +22,9 @@ export const DEAL_CLOSURE_CONFIRMATION_KEYS = {
     heading: 'dealClosureConfirmation.nextSteps.heading',
     subtitle: 'dealClosureConfirmation.nextSteps.subtitle',
     stageDue: 'dealClosureConfirmation.nextSteps.stageDue',
+    delivery: 'dealClosureConfirmation.nextSteps.delivery',
+    deliveryDays: 'dealClosureConfirmation.nextSteps.deliveryDays',
+    deliveryEmerging: 'dealClosureConfirmation.nextSteps.deliveryEmerging',
   },
 
   contact: {

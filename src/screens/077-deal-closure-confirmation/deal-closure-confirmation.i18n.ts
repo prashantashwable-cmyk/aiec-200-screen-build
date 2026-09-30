@@ -22,6 +22,11 @@ const translations: ScreenTranslations = {
         heading: 'What happens next',
         subtitle: 'Your payment schedule, exactly as agreed.',
         stageDue: 'Due {{date}}',
+        delivery: 'Parts reaching {{city}}',
+        deliveryDays_one: 'About {{count}} day from dispatch, which 8 in 10 of our last {{trips}} deliveries beat',
+        deliveryDays_other: 'About {{count}} days from dispatch, which 8 in 10 of our last {{trips}} deliveries beat',
+        deliveryEmerging_one: 'Too early to promise a time: only {{trips}} delivery there so far',
+        deliveryEmerging_other: 'Too early to promise a time: only {{trips}} deliveries there so far',
       },
 
       contact: {
@@ -77,6 +82,11 @@ const translations: ScreenTranslations = {
         heading: 'आगे क्या होगा',
         subtitle: 'आपकी भुगतान योजना, ठीक वैसी जैसी तय हुई थी।',
         stageDue: '{{date}} को देय',
+        delivery: '{{city}} तक पार्ट्स का पहुँचना',
+        deliveryDays_one: 'डिस्पैच से लगभग {{count}} दिन, जिसे हमारी पिछली {{trips}} डिलीवरी में से 10 में से 8 ने पूरा किया',
+        deliveryDays_other: 'डिस्पैच से लगभग {{count}} दिन, जिसे हमारी पिछली {{trips}} डिलीवरी में से 10 में से 8 ने पूरा किया',
+        deliveryEmerging_one: 'समय का वादा करना अभी जल्दबाज़ी होगी: वहाँ अब तक सिर्फ़ {{trips}} डिलीवरी हुई',
+        deliveryEmerging_other: 'समय का वादा करना अभी जल्दबाज़ी होगी: वहाँ अब तक सिर्फ़ {{trips}} डिलीवरी हुईं',
       },
 
       contact: {
@@ -132,6 +142,11 @@ const translations: ScreenTranslations = {
         heading: 'पुढे काय होईल',
         subtitle: 'तुमची पेमेंट योजना, ठरल्याप्रमाणे तंतोतंत.',
         stageDue: '{{date}} रोजी देय',
+        delivery: '{{city}} पर्यंत पार्ट्स पोहोचणं',
+        deliveryDays_one: 'डिस्पॅचपासून साधारण {{count}} दिवस, जे आमच्या शेवटच्या {{trips}} डिलिव्हऱ्यांपैकी 10 पैकी 8 ने पाळलं',
+        deliveryDays_other: 'डिस्पॅचपासून साधारण {{count}} दिवस, जे आमच्या शेवटच्या {{trips}} डिलिव्हऱ्यांपैकी 10 पैकी 8 ने पाळलं',
+        deliveryEmerging_one: 'वेळेचा शब्द देणं अजून घाईचं: तिथे आतापर्यंत फक्त {{trips}} डिलिव्हरी झाली',
+        deliveryEmerging_other: 'वेळेचा शब्द देणं अजून घाईचं: तिथे आतापर्यंत फक्त {{trips}} डिलिव्हऱ्या झाल्या',
       },
 
       contact: {

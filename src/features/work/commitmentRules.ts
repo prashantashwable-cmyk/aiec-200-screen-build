@@ -982,7 +982,8 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
     collect(src) {
       const admin = adminId(src);
       return src.discrepancyReports
-        .filter((r) => r.status !== 'withdrawn')
+        // A report from before delivery checks were kept here (no checklist) is history, not something to chase.
+        .filter((r) => r.status !== 'withdrawn' && r.checklistId)
         .map((r) => {
           const po = src.purchaseOrders.find((p) => p.id === r.poId);
           const deal = src.deals.find((d) => d.id === r.dealId);
