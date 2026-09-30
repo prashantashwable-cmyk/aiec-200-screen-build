@@ -69,6 +69,8 @@ import type {
   SupplierPaymentAdjustment,
   SupplierGstCheck,
   BankTransaction,
+  InstallSopSlot,
+  InstallSopVersion,
   SupplierDispute,
   SupplierPayment,
   SupplierPaymentPart,
@@ -942,7 +944,7 @@ export const installSteps = (completedCount: number): Job['steps'] => {
     { id: 's3', key: 'job.step.guideRails', evidence: false },
     { id: 's4', key: 'job.step.machineMount', evidence: true },
     { id: 's5', key: 'job.step.carAssembly', evidence: false },
-    { id: 's6', key: 'job.step.doorOperator', evidence: false },
+    { id: 's6', key: 'job.step.doorOperator', evidence: true },
     { id: 's7', key: 'job.step.wiringControl', evidence: true },
     { id: 's8', key: 'job.step.safetyGearTest', evidence: true },
     { id: 's9', key: 'job.step.loadTest', evidence: true },
@@ -957,6 +959,58 @@ export const installSteps = (completedCount: number): Job['steps'] => {
     completedAt: i < completedCount ? daysAgo(completedCount - i) : undefined,
   }));
 };
+
+/* ------------------------------------------ Installation SOP (123) */
+
+const slot = (id: string, labelKey: string, required: boolean, appliesWhen?: InstallSopSlot['appliesWhen']): InstallSopSlot => ({ id, labelKey, required, ...(appliesWhen ? { appliesWhen } : {}) });
+
+/** The one installation procedure every technician on every job follows. It says what each step needs; the job records what happened.
+ *  Safety devices and the tests that prove them (governor, buffers, rescue device, alarm, door sensors) are hard-gated on photos, in line
+ *  with what the BIS / IS lift standards emphasise. Steps that do not depend on each other can be done in whatever order the site allows. */
+export const seedInstallSopVersions: InstallSopVersion[] = [
+  {
+    version: 1,
+    effectiveFrom: daysAgo(400),
+    changeNote: 'First published procedure.',
+    publishedByName: 'Prashant Vasant Wable',
+    publishedAt: daysAgo(400),
+    steps: [
+      { id: 's1', labelKey: 'job.step.siteReadiness', phase: 'preparation', safetyCritical: false, slots: [slot('s1.shaft', 'installSop.slot.shaft', true), slot('s1.pit', 'installSop.slot.pit', true)], dependsOn: [], canBeNotApplicable: false },
+      { id: 's2', labelKey: 'job.step.materialsReceived', phase: 'preparation', safetyCritical: false, slots: [], dependsOn: ['s1'], canBeNotApplicable: false, satisfiedByDelivery: true },
+      { id: 's3', labelKey: 'job.step.guideRails', phase: 'rails', safetyCritical: false, slots: [slot('s3.alignment', 'installSop.slot.alignment', false)], dependsOn: ['s1', 's2'], canBeNotApplicable: false },
+      { id: 's4', labelKey: 'job.step.machineMount', phase: 'machine', safetyCritical: false, slots: [slot('s4.mount', 'installSop.slot.mount', true)], dependsOn: ['s3'], canBeNotApplicable: false },
+      { id: 's5', labelKey: 'job.step.carAssembly', phase: 'car', safetyCritical: false, slots: [slot('s5.frame', 'installSop.slot.frame', false)], dependsOn: ['s3'], canBeNotApplicable: false },
+      {
+        id: 's6',
+        labelKey: 'job.step.doorOperator',
+        phase: 'car',
+        safetyCritical: true,
+        slots: [slot('s6.sensors', 'installSop.slot.sensors', true)],
+        dependsOn: ['s5'],
+        appliesWhen: { field: 'doorType', oneOf: ['automatic_centre', 'automatic_side'] },
+        canBeNotApplicable: true,
+      },
+      { id: 's7', labelKey: 'job.step.wiringControl', phase: 'wiring', safetyCritical: false, slots: [slot('s7.panel', 'installSop.slot.panel', true), slot('s7.earthing', 'installSop.slot.earthing', true)], dependsOn: ['s4', 's5'], canBeNotApplicable: false },
+      {
+        id: 's8',
+        labelKey: 'job.step.safetyGearTest',
+        phase: 'safety',
+        safetyCritical: true,
+        slots: [
+          slot('s8.governor', 'installSop.slot.governor', true),
+          slot('s8.buffers', 'installSop.slot.buffers', true),
+          slot('s8.gear', 'installSop.slot.gear', true),
+          slot('s8.alarm', 'installSop.slot.alarm', true),
+          slot('s8.ard', 'installSop.slot.ard', true, { field: 'powerBackup', equals: true }),
+        ],
+        dependsOn: ['s6', 's7'],
+        canBeNotApplicable: false,
+      },
+      { id: 's9', labelKey: 'job.step.loadTest', phase: 'safety', safetyCritical: true, slots: [slot('s9.load', 'installSop.slot.load', true)], dependsOn: ['s8'], canBeNotApplicable: false },
+      { id: 's10', labelKey: 'job.step.finishHandover', phase: 'final', safetyCritical: false, slots: [slot('s10.final', 'installSop.slot.final', true)], dependsOn: ['s9'], canBeNotApplicable: false },
+    ],
+  },
+];
 
 export const seedJobs: Job[] = [
   { id: 'j-1', code: 'AIEC-J-3101', dealId: 'dl-1', technicianId: 'u-tech-1', status: 'in_progress', siteName: 'Shree Ram Heights', address: 'Phase 2, Hinjawadi', location: { lat: 18.5913, lng: 73.7389 }, scheduledFor: daysAgo(21), startedAt: daysAgo(21), steps: installSteps(7), crew: [{ userId: 'u-tech-1', role: 'lead', stepIds: [] }, { userId: 'u-tech-2', role: 'assistant', stepIds: ['s6', 's7'] }], isDemo: true },

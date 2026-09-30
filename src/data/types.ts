@@ -2374,6 +2374,68 @@ export interface JobStep {
   requiresEvidence: boolean;
   evidenceCount: number;
   completedAt?: string;
+  /** The photos attached to this step, one or more per evidence slot the SOP names (123). A step finished before evidence was kept
+   *  in the app only has `evidenceCount`. */
+  evidence?: JobEvidence[];
+  /** Set when the step genuinely does not apply to this configuration: it is done, but says so and why, and is never mistaken for a
+   *  step that applied and was skipped. */
+  notApplicable?: { reason: string; byName: string; at: string };
+  completedByName?: string;
+}
+
+export interface JobEvidence {
+  id: string;
+  slotId: string;
+  fileName: string;
+  /** A data URL, so the photo still shows on other screens once the capture screen is gone. */
+  previewUrl: string;
+  /** When the photo was taken on site, never when it reached the server. */
+  capturedAt: string;
+  byUserId: string;
+  byName: string;
+}
+
+/* ------------------------------------ Installation SOP (123) */
+
+export type InstallSopPhase = 'preparation' | 'rails' | 'machine' | 'car' | 'wiring' | 'safety' | 'final';
+
+/** A step or a photo that is only asked for when this configuration has the feature (an automatic rescue device only when the
+ *  lift has power backup, door sensors only on automatic doors). */
+export type InstallSopApplicability = { field: 'powerBackup'; equals: boolean } | { field: 'doorType'; oneOf: BuildingSpec['doorType'][] };
+
+export interface InstallSopSlot {
+  id: string;
+  labelKey: string;
+  required: boolean;
+  appliesWhen?: InstallSopApplicability;
+}
+
+export interface InstallSopStepDef {
+  /** The job step this defines (`s1`…`s10`): the SOP says what each step needs, the job records what happened. */
+  id: string;
+  labelKey: string;
+  phase: InstallSopPhase;
+  /** Governor, buffers, rescue device, door safety sensors and the tests that prove them (BIS / IS emphasis): hard-gated on evidence. */
+  safetyCritical: boolean;
+  slots: InstallSopSlot[];
+  /** Steps that must be done (or not applicable) first. Anything not listed can be done in whatever order the site allows. */
+  dependsOn: string[];
+  appliesWhen?: InstallSopApplicability;
+  /** Whether the technician may mark it not applicable with a reason. A step that applies and is safety-critical never can. */
+  canBeNotApplicable: boolean;
+  /** Satisfied by the signed delivery confirmation (104), so it is never ticked a second time. */
+  satisfiedByDelivery?: boolean;
+}
+
+/** One published version of the installation procedure. Append-only, like 107's delivery procedure: a job in progress finishes
+ *  under the version it started with. */
+export interface InstallSopVersion {
+  version: number;
+  effectiveFrom: string;
+  changeNote: string;
+  publishedByName: string;
+  publishedAt: string;
+  steps: InstallSopStepDef[];
 }
 
 export interface Job {
@@ -2400,6 +2462,8 @@ export interface Job {
   /** Everyone on the job when it is more than one person's. `technicianId` is the lead; the crew names the others and the steps each
    *  is responsible for, so an assistant sees their own part of the job and not the lead's whole view (121). Unset means the lead alone. */
   crew?: JobCrewMember[];
+  /** The installation procedure version this job is being done under, pinned when it starts (123). */
+  sopVersion?: number;
   isDemo: boolean;
 }
 

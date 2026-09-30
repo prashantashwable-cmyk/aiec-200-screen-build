@@ -1,5 +1,8 @@
 import type {
   AdvanceRecovery,
+  InstallSopPhase,
+  JobEvidence,
+  JobStep,
   JobStatus,
   AlertSeverity,
   SupplierDispute,
@@ -1360,6 +1363,67 @@ export interface TechnicianJobDetail {
   notes: JobNoteView[];
   /** A customer who has had AIEC installations before: what may sensibly carry over, always to be checked, never assumed. */
   repeat: { earlierJobs: { code: string; siteName: string; status: Job['status']; at: string }[]; carried: JobNoteView[] } | null;
+}
+
+/* ---------------------------------- Installation SOP checklist (123) */
+
+export interface SopSlotView {
+  id: string;
+  labelKey: string;
+  required: boolean;
+  /** The photo attached for this slot, if any. */
+  photo: JobEvidence | null;
+}
+
+export type SopStepProblem = 'depends_on' | 'evidence_missing' | 'materials_not_confirmed' | 'not_started' | 'not_yours' | 'read_only';
+
+export interface SopStepView {
+  id: string;
+  labelKey: string;
+  phase: InstallSopPhase;
+  safetyCritical: boolean;
+  status: JobStep['status'];
+  done: boolean;
+  /** Set when the step was set aside as not applicable: done, but never confused with a step that applied. */
+  notApplicable: { reason: string; byName: string; at: string } | null;
+  /** Whether this configuration has the feature the step is about. */
+  applies: boolean;
+  slots: SopSlotView[];
+  /** Why the step cannot be finished right now, or null when it can. */
+  problem: SopStepProblem | null;
+  /** The steps it stands on, by id, and by label key for those not done yet. */
+  dependsOn: string[];
+  waitingFor: string[];
+  missingSlotIds: string[];
+  canNotApplicable: boolean;
+  /** Finished before the app kept photos: counted as evidenced, with no photos to show. */
+  legacyEvidence: boolean;
+  satisfiedByDelivery: boolean;
+  completedAt: string | null;
+  completedByName: string | null;
+  /** Whose step it is: `you`, or the person it belongs to when it is not yours. */
+  owner: { isYou: boolean; name: string };
+}
+
+export interface InstallationSopView {
+  job: { id: string; code: string; siteName: string; status: Job['status']; role: 'lead' | 'assistant'; scheduledFor: string; startedAt: string | null; holdReason: string | null };
+  version: { version: number; effectiveFrom: string; changeNote: string } | null;
+  steps: SopStepView[];
+  progress: { done: number; total: number };
+  currentStepId: string | null;
+  /** All steps done with all evidence: the job is ready for QC (and has been handed there). */
+  qcReady: boolean;
+  canStart: boolean;
+  startProblem: 'materials_not_confirmed' | 'on_hold' | 'not_scheduled_yet' | null;
+  /** Nothing more can be changed here: the job is with QC, on hold, or finished. */
+  readOnly: boolean;
+}
+
+export interface SopPhotoInput {
+  fileName: string;
+  previewUrl: string;
+  /** When it was taken on site: a photo taken offline keeps its own time. */
+  capturedAt: string;
 }
 
 /* ---------------------------------- Auto-reconciliation (120) */
@@ -3871,6 +3935,19 @@ export interface Repository {
 
   /* Technician job detail (122) — context for one installation, read-mostly */
   getTechnicianJob(jobId: string, technicianId: string): Promise<TechnicianJobDetail>;
+
+  /* Installation SOP checklist (123) — the working record of the installation, under the central procedure */
+  getInstallationSop(jobId: string, technicianId: string): Promise<InstallationSopView>;
+  /** Starts the installation and pins the procedure version it will be done under. Needs the parts on site. */
+  startInstallation(jobId: string, technicianId: string, capturedAt?: string): Promise<InstallationSopView>;
+  /** Attaches a photo to one of a step's evidence slots, replacing the one there. */
+  attachStepEvidence(jobId: string, stepId: string, slotId: string, photo: SopPhotoInput, technicianId: string): Promise<InstallationSopView>;
+  /** Marks a step done. Refused while steps it depends on are open or a required photo is missing. */
+  completeSopStep(jobId: string, stepId: string, technicianId: string, capturedAt?: string): Promise<InstallationSopView>;
+  /** Sets a step aside as not applicable, with a reason. Never a safety-critical step that applies. */
+  markStepNotApplicable(jobId: string, stepId: string, reason: string, technicianId: string, capturedAt?: string): Promise<InstallationSopView>;
+  /** Picks which step to do next, when the site does not allow the suggested order. Only steps whose prerequisites are done. */
+  focusSopStep(jobId: string, stepId: string, technicianId: string): Promise<InstallationSopView>;
 
   /* Auto-reconciliation (120) — the bank's statement against the app's own records of money in and out */
   getReconciliationBoard(byUserId: string): Promise<ReconBoard>;

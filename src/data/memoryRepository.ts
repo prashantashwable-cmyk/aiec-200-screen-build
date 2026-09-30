@@ -65,6 +65,7 @@ import {
   seedSupplierGstChecks,
   seedBankTransactions,
   seedSiteNotes,
+  seedInstallSopVersions,
   seedSupplierDisputes,
   seedSupplierInvoices,
   seedPaymentDeviations,
@@ -201,6 +202,8 @@ import type {
   DeliveryAnalytics,
   BankSideView,
   FieldSosView,
+  InstallationSopView,
+  SopStepView,
   JobMaterialView,
   JobNoteView,
   JobSpecView,
@@ -311,6 +314,10 @@ import type {
   SupplierGstCheck,
   GstPeriodHandover,
   AdvanceRecovery,
+  InstallSopStepDef,
+  InstallSopVersion,
+  JobEvidence,
+  JobStep,
   BankFeed,
   FieldSosAttempt,
   BankTransaction,
@@ -482,6 +489,8 @@ import { RECOVERY_REASON_MIN, batchSkipReason, readAdvance, readRetention } from
 import type { RetentionHold } from '@/features/suppliers/exposure';
 import { DISPUTE_TARGET, NOTE_MIN, POSITION_MIN, REOPEN_WINDOW, canPartial, decisionProblem, dueAtOf, maxAmountOf, slaOf } from '@/features/suppliers/disputes';
 import { SOS_CANCEL_WINDOW_MS, SOS_SAME_INCIDENT } from '@/features/safety/sos';
+import { capturedAtProblem, completionProblem, isDone, missingSlots, naProblem, qcReadiness, slotsFor, stepApplies, suggestedNext, unmetDependencies, versionInForce as installVersionInForce } from '@/features/technician/installSop';
+import type { SpecFacts } from '@/features/technician/installSop';
 import { SOS_FOLLOW, actionOf, bucketOf, clashesOf, dayKey, isActiveJob, isOnJob, ownStepIds, peopleOn, roleOf, sameMonth } from '@/features/technician/jobs';
 import { RUN_HOUR, WINDOW as RECON_WINDOW, latestSlot, nextSlot, reasonsFor, reconcile, reconcileProblem, runStatusOf, severityOf } from '@/features/finance/reconciliation';
 import type { BankLine, LedgerLine } from '@/features/finance/reconciliation';
@@ -5174,6 +5183,151 @@ function jobMaterialsOf(dealId: string): TechnicianJobDetail['materials'] {
     }
   }
   return { lines, onSite: lines.filter((l) => l.state === 'on_site').length, total: lines.length, noOrders: pos.length === 0, materialsConfirmedAt: materialsConfirmedAt(dealId) };
+}
+
+/* ============================== Installation SOP (123) */
+
+const installSopVersions: InstallSopVersion[] = seedInstallSopVersions.map((v) => ({ ...v, steps: v.steps.map((st) => ({ ...st, slots: st.slots.map((sl) => ({ ...sl })), dependsOn: [...st.dependsOn] })) }));
+let sopEvidenceCounter = 0;
+/** A photo is a data URL held in memory: a cap keeps one absurd file from swelling the whole session. */
+const SOP_PHOTO_MAX = 6_000_000;
+
+/** What the sold configuration says about the two things that decide which parts of the procedure apply. */
+function sopSpecOf(job: Job): SpecFacts {
+  const deal = byId(deals, job.dealId);
+  const spec = (deal ? resolveLead(deal.leadId) : null)?.spec;
+  return spec ? { powerBackup: spec.powerBackup, doorType: spec.doorType } : null;
+}
+
+/** The procedure a job is done under: the version it was pinned to when it started, else the one in force now. */
+function sopVersionOf(job: Job): InstallSopVersion {
+  const pinned = job.sopVersion ? installSopVersions.find((v) => v.version === job.sopVersion) : undefined;
+  return pinned ?? installVersionInForce(installSopVersions, Date.now()) ?? installSopVersions[installSopVersions.length - 1];
+}
+
+const sopMaterialsConfirmed = (job: Job): boolean => {
+  const m = jobMaterialsOf(job.dealId);
+  return m.total === 0 || m.onSite === m.total;
+};
+
+/** Steps not done are `upcoming`, except the one in hand. A blocked one (a QC failure) stays blocked until it is redone. */
+function withCurrent(steps: JobStep[], defs: InstallSopStepDef[], prefer: string | null): JobStep[] {
+  const open = (id: string | null) => !!id && !isDone(steps.find((x) => x.id === id));
+  const currentNow = steps.find((x) => x.status === 'current')?.id ?? null;
+  const pick = open(prefer) ? prefer : open(currentNow) ? currentNow : suggestedNext(defs, steps);
+  return steps.map((x) => (isDone(x) ? x : x.status === 'blocked' && x.id !== pick ? x : { ...x, status: x.id === pick ? ('current' as const) : ('upcoming' as const) }));
+}
+
+/** The delivery confirmation (104) is the evidence for "materials received": it satisfies that step, and it is never ticked twice. */
+function syncSopMaterialsStep(job: Job): Job {
+  if (job.status !== 'in_progress') return job;
+  const version = sopVersionOf(job);
+  const def = version.steps.find((d) => d.satisfiedByDelivery);
+  const step = def ? job.steps.find((x) => x.id === def.id) : undefined;
+  if (!def || !step || isDone(step) || unmetDependencies(def, job.steps).length > 0 || !materialsConfirmedAt(job.dealId)) return job;
+  const steps = withCurrent(job.steps.map((x) => (x.id === def.id ? { ...x, status: 'complete' as const, completedAt: materialsConfirmedAt(job.dealId) as string, completedByName: 'Delivery confirmation' } : x)), version.steps, null);
+  logAutomatedAction({
+    sourceKey: 'installation.materials_step_satisfied',
+    triggeringCondition: `The delivery confirmation for ${job.siteName} was signed`,
+    actionTaken: `Marked "materials received" done on ${job.code}, so it is not ticked a second time`,
+    affectedRecordId: job.id,
+    affectedRecordType: 'other',
+    subjectLabel: job.code,
+  });
+  return patchInPlace(jobs, job.id, { steps });
+}
+
+function installationSopViewOf(jobIn: Job, userId: string): InstallationSopView {
+  const job = syncSopMaterialsStep(jobIn);
+  const role = roleOf(job, userId) ?? 'lead';
+  const own = ownStepIds(job, userId);
+  const version = sopVersionOf(job);
+  const spec = sopSpecOf(job);
+  const facts = { materialsConfirmed: sopMaterialsConfirmed(job) };
+  const inProgress = job.status === 'in_progress';
+  const leadName = job.technicianId ? (byId(users, job.technicianId)?.name ?? '') : '';
+  const readOnly = !inProgress && job.status !== 'scheduled' && job.status !== 'materials_pending';
+  const steps: SopStepView[] = version.steps.flatMap((def) => {
+    const step = job.steps.find((x) => x.id === def.id);
+    if (!step) return [];
+    const mine = own === null || own.includes(def.id);
+    const done = isDone(step);
+    const unmet = unmetDependencies(def, job.steps);
+    let problem: SopStepView['problem'] = null;
+    if (!done) {
+      if (!mine) problem = 'not_yours';
+      else if (!inProgress) problem = readOnly ? 'read_only' : 'not_started';
+      else problem = completionProblem(def, job.steps, spec, facts) as SopStepView['problem'];
+    }
+    const missing = missingSlots(def, step, spec).map((sl) => sl.id);
+    return [
+      {
+        id: def.id,
+        labelKey: def.labelKey,
+        phase: def.phase,
+        safetyCritical: def.safetyCritical,
+        status: step.status,
+        done,
+        notApplicable: step.notApplicable ?? null,
+        applies: stepApplies(def, spec),
+        slots: slotsFor(def, spec).map((sl) => ({ id: sl.id, labelKey: sl.labelKey, required: sl.required, photo: (step.evidence ?? []).find((e) => e.slotId === sl.id) ?? null })),
+        problem,
+        dependsOn: [...def.dependsOn],
+        waitingFor: unmet.map((id) => version.steps.find((d) => d.id === id)?.labelKey ?? id),
+        missingSlotIds: missing,
+        canNotApplicable: !done && mine && inProgress && !naProblem(def, step, spec, 'x'.repeat(20)),
+        legacyEvidence: step.evidence === undefined && step.evidenceCount > 0,
+        satisfiedByDelivery: !!def.satisfiedByDelivery,
+        completedAt: step.completedAt ?? null,
+        completedByName: step.completedByName ?? null,
+        owner: { isYou: mine, name: mine ? '' : leadName },
+      },
+    ];
+  });
+  const readiness = qcReadiness(version.steps, job.steps, spec);
+  const materials = jobMaterialsOf(job.dealId);
+  const early = dayKey(job.scheduledFor) > dayKey(Date.now());
+  const startProblem: InstallationSopView['startProblem'] = job.status === 'on_hold' ? 'on_hold' : job.status === 'materials_pending' || (job.status === 'scheduled' && materials.total > 0 && materials.onSite < materials.total) ? 'materials_not_confirmed' : job.status === 'scheduled' && early ? 'not_scheduled_yet' : null;
+  return {
+    job: { id: job.id, code: job.code, siteName: job.siteName, status: job.status, role, scheduledFor: job.scheduledFor, startedAt: job.startedAt ?? null, holdReason: job.holdReason ?? null },
+    version: { version: version.version, effectiveFrom: version.effectiveFrom, changeNote: version.changeNote },
+    steps,
+    progress: { done: steps.filter((x) => x.done).length, total: steps.length },
+    currentStepId: steps.find((x) => x.status === 'current')?.id ?? null,
+    qcReady: readiness.ready && (job.status === 'qc_pending' || job.status === 'handover_pending' || job.status === 'completed'),
+    canStart: job.status === 'scheduled' && startProblem === null,
+    startProblem: job.status === 'scheduled' || job.status === 'materials_pending' || job.status === 'on_hold' ? startProblem : null,
+    readOnly,
+  };
+}
+
+/** The job, the person acting and their part of it. Only someone on the job may act, and an assistant only on their own steps. */
+function sopActor(jobId: string, technicianId: string, stepId?: string): { job: Job; user: User; def: InstallSopStepDef | null } {
+  const user = byId(users, technicianId);
+  const job = byId(jobs, jobId);
+  if (!user || user.role !== 'technician') throw new RepositoryError('forbidden');
+  if (!job) throw new RepositoryError('not_found');
+  if (!isOnJob(job, technicianId)) throw new RepositoryError('forbidden');
+  if (!stepId) return { job, user, def: null };
+  const def = sopVersionOf(job).steps.find((d) => d.id === stepId);
+  if (!def || !job.steps.some((x) => x.id === stepId)) throw new RepositoryError('not_found');
+  const own = ownStepIds(job, technicianId);
+  if (own !== null && !own.includes(stepId)) throw new RepositoryError('not_yours');
+  return { job, user, def };
+}
+
+/** Work goes in only while the job is in progress; a job with QC, on hold or finished is read-only here. */
+function sopWorkable(job: Job): Job {
+  const current = syncSopMaterialsStep(job);
+  if (current.status === 'scheduled' || current.status === 'materials_pending') throw new RepositoryError('not_started');
+  if (current.status !== 'in_progress') throw new RepositoryError(current.status === 'on_hold' ? 'job_on_hold' : 'read_only');
+  return current;
+}
+
+/** Everything done, with all its evidence: the job is handed to QC. */
+function sopFinishIfDone(job: Job, version: InstallSopVersion): Job {
+  if (!qcReadiness(version.steps, job.steps, sopSpecOf(job)).ready) return job;
+  return patchInPlace(jobs, job.id, { status: 'qc_pending' as const });
 }
 
 function technicianJobViewOf(job: Job, userId: string, clashCodes: string[]): TechnicianJobView {
@@ -10942,6 +11096,93 @@ export const memoryRepository: Repository = {
       if (current.status !== 'pending') throw new RepositoryError(current.status === 'cancelled' ? 'invalid_state' : 'too_late');
       patchInPlace(fieldSosAttempts, a.id, { status: 'cancelled', cancelledAt: new Date(now).toISOString() });
       return fieldSosViewOf(byId(fieldSosAttempts, a.id)!);
+    }),
+
+  /* --------------------------------- Installation SOP checklist (123) */
+  getInstallationSop: (jobId, technicianId) =>
+    simulateRead((): InstallationSopView => {
+      const { job } = sopActor(jobId, technicianId);
+      return installationSopViewOf(job, technicianId);
+    }),
+
+  startInstallation: (jobId, technicianId, capturedAt) =>
+    simulateWrite((): InstallationSopView => {
+      const { job } = sopActor(jobId, technicianId);
+      // Only the lead starts the job: assistants join a job that is already under way.
+      if (roleOf(job, technicianId) !== 'lead') throw new RepositoryError('not_yours');
+      if (job.status === 'on_hold') throw new RepositoryError('job_on_hold');
+      if (job.status !== 'scheduled') throw new RepositoryError(job.status === 'materials_pending' ? 'materials_not_confirmed' : 'invalid_state');
+      if (!sopMaterialsConfirmed(job)) throw new RepositoryError('materials_not_confirmed');
+      const now = Date.now();
+      // Next week's job is not started today.
+      if (dayKey(job.scheduledFor) > dayKey(now)) throw new RepositoryError('not_scheduled_yet');
+      const at = capturedAt ?? new Date(now).toISOString();
+      const bad = capturedAtProblem(at, new Date(new Date(job.scheduledFor).getTime() - 86_400_000).toISOString(), now);
+      if (bad) throw new RepositoryError(`captured_${bad}`);
+      const version = installVersionInForce(installSopVersions, now) ?? installSopVersions[installSopVersions.length - 1];
+      const started = patchInPlace(jobs, job.id, { status: 'in_progress' as const, startedAt: at, sopVersion: version.version, steps: withCurrent(job.steps, version.steps, null) });
+      return installationSopViewOf(started, technicianId);
+    }),
+
+  attachStepEvidence: (jobId, stepId, slotId, photo, technicianId) =>
+    simulateWrite((): InstallationSopView => {
+      const { job: raw, user, def } = sopActor(jobId, technicianId, stepId);
+      const job = sopWorkable(raw);
+      const spec = sopSpecOf(job);
+      const step = job.steps.find((x) => x.id === stepId) as JobStep;
+      if (isDone(step)) throw new RepositoryError('already_done');
+      if (!slotsFor(def as InstallSopStepDef, spec).some((sl) => sl.id === slotId)) throw new RepositoryError('not_found');
+      if (photo.previewUrl.length > SOP_PHOTO_MAX) throw new RepositoryError('photo_too_large');
+      const bad = capturedAtProblem(photo.capturedAt, job.startedAt ?? job.scheduledFor, Date.now());
+      if (bad) throw new RepositoryError(`captured_${bad}`);
+      sopEvidenceCounter += 1;
+      const evidence: JobEvidence[] = [...(step.evidence ?? []).filter((e) => e.slotId !== slotId), { id: `ev-new-${sopEvidenceCounter}`, slotId, fileName: photo.fileName, previewUrl: photo.previewUrl, capturedAt: photo.capturedAt, byUserId: user.id, byName: user.name }];
+      const steps = job.steps.map((x) => (x.id === stepId ? { ...x, evidence, evidenceCount: evidence.length } : x));
+      return installationSopViewOf(patchInPlace(jobs, job.id, { steps }), technicianId);
+    }),
+
+  completeSopStep: (jobId, stepId, technicianId, capturedAt) =>
+    simulateWrite((): InstallationSopView => {
+      const { job: raw, user, def } = sopActor(jobId, technicianId, stepId);
+      const job = sopWorkable(raw);
+      const version = sopVersionOf(job);
+      const problem = completionProblem(def as InstallSopStepDef, job.steps, sopSpecOf(job), { materialsConfirmed: sopMaterialsConfirmed(job) });
+      if (problem) throw new RepositoryError(problem);
+      const now = Date.now();
+      const at = capturedAt ?? new Date(now).toISOString();
+      const bad = capturedAtProblem(at, job.startedAt ?? job.scheduledFor, now);
+      if (bad) throw new RepositoryError(`captured_${bad}`);
+      const done = job.steps.map((x) => (x.id === stepId ? { ...x, status: 'complete' as const, completedAt: at, completedByName: user.name } : x));
+      const updated = patchInPlace(jobs, job.id, { steps: withCurrent(done, version.steps, null) });
+      return installationSopViewOf(sopFinishIfDone(updated, version), technicianId);
+    }),
+
+  markStepNotApplicable: (jobId, stepId, reason, technicianId, capturedAt) =>
+    simulateWrite((): InstallationSopView => {
+      const { job: raw, user, def } = sopActor(jobId, technicianId, stepId);
+      const job = sopWorkable(raw);
+      const version = sopVersionOf(job);
+      const problem = naProblem(def as InstallSopStepDef, job.steps.find((x) => x.id === stepId), sopSpecOf(job), reason);
+      if (problem) throw new RepositoryError(problem);
+      const now = Date.now();
+      const at = capturedAt ?? new Date(now).toISOString();
+      const bad = capturedAtProblem(at, job.startedAt ?? job.scheduledFor, now);
+      if (bad) throw new RepositoryError(`captured_${bad}`);
+      const done = job.steps.map((x) => (x.id === stepId ? { ...x, status: 'complete' as const, completedAt: at, completedByName: user.name, notApplicable: { reason: reason.trim(), byName: user.name, at } } : x));
+      const updated = patchInPlace(jobs, job.id, { steps: withCurrent(done, version.steps, null) });
+      return installationSopViewOf(sopFinishIfDone(updated, version), technicianId);
+    }),
+
+  focusSopStep: (jobId, stepId, technicianId) =>
+    simulateWrite((): InstallationSopView => {
+      const { job: raw, def } = sopActor(jobId, technicianId, stepId);
+      const job = sopWorkable(raw);
+      const step = job.steps.find((x) => x.id === stepId) as JobStep;
+      if (isDone(step)) throw new RepositoryError('already_done');
+      // Out of order is fine where the site needs it, but not ahead of what the step stands on.
+      if (unmetDependencies(def as InstallSopStepDef, job.steps).length > 0) throw new RepositoryError('depends_on');
+      const updated = patchInPlace(jobs, job.id, { steps: withCurrent(job.steps, sopVersionOf(job).steps, stepId) });
+      return installationSopViewOf(updated, technicianId);
     }),
 
   /* --------------------------------- Auto-reconciliation (120) */

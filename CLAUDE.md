@@ -110,8 +110,32 @@ the module's section to `BUILD_README.md`.
 - **Module 11 Material Logistics & Delivery is done, including its checkpoint** (`101`–`110`, see
   BUILD_README's Module 11 section). Admin has a "Logistics" nav tab; every delivery screen declares
   `tab: 'logistics'` for Admin.
-- **Module 13 Installation & Technician in progress:** `121`–`122` built. **Next: `123`** (Installation SOP Checklist; 122's primary button
-  already opens `/technician/jobs/:jobId/sop` and 121's Start/Continue opens `/technician/jobs/:jobId`).
+- **Module 13 Installation & Technician in progress:** `121`–`123` built. **Next: `124`** (Photo/Video Evidence Capture).
+  123 facts:
+  - **The procedure is central and versioned** (`InstallSopVersion`, memoryRepository `installSopVersions`, seed `seedInstallSopVersions`, one
+    version so far; there is no Admin editor yet, which is 107's counterpart for installation and belongs to a later module). Each
+    `InstallSopStepDef` says what a job step needs: `slots` (photos, `required`, some only `appliesWhen` the configuration has the feature,
+    e.g. the automatic rescue device only with power backup, door sensors only on automatic doors), `dependsOn`, `safetyCritical`,
+    `canBeNotApplicable`, `satisfiedByDelivery`. The **job step (`Job.steps`) stays the working record** every other screen reads (014, 089,
+    118); it gained `evidence` (`JobEvidence`: slot, data-URL photo, `capturedAt`, who), `notApplicable` and `completedByName`. A job pins the
+    procedure version when it starts (`Job.sopVersion`). Step `s6` now requires evidence (the door safety sensors) in `installSteps`.
+  - Pure rules in `@/features/technician/installSop`, read by the screen and the repository alike: `completionProblem` (`depends_on`,
+    `evidence_missing`, `materials_not_confirmed`), `naProblem` (a step that applies and is safety-critical can never be set aside; one the
+    configuration lacks may be, with a reason of 8+ letters, kept as `notApplicable`, distinct from a skipped step), `qcReadiness`, `suggestedNext`.
+    Steps whose prerequisites are done can be done in any order (`focusSopStep`), so the site can dictate order within reason; a job moves to
+    `qc_pending` only when every step is done with all its evidence. Steps finished before evidence was kept (only `evidenceCount`) are
+    taken as evidenced (`legacyEvidence`), never re-asked.
+  - Actions: `getInstallationSop`, `startInstallation` (lead only, parts on site, not before the booked day: `not_scheduled_yet`),
+    `attachStepEvidence`, `completeSopStep`, `markStepNotApplicable`, `focusSopStep`; an assistant may act only on their own `crew.stepIds`
+    (`not_yours`). "Materials received" is satisfied by the signed delivery confirmation (`syncSopMaterialsStep`, logged) and not ticked twice;
+    with no confirmation records at all but parts delivered it can be ticked by hand.
+  - **Offline-tolerant, never blocking physical progress**: every change is written to a per-user localStorage queue (`aiec.sopQueue.<userId>`)
+    with its own `capturedAt` (the moment it was actually done: completion and photo times are never the sync time, and the repository refuses
+    a time in the future or before the job was booked), shown at once through the pure `applyQueue` overlay (`@/features/technician/sopQueue`)
+    marked "not synced", and sent in order when online. A refusal is reported (`failed`), never lost. Photos are scaled to 1280px JPEG
+    before queueing so a day's photos fit. **124's evidence capture should reuse `shrinkPhoto` and the queue.** `window.__aiecRepo` (dev only)
+    lets browser tests act as another person.
+  - `/technician/jobs/:jobId/sop` is Technician only, tab `jobs`.
   122 facts:
   - `getTechnicianJob(jobId, technicianId)` is read-mostly and only for a job the technician is on (`isOnJob`, else `forbidden`; unknown is
     `not_found`; the screen shows one "not one of your jobs" state for both). Everything is derived on read.
