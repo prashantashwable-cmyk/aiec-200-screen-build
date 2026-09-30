@@ -111,6 +111,8 @@ export interface CommitmentSources {
   /** Quality-check assignments (131), and the jobs waiting for one. */
   qcAssignments: QcAssignment[];
   qcWaiting: { jobId: string; readyAt: string; assigned: boolean }[];
+  /** Jobs whose mechanical and electrical checks are both signed off, and whether AIEC's compliance certificate has been issued (134). */
+  qcCertificateWaiting: { jobId: string; readyAt: string; issued: boolean }[];
   /** Mechanical quality-check attempts and the differences from the install record the inspector raised (132). */
   qcMechChecks: QcMechCheck[];
   qcFindings: QcFinding[];
@@ -1236,6 +1238,33 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
           ];
         }),
       );
+    },
+  },
+  {
+    // Both quality checks signed off means the compliance certificate is Admin's to issue (134), within a day: the customer's own
+    // inspection application waits for it.
+    kind: 'qc_certificate_issue',
+    nudgeBefore: hours(4),
+    escalateAfter: hours(12),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'quality',
+    collect(src) {
+      const admin = adminId(src);
+      return src.qcCertificateWaiting.map((w) => {
+        const job = src.jobs.find((j) => j.id === w.jobId);
+        return {
+          ...base('qc_certificate_issue', 'job', w.jobId),
+          ownerUserId: admin,
+          titleKey: 'work.title.qc_certificate_issue',
+          titleParams: { code: job?.code ?? '', site: job?.siteName ?? '' },
+          dueAt: plus(w.readyAt, hours(24)),
+          state: w.issued ? ('done' as const) : ('open' as const),
+          paused: false,
+          actionRoute: `/compliance/${w.jobId}`,
+          oversightRoute: `/compliance/${w.jobId}`,
+        };
+      });
     },
   },
   {

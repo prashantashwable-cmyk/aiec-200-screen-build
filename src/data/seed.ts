@@ -3,6 +3,7 @@ import type {
   JobSafetyTest,
   SafetyAttempt,
   SafetyStateItem,
+  StateInspectionGuidance,
   SiteCheckIn,
   ActivityEvent,
   Alert,
@@ -4047,6 +4048,25 @@ export const seedSafetyStateItems: SafetyStateItem[] = [
     active: true,
     createdByName: 'Prashant Wable',
     createdAt: daysAgo(40),
+    isDemo: true,
+  },
+];
+
+/** EXAMPLE wording only: what a customer in the state does next, after the certificate. Admin replaces it with what the state's Lift Act and
+ *  Inspectorate actually ask. It is shown on the certificate's guidance exactly as written here, so it must be checked before it is relied on. */
+export const seedStateGuidance: StateInspectionGuidance[] = [
+  {
+    id: 'sg-1',
+    state: 'Maharashtra',
+    authority: 'The State Electrical Inspectorate (Lifts) for your district',
+    steps: [
+      'Apply for the licence to operate the lift to the Inspectorate, with this certificate and the evidence package.',
+      'Have the lift ready for the Inspectorate’s own inspection visit and make sure someone who can open the machine room is present.',
+      'Ask the Inspectorate what else the state requires (fees, forms and renewal) before you apply.',
+    ],
+    note: 'Example wording: confirm every step with the Inspectorate and replace it with the state’s own requirements.',
+    updatedByName: 'Prashant Wable',
+    updatedAt: daysAgo(40),
     isDemo: true,
   },
 ];

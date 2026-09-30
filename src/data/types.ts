@@ -2596,6 +2596,70 @@ export interface QcElecCheck {
   isDemo: boolean;
 }
 
+/* ------------------------------------ Compliance certification (134) */
+
+export type ComplianceStandardId = 'IS_14665' | 'IS_15259' | 'IS_14671' | 'other';
+/** A standard as cited on the certificate. `other` carries the name Admin gave it; an additional one carries why it applies. */
+export interface ComplianceStandard {
+  id: ComplianceStandardId;
+  label?: string;
+  reason?: string;
+}
+
+/** What the certificate's evidence package held when it was issued. Frozen: a later check never changes an issued certificate. */
+export interface CertificatePackage {
+  builtAt: string;
+  installation: { stepsDone: number; stepsTotal: number; completedAt: string | null; leadName: string | null; teamCount: number };
+  mechanical: { signedOff: { at: string; byName: string } | null; items: { id: QcMechItemId; state: string; attempts: number; fails: number; evidence: number }[] };
+  electrical: { signedOff: { at: string; byName: string } | null; items: { id: QcElecItemId; state: string; attempts: number; fails: number; evidence: number; measures: { key: string; value: number }[] }[] };
+  trials: { id: 'trial_no_load' | 'trial_full_load'; at: string | null; runs: number | null; loadPct: number | null; evidence: number }[];
+  safety: { ready: boolean; state: string | null; lines: PreInspectionSummary['lines'] };
+  parts: { category: string; description: string; quantity: number; identifiers: number; substituted: boolean }[];
+  partsConfirmedAt: string | null;
+}
+
+/** What the state's own next steps are, written by Admin. Example wording is flagged where it was seeded; it is not legal advice. */
+export interface StateInspectionGuidance {
+  id: string;
+  state: string;
+  authority: string;
+  steps: string[];
+  note: string;
+  updatedByName: string;
+  updatedAt: string;
+  isDemo: boolean;
+}
+
+/** AIEC's own internal certificate that an installation was checked and is ready for the customer's government inspection. Immutable once issued;
+ *  a paperwork correction is a new version that voids this one. It is not the government's licence to operate. */
+export interface ComplianceCertificate {
+  id: string;
+  code: string;
+  jobId: string;
+  version: number;
+  driveType: DriveType;
+  quotationCode: string;
+  primary: ComplianceStandard;
+  /** `drive_type`: the standard the drive type gives. `selected`: Admin's documented choice. */
+  basis: 'drive_type' | 'selected';
+  overrideReason?: string;
+  additional: ComplianceStandard[];
+  state: string | null;
+  /** The state's next steps as they read when this was issued. */
+  guidance: { state: string | null; fallback: boolean; authority: string | null; steps: string[]; note: string | null };
+  package: CertificatePackage;
+  issuedAt: string;
+  issuedByName: string;
+  supersedes?: string;
+  supersededBy?: string;
+  /** Set on the original when a reissue voids it. */
+  voidedAt?: string;
+  voidReason?: string;
+  /** Issued before digital checks were kept: there is no package behind it. */
+  historic?: boolean;
+  isDemo: boolean;
+}
+
 /* ------------------------------------ QC mechanical check (132) */
 
 export type QcMechItemId = 'rail_alignment' | 'car_cwt_balance' | 'ride_smoothness' | 'levelling' | 'door_smoothness';
@@ -3555,6 +3619,7 @@ export type CommitmentKind =
   | 'qc_schedule'
   | 'qc_visit'
   | 'qc_exception_review'
+  | 'qc_certificate_issue'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'

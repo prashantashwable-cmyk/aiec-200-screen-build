@@ -70,6 +70,7 @@ import {
   seedJobSafetyTests,
   seedJobIssues,
   seedSafetyStateItems,
+  seedStateGuidance,
   seedSupplierDisputes,
   seedSupplierInvoices,
   seedPaymentDeviations,
@@ -215,6 +216,8 @@ import type {
   InstallTimelineView,
   JobTeamView,
   QcMechAttemptView,
+  ComplianceCertificateView,
+  ComplianceView,
   QcElecAttemptView,
   QcElecItemView,
   QcElecView,
@@ -407,6 +410,9 @@ import type {
   SafetyAttempt,
   SafetyFixKind,
   SafetyStateItem,
+  CertificatePackage,
+  ComplianceCertificate,
+  StateInspectionGuidance,
   JobStep,
   BankFeed,
   FieldSosAttempt,
@@ -581,6 +587,7 @@ import { DISPUTE_TARGET, NOTE_MIN, POSITION_MIN, REOPEN_WINDOW, canPartial, deci
 import { SOS_CANCEL_WINDOW_MS, SOS_SAME_INCIDENT } from '@/features/safety/sos';
 import { capturedAtProblem, completionProblem, isDone, missingSlots, naProblem, qcReadiness, slotsFor, stepApplies, suggestedNext, unmetDependencies, versionInForce as installVersionInForce } from '@/features/technician/installSop';
 import type { SpecFacts } from '@/features/technician/installSop';
+import { guidanceProblem, primaryOf as certPrimaryOf, readinessOf as certReadiness, reissueProblem as certReissueProblem, standardFor as certStandardFor, standardsProblem as certStandardsProblem } from '@/features/qc/compliance';
 import { ELEC_ITEMS, defOf as elecDef, attemptProblem as elecAttemptProblem, signOffProblem as elecSignOffProblem, stateOf as elecStateOf, suggestVerdict as elecSuggest } from '@/features/qc/electrical';
 import { MECH_ITEMS, INSTALL_STEPS, NOTE_MIN as NOTE_MIN_MECH, attemptProblem as mechAttemptProblem, itemState, isCleared as isMechCleared, signOffProblem as mechSignOffProblem, suggestVerdict as mechSuggest } from '@/features/qc/mechanical';
 import { WINDOWS, busyBecause, dayKeyOf as qcDay, eligibilityOf, involvementOf, isWorkingDay, matchesPreference, missingQcSkills, normalizeSkills, schedulingProblem, suggestSlots } from '@/features/qc/inspectors';
@@ -2256,6 +2263,7 @@ function commitmentSources(now: number): CommitmentSources {
     leadSignOffs: leadSignOffsWaiting(),
     qcAssignments: (ensureQcSeeds(), qcAssignments),
     qcWaiting: qcWaitingJobs(),
+    qcCertificateWaiting: qcCertificateWaiting(),
     qcMechChecks,
     qcFindings,
     deliveryChecklists,
@@ -6670,6 +6678,165 @@ function syncQcElecAlerts(now: number): void {
 
 /** Whether this job's safety verification has been passed in full: the one thing the compliance certification (134) waits for. */
 const qcElectricalCleared = (jobId: string): boolean => !!elecCheckOf(jobId).signedOff;
+
+/* ============================== Compliance certification (134) */
+
+const complianceCertificates: ComplianceCertificate[] = [];
+const stateGuidance: StateInspectionGuidance[] = seedStateGuidance.map((g) => ({ ...g, steps: [...g.steps] }));
+let complianceSeeded = false;
+let complianceCounter = 100;
+
+const emptyPackage = (at: string): CertificatePackage => ({
+  builtAt: at,
+  installation: { stepsDone: 0, stepsTotal: 0, completedAt: null, leadName: null, teamCount: 0 },
+  mechanical: { signedOff: null, items: [] },
+  electrical: { signedOff: null, items: [] },
+  trials: [],
+  safety: { ready: false, state: null, lines: [] },
+  parts: [],
+  partsConfirmedAt: null,
+});
+
+const guidanceOf = (state: string | null) => {
+  const g = state ? stateGuidance.find((x) => x.state === state) : undefined;
+  return { state, fallback: !g, authority: g?.authority ?? null, steps: g ? [...g.steps] : [], note: g?.note ?? null, updatedByName: g?.updatedByName ?? null, updatedAt: g?.updatedAt ?? null };
+};
+
+/** A job that finished before digital checks were kept has one historic certificate and nothing to build a package from. */
+function ensureComplianceSeeds(): void {
+  if (complianceSeeded) return;
+  complianceSeeded = true;
+  const job = byId(jobs, 'j-5');
+  const spec = job ? lockedSpecOf(byId(deals, job.dealId)?.leadId ?? '') : null;
+  if (!job || !spec) return;
+  const at = new Date(Date.now() - 34 * 86_400_000).toISOString();
+  const state = jobStateOf(job);
+  const g = guidanceOf(state);
+  complianceCertificates.push({
+    id: 'cc-seed-j-5',
+    code: `CERT-${job.code}`,
+    jobId: job.id,
+    version: 1,
+    driveType: spec.driveType,
+    quotationCode: spec.quotationCode,
+    primary: { id: certStandardFor(spec.driveType) ?? 'IS_14665' },
+    basis: 'drive_type',
+    additional: [],
+    state,
+    guidance: { state: g.state, fallback: g.fallback, authority: g.authority, steps: g.steps, note: g.note },
+    package: emptyPackage(at),
+    issuedAt: at,
+    issuedByName: 'Prashant Vasant Wable',
+    historic: true,
+    isDemo: true,
+  });
+}
+
+const certsOf = (jobId: string): ComplianceCertificate[] => (ensureComplianceSeeds(), complianceCertificates.filter((c) => c.jobId === jobId).sort((a, b) => b.version - a.version));
+const currentCertOf = (jobId: string): ComplianceCertificate | undefined => certsOf(jobId).find((c) => !c.supersededBy);
+
+/** What the package holds now, read from the records the checks already keep. Nothing is stored until a certificate freezes it. */
+function certPackageOf(job: Job, at: string): CertificatePackage {
+  const mech = mechCheckOf(job.id);
+  const elec = elecCheckOf(job.id);
+  ensureMaterialSeeds();
+  const log = materialLogs.find((l) => l.jobId === job.id && l.status === 'confirmed');
+  const pre = preInspectionViewOf(job);
+  const steps = job.steps.filter((x) => !x.notApplicable);
+  const last = <T,>(l: T[] | undefined): T | undefined => (l && l.length ? l[l.length - 1] : undefined);
+  const trial = (id: 'trial_no_load' | 'trial_full_load') => {
+    const passed = (elec.attempts[id] ?? []).filter((a) => a.verdict === 'pass').pop();
+    const m = (k: string) => passed?.measures.find((x) => x.key === k)?.value ?? null;
+    return { id, at: passed?.at ?? null, runs: m('runs'), loadPct: m('load_pct'), evidence: passed?.evidence.length ?? 0 };
+  };
+  return {
+    builtAt: at,
+    installation: { stepsDone: steps.filter((x) => x.status === 'complete').length, stepsTotal: steps.length, completedAt: job.completedAt ?? steps.map((x) => x.completedAt).filter((x): x is string => !!x).sort().pop() ?? null, leadName: byId(users, job.technicianId ?? '')?.name ?? null, teamCount: (job.crew ?? []).length || (job.technicianId ? 1 : 0) },
+    mechanical: { signedOff: mech.signedOff ? { at: mech.signedOff.at, byName: mech.signedOff.byName } : null, items: MECH_ITEMS.map((id) => ({ id, state: itemState(mech.attempts[id]), attempts: (mech.attempts[id] ?? []).length, fails: (mech.attempts[id] ?? []).filter((a) => a.verdict === 'fail').length, evidence: last(mech.attempts[id])?.evidence.length ?? 0 })) },
+    electrical: { signedOff: elec.signedOff ? { at: elec.signedOff.at, byName: elec.signedOff.byName } : null, items: ELEC_ITEMS.map((id) => ({ id, state: elecStateOf(elec.attempts[id]), attempts: (elec.attempts[id] ?? []).length, fails: (elec.attempts[id] ?? []).filter((a) => a.verdict === 'fail').length, evidence: last(elec.attempts[id])?.evidence.length ?? 0, measures: (last(elec.attempts[id])?.measures ?? []).map((m) => ({ ...m })) })) },
+    trials: [trial('trial_no_load'), trial('trial_full_load')],
+    safety: { ready: pre.ready, state: pre.state, lines: pre.lines.map((l) => ({ ...l })) },
+    parts: (log?.uses ?? []).filter((u) => u.usedQty > 0).map((u) => ({ category: u.category, description: u.description, quantity: u.usedQty, identifiers: u.identifiers.length, substituted: u.deviation?.kind === 'substitute' })),
+    partsConfirmedAt: log?.confirmedAt ?? null,
+  };
+}
+
+function certReadinessOf(job: Job): { ready: boolean; problems: ReturnType<typeof certReadiness>; openRework: number } {
+  const openRework = reworkRequests.filter((r) => r.jobId === job.id && (r.source === 'qc_mechanical' || r.source === 'qc_electrical') && r.status !== 'verified').length;
+  const hasSpec = !!lockedSpecOf(byId(deals, job.dealId)?.leadId ?? '');
+  const mechanicalSigned = !!mechCheckOf(job.id).signedOff;
+  const electricalSigned = qcElectricalCleared(job.id);
+  const beforeRecords = !mechanicalSigned && !electricalSigned && (job.status === 'completed' || job.status === 'handover_pending');
+  const problems = certReadiness({ hasSpec, mechanicalSigned, electricalSigned, openRework, beforeRecords });
+  return { ready: problems.length === 0, problems, openRework };
+}
+
+function certViewOf(c: ComplianceCertificate): ComplianceCertificateView {
+  const replaced = c.supersededBy ? certsOf(c.jobId).find((x) => x.id === c.supersededBy) : undefined;
+  const before = c.supersedes ? complianceCertificates.find((x) => x.id === c.supersedes) : undefined;
+  return {
+    id: c.id,
+    code: c.code,
+    version: c.version,
+    status: c.supersededBy ? 'superseded' : 'current',
+    driveType: c.driveType,
+    quotationCode: c.quotationCode,
+    primary: { ...c.primary },
+    basis: c.basis,
+    overrideReason: c.overrideReason ?? null,
+    additional: c.additional.map((a) => ({ ...a })),
+    state: c.state,
+    guidance: { ...c.guidance, steps: [...c.guidance.steps] },
+    package: c.package,
+    issuedAt: c.issuedAt,
+    issuedByName: c.issuedByName,
+    historic: !!c.historic,
+    supersedes: before ? { id: before.id, code: before.code } : null,
+    supersededBy: replaced ? { id: replaced.id, code: replaced.code, at: replaced.issuedAt, reason: c.voidReason ?? '' } : null,
+  };
+}
+
+function complianceViewOf(job: Job, viewer: 'admin' | 'inspector'): ComplianceView {
+  const spec = lockedSpecOf(byId(deals, job.dealId)?.leadId ?? '');
+  const readiness = certReadinessOf(job);
+  const history = certsOf(job.id).map(certViewOf);
+  const current = history.find((h) => h.status === 'current') ?? null;
+  const state = jobStateOf(job);
+  const lead = resolveLead(byId(deals, job.dealId)?.leadId ?? '');
+  return {
+    job: { id: job.id, code: job.code, siteName: job.siteName, address: `${job.address}${lead ? `, ${lead.city}` : ''}`, status: job.status },
+    viewer,
+    driveType: spec?.driveType ?? null,
+    quotationCode: spec?.quotationCode ?? null,
+    autoStandard: certStandardFor(spec?.driveType ?? null),
+    readiness,
+    package: current ? current.package : certPackageOf(job, new Date().toISOString()),
+    current,
+    history,
+    guidance: guidanceOf(state),
+    canIssue: viewer === 'admin' && !current && readiness.ready,
+    canReissue: viewer === 'admin' && !!current && !current.historic,
+    canEditGuidance: viewer === 'admin' && state !== null,
+  };
+}
+
+function complianceActor(jobId: string, userId: string, write: boolean): { job: Job; user: User; viewer: 'admin' | 'inspector' } {
+  const a = mechActor(jobId, userId);
+  if (a.viewer === 'lead') throw new RepositoryError('forbidden');
+  if (write && a.viewer !== 'admin') throw new RepositoryError('forbidden');
+  return { job: a.job, user: a.user, viewer: a.viewer };
+}
+
+/** Jobs with both quality checks signed off, for the commitment: the certificate is Admin's to issue within a day of the later sign-off. */
+function qcCertificateWaiting(): { jobId: string; readyAt: string; issued: boolean }[] {
+  ensureComplianceSeeds();
+  return qcMechChecks.flatMap((m) => {
+    const e = qcElecChecks.find((x) => x.jobId === m.jobId);
+    if (!m.signedOff || !e?.signedOff) return [];
+    const readyAt = m.signedOff.at > e.signedOff.at ? m.signedOff.at : e.signedOff.at;
+    return [{ jobId: m.jobId, readyAt, issued: !!currentCertOf(m.jobId) }];
+  });
+}
 
 /* ============================== Installation SOP (123) */
 
@@ -12866,6 +13033,102 @@ export const memoryRepository: Repository = {
       if (problem) throw new RepositoryError(problem);
       check.signedOff = { at: new Date().toISOString(), byUserId: user.id, byName: user.name };
       return elecViewOf(job, viewer, assignment);
+    }),
+
+  /* --------------------------------- Compliance certification (134) */
+  getComplianceCertification: (jobId, userId) =>
+    simulateRead((): ComplianceView => {
+      const { job, viewer } = complianceActor(jobId, userId, false);
+      return complianceViewOf(job, viewer);
+    }),
+
+  issueComplianceCertificate: (jobId, input, adminId) =>
+    simulateWrite((): ComplianceView => {
+      const { job, user } = complianceActor(jobId, adminId, true);
+      ensureComplianceSeeds();
+      if (currentCertOf(job.id)) throw new RepositoryError('already_issued');
+      const spec = lockedSpecOf(byId(deals, job.dealId)?.leadId ?? '');
+      if (!spec) throw new RepositoryError('no_spec');
+      if (!certReadinessOf(job).ready) throw new RepositoryError('not_ready');
+      const problem = certStandardsProblem(spec.driveType, input);
+      if (problem) throw new RepositoryError(problem);
+      const primary = certPrimaryOf(spec.driveType, input) as ComplianceCertificate['primary'];
+      const state = jobStateOf(job);
+      const g = guidanceOf(state);
+      const at = new Date().toISOString();
+      complianceCounter += 1;
+      complianceCertificates.push({
+        id: `cc-${complianceCounter}`,
+        code: `CERT-${job.code}`,
+        jobId: job.id,
+        version: 1,
+        driveType: spec.driveType,
+        quotationCode: spec.quotationCode,
+        primary: { ...primary },
+        basis: primary.id === certStandardFor(spec.driveType) ? 'drive_type' : 'selected',
+        ...(input.overrideReason?.trim() ? { overrideReason: input.overrideReason.trim() } : {}),
+        additional: input.additional.map((a) => ({ ...a })),
+        state,
+        guidance: { state: g.state, fallback: g.fallback, authority: g.authority, steps: g.steps, note: g.note },
+        package: certPackageOf(job, at),
+        issuedAt: at,
+        issuedByName: user.name,
+        isDemo: true,
+      });
+      return complianceViewOf(job, 'admin');
+    }),
+
+  reissueComplianceCertificate: (jobId, input, adminId) =>
+    simulateWrite((): ComplianceView => {
+      const { job, user } = complianceActor(jobId, adminId, true);
+      const current = currentCertOf(job.id);
+      if (!current || current.historic) throw new RepositoryError('not_issued');
+      const reasonProblem = certReissueProblem(input.reason);
+      if (reasonProblem) throw new RepositoryError(reasonProblem);
+      const problem = certStandardsProblem(current.driveType, input);
+      if (problem) throw new RepositoryError(problem);
+      const primary = certPrimaryOf(current.driveType, input) as ComplianceCertificate['primary'];
+      const state = jobStateOf(job);
+      const g = guidanceOf(state);
+      const at = new Date().toISOString();
+      complianceCounter += 1;
+      const id = `cc-${complianceCounter}`;
+      // The evidence package stays exactly as it was issued: a reissue corrects paperwork, it is never a fresh look at the lift.
+      complianceCertificates.push({
+        id,
+        code: `CERT-${job.code}-R${current.version}`,
+        jobId: job.id,
+        version: current.version + 1,
+        driveType: current.driveType,
+        quotationCode: current.quotationCode,
+        primary: { ...primary },
+        basis: primary.id === certStandardFor(current.driveType) ? 'drive_type' : 'selected',
+        ...(input.overrideReason?.trim() ? { overrideReason: input.overrideReason.trim() } : {}),
+        additional: input.additional.map((a) => ({ ...a })),
+        state,
+        guidance: { state: g.state, fallback: g.fallback, authority: g.authority, steps: g.steps, note: g.note },
+        package: current.package,
+        issuedAt: at,
+        issuedByName: user.name,
+        supersedes: current.id,
+        isDemo: true,
+      });
+      patchInPlace(complianceCertificates, current.id, { supersededBy: id, voidedAt: at, voidReason: input.reason.trim() });
+      return complianceViewOf(job, 'admin');
+    }),
+
+  saveStateGuidance: (input, adminId) =>
+    simulateWrite((): StateInspectionGuidance => {
+      const admin = adminOnly(adminId);
+      const steps = input.steps.map((x) => x.trim()).filter(Boolean);
+      const problem = guidanceProblem({ state: input.state.trim() || null, authority: input.authority, steps });
+      if (problem) throw new RepositoryError(problem);
+      const at = new Date().toISOString();
+      const existing = stateGuidance.find((x) => x.state === input.state.trim());
+      const next: StateInspectionGuidance = { id: existing?.id ?? `sg-new-${stateGuidance.length + 1}`, state: input.state.trim(), authority: input.authority.trim(), steps, note: input.note.trim(), updatedByName: admin.name, updatedAt: at, isDemo: true };
+      if (existing) patchInPlace(stateGuidance, existing.id, next);
+      else stateGuidance.push(next);
+      return { ...next, steps: [...next.steps] };
     }),
 
   /* --------------------------------- QC mechanical check (132) */

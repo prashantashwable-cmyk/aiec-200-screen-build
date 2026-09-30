@@ -1,8 +1,13 @@
 import type { ItemState, SignOffProblem } from '@/features/qc/mechanical';
 import type { ElecSignOffProblem, ElecState } from '@/features/qc/electrical';
+import type { GuidanceProblem, ReadinessProblem, ReissueProblem, StandardsProblem } from '@/features/qc/compliance';
 import type { BusyReason, EligibilityProblem, Involvement, SlotOffer } from '@/features/qc/inspectors';
 import type {
   AdvanceRecovery,
+  CertificatePackage,
+  ComplianceStandard,
+  ComplianceStandardId,
+  StateInspectionGuidance,
   QcElecItemId,
   QcMechAttempt,
   QcMechItemId,
@@ -1717,6 +1722,56 @@ export interface QcElecInput {
   clientId?: string;
   capturedAt?: string;
 }
+
+/* ------------------------------------ Compliance certification (134) */
+
+export interface ComplianceCertificateView {
+  id: string;
+  code: string;
+  version: number;
+  status: 'current' | 'superseded';
+  driveType: DriveType;
+  quotationCode: string;
+  primary: ComplianceStandard;
+  basis: 'drive_type' | 'selected';
+  overrideReason: string | null;
+  additional: ComplianceStandard[];
+  state: string | null;
+  guidance: { state: string | null; fallback: boolean; authority: string | null; steps: string[]; note: string | null };
+  package: CertificatePackage;
+  issuedAt: string;
+  issuedByName: string;
+  historic: boolean;
+  supersedes: { id: string; code: string } | null;
+  supersededBy: { id: string; code: string; at: string; reason: string } | null;
+}
+
+export interface ComplianceView {
+  job: { id: string; code: string; siteName: string; address: string; status: Job['status'] };
+  viewer: 'admin' | 'inspector';
+  driveType: DriveType | null;
+  quotationCode: string | null;
+  /** The standard the drive type gives; null where the configuration is not one the two common standards cover, so Admin must name it. */
+  autoStandard: Exclude<ComplianceStandardId, 'other' | 'IS_14671'> | null;
+  readiness: { ready: boolean; problems: ReadinessProblem[]; openRework: number };
+  /** What the package holds now. Once issued, `current.package` is what counts. */
+  package: CertificatePackage;
+  current: ComplianceCertificateView | null;
+  /** Every version, newest first, voided ones included. */
+  history: ComplianceCertificateView[];
+  guidance: { state: string | null; fallback: boolean; authority: string | null; steps: string[]; note: string | null; updatedByName: string | null; updatedAt: string | null };
+  canIssue: boolean;
+  canReissue: boolean;
+  canEditGuidance: boolean;
+}
+
+export interface ComplianceInput {
+  primary?: ComplianceStandard;
+  additional: ComplianceStandard[];
+  overrideReason?: string;
+}
+
+export type ComplianceError = StandardsProblem | ReissueProblem | GuidanceProblem | 'not_ready' | 'already_issued' | 'not_issued' | 'no_spec';
 
 /* ------------------------------------ QC mechanical check (132) */
 
@@ -4740,6 +4795,15 @@ export interface Repository {
   pingSiteLocation(technicianId: string, point: GeoPoint, at?: string): Promise<void>;
   /** Picks which step to do next, when the site does not allow the suggested order. Only steps whose prerequisites are done. */
   focusSopStep(jobId: string, stepId: string, technicianId: string): Promise<InstallationSopView>;
+
+  /* Compliance certification (134) */
+  getComplianceCertification(jobId: string, userId: string): Promise<ComplianceView>;
+  /** Admin only: AIEC's internal certificate, once both quality checks are signed off. Immutable once issued. */
+  issueComplianceCertificate(jobId: string, input: ComplianceInput, adminId: string): Promise<ComplianceView>;
+  /** Admin only: a paperwork correction. The new version voids the original and keeps its evidence package as it was. */
+  reissueComplianceCertificate(jobId: string, input: ComplianceInput & { reason: string }, adminId: string): Promise<ComplianceView>;
+  /** Admin only: the state's own next steps for the customer, as they should read on every certificate issued from now on. */
+  saveStateGuidance(input: { state: string; authority: string; steps: string[]; note: string }, adminId: string): Promise<StateInspectionGuidance>;
 
   /* QC electrical & safety check (133) */
   getElectricalCheck(jobId: string, userId: string): Promise<QcElecView>;
