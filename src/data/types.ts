@@ -2380,19 +2380,44 @@ export interface JobStep {
   /** Set when the step genuinely does not apply to this configuration: it is done, but says so and why, and is never mistaken for a
    *  step that applied and was skipped. */
   notApplicable?: { reason: string; byName: string; at: string };
+  /** Required evidence that could not be captured, explained (124). */
+  evidenceExceptions?: JobEvidenceException[];
   completedByName?: string;
 }
 
 export interface JobEvidence {
   id: string;
   slotId: string;
+  /** A photo, or a short video for a check that is about motion (a door-sensor test, a safety-gear trip). */
+  kind: 'photo' | 'video';
   fileName: string;
-  /** A data URL, so the photo still shows on other screens once the capture screen is gone. */
+  /** A data URL, so the picture still shows on other screens once the capture screen is gone. For a video, its poster frame. */
   previewUrl: string;
-  /** When the photo was taken on site, never when it reached the server. */
+  /** Where a video plays from. Held in memory in this build (see BUILD_README); a real store would hand back a durable URL. */
+  mediaUrl?: string;
+  mimeType: string;
+  sizeBytes: number;
+  durationS?: number;
+  /** When it was taken on site, never when it reached the server. */
   capturedAt: string;
+  /** Where the phone was, when it could say quickly. Never waited for. */
+  location?: GeoPoint;
   byUserId: string;
   byName: string;
+  /** The technician says this shows a problem rather than a clean pass: kept in full, and it does not count as the proof the step needs. */
+  finding?: boolean;
+  note?: string;
+  /** A later capture replaced this one for the slot. It stays in the record: evidence is never deleted, only superseded. */
+  supersededAt?: string;
+}
+
+/** A required piece of evidence that genuinely could not be captured as specified (a physically inaccessible angle in a tight shaft),
+ *  with the technician's explanation. It lets the work go on, and Admin is told. */
+export interface JobEvidenceException {
+  slotId: string;
+  reason: string;
+  byName: string;
+  at: string;
 }
 
 /* ------------------------------------ Installation SOP (123) */
@@ -2407,6 +2432,8 @@ export interface InstallSopSlot {
   id: string;
   labelKey: string;
   required: boolean;
+  /** What is to be captured: a still, or a short video for a check that is about behaviour. */
+  kind: 'photo' | 'video';
   appliesWhen?: InstallSopApplicability;
 }
 

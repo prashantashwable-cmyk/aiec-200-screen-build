@@ -1,14 +1,14 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Camera, CheckCircle, CloudArrowUp, Package, PauseCircle, ShieldWarning, Warning, WifiSlash } from '@phosphor-icons/react';
+import { ArrowLeft, Camera, CheckCircle, CloudArrowUp, Images, Package, PauseCircle, ShieldWarning, VideoCamera, Warning, WifiSlash } from '@phosphor-icons/react';
 import { ActionBar, AscensionLine, Badge, Button, Card, EmptyState, ErrorState, Field, LoadingState, ProgressBar, Screen, ScreenHeader, Sheet, TextArea, formatDate, formatDateTime } from '@/design-system';
 import type { AscensionStep } from '@/design-system';
 import type { SopSlotView, SopStepView } from '@/data/repository';
 import { NA_REASON_MIN } from '@/features/technician/installSop';
 import type { InstallationSopState } from './useInstallationSopChecklist';
 import { useInstallationSopChecklist } from './useInstallationSopChecklist';
-import { SOP_KEYS as K, STEP_IDS, homePath, jobPath } from './installation-sop-checklist.types';
+import { SOP_KEYS as K, STEP_IDS, evidencePath, homePath, jobPath } from './installation-sop-checklist.types';
 
 type T = ReturnType<typeof useTranslation>['t'];
 type Slot = SopSlotView;
@@ -60,6 +60,7 @@ export function InstallationSopChecklistView() {
   const shown = v.steps.find((x) => x.id === s.selectedId) ?? null;
   const working = v.job.status === 'in_progress';
   const notStarted = v.job.status === 'scheduled' || v.job.status === 'materials_pending' || v.job.status === 'on_hold';
+  const waitingAdmin = working && v.awaitingAdmin.length > 0;
   const finished = v.qcReady || (s.local.doneHere && working);
 
   const rail: AscensionStep[] = v.steps.map((x) => ({
@@ -89,9 +90,14 @@ export function InstallationSopChecklistView() {
         title={t(K.title)}
         subtitle={`${v.job.siteName} · ${v.job.code}`}
         action={
-          <Button size="sm" variant="ghost" onClick={() => navigate(jobPath(v.job.id))} aria-label={t(K.back)}>
-            <ArrowLeft size={16} aria-hidden="true" /> {t(K.back)}
-          </Button>
+          <div className="row gap-2">
+            <Button size="sm" variant="ghost" onClick={() => navigate(evidencePath(v.job.id))} icon={<Images size={16} aria-hidden="true" />}>
+              {t(K.photo.gallery)}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => navigate(jobPath(v.job.id))} aria-label={t(K.back)}>
+              <ArrowLeft size={16} aria-hidden="true" /> {t(K.back)}
+            </Button>
+          </div>
         }
       />
 
@@ -119,12 +125,12 @@ export function InstallationSopChecklistView() {
       {notStarted && <StartCard s={s} t={t} lang={lang} onOpenJob={() => navigate(jobPath(v.job.id))} />}
 
       {finished && (
-        <Card className="mb-3" style={{ borderColor: 'var(--color-success)' }}>
+        <Card className="mb-3" style={{ borderColor: waitingAdmin ? 'var(--color-warning)' : 'var(--color-success)' }}>
           <div className="row-top gap-3">
             <CheckCircle size={24} color="var(--color-success)" weight="fill" aria-hidden="true" />
             <div className="stack gap-1">
               <strong className="t-md">{t(K.finished.title)}</strong>
-              <p className="t-sm">{t(v.qcReady ? K.finished.body : K.finished.local)}</p>
+              <p className="t-sm">{t(waitingAdmin ? K.finished.admin : v.qcReady ? K.finished.body : K.finished.local)}</p>
             </div>
           </div>
         </Card>
@@ -132,7 +138,7 @@ export function InstallationSopChecklistView() {
 
       <div className="main-aside">
         <div className="stack gap-3">
-          {shown ? <StepCard step={shown} s={s} t={t} lang={lang} onNa={() => setNaFor(shown)} /> : null}
+          {shown ? <StepCard step={shown} s={s} t={t} lang={lang} onNa={() => setNaFor(shown)} onCapture={(slotId) => navigate(evidencePath(v.job.id, shown.id, slotId))} /> : null}
         </div>
         <Card>
           <div className="stack gap-3">
@@ -235,7 +241,7 @@ function StartCard({ s, t, lang, onOpenJob }: { s: InstallationSopState; t: T; l
   );
 }
 
-function StepCard({ step, s, t, lang, onNa }: { step: SopStepView; s: InstallationSopState; t: T; lang: string; onNa: () => void }) {
+function StepCard({ step, s, t, lang, onNa, onCapture }: { step: SopStepView; s: InstallationSopState; t: T; lang: string; onNa: () => void; onCapture: (slotId: string) => void }) {
   const hint = hintKey(step.id);
   const canPhoto = !step.done && step.owner.isYou && s.view?.job.status === 'in_progress' && !step.satisfiedByDelivery;
   return (
@@ -277,7 +283,7 @@ function StepCard({ step, s, t, lang, onNa }: { step: SopStepView; s: Installati
         {step.slots.length > 0 && (
           <div className="stack gap-2">
             {step.slots.map((slot) => (
-              <PhotoSlot key={slot.id} stepId={step.id} slot={slot} canPhoto={canPhoto} pending={!!s.local?.pendingSlots.has(`${step.id}:${slot.id}`)} onPick={(file) => s.photo(step.id, slot.id, file)} t={t} lang={lang} />
+              <PhotoSlot key={slot.id} stepId={step.id} slot={slot} canPhoto={canPhoto} pending={!!s.local?.pendingSlots.has(`${step.id}:${slot.id}`)} onOpen={() => onCapture(slot.id)} t={t} lang={lang} />
             ))}
           </div>
         )}
@@ -296,42 +302,28 @@ function StepCard({ step, s, t, lang, onNa }: { step: SopStepView; s: Installati
   );
 }
 
-function PhotoSlot({ stepId, slot, canPhoto, pending, onPick, t, lang }: { stepId: string; slot: Slot; canPhoto: boolean; pending: boolean; onPick: (file: File) => Promise<boolean>; t: T; lang: string }) {
-  const input = useRef<HTMLInputElement>(null);
-  const [unreadable, setUnreadable] = useState(false);
+function PhotoSlot({ stepId, slot, canPhoto, pending, onOpen, t, lang }: { stepId: string; slot: Slot; canPhoto: boolean; pending: boolean; onOpen: () => void; t: T; lang: string }) {
+  const Icon = slot.kind === 'video' ? VideoCamera : Camera;
+  const findings = slot.history.filter((e) => e.finding).length;
+  const state = slot.photo ? (pending ? K.photo.waiting : K.photo.taken) : slot.exception ? K.photo.excepted : slot.kind === 'video' ? K.photo.noneVideo : K.photo.none;
   return (
     <div className="row gap-3" style={{ alignItems: 'center', padding: 'var(--space-2)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }} data-slot={`${stepId}:${slot.id}`}>
-      {slot.photo ? <img src={slot.photo.previewUrl} alt={t(slot.labelKey)} style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 'var(--radius-md)', flexShrink: 0 }} /> : <div style={{ width: 64, height: 64, borderRadius: 'var(--radius-md)', background: 'var(--color-surface-alt)', display: 'grid', placeItems: 'center', flexShrink: 0 }}><Camera size={22} aria-hidden="true" /></div>}
+      {slot.photo ? <img src={slot.photo.previewUrl} alt={t(slot.labelKey)} style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 'var(--radius-md)', flexShrink: 0 }} /> : <div style={{ width: 64, height: 64, borderRadius: 'var(--radius-md)', background: 'var(--color-surface-alt)', display: 'grid', placeItems: 'center', flexShrink: 0 }}><Icon size={22} aria-hidden="true" /></div>}
       <span className="stack grow" style={{ minWidth: 0 }}>
         <strong className="t-sm">
           {t(slot.labelKey)} {slot.required && <span className="t-error">*</span>}
         </strong>
         <span className="t-xs t-muted">
-          {slot.photo ? (pending ? t(K.photo.waiting) : t(K.photo.taken)) : t(K.photo.none)} · {t(slot.required ? K.photo.required : K.photo.optional)}
+          {t(state)} · {t(slot.required ? K.photo.required : K.photo.optional)}
           {slot.photo ? ` · ${t(K.photo.at, { date: formatDateTime(slot.photo.capturedAt, lang) })}` : ''}
         </span>
-        {unreadable && <span className="t-xs t-error">{t(K.photo.unreadable)}</span>}
+        {slot.exception && <span className="t-xs t-warning">{t(K.photo.exceptionWhy, { reason: slot.exception.reason })}</span>}
+        {findings > 0 && <span className="t-xs t-warning">{t(K.photo.findings, { count: findings })}</span>}
       </span>
       {canPhoto && (
-        <>
-          <input
-            ref={input}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            hidden
-            aria-label={t(slot.labelKey)}
-            onChange={async (e) => {
-              const file = e.target.files?.[0];
-              e.target.value = '';
-              if (!file) return;
-              setUnreadable(!(await onPick(file)));
-            }}
-          />
-          <Button size="sm" variant={slot.photo ? 'ghost' : 'secondary'} icon={<Camera size={16} aria-hidden="true" />} onClick={() => input.current?.click()}>
-            {t(slot.photo ? K.photo.retake : K.photo.take)}
-          </Button>
-        </>
+        <Button size="sm" variant={slot.photo || slot.exception ? 'ghost' : 'secondary'} icon={<Icon size={16} aria-hidden="true" />} onClick={onOpen}>
+          {t(slot.photo ? K.photo.retake : slot.kind === 'video' ? K.photo.takeVideo : K.photo.take)}
+        </Button>
       )}
     </div>
   );

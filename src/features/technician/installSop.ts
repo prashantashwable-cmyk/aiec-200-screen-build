@@ -31,7 +31,8 @@ const isLegacy = (s: JobStep) => s.evidence === undefined && s.evidenceCount > 0
 /** The required photos this step still lacks. */
 export function missingSlots(def: InstallSopStepDef, step: JobStep, spec: SpecFacts): InstallSopSlot[] {
   if (isLegacy(step)) return [];
-  const have = new Set((step.evidence ?? []).map((e) => e.slotId));
+  // Proof is the newest capture that is neither replaced nor a finding; a documented exception (124) also answers a required photo.
+  const have = new Set([...(step.evidence ?? []).filter((e) => !e.supersededAt && !e.finding).map((e) => e.slotId), ...(step.evidenceExceptions ?? []).map((e) => e.slotId)]);
   return requiredSlotsFor(def, spec).filter((s) => !have.has(s.id));
 }
 

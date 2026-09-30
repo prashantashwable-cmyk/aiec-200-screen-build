@@ -2,6 +2,7 @@ import type {
   AdvanceRecovery,
   InstallSopPhase,
   JobEvidence,
+  JobEvidenceException,
   JobStep,
   JobStatus,
   AlertSeverity,
@@ -1371,8 +1372,14 @@ export interface SopSlotView {
   id: string;
   labelKey: string;
   required: boolean;
-  /** The photo attached for this slot, if any. */
+  /** A photo, or a short video for a check that is about motion. */
+  kind: 'photo' | 'video';
+  /** The capture that counts as the proof for this slot (newest, not replaced, not a finding), if any. */
   photo: JobEvidence | null;
+  /** Everything captured for this slot, oldest first: replaced captures and findings stay in the record (124). */
+  history: JobEvidence[];
+  /** Why the required capture could not be made, when the technician documented that instead. */
+  exception: (JobEvidenceException & { acknowledged: boolean }) | null;
 }
 
 export type SopStepProblem = 'depends_on' | 'evidence_missing' | 'materials_not_confirmed' | 'not_started' | 'not_yours' | 'read_only';
@@ -1389,6 +1396,8 @@ export interface SopStepView {
   /** Whether this configuration has the feature the step is about. */
   applies: boolean;
   slots: SopSlotView[];
+  /** Problems found at this step that are not tied to one of its slots (124), oldest first. */
+  otherFindings: JobEvidence[];
   /** Why the step cannot be finished right now, or null when it can. */
   problem: SopStepProblem | null;
   /** The steps it stands on, by id, and by label key for those not done yet. */
@@ -1417,13 +1426,28 @@ export interface InstallationSopView {
   startProblem: 'materials_not_confirmed' | 'on_hold' | 'not_scheduled_yet' | null;
   /** Nothing more can be changed here: the job is with QC, on hold, or finished. */
   readOnly: boolean;
+  /** Safety-critical evidence that could not be captured and that Admin has not yet acknowledged: the job waits for them before QC. */
+  awaitingAdmin: { stepId: string; slotId: string }[];
+  /** Captures shown as "a problem found" on this job (124), so the technician can carry them into a blocker report. */
+  findings: number;
 }
 
-export interface SopPhotoInput {
+export interface SopMediaInput {
+  kind: 'photo' | 'video';
   fileName: string;
+  /** A photo's own picture (compressed) or a video's poster frame, as a data URL. */
   previewUrl: string;
-  /** When it was taken on site: a photo taken offline keeps its own time. */
+  /** Where a video plays from. */
+  mediaUrl?: string;
+  mimeType: string;
+  sizeBytes: number;
+  durationS?: number;
+  /** When it was taken on site: a capture made offline keeps its own time. */
   capturedAt: string;
+  location?: GeoPoint;
+  /** The technician says this shows a problem, not a clean pass. Needs a note. */
+  finding?: boolean;
+  note?: string;
 }
 
 /* ---------------------------------- Auto-reconciliation (120) */
@@ -3941,7 +3965,9 @@ export interface Repository {
   /** Starts the installation and pins the procedure version it will be done under. Needs the parts on site. */
   startInstallation(jobId: string, technicianId: string, capturedAt?: string): Promise<InstallationSopView>;
   /** Attaches a photo to one of a step's evidence slots, replacing the one there. */
-  attachStepEvidence(jobId: string, stepId: string, slotId: string, photo: SopPhotoInput, technicianId: string): Promise<InstallationSopView>;
+  attachStepEvidence(jobId: string, stepId: string, slotId: string, media: SopMediaInput, technicianId: string): Promise<InstallationSopView>;
+  /** A required capture that genuinely cannot be made as specified: documented, not a dead end. Admin is told (124). */
+  recordEvidenceException(jobId: string, stepId: string, slotId: string, reason: string, technicianId: string, capturedAt?: string): Promise<InstallationSopView>;
   /** Marks a step done. Refused while steps it depends on are open or a required photo is missing. */
   completeSopStep(jobId: string, stepId: string, technicianId: string, capturedAt?: string): Promise<InstallationSopView>;
   /** Sets a step aside as not applicable, with a reason. Never a safety-critical step that applies. */

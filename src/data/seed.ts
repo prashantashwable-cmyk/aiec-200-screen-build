@@ -962,7 +962,7 @@ export const installSteps = (completedCount: number): Job['steps'] => {
 
 /* ------------------------------------------ Installation SOP (123) */
 
-const slot = (id: string, labelKey: string, required: boolean, appliesWhen?: InstallSopSlot['appliesWhen']): InstallSopSlot => ({ id, labelKey, required, ...(appliesWhen ? { appliesWhen } : {}) });
+const slot = (id: string, labelKey: string, required: boolean, appliesWhen?: InstallSopSlot['appliesWhen'], kind: InstallSopSlot['kind'] = 'photo'): InstallSopSlot => ({ id, labelKey, required, kind, ...(appliesWhen ? { appliesWhen } : {}) });
 
 /** The one installation procedure every technician on every job follows. It says what each step needs; the job records what happened.
  *  Safety devices and the tests that prove them (governor, buffers, rescue device, alarm, door sensors) are hard-gated on photos, in line
@@ -985,7 +985,7 @@ export const seedInstallSopVersions: InstallSopVersion[] = [
         labelKey: 'job.step.doorOperator',
         phase: 'car',
         safetyCritical: true,
-        slots: [slot('s6.sensors', 'installSop.slot.sensors', true)],
+        slots: [slot('s6.sensors', 'installSop.slot.sensors', true, undefined, 'video')],
         dependsOn: ['s5'],
         appliesWhen: { field: 'doorType', oneOf: ['automatic_centre', 'automatic_side'] },
         canBeNotApplicable: true,
@@ -999,7 +999,7 @@ export const seedInstallSopVersions: InstallSopVersion[] = [
         slots: [
           slot('s8.governor', 'installSop.slot.governor', true),
           slot('s8.buffers', 'installSop.slot.buffers', true),
-          slot('s8.gear', 'installSop.slot.gear', true),
+          slot('s8.gear', 'installSop.slot.gear', true, undefined, 'video'),
           slot('s8.alarm', 'installSop.slot.alarm', true),
           slot('s8.ard', 'installSop.slot.ard', true, { field: 'powerBackup', equals: true }),
         ],

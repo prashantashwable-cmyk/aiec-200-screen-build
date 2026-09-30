@@ -4,16 +4,13 @@ import type { InstallSopPhase } from '@/data/types';
 
 export type SopStatus = 'loading' | 'ready' | 'error' | 'not_found';
 
-/** How often the checklist re-reads while open. */
-export const POLL_MS = 20_000;
-/** Where changes not yet sent live on the phone. Per person, so a shared phone never mixes two technicians' work. */
-export const queueKey = (userId: string) => `aiec.sopQueue.${userId}`;
+export { POLL_MS, queueKey } from '@/features/technician/useSopWork';
 
 export const PHASES: InstallSopPhase[] = ['preparation', 'rails', 'machine', 'car', 'wiring', 'safety', 'final'];
 export const STEP_IDS = ['s1', 's2', 's3', 's4', 's5', 's6', 's7', 's8', 's9', 's10'] as const;
 export const SLOT_IDS = ['shaft', 'pit', 'alignment', 'mount', 'frame', 'sensors', 'panel', 'earthing', 'governor', 'buffers', 'gear', 'alarm', 'ard', 'load', 'final'] as const;
 export const PROBLEMS = ['depends_on', 'evidence_missing', 'materials_not_confirmed', 'not_started', 'not_yours', 'read_only'] as const;
-/** Errors that mean the action itself was refused: retrying will not change the answer, so it is reported, not retried. */
+/** The refusals this screen has words for; anything else reads as the generic one. */
 export const FINAL_ERRORS = [
   'depends_on', 'evidence_missing', 'materials_not_confirmed', 'already_done', 'not_yours', 'forbidden', 'not_found', 'read_only', 'job_on_hold', 'not_started', 'invalid_state',
   'not_allowed', 'not_scheduled_yet', 'safety_step_applies', 'reason_required', 'photo_too_large', 'captured_in_future', 'captured_before_job', 'captured_invalid',
@@ -21,6 +18,8 @@ export const FINAL_ERRORS = [
 
 export const jobPath = (id: string) => `/technician/jobs/${id}`;
 export const homePath = '/technician';
+/** Evidence capture (124) for one slot of one step. */
+export const evidencePath = (jobId: string, stepId?: string, slotId?: string) => `/technician/jobs/${jobId}/evidence${stepId && slotId ? `?step=${stepId}&slot=${encodeURIComponent(slotId)}` : ''}`;
 
 const rec = <T extends string>(ns: string, keys: readonly T[]) => Object.fromEntries(keys.map((k) => [k, `${ns}.${k}`])) as Record<T, string>;
 
@@ -80,6 +79,12 @@ export const SOP_KEYS = {
     required: 'installSop.photo.required',
     optional: 'installSop.photo.optional',
     take: 'installSop.photo.take',
+    takeVideo: 'installSop.photo.takeVideo',
+    noneVideo: 'installSop.photo.noneVideo',
+    excepted: 'installSop.photo.excepted',
+    exceptionWhy: 'installSop.photo.exceptionWhy',
+    findings: 'installSop.photo.findings',
+    gallery: 'installSop.photo.gallery',
     retake: 'installSop.photo.retake',
     taken: 'installSop.photo.taken',
     none: 'installSop.photo.none',
@@ -95,7 +100,7 @@ export const SOP_KEYS = {
     hint: 'installSop.na.hint',
     confirm: 'installSop.na.confirm',
   },
-  finished: { title: 'installSop.finished.title', body: 'installSop.finished.body', local: 'installSop.finished.local' },
+  finished: { title: 'installSop.finished.title', body: 'installSop.finished.body', local: 'installSop.finished.local', admin: 'installSop.finished.admin' },
   toast: { started: 'installSop.toast.started' },
   problem: rec('installSop.problem', [...FINAL_ERRORS, 'generic'] as const),
 } as const;

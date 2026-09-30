@@ -317,6 +317,7 @@ import type {
   InstallSopStepDef,
   InstallSopVersion,
   JobEvidence,
+  JobEvidenceException,
   JobStep,
   BankFeed,
   FieldSosAttempt,
@@ -491,6 +492,7 @@ import { DISPUTE_TARGET, NOTE_MIN, POSITION_MIN, REOPEN_WINDOW, canPartial, deci
 import { SOS_CANCEL_WINDOW_MS, SOS_SAME_INCIDENT } from '@/features/safety/sos';
 import { capturedAtProblem, completionProblem, isDone, missingSlots, naProblem, qcReadiness, slotsFor, stepApplies, suggestedNext, unmetDependencies, versionInForce as installVersionInForce } from '@/features/technician/installSop';
 import type { SpecFacts } from '@/features/technician/installSop';
+import { FINDING_SLOT, activeProofOf, evidenceProblem, exceptionKey, exceptionOf, exceptionProblem, findingKey, historyOf } from '@/features/technician/evidence';
 import { SOS_FOLLOW, actionOf, bucketOf, clashesOf, dayKey, isActiveJob, isOnJob, ownStepIds, peopleOn, roleOf, sameMonth } from '@/features/technician/jobs';
 import { RUN_HOUR, WINDOW as RECON_WINDOW, latestSlot, nextSlot, reasonsFor, reconcile, reconcileProblem, runStatusOf, severityOf } from '@/features/finance/reconciliation';
 import type { BankLine, LedgerLine } from '@/features/finance/reconciliation';
@@ -2398,6 +2400,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   syncReconciliation(now);
   sendDueSos(now);
   syncTechnicianClashes(now);
+  syncSopHandoff();
   syncAdvanceExposure(now);
   advanceShipments(now);
   // 105: a delivery running late is noticed, and one that caught up is cleared, without anyone looking.
@@ -5270,7 +5273,11 @@ function installationSopViewOf(jobIn: Job, userId: string): InstallationSopView 
         done,
         notApplicable: step.notApplicable ?? null,
         applies: stepApplies(def, spec),
-        slots: slotsFor(def, spec).map((sl) => ({ id: sl.id, labelKey: sl.labelKey, required: sl.required, photo: (step.evidence ?? []).find((e) => e.slotId === sl.id) ?? null })),
+        slots: slotsFor(def, spec).map((sl) => {
+          const ex = exceptionOf(step, sl.id);
+          return { id: sl.id, labelKey: sl.labelKey, required: sl.required, kind: sl.kind, photo: activeProofOf(step, sl.id), history: historyOf(step, sl.id), exception: ex ? { ...ex, acknowledged: exceptionAcknowledged(job.id, def.id, sl.id) } : null };
+        }),
+        otherFindings: historyOf(step, FINDING_SLOT),
         problem,
         dependsOn: [...def.dependsOn],
         waitingFor: unmet.map((id) => version.steps.find((d) => d.id === id)?.labelKey ?? id),
@@ -5285,6 +5292,7 @@ function installationSopViewOf(jobIn: Job, userId: string): InstallationSopView 
     ];
   });
   const readiness = qcReadiness(version.steps, job.steps, spec);
+  const awaitingAdmin = sopAwaitingAdmin(job, version);
   const materials = jobMaterialsOf(job.dealId);
   const early = dayKey(job.scheduledFor) > dayKey(Date.now());
   const startProblem: InstallationSopView['startProblem'] = job.status === 'on_hold' ? 'on_hold' : job.status === 'materials_pending' || (job.status === 'scheduled' && materials.total > 0 && materials.onSite < materials.total) ? 'materials_not_confirmed' : job.status === 'scheduled' && early ? 'not_scheduled_yet' : null;
@@ -5294,7 +5302,9 @@ function installationSopViewOf(jobIn: Job, userId: string): InstallationSopView 
     steps,
     progress: { done: steps.filter((x) => x.done).length, total: steps.length },
     currentStepId: steps.find((x) => x.status === 'current')?.id ?? null,
-    qcReady: readiness.ready && (job.status === 'qc_pending' || job.status === 'handover_pending' || job.status === 'completed'),
+    qcReady: readiness.ready && awaitingAdmin.length === 0 && (job.status === 'qc_pending' || job.status === 'handover_pending' || job.status === 'completed'),
+    awaitingAdmin,
+    findings: job.steps.reduce((n, x) => n + (x.evidence ?? []).filter((e) => e.finding).length, 0),
     canStart: job.status === 'scheduled' && startProblem === null,
     startProblem: job.status === 'scheduled' || job.status === 'materials_pending' || job.status === 'on_hold' ? startProblem : null,
     readOnly,
@@ -5326,8 +5336,46 @@ function sopWorkable(job: Job): Job {
 
 /** Everything done, with all its evidence: the job is handed to QC. */
 function sopFinishIfDone(job: Job, version: InstallSopVersion): Job {
+  if (job.status !== 'in_progress') return job;
   if (!qcReadiness(version.steps, job.steps, sopSpecOf(job)).ready) return job;
+  // Evidence that could not be captured on a safety-critical step is Admin's to accept before the job is handed to QC.
+  if (sopAwaitingAdmin(job, version).length > 0) return job;
   return patchInPlace(jobs, job.id, { status: 'qc_pending' as const });
+}
+
+/** Whether Admin has seen the exception: the alert raised for it was acknowledged or resolved. */
+function exceptionAcknowledged(jobId: string, stepId: string, slotId: string): boolean {
+  const key = exceptionKey(jobId, stepId, slotId);
+  const a = alerts.find((x) => x.relatedId === key);
+  return !a || a.status !== 'open';
+}
+
+/** Safety-critical exceptions Admin has not yet acknowledged. */
+function sopAwaitingAdmin(job: Job, version: InstallSopVersion): { stepId: string; slotId: string }[] {
+  return version.steps.flatMap((def) => {
+    if (!def.safetyCritical) return [];
+    const step = job.steps.find((x) => x.id === def.id);
+    return (step?.evidenceExceptions ?? []).filter((e) => !exceptionAcknowledged(job.id, def.id, e.slotId)).map((e) => ({ stepId: def.id, slotId: e.slotId }));
+  });
+}
+
+/** A job whose checklist is complete but for Admin's acknowledgement moves to QC the moment that is given, without anyone re-opening it. */
+function syncSopHandoff(): void {
+  for (const job of jobs) {
+    if (job.status !== 'in_progress') continue;
+    const version = sopVersionOf(job);
+    const after = sopFinishIfDone(job, version);
+    if (after.status === 'qc_pending') {
+      logAutomatedAction({
+        sourceKey: 'installation.qc_handoff',
+        triggeringCondition: `Admin acknowledged the last open evidence exception on ${job.code}`,
+        actionTaken: 'Handed the finished installation checklist to quality check',
+        affectedRecordId: job.id,
+        affectedRecordType: 'other',
+        subjectLabel: job.code,
+      });
+    }
+  }
 }
 
 function technicianJobViewOf(job: Job, userId: string, clashCodes: string[]): TechnicianJobView {
@@ -11124,21 +11172,89 @@ export const memoryRepository: Repository = {
       return installationSopViewOf(started, technicianId);
     }),
 
-  attachStepEvidence: (jobId, stepId, slotId, photo, technicianId) =>
+  attachStepEvidence: (jobId, stepId, slotId, media, technicianId) =>
     simulateWrite((): InstallationSopView => {
       const { job: raw, user, def } = sopActor(jobId, technicianId, stepId);
       const job = sopWorkable(raw);
       const spec = sopSpecOf(job);
       const step = job.steps.find((x) => x.id === stepId) as JobStep;
       if (isDone(step)) throw new RepositoryError('already_done');
-      if (!slotsFor(def as InstallSopStepDef, spec).some((sl) => sl.id === slotId)) throw new RepositoryError('not_found');
-      if (photo.previewUrl.length > SOP_PHOTO_MAX) throw new RepositoryError('photo_too_large');
-      const bad = capturedAtProblem(photo.capturedAt, job.startedAt ?? job.scheduledFor, Date.now());
+      const slot = slotsFor(def as InstallSopStepDef, spec).find((sl) => sl.id === slotId);
+      if (!slot && slotId !== FINDING_SLOT) throw new RepositoryError('not_found');
+      const problem = evidenceProblem(slot ? slot.kind : null, media);
+      if (problem) throw new RepositoryError(problem);
+      if (media.previewUrl.length > SOP_PHOTO_MAX) throw new RepositoryError('photo_too_large');
+      const bad = capturedAtProblem(media.capturedAt, job.startedAt ?? job.scheduledFor, Date.now());
       if (bad) throw new RepositoryError(`captured_${bad}`);
       sopEvidenceCounter += 1;
-      const evidence: JobEvidence[] = [...(step.evidence ?? []).filter((e) => e.slotId !== slotId), { id: `ev-new-${sopEvidenceCounter}`, slotId, fileName: photo.fileName, previewUrl: photo.previewUrl, capturedAt: photo.capturedAt, byUserId: user.id, byName: user.name }];
-      const steps = job.steps.map((x) => (x.id === stepId ? { ...x, evidence, evidenceCount: evidence.length } : x));
+      const at = new Date().toISOString();
+      const fresh: JobEvidence = {
+        id: `ev-new-${sopEvidenceCounter}`,
+        slotId,
+        kind: media.kind,
+        fileName: media.fileName,
+        previewUrl: media.previewUrl,
+        ...(media.mediaUrl ? { mediaUrl: media.mediaUrl } : {}),
+        mimeType: media.mimeType,
+        sizeBytes: media.sizeBytes,
+        ...(media.durationS !== undefined ? { durationS: media.durationS } : {}),
+        capturedAt: media.capturedAt,
+        ...(media.location ? { location: media.location } : {}),
+        byUserId: user.id,
+        byName: user.name,
+        ...(media.finding ? { finding: true, note: (media.note ?? '').trim() } : media.note?.trim() ? { note: media.note.trim() } : {}),
+      };
+      // A retake replaces the proof, it does not remove it: the earlier capture stays in the record, marked as replaced. A finding
+      // never replaces anything and is never replaced.
+      const prior = (step.evidence ?? []).map((e) => (!fresh.finding && e.slotId === slotId && !e.finding && !e.supersededAt ? { ...e, supersededAt: at } : e));
+      const evidence = [...prior, fresh];
+      // A capture made instead of an exception answers the exception.
+      const exceptions = fresh.finding ? step.evidenceExceptions : (step.evidenceExceptions ?? []).filter((e) => e.slotId !== slotId);
+      const steps = job.steps.map((x) => (x.id === stepId ? { ...x, evidence, evidenceCount: evidence.filter((e) => !e.supersededAt).length, ...(exceptions ? { evidenceExceptions: exceptions } : {}) } : x));
+      if (!fresh.finding && exceptionOf(step, slotId)) {
+        const ex = alerts.find((a) => a.relatedId === exceptionKey(job.id, stepId, slotId) && a.status !== 'resolved');
+        if (ex) patchInPlace(alerts, ex.id, { status: 'resolved', resolvedAt: at, resolvedBy: user.name, resolutionNote: 'The capture was made after all.' });
+      }
+      if (fresh.finding) {
+        raiseAlert({
+          titleKey: 'installEvidence.alert.finding',
+          context: `${job.code} · ${job.siteName} · ${user.name}: ${fresh.note}`,
+          severity: (def as InstallSopStepDef).safetyCritical ? 'high' : 'medium',
+          category: 'quality',
+          relatedId: findingKey(fresh.id),
+          sourceRoute: `/admin/tracking/technician/${user.id}`,
+        });
+      }
       return installationSopViewOf(patchInPlace(jobs, job.id, { steps }), technicianId);
+    }),
+
+  recordEvidenceException: (jobId, stepId, slotId, reason, technicianId, capturedAt) =>
+    simulateWrite((): InstallationSopView => {
+      const { job: raw, user, def } = sopActor(jobId, technicianId, stepId);
+      const job = sopWorkable(raw);
+      const step = job.steps.find((x) => x.id === stepId) as JobStep;
+      if (isDone(step)) throw new RepositoryError('already_done');
+      const slot = slotsFor(def as InstallSopStepDef, sopSpecOf(job)).find((sl) => sl.id === slotId);
+      if (!slot) throw new RepositoryError('not_found');
+      const problem = exceptionProblem(slot, step, reason);
+      if (problem) throw new RepositoryError(problem);
+      const now = Date.now();
+      const at = capturedAt ?? new Date(now).toISOString();
+      const bad = capturedAtProblem(at, job.startedAt ?? job.scheduledFor, now);
+      if (bad) throw new RepositoryError(`captured_${bad}`);
+      const entry: JobEvidenceException = { slotId, reason: reason.trim(), byName: user.name, at };
+      const steps = job.steps.map((x) => (x.id === stepId ? { ...x, evidenceExceptions: [...(x.evidenceExceptions ?? []), entry] } : x));
+      const safety = (def as InstallSopStepDef).safetyCritical;
+      raiseAlert({
+        titleKey: safety ? 'installEvidence.alert.exceptionSafety' : 'installEvidence.alert.exception',
+        context: `${job.code} · ${job.siteName} · ${user.name}: ${entry.reason}`,
+        severity: safety ? 'high' : 'low',
+        category: safety ? 'safety' : 'quality',
+        relatedId: exceptionKey(job.id, stepId, slotId),
+        sourceRoute: `/admin/tracking/technician/${user.id}`,
+      });
+      const updated = patchInPlace(jobs, job.id, { steps });
+      return installationSopViewOf(updated, technicianId);
     }),
 
   completeSopStep: (jobId, stepId, technicianId, capturedAt) =>

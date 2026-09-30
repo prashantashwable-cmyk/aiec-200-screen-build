@@ -110,7 +110,33 @@ the module's section to `BUILD_README.md`.
 - **Module 11 Material Logistics & Delivery is done, including its checkpoint** (`101`–`110`, see
   BUILD_README's Module 11 section). Admin has a "Logistics" nav tab; every delivery screen declares
   `tab: 'logistics'` for Admin.
-- **Module 13 Installation & Technician in progress:** `121`–`123` built. **Next: `124`** (Photo/Video Evidence Capture).
+- **Module 13 Installation & Technician in progress:** `121`–`124` built. **Next: `125`** (Technician Live Location Check-in/out).
+  124 facts:
+  - **Evidence is append-only and guided.** `JobEvidence` (on `JobStep.evidence`) now has `kind` (`photo` | `video`), `mimeType`, `sizeBytes`,
+    `durationS`, `location` (best effort, never waited on), `finding`/`note` and `supersededAt`. A retake **supersedes** the slot's earlier proof
+    (`supersededAt`), never deletes it; `SopSlotView.history` returns everything (replaced captures and findings included) and `photo` is only
+    the active proof. Slots carry a `kind` (`s6.sensors` door-sensor test and `s8.gear` safety-gear test are `video`). Pure rules in
+    `@/features/technician/evidence` (`evidenceProblem`, `exceptionProblem`, `activeProofOf`, `slotState`, `frameOf`, limits `VIDEO_MAX_SECONDS` 30,
+    `VIDEO_MAX_BYTES` 20 MB, `FINDING_NOTE_MIN` 8, `EXCEPTION_REASON_MIN` 15, `FINDING_SLOT` `_finding`), read by the screen and the repository.
+    `installSop.missingSlots` now means "no active non-finding proof and no exception".
+  - **A finding is a capture that shows a problem** (`finding: true`, note required): kept in full, does not satisfy the slot, and raises a
+    `quality` alert `installEvidence.alert.finding` (`sourceRoute` `/admin/tracking/technician/:id`, high on a safety step). `_finding` is a free
+    problem at a step. **127 (Issue/Blocker Reporting) should read `JobEvidence.finding`** rather than ask for the photo again.
+  - **A documented exception** (`recordEvidenceException`, `JobStep.evidenceExceptions`) answers a required slot that cannot be captured
+    (reason 15+ letters); it raises an alert (`installEvidence.alert.exception`, or `exceptionSafety`, high + `safety`, on a safety-critical step).
+    A safety-critical exception must be acknowledged by Admin (the alert, in 019) before the job reaches QC: `sopFinishIfDone` and the heartbeat's
+    `syncSopHandoff` (logged `installation.qc_handoff`) hand it over once acknowledged; `InstallationSopView.awaitingAdmin` says what waits. A later
+    capture for that slot removes the exception and resolves its alert.
+  - **The queue is shared**: `@/features/technician/useSopWork` (123's hook wraps it) owns the phone-first queue, now with `evidence` and
+    `exception` items; `applyQueue` overlays them. A **video is held in memory only** (module-level, survives moving between 123 and 124 but not
+    closing the app; the screen warns while one is waiting): a real build would store it in the device's file storage. The last server view of a
+    job is cached (pictures stripped) so the app opens offline. Stills are compressed in steps (1600/1280/1024 px, never below) to ~700 KB
+    (`@/features/technician/mediaCapture`: `prepareStill`, `prepareVideo` (poster frame + length), `currentPlace`); blur/dark/glare is advisory
+    only (`analyseImage`, "keep anyway"). `CaptureCamera` is a live viewfinder with a `FramingGuide` outline (shared, reusable by 126/127);
+    without a camera it falls back to the phone's camera app (`<input capture>`).
+  - `/technician/jobs/:jobId/evidence` (`?step=&slot=`), Technician only, tab `jobs`; an assistant captures only for their own steps. 123's slot
+    rows now open it instead of an inline camera input. The gallery lists steps still open first, tiles marked Proof / Replaced / Problem and
+    Not sent / Sending / Saved, with a full-screen lightbox (arrow keys, video plays). Admin has no evidence viewer yet: the alert points at 014.
   123 facts:
   - **The procedure is central and versioned** (`InstallSopVersion`, memoryRepository `installSopVersions`, seed `seedInstallSopVersions`, one
     version so far; there is no Admin editor yet, which is 107's counterpart for installation and belongs to a later module). Each
