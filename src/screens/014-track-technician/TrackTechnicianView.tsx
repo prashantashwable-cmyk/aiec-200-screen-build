@@ -189,6 +189,9 @@ export function TrackTechnicianView() {
                 <Button size="sm" variant="secondary" onClick={() => navigate(`/installation-timeline/${s.data?.job?.id}`)}>
                   {t('installTimeline.title')}
                 </Button>
+                <Button size="sm" variant="secondary" onClick={() => navigate(`/job-team/${s.data?.job?.id}`)}>
+                  {t('jobTeam.title')}
+                </Button>
               </div>
             </Card>
 

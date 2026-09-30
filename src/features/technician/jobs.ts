@@ -38,14 +38,27 @@ export const isOnJob = (j: Pick<Job, 'technicianId' | 'crew'>, userId: string): 
 
 export type JobRole = 'lead' | 'assistant';
 
+/** Whether a lead's delegation is in force today, on the site's calendar: from its first day to the end of its last, and not withdrawn. */
+export const delegationActive = (d: Job['leadDelegation'], now = Date.now()): boolean => {
+  if (!d || d.revokedAt) return false;
+  const from = new Date(`${d.from}T00:00:00`).getTime();
+  const until = new Date(`${d.until}T23:59:59`).getTime();
+  return now >= from && now <= until;
+};
+
+type Crewed = Pick<Job, 'technicianId' | 'crew'> & Partial<Pick<Job, 'leadDelegation'>>;
+
+/** Everyone who holds the lead's authority right now: the lead, and whoever the lead's authority was handed to for these days. */
+export const leadIdsOf = (j: Crewed, now = Date.now()): string[] => [...(j.technicianId ? [j.technicianId] : []), ...(delegationActive(j.leadDelegation, now) && j.leadDelegation ? [j.leadDelegation.toUserId] : [])];
+
 /** The lead answers for the whole job. Anyone else the job names is an assistant with their own steps. */
-export const roleOf = (j: Pick<Job, 'technicianId' | 'crew'>, userId: string): JobRole | null => {
-  if (j.technicianId === userId) return 'lead';
+export const roleOf = (j: Crewed, userId: string): JobRole | null => {
+  if (leadIdsOf(j).includes(userId)) return 'lead';
   return (j.crew ?? []).some((c) => c.userId === userId) ? 'assistant' : null;
 };
 
 /** The steps that are this person's own, or null for the lead, who sees them all. */
-export const ownStepIds = (j: Pick<Job, 'technicianId' | 'crew'>, userId: string): string[] | null => {
+export const ownStepIds = (j: Crewed, userId: string): string[] | null => {
   if (roleOf(j, userId) !== 'assistant') return null;
   return (j.crew ?? []).find((c) => c.userId === userId)?.stepIds ?? [];
 };

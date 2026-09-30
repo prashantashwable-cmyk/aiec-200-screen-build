@@ -213,6 +213,10 @@ import type {
   JobIssueView,
   MaterialLogView,
   InstallTimelineView,
+  JobTeamView,
+  TeamHandoffView,
+  TeamMemberView,
+  TeamMessageView,
   TimelineAudience,
   TimelineEvent,
   TimelineIssueView,
@@ -361,6 +365,12 @@ import type {
   JobIssueEvent,
   JobMaterialLog,
   InstallSopPhase,
+  JobCrewMember,
+  JobHandoffNote,
+  JobLeadDelegation,
+  JobTeamEvent,
+  JobTeamEventKind,
+  JobTeamMessage,
   JobMaterialUse,
   MaterialDeviationKind,
   IssuePatternReview,
@@ -551,7 +561,7 @@ import { RESOLVE_TARGET, blockedMs, canReopen, canResolve, categoryCounts, minSe
 import { MAX_FAILS, SAFETY_ITEMS, defOf as safetyDefOf, disagreementProblem, failCount, fixProblem, isCleared, itemsFor as safetyItemsForSpec, overrideProblem, readiness as safetyReadiness, resultProblem, safetyState, DISAGREEMENT_NOTE_MIN, RESOLUTION_NOTE_MIN } from '@/features/technician/safety';
 import { LEAVE_NOTE_MIN, MIN_TYPICAL_JOBS, OVERRIDE_REASON_MIN, daysOf, isStale, jobVisitProblem, leaveSeverity, leaveTimeProblem, medianOf, radiusFor, readPresence, timeOf, visitMinutes } from '@/features/technician/presence';
 import { FINDING_SLOT, activeProofOf, evidenceProblem, exceptionKey, exceptionOf, exceptionProblem, findingKey, historyOf } from '@/features/technician/evidence';
-import { SOS_FOLLOW, actionOf, bucketOf, clashesOf, dayKey, isActiveJob, isOnJob, ownStepIds, peopleOn, roleOf, sameMonth } from '@/features/technician/jobs';
+import { SOS_FOLLOW, actionOf, bucketOf, clashesOf, dayKey, delegationActive, isActiveJob, isOnJob, leadIdsOf, ownStepIds, peopleOn, roleOf, sameMonth } from '@/features/technician/jobs';
 import { RUN_HOUR, WINDOW as RECON_WINDOW, latestSlot, nextSlot, reasonsFor, reconcile, reconcileProblem, runStatusOf, severityOf } from '@/features/finance/reconciliation';
 import type { BankLine, LedgerLine } from '@/features/finance/reconciliation';
 import { NOTE_LABEL_MIN, PAYMENT_TARGET, PAYMENT_TARGET_DAYS, alertingReasons, allocateByLines, average, daysToPay, endOfMonth, fleetRate, heldAt, isRatedSupplier, median, oneDecimal, oneOrderExplains, ratePct, reviewReasons, spikeOf, withinTarget } from '@/features/suppliers/paymentAnalytics';
@@ -2211,6 +2221,8 @@ function commitmentSources(now: number): CommitmentSources {
     jobSafetyTests,
     jobIssues,
     materialLogs: (ensureMaterialSeeds(), materialLogs),
+    handoffNotes: (ensureTeamSeeds(), jobHandoffs).map((h) => ({ ...h, ownerId: handoffOwnerOf(byId(jobs, h.jobId) as Job, h) })),
+    leadSignOffs: leadSignOffsWaiting(),
     deliveryChecklists,
     delayCases,
     discrepancyReports,
@@ -2465,6 +2477,8 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   syncSafetyAlerts(true, now);
   syncIssueAlerts(true, now);
   syncMaterialDeviations(true, now);
+  syncTeamAlerts(true, now);
+  syncLeadDelegations(now);
   for (const j of jobs) syncIssueHold(j);
   syncSopHandoff();
   syncAdvanceExposure(now);
@@ -6017,6 +6031,195 @@ function timelineViewOf(job: Job, user: User, audience: TimelineAudience, now: n
   };
 }
 
+/* ============================== Technician team coordination (130) */
+
+const jobHandoffs: JobHandoffNote[] = [];
+const jobTeamMessages: JobTeamMessage[] = [];
+let teamSeeded = false;
+let teamCounter = 100;
+const TEAM_TEXT_MAX = 1000;
+const HANDOFF_MIN = 15;
+const DELEGATION_MAX_DAYS = 30;
+
+function ensureTeamSeeds(): void {
+  if (teamSeeded) return;
+  teamSeeded = true;
+  const job = byId(jobs, 'j-1');
+  if (!job) return;
+  const ago = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
+  const msg = (id: string, authorId: string, text: string, h: number): JobTeamMessage => ({ id, jobId: 'j-1', authorId, authorName: byId(users, authorId)?.name ?? authorId, text, createdAt: ago(h), kind: 'message', readBy: [authorId], isDemo: true });
+  jobTeamMessages.push(
+    msg('tm-seed-1', 'u-tech-1', 'Rails are aligned. I will start on the machine mount after lunch.', 30),
+    msg('tm-seed-2', 'u-tech-2', 'Understood. I have the door sensor kit with me for tomorrow.', 29),
+    msg('tm-seed-3', 'u-tech-1', 'The society says no drilling after 5 pm. Plan the noisy work for the morning.', 6),
+  );
+  jobHandoffs.push({ id: 'ho-seed-1', jobId: 'j-1', fromUserId: 'u-tech-2', fromName: byId(users, 'u-tech-2')?.name ?? '', toUserId: 'u-tech-1', toName: byId(users, 'u-tech-1')?.name ?? '', text: 'Left the door sensor wiring half done at the fifth floor landing. The cable is marked with red tape, and the gate key is with the watchman.', openStepIds: ['s6', 's7'], createdAt: ago(5), acknowledgedBy: [], isDemo: true });
+}
+
+/** Who may see this team: anyone on the job, and Admin. A customer or supplier never does. */
+function teamActor(jobId: string, userId: string): { job: Job; user: User; isAdmin: boolean } {
+  ensureTeamSeeds();
+  const user = byId(users, userId);
+  const job = byId(jobs, jobId);
+  if (!user) throw new RepositoryError('forbidden');
+  if (!job) throw new RepositoryError('not_found');
+  if (user.role === 'admin') return { job, user, isAdmin: true };
+  if (user.role !== 'technician' || !isOnJob(job, userId)) throw new RepositoryError('forbidden');
+  return { job, user, isAdmin: false };
+}
+
+/** The lead, or whoever holds the lead's authority for these days, or Admin. */
+function teamManager(jobId: string, userId: string): { job: Job; user: User; isAdmin: boolean } {
+  const a = teamActor(jobId, userId);
+  if (!a.isAdmin && !leadIdsOf(a.job).includes(userId)) throw new RepositoryError('not_lead');
+  return a;
+}
+
+const teamEvent = (kind: JobTeamEventKind, byName: string, subjectName?: string, note?: string): JobTeamEvent => {
+  teamCounter += 1;
+  return { id: `te-${teamCounter}`, at: new Date().toISOString(), kind, byName, ...(subjectName ? { subjectName } : {}), ...(note ? { note } : {}) };
+};
+const logTeam = (job: Job, e: JobTeamEvent, patch: Partial<Job> = {}): Job => patchInPlace(jobs, job.id, { ...patch, teamLog: [...(job.teamLog ?? []), e] });
+
+/** The crew as it stands, with the lead first and a lead entry for whoever leads. */
+function crewOf(job: Job): JobCrewMember[] {
+  const crew = (job.crew ?? []).map((c) => ({ ...c, stepIds: [...c.stepIds] }));
+  if (job.technicianId && !crew.some((c) => c.userId === job.technicianId)) crew.unshift({ userId: job.technicianId, role: 'lead', stepIds: [] });
+  return crew;
+}
+
+function jobTeamViewOf(job: Job, viewerId: string, now: number): JobTeamView {
+  const viewer = byId(users, viewerId) as User;
+  const isAdmin = viewer.role === 'admin';
+  const version = sopVersionOf(job);
+  const spec = sopSpecOf(job);
+  const steps = version.steps.flatMap((def) => {
+    const st = job.steps.find((x) => x.id === def.id);
+    return st && stepApplies(def, spec) ? [{ def, st }] : [];
+  });
+  const crew = crewOf(job);
+  const ownerOf = (stepId: string): string | null => crew.find((c) => c.role === 'assistant' && c.stepIds.includes(stepId))?.userId ?? null;
+  const deleg = delegationActive(job.leadDelegation, now) ? job.leadDelegation : null;
+  const members: TeamMemberView[] = crew.map((c) => {
+    const u = byId(users, c.userId);
+    const isLead = c.userId === job.technicianId;
+    const mine = isLead ? null : steps.filter((x) => c.stepIds.includes(x.st.id));
+    const visit = siteCheckIns.find((v) => v.jobId === job.id && v.userId === c.userId && !v.checkOutAt);
+    const current = (mine ?? steps).find((x) => x.st.status === 'current');
+    return {
+      userId: c.userId,
+      name: u?.name ?? c.userId,
+      phone: viewer.role === 'technician' || isAdmin ? (u?.phone ?? null) : null,
+      role: isLead ? 'lead' : 'assistant',
+      delegated: !isLead && !!deleg && deleg.toUserId === c.userId,
+      responsibility: c.responsibility ?? null,
+      steps: (mine ?? []).map((x) => ({ id: x.st.id, labelKey: x.st.labelKey, status: x.st.status })),
+      owned: mine === null ? null : mine.length,
+      ownedDone: (mine ?? steps).filter((x) => isDone(x.st)).length,
+      completedByThem: steps.filter((x) => x.st.completedByName && x.st.completedByName === u?.name).length,
+      currentStepLabelKey: current?.st.labelKey ?? null,
+      onSiteSince: visit?.checkInAt ?? null,
+      isMe: c.userId === viewerId,
+    };
+  });
+  const multi = peopleOn(job).length > 1;
+  const readiness = qcReadiness(version.steps, job.steps, spec);
+  const problem = job.status !== 'in_progress' ? (job.status === 'on_hold' ? 'job_on_hold' : 'read_only') : !readiness.ready ? 'not_ready' : null;
+  const lead = byId(users, job.technicianId ?? '');
+  const seen = (m: JobTeamMessage) => m.readBy.includes(viewerId);
+  const msgs = jobTeamMessages.filter((m) => m.jobId === job.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const disagreementIssue = [...jobIssues].filter((i) => i.jobId === job.id && i.teamDisagreement).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  const stepLabel = (id: string) => job.steps.find((x) => x.id === id)?.labelKey ?? id;
+  const role: JobTeamView['viewer']['role'] = isAdmin ? 'admin' : (roleOf(job, viewerId) ?? 'assistant');
+  return {
+    job: { id: job.id, code: job.code, siteName: job.siteName, status: job.status, scheduledFor: job.scheduledFor, startedAt: job.startedAt ?? null },
+    viewer: { userId: viewerId, role, holdsLead: !isAdmin && leadIdsOf(job, now).includes(viewerId) },
+    lead: { userId: job.technicianId ?? '', name: lead?.name ?? '' },
+    delegation: job.leadDelegation && !job.leadDelegation.revokedAt && new Date(`${job.leadDelegation.until}T23:59:59`).getTime() >= now ? { ...job.leadDelegation } : null,
+    members,
+    steps: steps.map((x) => ({ id: x.st.id, labelKey: x.st.labelKey, status: x.st.status, ownerId: ownerOf(x.st.id) })),
+    progress: { done: steps.filter((x) => isDone(x.st)).length, total: steps.length },
+    signOff: { needed: multi, ready: readiness.ready, signedOff: job.leadSignOff ? { at: job.leadSignOff.at, byName: job.leadSignOff.byName } : null, awaitingLead: multi && readiness.ready && !job.leadSignOff && job.status === 'in_progress', problem },
+    handoffs: jobHandoffs
+      .filter((h) => h.jobId === job.id)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((h): TeamHandoffView => ({
+        id: h.id,
+        fromUserId: h.fromUserId,
+        fromName: h.fromName,
+        toUserId: h.toUserId ?? null,
+        toName: h.toName ?? null,
+        text: h.text,
+        openSteps: h.openStepIds.map((id) => ({ id, labelKey: stepLabel(id) })),
+        createdAt: h.createdAt,
+        acknowledgedBy: h.acknowledgedBy.map((a) => ({ ...a })),
+        mine: h.fromUserId === viewerId,
+        waitingForMe: !isAdmin && h.fromUserId !== viewerId && (h.toUserId ? h.toUserId === viewerId : true) && !h.acknowledgedBy.some((a) => a.userId === viewerId),
+      })),
+    messages: msgs.map((m): TeamMessageView => ({ id: m.id, authorId: m.authorId, authorName: m.authorName, text: m.text, createdAt: m.createdAt, kind: m.kind, issueId: m.issueId ?? null, mine: m.authorId === viewerId, unread: !seen(m) })),
+    unread: msgs.filter((m) => !seen(m)).length,
+    log: [...(job.teamLog ?? [])].reverse(),
+    addable: isAdmin
+      ? users
+          .filter((u) => u.role === 'technician' && u.status === 'active' && !isOnJob(job, u.id))
+          .map((u) => ({ id: u.id, name: u.name, otherJobsToday: jobs.filter((j) => j.id !== job.id && isOnJob(j, u.id) && (j.status === 'in_progress' || dayKey(j.scheduledFor) === dayKey(now))).length }))
+      : [],
+    disagreement: disagreementIssue ? { issueId: disagreementIssue.id, code: disagreementIssue.code, at: disagreementIssue.createdAt, resolved: disagreementIssue.status === 'resolved' } : null,
+    canWrite: true,
+    canManage: isAdmin || leadIdsOf(job, now).includes(viewerId),
+    canAdmin: isAdmin,
+  };
+}
+
+/** A shared reading of who is waiting on a handoff note, for the follow-up engine. */
+function handoffOwnerOf(job: Job, h: JobHandoffNote): string | null {
+  if (h.toUserId) return h.toUserId;
+  const others = peopleOn(job).filter((id) => id !== h.fromUserId);
+  return leadIdsOf(job).find((id) => others.includes(id)) ?? others[0] ?? null;
+}
+
+/** An alert while a team disagreement stands, cleared when its report is closed: Admin sees a team that cannot agree, not a silent delay. */
+function syncTeamAlerts(automated: boolean, now: number): void {
+  ensureTeamSeeds();
+  const at = new Date(now).toISOString();
+  const live = new Set<string>();
+  for (const i of jobIssues) {
+    if (!i.teamDisagreement || i.status !== 'open') continue;
+    const job = byId(jobs, i.jobId);
+    if (!job) continue;
+    const key = `disagree:${i.id}`;
+    live.add(key);
+    if (alerts.some((a) => a.relatedId === key && a.status !== 'resolved')) continue;
+    raiseAlert({ titleKey: 'jobTeam.alert.disagreement', context: `${job.code} · ${job.siteName}: ${i.description}`, severity: 'medium', category: 'quality', relatedId: key, sourceRoute: `/job-issues/${job.id}?issue=${i.id}`, location: job.location });
+    if (automated) logAutomatedAction({ sourceKey: 'team.disagreement', triggeringCondition: `The team on ${job.code} flagged that they could not agree`, actionTaken: 'Raised an alert so Admin can settle it', affectedRecordId: i.id, affectedRecordType: 'other', subjectLabel: job.code });
+  }
+  for (const a of alerts) if (a.relatedId?.startsWith('disagree:') && a.status !== 'resolved' && !live.has(a.relatedId)) patchInPlace(alerts, a.id, { status: 'resolved', resolvedAt: at, resolvedBy: 'system', resolutionNote: 'Closed.' });
+}
+
+/** The lead's authority handed over for a few days lapses by itself on the day after: recorded so the team's history says so. */
+function syncLeadDelegations(now: number): void {
+  for (const j of jobs) {
+    const d = j.leadDelegation;
+    if (!d || d.revokedAt) continue;
+    if (new Date(`${d.until}T23:59:59`).getTime() < now) {
+      const ended = { ...d, revokedAt: new Date(now).toISOString() };
+      logTeam(j, teamEvent('delegation_ended', 'AIEC', d.toName, 'The days it was given for have passed.'), { leadDelegation: ended });
+      logAutomatedAction({ sourceKey: 'team.delegation_ended', triggeringCondition: `The lead's authority on ${j.code} was given to ${d.toName} until ${d.until}`, actionTaken: 'Returned it to the lead', affectedRecordId: j.id, affectedRecordType: 'other', subjectLabel: j.code });
+    }
+  }
+}
+
+/** Jobs whose checklist is all done with more than one person on them, waiting for the lead to say so. */
+function leadSignOffsWaiting(): { jobId: string; ownerId: string; doneAt: string }[] {
+  return jobs.flatMap((j) => {
+    if (j.status !== 'in_progress' || peopleOn(j).length < 2 || j.leadSignOff) return [];
+    const version = sopVersionOf(j);
+    if (!qcReadiness(version.steps, j.steps, sopSpecOf(j)).ready) return [];
+    const doneAt = j.steps.map((s) => s.completedAt).filter((x): x is string => !!x).sort().pop();
+    return doneAt && j.technicianId ? [{ jobId: j.id, ownerId: (leadIdsOf(j).length > 1 ? leadIdsOf(j)[1] : j.technicianId) as string, doneAt }] : [];
+  });
+}
+
 /* ============================== Installation SOP (123) */
 
 const installSopVersions: InstallSopVersion[] = seedInstallSopVersions.map((v) => ({ ...v, steps: v.steps.map((st) => ({ ...st, slots: st.slots.map((sl) => ({ ...sl })), dependsOn: [...st.dependsOn] })) }));
@@ -6165,9 +6368,16 @@ function sopWorkable(job: Job): Job {
 }
 
 /** Everything done, with all its evidence: the job is handed to QC. */
-function sopFinishIfDone(job: Job, version: InstallSopVersion): Job {
+function sopFinishIfDone(jobIn: Job, version: InstallSopVersion, actorId?: string): Job {
+  let job = jobIn;
   if (job.status !== 'in_progress') return job;
   if (!qcReadiness(version.steps, job.steps, sopSpecOf(job)).ready) return job;
+  // With more than one person on the job, the lead has the last word (130): finishing the last step as the lead is that word, and anyone else
+  // finishing it leaves the job waiting for the lead's sign-off.
+  if (peopleOn(job).length > 1 && !job.leadSignOff) {
+    if (!actorId || !leadIdsOf(job).includes(actorId)) return job;
+    job = patchInPlace(jobs, job.id, { leadSignOff: { at: new Date().toISOString(), byUserId: actorId, byName: byId(users, actorId)?.name ?? '' } });
+  }
   // Evidence that could not be captured on a safety-critical step is Admin's to accept before the job is handed to QC.
   if (sopAwaitingAdmin(job, version).length > 0) return job;
   // A safety check not passed (or accepted by Admin with a named engineer) stops the job here, with no way round for a technician alone.
@@ -12120,7 +12330,7 @@ export const memoryRepository: Repository = {
       if (bad) throw new RepositoryError(`captured_${bad}`);
       const done = job.steps.map((x) => (x.id === stepId ? { ...x, status: 'complete' as const, completedAt: at, completedByName: user.name } : x));
       const updated = patchInPlace(jobs, job.id, { steps: withCurrent(done, version.steps, null) });
-      return installationSopViewOf(sopFinishIfDone(updated, version), technicianId);
+      return installationSopViewOf(sopFinishIfDone(updated, version, technicianId), technicianId);
     }),
 
   markStepNotApplicable: (jobId, stepId, reason, technicianId, capturedAt) =>
@@ -12136,7 +12346,7 @@ export const memoryRepository: Repository = {
       if (bad) throw new RepositoryError(`captured_${bad}`);
       const done = job.steps.map((x) => (x.id === stepId ? { ...x, status: 'complete' as const, completedAt: at, completedByName: user.name, notApplicable: { reason: reason.trim(), byName: user.name, at } } : x));
       const updated = patchInPlace(jobs, job.id, { steps: withCurrent(done, version.steps, null) });
-      return installationSopViewOf(sopFinishIfDone(updated, version), technicianId);
+      return installationSopViewOf(sopFinishIfDone(updated, version, technicianId), technicianId);
     }),
 
   focusSopStep: (jobId, stepId, technicianId) =>
@@ -12149,6 +12359,208 @@ export const memoryRepository: Repository = {
       if (unmetDependencies(def as InstallSopStepDef, job.steps).length > 0) throw new RepositoryError('depends_on');
       const updated = patchInPlace(jobs, job.id, { steps: withCurrent(job.steps, sopVersionOf(job).steps, stepId) });
       return installationSopViewOf(updated, technicianId);
+    }),
+
+  /* --------------------------------- Technician team coordination (130) */
+  getJobTeam: (jobId, userId) =>
+    simulateRead((): JobTeamView => {
+      const { job } = teamActor(jobId, userId);
+      return jobTeamViewOf(job, userId, Date.now());
+    }),
+
+  postTeamMessage: (jobId, input, userId) =>
+    simulateWrite((): JobTeamView => {
+      const { job, user } = teamActor(jobId, userId);
+      const text = input.text.trim();
+      if (!text) throw new RepositoryError('text_required');
+      if (text.length > TEAM_TEXT_MAX) throw new RepositoryError('text_too_long');
+      const now = Date.now();
+      const at = input.capturedAt ? new Date(input.capturedAt).getTime() : now;
+      if (Number.isNaN(at)) throw new RepositoryError('captured_invalid');
+      if (at > now + 60_000) throw new RepositoryError('captured_in_future');
+      const id = input.clientId ? `tm-${input.clientId}` : `tm-${++teamCounter}`;
+      // A message written without signal is sent when there is some; sending it twice is harmless.
+      if (!jobTeamMessages.some((m) => m.id === id)) jobTeamMessages.push({ id, jobId: job.id, authorId: user.id, authorName: user.name, text, createdAt: new Date(at).toISOString(), kind: 'message', readBy: [user.id], isDemo: true });
+      return jobTeamViewOf(job, userId, now);
+    }),
+
+  markTeamMessagesRead: (jobId, userId) =>
+    simulateWrite((): void => {
+      const { job } = teamActor(jobId, userId);
+      for (const m of jobTeamMessages) if (m.jobId === job.id && !m.readBy.includes(userId)) m.readBy.push(userId);
+    }),
+
+  addHandoffNote: (jobId, input, userId) =>
+    simulateWrite((): JobTeamView => {
+      const { job, user, isAdmin } = teamActor(jobId, userId);
+      if (isAdmin) throw new RepositoryError('forbidden');
+      const text = input.text.trim();
+      if (text.length < HANDOFF_MIN) throw new RepositoryError('note_required');
+      if (text.length > TEAM_TEXT_MAX) throw new RepositoryError('text_too_long');
+      if (input.toUserId && (input.toUserId === userId || !isOnJob(job, input.toUserId))) throw new RepositoryError('unknown_member');
+      if (job.status === 'completed') throw new RepositoryError('read_only');
+      const now = Date.now();
+      const at = input.capturedAt ? new Date(input.capturedAt).getTime() : now;
+      if (Number.isNaN(at)) throw new RepositoryError('captured_invalid');
+      if (at > now + 60_000) throw new RepositoryError('captured_in_future');
+      const id = input.clientId ? `ho-${input.clientId}` : `ho-${++teamCounter}`;
+      if (!jobHandoffs.some((h) => h.id === id)) {
+        const own = ownStepIds(job, userId);
+        const open = job.steps.filter((st) => st.status !== 'complete' && (own === null || own.includes(st.id))).map((st) => st.id);
+        const to = input.toUserId ? byId(users, input.toUserId) : undefined;
+        jobHandoffs.push({ id, jobId: job.id, fromUserId: user.id, fromName: user.name, ...(to ? { toUserId: to.id, toName: to.name } : {}), text, openStepIds: open, createdAt: new Date(at).toISOString(), acknowledgedBy: [], isDemo: true });
+      }
+      return jobTeamViewOf(job, userId, now);
+    }),
+
+  acknowledgeHandoff: (noteId, userId) =>
+    simulateWrite((): JobTeamView => {
+      const note = jobHandoffs.find((h) => h.id === noteId) ?? (ensureTeamSeeds(), jobHandoffs.find((h) => h.id === noteId));
+      if (!note) throw new RepositoryError('not_found');
+      const { job, user, isAdmin } = teamActor(note.jobId, userId);
+      if (isAdmin) throw new RepositoryError('forbidden');
+      if (note.fromUserId === userId || (note.toUserId && note.toUserId !== userId)) throw new RepositoryError('forbidden');
+      if (!note.acknowledgedBy.some((a) => a.userId === userId)) note.acknowledgedBy.push({ userId, name: user.name, at: new Date().toISOString() });
+      return jobTeamViewOf(job, userId, Date.now());
+    }),
+
+  assignTeamSteps: (jobId, memberId, input, byId_) =>
+    simulateWrite((): JobTeamView => {
+      const { job, user } = teamManager(jobId, byId_);
+      if (job.status === 'completed') throw new RepositoryError('read_only');
+      const crew = crewOf(job);
+      const member = crew.find((c) => c.userId === memberId);
+      if (!member) throw new RepositoryError('unknown_member');
+      if (member.userId === job.technicianId) throw new RepositoryError('lead_owns_all');
+      const known = new Set(job.steps.map((st) => st.id));
+      if (input.stepIds.some((id) => !known.has(id))) throw new RepositoryError('unknown_step');
+      // A step has one owner: giving it to this person takes it from whoever held it, and only unfinished steps are worth handing over.
+      const openIds = new Set(input.stepIds.filter((id) => job.steps.find((st) => st.id === id)?.status !== 'complete'));
+      const next = crew.map((c) => (c.userId === memberId ? { ...c, stepIds: [...new Set([...c.stepIds.filter((id) => job.steps.find((st) => st.id === id)?.status === 'complete' || openIds.has(id)), ...openIds])], ...(input.responsibility !== undefined ? { responsibility: input.responsibility.trim() || undefined } : {}) } : { ...c, stepIds: c.stepIds.filter((id) => !openIds.has(id)) }));
+      // What was set aside for this person and is no longer ticked goes back to the lead.
+      const kept = next.find((c) => c.userId === memberId) as JobCrewMember;
+      kept.stepIds = kept.stepIds.filter((id) => openIds.has(id) || job.steps.find((st) => st.id === id)?.status === 'complete');
+      logTeam(job, teamEvent('steps_assigned', user.name, byId(users, memberId)?.name, `${openIds.size}`), { crew: next });
+      return jobTeamViewOf(byId(jobs, job.id) as Job, byId_, Date.now());
+    }),
+
+  delegateLead: (jobId, input, byId_) =>
+    simulateWrite((): JobTeamView => {
+      const { job, user, isAdmin } = teamActor(jobId, byId_);
+      // Only the lead themself (or Admin) hands the authority over: someone holding it for a few days cannot pass it on.
+      if (!isAdmin && job.technicianId !== byId_) throw new RepositoryError('not_lead');
+      const to = crewOf(job).find((c) => c.userId === input.toUserId);
+      if (!to || to.userId === job.technicianId) throw new RepositoryError('unknown_member');
+      if (input.reason.trim().length < 8) throw new RepositoryError('reason_required');
+      const okDay = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(new Date(`${s}T00:00:00`).getTime());
+      if (!okDay(input.from) || !okDay(input.until) || input.until < input.from) throw new RepositoryError('dates_invalid');
+      const todayKey = dayKey(Date.now());
+      if (input.until < todayKey) throw new RepositoryError('dates_invalid');
+      if ((new Date(`${input.until}T00:00:00`).getTime() - new Date(`${input.from}T00:00:00`).getTime()) / 86_400_000 > DELEGATION_MAX_DAYS) throw new RepositoryError('dates_too_long');
+      const name = byId(users, to.userId)?.name ?? to.userId;
+      const d: JobLeadDelegation = { toUserId: to.userId, toName: name, from: input.from, until: input.until, reason: input.reason.trim(), byName: user.name, at: new Date().toISOString() };
+      logTeam(job, teamEvent('delegated', user.name, name, `${input.from} → ${input.until}`), { leadDelegation: d });
+      return jobTeamViewOf(byId(jobs, job.id) as Job, byId_, Date.now());
+    }),
+
+  endLeadDelegation: (jobId, byId_) =>
+    simulateWrite((): JobTeamView => {
+      const { job, user, isAdmin } = teamActor(jobId, byId_);
+      if (!isAdmin && job.technicianId !== byId_) throw new RepositoryError('not_lead');
+      const d = job.leadDelegation;
+      if (!d || d.revokedAt) throw new RepositoryError('invalid_state');
+      logTeam(job, teamEvent('delegation_ended', user.name, d.toName), { leadDelegation: { ...d, revokedAt: new Date().toISOString() } });
+      return jobTeamViewOf(byId(jobs, job.id) as Job, byId_, Date.now());
+    }),
+
+  addTeamMember: (jobId, technicianId, input, adminId) =>
+    simulateWrite((): JobTeamView => {
+      adminOnly(adminId);
+      const { job, user } = teamActor(jobId, adminId);
+      const tech = byId(users, technicianId);
+      if (!tech || tech.role !== 'technician' || tech.status !== 'active') throw new RepositoryError('unknown_member');
+      if (isOnJob(job, technicianId)) throw new RepositoryError('already_on_job');
+      if (job.status === 'completed') throw new RepositoryError('read_only');
+      const known = new Set(job.steps.filter((st) => st.status !== 'complete').map((st) => st.id));
+      const stepIds = input.stepIds.filter((id) => known.has(id));
+      const crew = crewOf(job).map((c) => ({ ...c, stepIds: c.stepIds.filter((id) => !stepIds.includes(id)) }));
+      crew.push({ userId: tech.id, role: 'assistant', stepIds, ...(input.responsibility?.trim() ? { responsibility: input.responsibility.trim() } : {}) });
+      logTeam(job, teamEvent('added', user.name, tech.name), { crew });
+      return jobTeamViewOf(byId(jobs, job.id) as Job, adminId, Date.now());
+    }),
+
+  reassignTeamMember: (jobId, memberId, input, adminId) =>
+    simulateWrite((): JobTeamView => {
+      adminOnly(adminId);
+      const { job, user } = teamActor(jobId, adminId);
+      if (input.reason.trim().length < 8) throw new RepositoryError('reason_required');
+      const crew = crewOf(job);
+      const member = crew.find((c) => c.userId === memberId);
+      if (!member) throw new RepositoryError('unknown_member');
+      const isLead = memberId === job.technicianId;
+      if (isLead && !input.newLeadId) throw new RepositoryError('new_lead_required');
+      if (isLead && (!input.newLeadId || input.newLeadId === memberId || !crew.some((c) => c.userId === input.newLeadId))) throw new RepositoryError('unknown_member');
+      // Someone still checked in here cannot be taken off the job: their time on site has to be closed first.
+      if (siteCheckIns.some((v) => v.jobId === job.id && v.userId === memberId && !v.checkOutAt)) throw new RepositoryError('still_checked_in');
+      const newLead = isLead ? (input.newLeadId as string) : job.technicianId;
+      const receiverId = input.handStepsTo && crew.some((c) => c.userId === input.handStepsTo) && input.handStepsTo !== memberId ? input.handStepsTo : newLead;
+      const openOwned = member.stepIds.filter((id) => job.steps.find((st) => st.id === id)?.status !== 'complete');
+      const next = crew
+        .filter((c) => c.userId !== memberId)
+        .map((c) => {
+          if (c.userId === newLead) return { ...c, role: 'lead' as const, stepIds: [] };
+          if (c.userId === receiverId) return { ...c, stepIds: [...new Set([...c.stepIds, ...openOwned])] };
+          return c;
+        });
+      const name = byId(users, memberId)?.name ?? memberId;
+      const d = job.leadDelegation && (job.leadDelegation.toUserId === memberId || isLead) && !job.leadDelegation.revokedAt ? { ...job.leadDelegation, revokedAt: new Date().toISOString() } : job.leadDelegation;
+      // Their finished steps keep their name (completedByName): the partial progress stays theirs, and the rest of the team carries on.
+      logTeam(job, teamEvent('reassigned', user.name, name, input.reason.trim()), { crew: next, technicianId: newLead, ...(d ? { leadDelegation: d } : {}) });
+      if (isLead && newLead) logTeam(byId(jobs, job.id) as Job, teamEvent('lead_changed', user.name, byId(users, newLead)?.name, input.reason.trim()));
+      return jobTeamViewOf(byId(jobs, job.id) as Job, adminId, Date.now());
+    }),
+
+  changeJobLead: (jobId, newLeadId, reason, adminId) =>
+    simulateWrite((): JobTeamView => {
+      adminOnly(adminId);
+      const { job, user } = teamActor(jobId, adminId);
+      if (reason.trim().length < 8) throw new RepositoryError('reason_required');
+      const crew = crewOf(job);
+      if (newLeadId === job.technicianId || !crew.some((c) => c.userId === newLeadId)) throw new RepositoryError('unknown_member');
+      const next = crew.map((c) => (c.userId === newLeadId ? { ...c, role: 'lead' as const, stepIds: [] } : c.userId === job.technicianId ? { ...c, role: 'assistant' as const, stepIds: [] } : c));
+      logTeam(job, teamEvent('lead_changed', user.name, byId(users, newLeadId)?.name, reason.trim()), { crew: next, technicianId: newLeadId });
+      return jobTeamViewOf(byId(jobs, job.id) as Job, adminId, Date.now());
+    }),
+
+  flagTeamDisagreement: (jobId, note, userId) =>
+    simulateWrite((): JobTeamView => {
+      const { job, user, isAdmin } = teamActor(jobId, userId);
+      if (isAdmin) throw new RepositoryError('forbidden');
+      if (note.trim().length < HANDOFF_MIN) throw new RepositoryError('note_required');
+      if (job.status === 'completed' || job.status === 'handover_pending') throw new RepositoryError('job_finished');
+      if (jobIssues.some((i) => i.jobId === job.id && i.teamDisagreement && i.status === 'open')) throw new RepositoryError('already_open');
+      issueCounter += 1;
+      const id = `iss-new-${issueCounter}`;
+      const createdAt = new Date().toISOString();
+      const description = `Team disagreement: ${note.trim()}`;
+      jobIssues.push({ id, code: `AIEC-ISS-${1000 + issueCounter}`, jobId: job.id, category: 'other', severity: 'minor', description, sopGap: false, teamDisagreement: true, evidence: [], status: 'open', groupId: id, reportedByUserId: user.id, reportedByName: user.name, createdAt, events: [issueEvent('reported', actorOf(user), description, { at: createdAt })], isDemo: true });
+      jobTeamMessages.push({ id: `tm-${++teamCounter}`, jobId: job.id, authorId: user.id, authorName: user.name, text: note.trim(), createdAt, kind: 'disagreement', issueId: id, readBy: [user.id], isDemo: true });
+      syncTeamAlerts(false, Date.now());
+      return jobTeamViewOf(job, userId, Date.now());
+    }),
+
+  signOffForQuality: (jobId, userId) =>
+    simulateWrite((): JobTeamView => {
+      const { job, user, isAdmin } = teamActor(jobId, userId);
+      if (isAdmin) throw new RepositoryError('forbidden');
+      if (!leadIdsOf(job).includes(userId)) throw new RepositoryError('not_lead');
+      if (job.status !== 'in_progress') throw new RepositoryError(job.status === 'on_hold' ? 'job_on_hold' : 'read_only');
+      if (job.leadSignOff) throw new RepositoryError('invalid_state');
+      const version = sopVersionOf(job);
+      if (!qcReadiness(version.steps, job.steps, sopSpecOf(job)).ready) throw new RepositoryError('not_ready');
+      const signed = logTeam(job, teamEvent('signed_off', user.name), { leadSignOff: { at: new Date().toISOString(), byUserId: user.id, byName: user.name } });
+      sopFinishIfDone(signed, version);
+      return jobTeamViewOf(byId(jobs, job.id) as Job, userId, Date.now());
     }),
 
   /* --------------------------------- Installation progress timeline (129) */

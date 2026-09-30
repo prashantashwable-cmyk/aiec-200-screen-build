@@ -2655,6 +2655,8 @@ export interface JobIssue {
   stepId?: string;
   /** The person says the procedure itself was unclear or wrong here: the signal that turns repeated reports into a change to the SOP. */
   sopGap: boolean;
+  /** Raised from the team chat because the people on the job could not agree on what to do (130). */
+  teamDisagreement?: boolean;
   evidence: JobEvidence[];
   status: 'open' | 'resolved';
   /** Reports that are the same problem share a group; the first report's id names it. */
@@ -2752,6 +2754,11 @@ export interface Job {
   resumeStatus?: JobStatus;
   /** Admin has turned the customer's view of this job's timeline off (129), with when, by whom and why. Unset means the customer sees it. */
   customerTimelineHidden?: { at: string; byName: string; note?: string };
+  /** Someone on the crew holds the lead's authority for a while (130). */
+  leadDelegation?: JobLeadDelegation;
+  /** On a job with more than one person, the lead says the whole checklist is done before it goes to quality check (130). */
+  leadSignOff?: { at: string; byUserId: string; byName: string };
+  teamLog?: JobTeamEvent[];
   isDemo: boolean;
 }
 
@@ -2760,6 +2767,64 @@ export interface JobCrewMember {
   role: 'lead' | 'assistant';
   /** The job steps this person owns. Empty for the lead, who answers for all of them. */
   stepIds: string[];
+  /** What this person is doing on this job, in a few words (130). */
+  responsibility?: string;
+}
+
+/** The lead is away on a day the job goes on: someone on the crew holds the lead's authority for a while (130). */
+export interface JobLeadDelegation {
+  toUserId: string;
+  toName: string;
+  /** Inclusive days, `yyyy-mm-dd`, on the site's calendar. */
+  from: string;
+  until: string;
+  reason: string;
+  byName: string;
+  at: string;
+  revokedAt?: string;
+}
+
+export type JobTeamEventKind = 'added' | 'reassigned' | 'lead_changed' | 'delegated' | 'delegation_ended' | 'steps_assigned' | 'signed_off';
+/** Who joined, left, was given what, and who held the lead: the team's own history, kept on the job. */
+export interface JobTeamEvent {
+  id: string;
+  at: string;
+  kind: JobTeamEventKind;
+  byName: string;
+  subjectName?: string;
+  note?: string;
+}
+
+/** What the next person on a job needs to know when a shift ends part-way through (130). */
+export interface JobHandoffNote {
+  id: string;
+  jobId: string;
+  fromUserId: string;
+  fromName: string;
+  /** A named person, or the whole team when unset. */
+  toUserId?: string;
+  toName?: string;
+  text: string;
+  /** The steps that were still open (the author's own) when it was written. */
+  openStepIds: string[];
+  createdAt: string;
+  acknowledgedBy: { userId: string; name: string; at: string }[];
+  isDemo: boolean;
+}
+
+/** One line in a job's own team chat: only the people on it, and Admin, ever see it. */
+export interface JobTeamMessage {
+  id: string;
+  jobId: string;
+  authorId: string;
+  authorName: string;
+  text: string;
+  createdAt: string;
+  kind: 'message' | 'disagreement';
+  /** The issue report a disagreement went up as (127). */
+  issueId?: string;
+  readBy: string[];
+  isDemo: boolean;
 }
 
 /** Someone in the field pressed SOS. It is sent after a short window in which it can be cancelled, and the attempt is kept either way:
@@ -3329,6 +3394,8 @@ export type CommitmentKind =
   | 'safety_review'
   | 'job_issue_resolve'
   | 'material_log_confirm'
+  | 'handoff_acknowledge'
+  | 'lead_signoff'
   | 'discrepancy_report_review'
   | 'partner_feed_restore'
   | 'supplier_payment_approve'
@@ -3352,6 +3419,7 @@ export type CommitmentKind =
 
 export type CommitmentSubjectType =
   | 'material_log'
+  | 'handoff'
   | 'job_issue'
   | 'safety_test'
   | 'site_checkin'

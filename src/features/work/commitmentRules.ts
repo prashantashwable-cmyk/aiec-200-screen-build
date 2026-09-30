@@ -33,6 +33,7 @@ import type {
   JobSafetyTest,
   JobIssue,
   JobMaterialLog,
+  JobHandoffNote,
   DeliveryDelayCase,
   DeliveryDiscrepancyReport,
   DeliveryPartner,
@@ -100,6 +101,10 @@ export interface CommitmentSources {
   jobSafetyTests: JobSafetyTest[];
   jobIssues: JobIssue[];
   materialLogs: JobMaterialLog[];
+  /** Notes left for the next person on a job, each with the person who has to read it (130). */
+  handoffNotes: (JobHandoffNote & { ownerId: string | null })[];
+  /** Jobs with everything done and more than one person on them, waiting for the lead to sign off (130). */
+  leadSignOffs: { jobId: string; ownerId: string; doneAt: string }[];
   deliveryChecklists: DeliveryChecklist[];
   delayCases: DeliveryDelayCase[];
   discrepancyReports: DeliveryDiscrepancyReport[];
@@ -1106,6 +1111,65 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
             oversightRoute: `/job-issues/${i.jobId}?issue=${i.id}`,
           };
         });
+    },
+  },
+  {
+    // A note left for the next person on the job is read and acknowledged within half a day (130): what was left half done, and where the key is,
+    // is the sort of thing that goes wrong when nobody is sure it was seen.
+    kind: 'handoff_acknowledge',
+    nudgeBefore: hours(2),
+    escalateAfter: hours(6),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'quality',
+    collect(src) {
+      return src.handoffNotes.flatMap((h) => {
+        const job = src.jobs.find((j) => j.id === h.jobId);
+        if (!job || !h.ownerId || job.status === 'completed') return [];
+        const done = h.toUserId ? h.acknowledgedBy.some((a) => a.userId === h.toUserId) : h.acknowledgedBy.length > 0;
+        return [
+          {
+            ...base('handoff_acknowledge', 'handoff', h.id),
+            ownerUserId: h.ownerId,
+            titleKey: 'work.title.handoff_acknowledge',
+            titleParams: { code: job.code, name: h.fromName },
+            dueAt: plus(h.createdAt, hours(12)),
+            state: done ? ('done' as const) : ('open' as const),
+            paused: false,
+            completedAt: h.acknowledgedBy[0]?.at,
+            actionRoute: `/job-team/${job.id}?tab=handoffs`,
+            oversightRoute: `/job-team/${job.id}?tab=handoffs`,
+          },
+        ];
+      });
+    },
+  },
+  {
+    // With more than one person on a job the lead has the last word: once everything is done it is theirs to sign off for quality check (130).
+    kind: 'lead_signoff',
+    nudgeBefore: hours(2),
+    escalateAfter: hours(12),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'quality',
+    collect(src) {
+      return src.leadSignOffs.flatMap((w) => {
+        const job = src.jobs.find((j) => j.id === w.jobId);
+        if (!job) return [];
+        return [
+          {
+            ...base('lead_signoff', 'job', w.jobId),
+            ownerUserId: w.ownerId,
+            titleKey: 'work.title.lead_signoff',
+            titleParams: { code: job.code, site: job.siteName },
+            dueAt: plus(w.doneAt, hours(12)),
+            state: 'open' as const,
+            paused: false,
+            actionRoute: `/job-team/${job.id}`,
+            oversightRoute: `/job-team/${job.id}`,
+          },
+        ];
+      });
     },
   },
   {

@@ -127,6 +127,9 @@ export function JobDetailSiteInfoView() {
             <Button variant="secondary" onClick={() => navigate(`/installation-timeline/${job.id}`)}>
               {t('installTimeline.title')}
             </Button>
+            <Button variant="secondary" onClick={() => navigate(`/job-team/${job.id}`)}>
+              {t('jobTeam.title')}
+            </Button>
           </div>
         )}
       </ActionBar>

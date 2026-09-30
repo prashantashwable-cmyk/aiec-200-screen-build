@@ -1,5 +1,7 @@
 import type {
   AdvanceRecovery,
+  JobLeadDelegation,
+  JobTeamEvent,
   JobMaterialUse,
   MaterialDeviationKind,
   InstallSopPhase,
@@ -1652,6 +1654,77 @@ export interface JobIssueView {
   canReopen: boolean;
   /** Only on this phone so far. */
   local?: boolean;
+}
+
+/* ------------------------------------ Technician team coordination (130) */
+
+export interface TeamMemberView {
+  userId: string;
+  name: string;
+  phone: string | null;
+  role: 'lead' | 'assistant';
+  /** Holds the lead's authority for a while, though not the lead. */
+  delegated: boolean;
+  responsibility: string | null;
+  /** The steps assigned to this person (an assistant's own); the lead answers for every step nobody else holds. */
+  steps: { id: string; labelKey: string; status: JobStep['status'] }[];
+  owned: number | null;
+  ownedDone: number;
+  /** Steps whose completion is attributed to this person, kept even after they leave the job. */
+  completedByThem: number;
+  currentStepLabelKey: string | null;
+  onSiteSince: string | null;
+  isMe: boolean;
+}
+
+export interface TeamHandoffView {
+  id: string;
+  fromUserId: string;
+  fromName: string;
+  toUserId: string | null;
+  toName: string | null;
+  text: string;
+  openSteps: { id: string; labelKey: string }[];
+  createdAt: string;
+  acknowledgedBy: { userId: string; name: string; at: string }[];
+  mine: boolean;
+  /** Written for me (by name, or to the whole team by someone else) and not yet acknowledged by me. */
+  waitingForMe: boolean;
+  local?: boolean;
+}
+
+export interface TeamMessageView {
+  id: string;
+  authorId: string;
+  authorName: string;
+  text: string;
+  createdAt: string;
+  kind: 'message' | 'disagreement';
+  issueId: string | null;
+  mine: boolean;
+  unread: boolean;
+  local?: boolean;
+}
+
+export interface JobTeamView {
+  job: { id: string; code: string; siteName: string; status: Job['status']; scheduledFor: string; startedAt: string | null };
+  viewer: { userId: string; role: 'lead' | 'assistant' | 'admin'; holdsLead: boolean };
+  lead: { userId: string; name: string };
+  delegation: JobLeadDelegation | null;
+  members: TeamMemberView[];
+  steps: { id: string; labelKey: string; status: JobStep['status']; ownerId: string | null }[];
+  progress: { done: number; total: number };
+  signOff: { needed: boolean; ready: boolean; signedOff: { at: string; byName: string } | null; awaitingLead: boolean; problem: string | null };
+  handoffs: TeamHandoffView[];
+  messages: TeamMessageView[];
+  unread: number;
+  log: JobTeamEvent[];
+  /** Technicians who could be added (Admin only). */
+  addable: { id: string; name: string; otherJobsToday: number }[];
+  disagreement: { issueId: string; code: string; at: string; resolved: boolean } | null;
+  canWrite: boolean;
+  canManage: boolean;
+  canAdmin: boolean;
 }
 
 /* ------------------------------------ Installation progress timeline (129) */
@@ -4446,6 +4519,29 @@ export interface Repository {
   pingSiteLocation(technicianId: string, point: GeoPoint, at?: string): Promise<void>;
   /** Picks which step to do next, when the site does not allow the suggested order. Only steps whose prerequisites are done. */
   focusSopStep(jobId: string, stepId: string, technicianId: string): Promise<InstallationSopView>;
+
+  /* Technician team coordination (130) */
+  getJobTeam(jobId: string, userId: string): Promise<JobTeamView>;
+  /** `clientId` makes a message written offline safe to send twice. */
+  postTeamMessage(jobId: string, input: { text: string; clientId?: string; capturedAt?: string }, userId: string): Promise<JobTeamView>;
+  markTeamMessagesRead(jobId: string, userId: string): Promise<void>;
+  addHandoffNote(jobId: string, input: { text: string; toUserId?: string; clientId?: string; capturedAt?: string }, userId: string): Promise<JobTeamView>;
+  acknowledgeHandoff(noteId: string, userId: string): Promise<JobTeamView>;
+  /** The lead (or whoever holds the lead's authority) or Admin says which steps a person answers for. Moves them from whoever held them. */
+  assignTeamSteps(jobId: string, memberId: string, input: { stepIds: string[]; responsibility?: string }, byId: string): Promise<JobTeamView>;
+  /** The lead's authority goes to someone on the crew for a few days. Only the lead or Admin can hand it over. */
+  delegateLead(jobId: string, input: { toUserId: string; from: string; until: string; reason: string }, byId: string): Promise<JobTeamView>;
+  endLeadDelegation(jobId: string, byId: string): Promise<JobTeamView>;
+  /** Admin only. */
+  addTeamMember(jobId: string, technicianId: string, input: { stepIds: string[]; responsibility?: string }, adminId: string): Promise<JobTeamView>;
+  /** Admin only: someone is needed elsewhere. Their finished steps stay attributed to them; the ones still open go to `handStepsTo`. */
+  reassignTeamMember(jobId: string, memberId: string, input: { reason: string; handStepsTo?: string; newLeadId?: string }, adminId: string): Promise<JobTeamView>;
+  /** Admin only. */
+  changeJobLead(jobId: string, newLeadId: string, reason: string, adminId: string): Promise<JobTeamView>;
+  /** Anyone on the job: the team cannot agree. It goes up to Admin as an issue report (127) and is said in the chat. */
+  flagTeamDisagreement(jobId: string, note: string, userId: string): Promise<JobTeamView>;
+  /** The lead says the whole checklist is done: only then does a job with more than one person go to quality check. */
+  signOffForQuality(jobId: string, userId: string): Promise<JobTeamView>;
 
   /* Installation progress timeline (129) */
   getInstallationTimeline(jobId: string, userId: string): Promise<InstallTimelineView>;
