@@ -110,7 +110,31 @@ the module's section to `BUILD_README.md`.
 - **Module 11 Material Logistics & Delivery is done, including its checkpoint** (`101`–`110`, see
   BUILD_README's Module 11 section). Admin has a "Logistics" nav tab; every delivery screen declares
   `tab: 'logistics'` for Admin.
-- **Module 12 Supplier Payment Processing in progress:** `111`–`119` built. **Next: `120`**, then the Module 12 checkpoint.
+- **Module 12 Supplier Payment Processing in progress:** `111`–`120` built. **Next: the Module 12 checkpoint**, then Module 13 (`121`).
+  120 facts:
+  - Reconciliation compares a stored bank statement (`BankTransaction`, memoryRepository `bankTransactions`, seeded sample) with
+    a *derived* ledger (`ledgerEntriesOf`: executed supplier payments, amounts received from customers, refunds; a financing partner's
+    disbursement across several stages is one entry). `@/features/finance/reconciliation` is the pure logic (`reconcile`, `severityOf`,
+    `runStatusOf`, `reconcileProblem`, `latestSlot`). Matching: by reference, then amount + date, then a single line each side within
+    ₹1,000 (listed as `amount_differs`, never quietly accepted).
+  - Nothing about a match is stored except the run log. `ReconciliationRun` is append-only (matched pairs, what was open at the time);
+    `ReconException` persists across runs by a stable `key` and is `open` → `reconciled` (by hand, with category, reason, name,
+    time) | `cleared` (the records caught up). Seven daily runs are replayed at start-up so the log is not empty; one of them is a
+    could-not-run day.
+  - **No bank data is never a clean pass**: with `bankFeed.status === 'unavailable'` a run is `could_not_run`, compares nothing and
+    changes no exception; the screen says so and the open list is marked "not checked". `syncReconciliation` (heartbeat) runs the
+    daily 02:00 check, and re-runs at once when a connection that was down is back. The screen's outage button is a demo control
+    (`setBankFeed`); a real connector would report its own status.
+  - Severity: `critical` = `duplicate_debit` / `duplicate_credit` / `recorded_twice` (a payment made or recorded twice), `high` =
+    unrecorded credit/debit, missing in bank, amount differs over ₹1,000, `low` = bank charge / small difference. Critical and high raise an
+    alert (`reconciliation.alert.<kind>`, `sourceRoute` `/reconciliation?exception=`); low ones do not (no alert fatigue) but still get the
+    commitment `reconciliation_exception_review` (Admin; due 1 / 3 / 7 days by severity) and `reconciliation_feed_restore` (24 h).
+  - Manual reconcile (`markReconciled`): `bank_fee` only for a bank charge or amount difference up to ₹1,000, `rounding` up to ₹50,
+    `verified` for anything, with a 20-letter reason. A serious one can only be `verified` and needs an explicit confirmation, so a
+    double payment can never be waved through as a fee. A payment recorded in the last 2 days and not yet on the statement is
+    `pending`, not a mismatch.
+  - Adjustments (115) and recovered advances (118) are not separate bank lines here; only the payments themselves are compared.
+  - `/reconciliation` is Admin only (`?tab=open|runs|explained`, `?exception=`, `?run=`), tab `analytics`.
   119 facts:
   - Keeps no data of its own. `computeSupplierPaymentAnalytics(months, now)` (memoryRepository) reads executed `SupplierPayment`s
     (net of 115's adjustments, by the month paid), `SupplierRetention`s and `SupplierDispute`s; `@/features/suppliers/paymentAnalytics`

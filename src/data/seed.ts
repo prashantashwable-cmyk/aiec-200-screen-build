@@ -68,6 +68,7 @@ import type {
   SupplierInvoice,
   SupplierPaymentAdjustment,
   SupplierGstCheck,
+  BankTransaction,
   SupplierDispute,
   SupplierPayment,
   SupplierPaymentPart,
@@ -1979,6 +1980,37 @@ export const seedPaymentDeviations: { poId: string; upfrontPct: number; retentio
   { poId: 'spo-201', upfrontPct: 30, retentionPct: 5, reason: 'Sanghvi buys the cabin sheet steel against this order, so we agreed 30% up front on a call on 12 September.', byName: 'Prashant Vasant Wable', at: daysAgo(10) },
 ];
 
+
+/* ------------------------------------------ Bank statement (120) */
+
+const bankTxn = (n: number, hoursBack: number, direction: 'debit' | 'credit', amount: number, reference: string | null, narration: string, counterparty: string): BankTransaction => ({
+  id: `btx-${n}`,
+  postedAt: hoursAgo(hoursBack),
+  direction,
+  amount,
+  reference,
+  narration,
+  counterparty,
+  isDemo: true,
+});
+
+/** The last thirty days of the bank's own statement. Most of it matches the app's records line for line. Four things do not: a bank
+ *  charge the app has no model for, a loan partner that paid ₹250 short, Sanghvi's ₹7,500 advance debited twice, and ₹50,000 that
+ *  arrived from a customer nobody recorded. */
+export const seedBankTransactions: BankTransaction[] = [
+  bankTxn(12, 32 * 24, 'credit', 470_000, null, 'UPI CR KULKARNI CONSTRUCTIONS', 'Kulkarni Constructions'),
+  bankTxn(1, 29 * 24, 'credit', 924_000, null, 'NEFT CR SHREE RAM DEVELOPERS', 'Shree Ram Developers'),
+  bankTxn(2, 27 * 24, 'debit', 66_000, 'AIEC-TRF-3012', 'NEFT DR AIEC-TRF-3012 KONARK DRIVES', 'Konark Drives & Controls'),
+  bankTxn(3, 20 * 24, 'debit', 7_500, 'AIEC-TRF-3014', 'NEFT DR AIEC-TRF-3014 SANGHVI LIFT WORKS', 'Sanghvi Lift Works'),
+  bankTxn(4, 20 * 24 - 3, 'debit', 7_500, 'AIEC-TRF-3014', 'NEFT DR AIEC-TRF-3014 SANGHVI LIFT WORKS', 'Sanghvi Lift Works'),
+  bankTxn(5, 19 * 24, 'credit', 658_000, null, 'NEFT CR OM SAI APARTMENTS', 'Om Sai Apartments'),
+  bankTxn(6, 15 * 24, 'credit', 269_750, null, 'LOAN DISBURSEMENT FIN PARTNER', 'Financing partner'),
+  bankTxn(7, 12 * 24, 'debit', 19_200, 'AIEC-TRF-3013', 'NEFT DR AIEC-TRF-3013 KONARK DRIVES', 'Konark Drives & Controls'),
+  bankTxn(8, 12 * 24 - 2, 'debit', 354, null, 'NEFT/RTGS CHARGES + GST', 'Bank'),
+  bankTxn(9, 7 * 24, 'debit', 152_000, 'AIEC-TRF-3003', 'NEFT DR AIEC-TRF-3003 VERTEX ELEVATOR', 'Vertex Elevator Components Pvt Ltd'),
+  bankTxn(10, 5 * 24, 'credit', 50_000, null, 'UPI CR SUNRISE TOWERS PART PAYMENT', 'Sunrise Towers'),
+  bankTxn(11, 4 * 24, 'credit', 400_000, 'NEFT240811', 'NEFT CR NEFT240811 SHREE RAM DEVELOPERS', 'Shree Ram Developers'),
+];
 
 /* ------------------------------------------ Supplier GST standing (116) */
 

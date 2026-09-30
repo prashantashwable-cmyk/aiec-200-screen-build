@@ -63,6 +63,7 @@ import {
   seedSupplierPayments,
   seedSupplierPaymentAdjustments,
   seedSupplierGstChecks,
+  seedBankTransactions,
   seedSupplierDisputes,
   seedSupplierInvoices,
   seedPaymentDeviations,
@@ -197,6 +198,12 @@ import type {
   SupplierPaymentView,
   BookablePo,
   DeliveryAnalytics,
+  BankSideView,
+  LedgerSideView,
+  ReconBoard,
+  ReconExceptionView,
+  ReconRunDetail,
+  ReconRunRow,
   DisputeAnalyticsRowView,
   PaySpeedMonthView,
   PaySpeedRowView,
@@ -295,6 +302,10 @@ import type {
   SupplierGstCheck,
   GstPeriodHandover,
   AdvanceRecovery,
+  BankFeed,
+  BankTransaction,
+  ReconException,
+  ReconciliationRun,
   SupplierDispute,
   SupplierSpendNote,
   SupplierDisputeDecision,
@@ -460,6 +471,8 @@ import type { ChainNodeFacts, ChainNodeKind, ChainNodeState } from '@/features/s
 import { RECOVERY_REASON_MIN, batchSkipReason, readAdvance, readRetention } from '@/features/suppliers/exposure';
 import type { RetentionHold } from '@/features/suppliers/exposure';
 import { DISPUTE_TARGET, NOTE_MIN, POSITION_MIN, REOPEN_WINDOW, canPartial, decisionProblem, dueAtOf, maxAmountOf, slaOf } from '@/features/suppliers/disputes';
+import { RUN_HOUR, WINDOW as RECON_WINDOW, latestSlot, nextSlot, reasonsFor, reconcile, reconcileProblem, runStatusOf, severityOf } from '@/features/finance/reconciliation';
+import type { BankLine, LedgerLine } from '@/features/finance/reconciliation';
 import { NOTE_LABEL_MIN, PAYMENT_TARGET, PAYMENT_TARGET_DAYS, alertingReasons, allocateByLines, average, daysToPay, endOfMonth, fleetRate, heldAt, isRatedSupplier, median, oneDecimal, oneOrderExplains, ratePct, reviewReasons, spikeOf, withinTarget } from '@/features/suppliers/paymentAnalytics';
 import { CHECK_STALE_AFTER, ZERO_SPLIT, addSplit, creditStatus, gstOn, handoverDueAt, periodOf, recentPeriods, shiftPeriod, splitTax, supplierRisk, supplyType } from '@/features/tax/gst';
 import type { CreditStatus, SupplierRisk, SupplierRiskKind } from '@/features/tax/gst';
@@ -2135,6 +2148,8 @@ function commitmentSources(now: number): CommitmentSources {
         resolvedAt: i.rejectedAt ?? i.events.filter((e) => e.kind === 'adjustment_accepted').map((e) => e.at).sort().pop(),
       })),
     supplierDisputes,
+    reconciliationExceptions: reconExceptions,
+    bankFeed,
     advanceRecoveries,
     retentionsReady: retentionItemsOf(now)
       .filter((r) => r.bulkOk && r.job?.completedAt)
@@ -2359,6 +2374,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   syncGstCompliance(now);
   syncSupplierDisputes(now);
   syncSupplierReviewFlags(now);
+  syncReconciliation(now);
   syncAdvanceExposure(now);
   advanceShipments(now);
   // 105: a delivery running late is noticed, and one that caught up is cleared, without anyone looking.
@@ -5006,6 +5022,203 @@ function disputeMessage(d: SupplierDispute, author: 'aiec' | 'supplier', authorN
 }
 
 const DECISION_WORDS: Record<SupplierDisputeDecision, string> = { uphold: 'AIEC has upheld the original', supplier_favor: 'AIEC has decided in your favour', partial: 'AIEC has adjusted in part' };
+
+/* ============================== Auto-reconciliation (120) */
+
+const bankTransactions: BankTransaction[] = seedBankTransactions.map((b) => ({ ...b }));
+let bankFeed: BankFeed = { status: 'connected', since: new Date(Date.now() - 6 * 3_600_000).toISOString(), lastStatementAt: new Date(Date.now() - 3 * 3_600_000).toISOString() };
+const reconRuns: ReconciliationRun[] = [];
+const reconExceptions: ReconException[] = [];
+let reconRunCounter = 0;
+let reconExceptionCounter = 0;
+let reconSeeded = false;
+const RECON_FEED_ALERT = 'reconciliation.alert.noBank';
+
+const bankSideOf = (b: BankTransaction): BankSideView => ({ id: b.id, postedAt: b.postedAt, direction: b.direction, amount: b.amount, reference: b.reference, narration: b.narration, counterparty: b.counterparty });
+
+/** What the app recorded as money moving: every executed supplier payment, every amount received from a customer (a financing
+ *  partner's disbursement across several stages is the one bank credit it really was) and every refund paid back. */
+function ledgerEntriesOf(): LedgerSideView[] {
+  const out: LedgerSideView[] = [];
+  for (const p of supplierPayments) {
+    if (p.status !== 'executed' || !p.executedAt) continue;
+    out.push({ id: `supplier_payment:${p.id}`, kind: 'supplier_payment', codes: [p.code], direction: 'out', amount: p.amount, date: p.executedAt, reference: p.bankReference ?? null, counterparty: byId(suppliers, p.supplierId)?.name ?? '', route: `/supplier-payment-history?payment=${p.id}` });
+  }
+  const financing = new Map<string, LedgerSideView>();
+  const who = (dealId: string) => {
+    const deal = byId(deals, dealId);
+    const lead = deal ? resolveLead(deal.leadId) : null;
+    return lead?.builderName || lead?.contactName || '';
+  };
+  for (const p of payments) {
+    const received = p.amountReceived ?? (p.status === 'paid' ? p.amount : 0);
+    const date = p.lastReceivedAt ?? p.paidAt;
+    if (received > 0 && date) {
+      if (p.method === 'financing') {
+        const key = `${p.dealId}:${date.slice(0, 10)}`;
+        const cur = financing.get(key);
+        if (cur) {
+          cur.amount += received;
+          cur.codes.push(p.code);
+        } else financing.set(key, { id: `customer_receipt:${p.id}`, kind: 'customer_receipt', codes: [p.code], direction: 'in', amount: received, date, reference: null, counterparty: 'Financing partner', route: '/payments/history' });
+      } else {
+        out.push({ id: `customer_receipt:${p.id}`, kind: 'customer_receipt', codes: [p.code], direction: 'in', amount: received, date, reference: p.gatewayTransactionRef ?? p.manualReferenceNumber ?? null, counterparty: who(p.dealId), route: '/payments/history' });
+      }
+    }
+    if ((p.resolutionType === 'full_refund' || p.resolutionType === 'partial_refund') && (p.resolutionAmount ?? 0) > 0 && !p.refundRoutedToFinancingPartner && p.resolvedAt) {
+      out.push({ id: `customer_refund:${p.id}`, kind: 'customer_refund', codes: [p.code], direction: 'out', amount: p.resolutionAmount as number, date: p.resolvedAt, reference: null, counterparty: who(p.dealId), route: '/admin/analytics/collections/disputes' });
+    }
+  }
+  return [...out, ...financing.values()];
+}
+
+/** Compares the statement with the records over the window ending at `at`. Never called with a feed that is down. */
+function currentReconciliation(at: number) {
+  const from = at - RECON_WINDOW;
+  const bank = bankTransactions.filter((b) => new Date(b.postedAt).getTime() >= from && new Date(b.postedAt).getTime() <= at);
+  const ledger = ledgerEntriesOf().filter((l) => new Date(l.date).getTime() >= from && new Date(l.date).getTime() <= at);
+  const bankLines: BankLine[] = bank.map((b) => ({ id: b.id, postedAt: b.postedAt, direction: b.direction, amount: b.amount, reference: b.reference, narration: b.narration, counterparty: b.counterparty }));
+  const ledgerLines: LedgerLine[] = ledger.map((l) => ({ id: l.id, direction: l.direction, amount: l.amount, date: l.date, reference: l.reference, counterparty: l.counterparty }));
+  return { from, outcome: reconcile(bankLines, ledgerLines, at), ledger };
+}
+
+function runReconciliationAt(at: number, trigger: 'scheduled' | 'manual', byName: string, feed: { up: boolean; reason?: BankFeed['reason'] }): ReconciliationRun {
+  reconRunCounter += 1;
+  const id = `rrun-${reconRunCounter}`;
+  const iso = new Date(at).toISOString();
+  const base = { id, code: `AIEC-RC-${5000 + reconRunCounter}`, runAt: iso, trigger, byName, windowFrom: new Date(at - RECON_WINDOW).toISOString(), windowTo: iso, isDemo: true };
+  if (!feed.up) {
+    // Comparing against nothing would read as "all matched". It is reported as not run, and nothing about the exceptions changes.
+    const run: ReconciliationRun = { ...base, status: 'could_not_run', matchedCount: 0, matchedAmount: 0, explainedCount: 0, pendingCount: 0, matched: [], unmatched: [], feedReason: feed.reason };
+    reconRuns.push(run);
+    return run;
+  }
+  const { from, outcome } = currentReconciliation(at);
+  const seen = new Set<string>();
+  for (const raw of outcome.exceptions) {
+    seen.add(raw.key);
+    const existing = reconExceptions.find((e) => e.key === raw.key);
+    if (existing) {
+      patchInPlace(reconExceptions, existing.id, { lastSeenRunId: id, ...(existing.status === 'open' ? { amount: raw.amount, difference: raw.difference } : {}) });
+    } else {
+      reconExceptionCounter += 1;
+      reconExceptions.push({ id: `rex-${reconExceptionCounter}`, key: raw.key, kind: raw.kind, direction: raw.direction, amount: raw.amount, difference: raw.difference, bankTxnId: raw.bankId, ledgerId: raw.ledgerId, reference: raw.reference, counterparty: raw.counterparty, occurredAt: raw.occurredAt, firstSeenAt: iso, firstSeenRunId: id, lastSeenRunId: id, status: 'open', isDemo: true });
+    }
+  }
+  // What was open and is now in step (a payment the bank has since shown) closes itself. An older one the window no longer reaches stays open.
+  for (const e of reconExceptions) {
+    if (e.status === 'open' && !seen.has(e.key) && new Date(e.occurredAt).getTime() >= from) patchInPlace(reconExceptions, e.id, { status: 'cleared', clearedAt: iso });
+  }
+  const now_ = reconExceptions.filter((e) => seen.has(e.key));
+  const open = now_.filter((e) => e.status === 'open');
+  const clean = outcome.matches.filter((m) => Math.abs(m.difference) <= 1);
+  const ledgerById = new Map(ledgerEntriesOf().map((l) => [l.id, l]));
+  const run: ReconciliationRun = {
+    ...base,
+    status: runStatusOf(open),
+    matchedCount: clean.length,
+    matchedAmount: clean.reduce((n, m) => n + (ledgerById.get(m.ledgerId)?.amount ?? 0), 0),
+    explainedCount: now_.filter((e) => e.status === 'reconciled').length,
+    pendingCount: outcome.pending.length,
+    matched: clean,
+    unmatched: open.map((e) => ({ exceptionId: e.id, kind: e.kind, direction: e.direction, amount: e.amount, reference: e.reference, date: e.occurredAt, counterparty: e.counterparty })),
+  };
+  reconRuns.push(run);
+  return run;
+}
+
+/** The last week of daily runs, as the schedule would have made them, so the log is not empty on day one. One of those days the
+ *  bank connection was down. */
+function ensureReconSeeded(now: number): void {
+  if (reconSeeded) return;
+  reconSeeded = true;
+  for (let k = 7; k >= 1; k -= 1) {
+    runReconciliationAt(latestSlot(now - k * DAY_MS), 'scheduled', ASSISTANT_ACTOR, k === 3 ? { up: false, reason: 'outage' } : { up: true });
+  }
+}
+
+/** Runs the daily reconciliation when it is due, tries again as soon as a connection that was down is back, and keeps the alerts
+ *  in step. Idempotent: the heartbeat calls it every minute. */
+function syncReconciliation(now: number): void {
+  ensureReconSeeded(now);
+  const last = reconRuns[reconRuns.length - 1];
+  const up = bankFeed.status === 'connected';
+  const daily = !last || new Date(last.runAt).getTime() < latestSlot(now);
+  const restored = !!last && last.status === 'could_not_run' && up;
+  if (daily || restored) {
+    const run = runReconciliationAt(now, 'scheduled', ASSISTANT_ACTOR, { up, reason: bankFeed.reason });
+    if (up) bankFeed = { ...bankFeed, lastStatementAt: new Date(now).toISOString() };
+    logAutomatedAction({
+      sourceKey: run.status === 'could_not_run' ? 'reconciliation.could_not_run' : 'reconciliation.run',
+      triggeringCondition: restored ? 'The bank connection came back after a run could not be made' : 'The daily reconciliation was due',
+      actionTaken: run.status === 'could_not_run' ? 'Recorded that no bank data was available, so nothing was compared' : `Compared the bank statement with the records: ${run.matchedCount} matched, ${run.unmatched.length} to look at`,
+      affectedRecordId: run.id,
+      affectedRecordType: 'other',
+      subjectLabel: run.code,
+    });
+  }
+  syncReconciliationAlerts(now);
+}
+
+function syncReconciliationAlerts(now: number): void {
+  const at = new Date(now).toISOString();
+  for (const e of reconExceptions) {
+    const sev = severityOf(e.kind, e.amount, e.difference);
+    const titleKey = `reconciliation.alert.${e.kind}`;
+    const open = alerts.find((a) => a.relatedId === e.id && a.titleKey === titleKey && a.status !== 'resolved');
+    // A small expected difference is on the screen and in the work list; it is not an alarm.
+    if (e.status === 'open' && sev !== 'low' && !open) {
+      raiseAlert({ titleKey, context: `${formatINR(e.amount)} · ${e.counterparty}`, severity: sev === 'critical' ? 'critical' : 'high', category: 'payment', relatedId: e.id, sourceRoute: `/reconciliation?exception=${e.id}` });
+      logAutomatedAction({
+        sourceKey: 'reconciliation.exception',
+        triggeringCondition: `The bank statement and the records disagree: ${e.kind.replace(/_/g, ' ')} of ${formatINR(e.amount)}`,
+        actionTaken: sev === 'critical' ? 'Raised a critical alert: it looks like a payment recorded or made twice' : 'Raised an alert so the mismatch is seen with the other exceptions',
+        affectedRecordId: e.id,
+        affectedRecordType: 'other',
+        subjectLabel: e.counterparty,
+      });
+    } else if (e.status !== 'open' && open) {
+      patchInPlace(alerts, open.id, { status: 'resolved', resolvedAt: at, resolvedBy: e.status === 'reconciled' ? (e.reconciled?.byName ?? 'Admin') : 'system', resolutionNote: e.status === 'reconciled' ? 'Explained by hand.' : 'The records caught up with the statement.' });
+    }
+  }
+  const last = reconRuns[reconRuns.length - 1];
+  const feedOpen = alerts.find((a) => a.relatedId === 'bank-feed' && a.titleKey === RECON_FEED_ALERT && a.status !== 'resolved');
+  if (last?.status === 'could_not_run' && bankFeed.status === 'unavailable' && !feedOpen) {
+    raiseAlert({ titleKey: RECON_FEED_ALERT, context: 'Reconciliation', severity: 'medium', category: 'payment', relatedId: 'bank-feed', sourceRoute: '/reconciliation' });
+  } else if ((bankFeed.status === 'connected' || last?.status !== 'could_not_run') && feedOpen) {
+    patchInPlace(alerts, feedOpen.id, { status: 'resolved', resolvedAt: at, resolvedBy: 'system', resolutionNote: 'The bank connection is back.' });
+  }
+}
+
+function reconExceptionView(e: ReconException, now: number, ledger: Map<string, LedgerSideView>): ReconExceptionView {
+  const bank = e.bankTxnId ? byId(bankTransactions, e.bankTxnId) : null;
+  return {
+    id: e.id,
+    kind: e.kind,
+    severity: severityOf(e.kind, e.amount, e.difference),
+    direction: e.direction,
+    amount: e.amount,
+    difference: e.difference,
+    reference: e.reference,
+    counterparty: e.counterparty,
+    occurredAt: e.occurredAt,
+    firstSeenAt: e.firstSeenAt,
+    ageDays: Math.max(0, Math.floor((now - new Date(e.firstSeenAt).getTime()) / DAY_MS)),
+    status: e.status,
+    bank: bank ? bankSideOf(bank) : null,
+    ledger: e.ledgerId ? (ledger.get(e.ledgerId) ?? null) : null,
+    canReconcileAs: e.status === 'open' ? reasonsFor(e) : [],
+    reconciled: e.reconciled ?? null,
+    clearedAt: e.clearedAt ?? null,
+    firstSeenRunCode: reconRuns.find((r) => r.id === e.firstSeenRunId)?.code ?? '',
+  };
+}
+
+const SEVERITY_RANK = { critical: 0, high: 1, low: 2 } as const;
+
+function reconRunRow(r: ReconciliationRun): ReconRunRow {
+  return { id: r.id, code: r.code, runAt: r.runAt, trigger: r.trigger, byName: r.byName, status: r.status, matchedCount: r.matchedCount, unmatchedCount: r.unmatched.length, explainedCount: r.explainedCount, pendingCount: r.pendingCount, feedReason: r.feedReason ?? null };
+}
 
 /* ============================== Supplier payment analytics (119) */
 
@@ -10401,6 +10614,105 @@ export const memoryRepository: Repository = {
       }
       syncCommitments(now);
       return { approved, skipped };
+    }),
+
+  /* --------------------------------- Auto-reconciliation (120) */
+  getReconciliationBoard: (byUserId) =>
+    simulateRead((): ReconBoard => {
+      adminOnly(byUserId);
+      const now = Date.now();
+      syncReconciliation(now);
+      const ledger = new Map(ledgerEntriesOf().map((l) => [l.id, l]));
+      const views = reconExceptions.map((e) => reconExceptionView(e, now, ledger));
+      const open = views.filter((v) => v.status === 'open').sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] || b.ageDays - a.ageDays);
+      const explained = views
+        .filter((v) => v.status !== 'open')
+        .sort((a, b) => (b.reconciled?.at ?? b.clearedAt ?? '').localeCompare(a.reconciled?.at ?? a.clearedAt ?? ''))
+        .slice(0, 20);
+      const pending = currentReconciliation(now).outcome.pending.map((id) => ledger.get(id)).filter((x): x is LedgerSideView => !!x);
+      const latest = reconRuns[reconRuns.length - 1];
+      return {
+        feed: { ...bankFeed },
+        latest: latest ? reconRunRow(latest) : null,
+        runs: [...reconRuns].reverse().slice(0, 40).map(reconRunRow),
+        open,
+        explained,
+        pending,
+        nextRunAt: new Date(nextSlot(now)).toISOString(),
+        totals: {
+          // A run that could not run compared nothing: the last real comparison is the figure worth showing.
+          matched: [...reconRuns].reverse().find((r) => r.status !== 'could_not_run')?.matchedCount ?? 0,
+          open: open.length,
+          serious: open.filter((v) => v.severity === 'critical').length,
+          explained: reconExceptions.filter((e) => e.status === 'reconciled').length,
+          pending: pending.length,
+          openIn: open.filter((v) => v.direction === 'in').reduce((n, v) => n + v.amount, 0),
+          openOut: open.filter((v) => v.direction === 'out').reduce((n, v) => n + v.amount, 0),
+        },
+      };
+    }),
+
+  getReconciliationRun: (runId, byUserId) =>
+    simulateRead((): ReconRunDetail => {
+      adminOnly(byUserId);
+      const run = byId(reconRuns, runId);
+      if (!run) throw new RepositoryError('not_found');
+      const now = Date.now();
+      const ledger = new Map(ledgerEntriesOf().map((l) => [l.id, l]));
+      return {
+        ...reconRunRow(run),
+        windowFrom: run.windowFrom,
+        windowTo: run.windowTo,
+        matchedAmount: run.matchedAmount,
+        matched: run.matched.flatMap((m) => {
+          const b = byId(bankTransactions, m.bankId);
+          const l = ledger.get(m.ledgerId);
+          return b && l ? [{ bank: bankSideOf(b), ledger: l, difference: m.difference }] : [];
+        }),
+        unmatched: run.unmatched.flatMap((u) => {
+          const e = byId(reconExceptions, u.exceptionId);
+          return e ? [reconExceptionView(e, now, ledger)] : [];
+        }),
+      };
+    }),
+
+  runReconciliation: (byUserId) =>
+    simulateWrite((): ReconRunRow => {
+      const actor = adminOnly(byUserId);
+      const now = Date.now();
+      ensureReconSeeded(now);
+      const up = bankFeed.status === 'connected';
+      const run = runReconciliationAt(now, 'manual', actor.name, { up, reason: bankFeed.reason });
+      if (up) bankFeed = { ...bankFeed, lastStatementAt: new Date(now).toISOString() };
+      syncReconciliationAlerts(now);
+      syncCommitments(now);
+      return reconRunRow(run);
+    }),
+
+  markReconciled: (exceptionId, input, byUserId) =>
+    simulateWrite((): ReconExceptionView => {
+      const actor = adminOnly(byUserId);
+      const e = byId(reconExceptions, exceptionId);
+      if (!e) throw new RepositoryError('not_found');
+      if (e.status !== 'open') throw new RepositoryError('invalid_state');
+      const problem = reconcileProblem(e, input.category, input.note, !!input.confirmSerious);
+      if (problem) throw new RepositoryError(problem);
+      const now = Date.now();
+      patchInPlace(reconExceptions, e.id, { status: 'reconciled', reconciled: { category: input.category, note: input.note.trim(), byName: actor.name, at: new Date(now).toISOString(), confirmedSerious: !!input.confirmSerious } });
+      syncReconciliationAlerts(now);
+      syncCommitments(now);
+      const ledger = new Map(ledgerEntriesOf().map((l) => [l.id, l]));
+      return reconExceptionView(byId(reconExceptions, e.id)!, now, ledger);
+    }),
+
+  setBankFeed: (status, byUserId) =>
+    simulateWrite((): BankFeed => {
+      adminOnly(byUserId);
+      const now = Date.now();
+      bankFeed = { status, since: new Date(now).toISOString(), reason: status === 'unavailable' ? 'outage' : undefined, lastStatementAt: bankFeed.lastStatementAt };
+      syncReconciliation(now);
+      syncCommitments(now);
+      return { ...bankFeed };
     }),
 
   /* --------------------------------- Supplier payment analytics (119) */

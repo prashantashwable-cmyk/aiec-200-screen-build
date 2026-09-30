@@ -983,6 +983,80 @@ export interface SupplierInvoice {
 
 export type AdvanceRecoveryEventKind = 'started' | 'recovered' | 'written_off';
 
+/* ------------------------------------ Bank reconciliation (120) */
+
+/** What the bank connection is doing. While it is `unavailable` a run reports "could not run": comparing against nothing
+ *  would read as a clean result, so it is never allowed to. */
+export interface BankFeed {
+  status: 'connected' | 'unavailable';
+  since: string;
+  reason?: 'outage' | 'consent_expired';
+  lastStatementAt: string;
+}
+
+/** One line of the bank's own statement, as the feed delivered it. It is never edited by the app. */
+export interface BankTransaction {
+  id: string;
+  postedAt: string;
+  direction: 'debit' | 'credit';
+  amount: number;
+  /** The UTR or instruction reference the bank shows, when it shows one. */
+  reference: string | null;
+  narration: string;
+  counterparty: string;
+  isDemo: boolean;
+}
+
+export type ReconExceptionKind = 'unrecorded_credit' | 'unrecorded_debit' | 'missing_in_bank' | 'amount_differs' | 'bank_charge' | 'duplicate_debit' | 'duplicate_credit' | 'recorded_twice';
+export type ReconReason = 'bank_fee' | 'rounding' | 'verified';
+export type ReconRunStatus = 'passed' | 'review' | 'failed' | 'could_not_run';
+
+/** A transaction that did not match cleanly. It stays open across runs until Admin explains it or the records catch up; the run
+ *  log keeps what each run saw at the time. */
+export interface ReconException {
+  id: string;
+  /** Stable across runs, so the same problem is one exception however many times it is seen. */
+  key: string;
+  kind: ReconExceptionKind;
+  direction: 'in' | 'out';
+  amount: number;
+  /** Bank minus the app's figure, when both sides exist. */
+  difference: number | null;
+  bankTxnId: string | null;
+  ledgerId: string | null;
+  reference: string | null;
+  counterparty: string;
+  occurredAt: string;
+  firstSeenAt: string;
+  firstSeenRunId: string;
+  lastSeenRunId: string;
+  status: 'open' | 'reconciled' | 'cleared';
+  reconciled?: { category: ReconReason; note: string; byName: string; at: string; confirmedSerious: boolean };
+  clearedAt?: string;
+  isDemo: boolean;
+}
+
+export interface ReconciliationRun {
+  id: string;
+  code: string;
+  runAt: string;
+  trigger: 'scheduled' | 'manual';
+  byName: string;
+  windowFrom: string;
+  windowTo: string;
+  status: ReconRunStatus;
+  matchedCount: number;
+  matchedAmount: number;
+  /** Differences Admin had already explained and that were seen again. */
+  explainedCount: number;
+  /** Recorded in the app but not yet on the statement, inside the grace period. */
+  pendingCount: number;
+  matched: { bankId: string; ledgerId: string; difference: number }[];
+  unmatched: { exceptionId: string; kind: ReconExceptionKind; direction: 'in' | 'out'; amount: number; reference: string | null; date: string; counterparty: string }[];
+  feedReason?: 'outage' | 'consent_expired';
+  isDemo: boolean;
+}
+
 /** Admin's own explanation of a month of supplier spending that stands out (119), so a spike caused by something unusual (a bulk
  *  order, a one-off purchase) is understood, not misread as a cost-control problem. It explains a number and never changes it. */
 export interface SupplierSpendNote {
@@ -2875,6 +2949,8 @@ export type CommitmentKind =
   | 'supplier_payment_approve'
   | 'supplier_payment_hold_review'
   | 'advance_recovery_followup'
+  | 'reconciliation_exception_review'
+  | 'reconciliation_feed_restore'
   | 'retention_release_ready'
   | 'supplier_dispute_resolve'
   | 'supplier_dispute_process_review'
@@ -2914,6 +2990,8 @@ export type CommitmentSubjectType =
   | 'supplier_dispute'
   | 'advance_recovery'
   | 'supplier_retention'
+  | 'reconciliation_exception'
+  | 'bank_feed'
   | 'supplier_gst';
 
 /**

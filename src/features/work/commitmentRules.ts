@@ -8,6 +8,8 @@ import type {
   ShipmentLeg,
   SupplierMessage,
   AdvanceRecovery,
+  BankFeed,
+  ReconException,
   SupplierDispute,
   SupplierRetention,
   SupplierThread,
@@ -43,6 +45,7 @@ import type { InvoiceGate } from '@/features/suppliers/invoiceMatch';
 import { CHECK_STALE_AFTER, handoverDueAt } from '@/features/tax/gst';
 import { PROCESS_REVIEW_TARGET, dueAtOf } from '@/features/suppliers/disputes';
 import { RECOVERY_CHASE_EVERY, RELEASE_DUE_AFTER } from '@/features/suppliers/exposure';
+import { FEED_RESTORE_DUE, REVIEW_DUE, severityOf } from '@/features/finance/reconciliation';
 import { MANUAL_UPDATE_EVERY } from '@/features/logistics/shipmentTracking';
 
 /**
@@ -98,6 +101,10 @@ export interface CommitmentSources {
   invoiceMismatches: { invoiceId: string; poId: string; supplierId: string; invoiceNumber: string; notifiedAt: string; stillMismatched: boolean; resolvedAt?: string }[];
   /** Supplier payment disputes (117). */
   supplierDisputes: SupplierDispute[];
+  /** Bank statement lines and records that did not match cleanly (120). */
+  reconciliationExceptions: ReconException[];
+  /** Whether the bank connection is delivering statements (120). */
+  bankFeed: BankFeed;
   /** Advances being recovered (118). */
   advanceRecoveries: AdvanceRecovery[];
   /** Retentions whose installation has cleared QC and handover, with nothing open on the order, and that are still held (118). */
@@ -1147,6 +1154,57 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
           oversightRoute: `/advance-retention?advance=${r.paymentId}`,
         };
       });
+    },
+  },
+  {
+    // A mismatch between the bank and the books is Admin's until it is explained or the records catch up. A payment made twice is
+    // owed an answer the same day; a bank fee can wait a week, and does not raise an alert of its own (120).
+    kind: 'reconciliation_exception_review',
+    nudgeBefore: hours(6),
+    escalateAfter: days(1),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'payment',
+    collect(src) {
+      const admin = adminId(src);
+      return src.reconciliationExceptions.map((e) => ({
+        ...base('reconciliation_exception_review', 'reconciliation_exception', e.id),
+        ownerUserId: admin,
+        titleKey: 'work.title.reconciliation_exception_review',
+        titleParams: { party: e.counterparty },
+        amount: e.amount,
+        dueAt: plus(e.firstSeenAt, REVIEW_DUE[severityOf(e.kind, e.amount, e.difference)]),
+        state: e.status === 'open' ? ('open' as const) : ('done' as const),
+        paused: false,
+        completedAt: e.reconciled?.at ?? e.clearedAt,
+        actionRoute: `/reconciliation?exception=${e.id}`,
+        oversightRoute: `/reconciliation?exception=${e.id}`,
+      }));
+    },
+  },
+  {
+    // With the bank connection down a reconciliation cannot run at all, so the day's check is silently not happening (120).
+    kind: 'reconciliation_feed_restore',
+    nudgeBefore: hours(4),
+    escalateAfter: days(1),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'payment',
+    collect(src) {
+      if (src.bankFeed.status !== 'unavailable') return [];
+      return [
+        {
+          ...base('reconciliation_feed_restore', 'bank_feed', 'bank-feed'),
+          ownerUserId: adminId(src),
+          titleKey: 'work.title.reconciliation_feed_restore',
+          titleParams: {},
+          dueAt: plus(src.bankFeed.since, FEED_RESTORE_DUE),
+          state: 'open' as const,
+          paused: false,
+          actionRoute: '/reconciliation',
+          oversightRoute: '/reconciliation',
+        },
+      ];
     },
   },
   {

@@ -4,6 +4,10 @@ import type {
   AlertSeverity,
   SupplierDispute,
   SupplierSpendNote,
+  BankFeed,
+  ReconExceptionKind,
+  ReconReason,
+  ReconRunStatus,
   SupplierDisputeKind,
   SupplierDisputeDecision,
   SupplierDisputeEvent,
@@ -1222,6 +1226,109 @@ export interface AdvanceRetentionBoard {
 export interface ReleaseBatchResult {
   released: string[];
   skipped: { id: string; reason: BatchSkip }[];
+}
+
+/* ---------------------------------- Auto-reconciliation (120) */
+
+export type ReconSeverityView = 'critical' | 'high' | 'low';
+export type LedgerKindView = 'supplier_payment' | 'customer_receipt' | 'customer_refund';
+
+/** One line of the bank's statement, as shown next to the app's own record of it. */
+export interface BankSideView {
+  id: string;
+  postedAt: string;
+  direction: 'debit' | 'credit';
+  amount: number;
+  reference: string | null;
+  narration: string;
+  counterparty: string;
+}
+
+/** What the app recorded: a supplier payment, money received from a customer (or a loan partner), or a refund. */
+export interface LedgerSideView {
+  id: string;
+  kind: LedgerKindView;
+  codes: string[];
+  direction: 'in' | 'out';
+  amount: number;
+  date: string;
+  reference: string | null;
+  counterparty: string;
+  /** Where to look at the record itself. */
+  route: string | null;
+}
+
+export interface ReconExceptionView {
+  id: string;
+  kind: ReconExceptionKind;
+  severity: ReconSeverityView;
+  direction: 'in' | 'out';
+  amount: number;
+  /** Bank minus the app, when both sides exist. */
+  difference: number | null;
+  reference: string | null;
+  counterparty: string;
+  occurredAt: string;
+  firstSeenAt: string;
+  ageDays: number;
+  status: 'open' | 'reconciled' | 'cleared';
+  bank: BankSideView | null;
+  ledger: LedgerSideView | null;
+  /** What it may be explained as by hand. Empty when the app will not take an explanation without more (never for a duplicate as a fee). */
+  canReconcileAs: ReconReason[];
+  reconciled: { category: ReconReason; note: string; byName: string; at: string; confirmedSerious: boolean } | null;
+  clearedAt: string | null;
+  /** The run log entry that first saw it. */
+  firstSeenRunCode: string;
+}
+
+export interface ReconRunRow {
+  id: string;
+  code: string;
+  runAt: string;
+  trigger: 'scheduled' | 'manual';
+  byName: string;
+  status: ReconRunStatus;
+  matchedCount: number;
+  unmatchedCount: number;
+  explainedCount: number;
+  pendingCount: number;
+  feedReason: 'outage' | 'consent_expired' | null;
+}
+
+export interface ReconMatchView {
+  bank: BankSideView;
+  ledger: LedgerSideView;
+  difference: number;
+}
+
+export interface ReconRunDetail extends ReconRunRow {
+  windowFrom: string;
+  windowTo: string;
+  matchedAmount: number;
+  matched: ReconMatchView[];
+  /** What the run saw open at the time, whatever has happened to it since. */
+  unmatched: ReconExceptionView[];
+}
+
+export interface ReconBoard {
+  feed: BankFeed;
+  latest: ReconRunRow | null;
+  runs: ReconRunRow[];
+  open: ReconExceptionView[];
+  /** The most recent explained or self-cleared exceptions, newest first. */
+  explained: ReconExceptionView[];
+  /** In the app, not on the statement yet, and still inside the grace period. */
+  pending: LedgerSideView[];
+  nextRunAt: string;
+  totals: { matched: number; open: number; serious: number; explained: number; pending: number; openIn: number; openOut: number };
+}
+
+export interface ReconcileInput {
+  category: ReconReason;
+  note: string;
+  /** Required for a serious exception: the person has looked at it and says so. */
+  confirmSerious?: boolean;
 }
 
 /* ---------------------------------- Supplier payment analytics (119) */
@@ -3621,6 +3728,16 @@ export interface Repository {
   /** Money came back: recorded as a credit beside the advance in Payment History. */
   recordAdvanceRecovered(recoveryId: string, amount: number, note: string | undefined, byUserId: string): Promise<AdvanceRecoveryView>;
   writeOffAdvance(recoveryId: string, note: string, byUserId: string): Promise<AdvanceRecoveryView>;
+
+  /* Auto-reconciliation (120) — the bank's statement against the app's own records of money in and out */
+  getReconciliationBoard(byUserId: string): Promise<ReconBoard>;
+  getReconciliationRun(runId: string, byUserId: string): Promise<ReconRunDetail>;
+  /** Runs it now, outside the daily schedule. With no bank data it reports "could not run", never a clean pass. */
+  runReconciliation(byUserId: string): Promise<ReconRunRow>;
+  /** Admin has looked at a mismatch personally and explains it. A serious one (a payment made twice) needs a real explanation and a confirmation. */
+  markReconciled(exceptionId: string, input: ReconcileInput, byUserId: string): Promise<ReconExceptionView>;
+  /** Demo control: marks the bank connection down or back up. A real connector reports this itself. */
+  setBankFeed(status: BankFeed['status'], byUserId: string): Promise<BankFeed>;
 
   /* Supplier payment analytics (119) — a synthesis of the payment, retention and dispute records; nothing here is stored as a figure */
   getSupplierPaymentAnalytics(months: AnalyticsMonths, byUserId: string): Promise<SupplierPaymentAnalytics>;
