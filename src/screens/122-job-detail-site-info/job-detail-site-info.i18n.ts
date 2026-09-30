@@ -83,6 +83,15 @@ const translations: ScreenTranslations = {
         steps_other: 'owns {{count}} steps',
         call: 'Call {{name}}',
       },
+      onSite: {
+        heading: 'On site',
+        none: 'Nobody is on site right now.',
+        now: '{{name}} has been on site since {{time}}',
+        total_one: 'So far this job has taken {{total}} on site over {{count}} day.',
+        total_other: 'So far this job has taken {{total}} on site over {{count}} days.',
+        open: 'Check in or out',
+        stale: 'You are still checked in from an earlier day. Say when you left.',
+      },
       repeat: {
         heading: 'A returning customer',
         body: 'AIEC has worked for this customer before. Contact preferences and site access may carry over, but check each one: nothing here is assumed to be the same.',
@@ -182,6 +191,15 @@ const translations: ScreenTranslations = {
         steps_other: '{{count}} चरण इनके ज़िम्मे',
         call: '{{name}} को कॉल करें',
       },
+      onSite: {
+        heading: 'साइट पर',
+        none: 'अभी साइट पर कोई नहीं है।',
+        now: '{{name}} {{time}} से साइट पर हैं',
+        total_one: 'अब तक इस काम में साइट पर {{total}} लगे हैं, {{count}} दिन में।',
+        total_other: 'अब तक इस काम में साइट पर {{total}} लगे हैं, {{count}} दिनों में।',
+        open: 'चेक-इन या चेक-आउट',
+        stale: 'आप किसी पिछले दिन से अभी भी चेक-इन दिख रहे हैं। बताएँ कि कब निकले।',
+      },
       repeat: {
         heading: 'दोबारा आने वाला ग्राहक',
         body: 'AIEC इस ग्राहक के लिए पहले भी काम कर चुका है। संपर्क की पसंद और साइट की पहुँच आगे चल सकती है, पर हर एक जाँच लें: यहाँ कुछ भी पहले जैसा मान नहीं लिया गया।',
@@ -280,6 +298,15 @@ const translations: ScreenTranslations = {
         steps_one: '{{count}} टप्पा यांच्याकडे',
         steps_other: '{{count}} टप्पे यांच्याकडे',
         call: '{{name}} यांना कॉल करा',
+      },
+      onSite: {
+        heading: 'साइटवर',
+        none: 'सध्या साइटवर कोणीही नाही.',
+        now: '{{name}} {{time}} पासून साइटवर आहेत',
+        total_one: 'आतापर्यंत या कामाला साइटवर {{total}} लागले आहेत, {{count}} दिवसात.',
+        total_other: 'आतापर्यंत या कामाला साइटवर {{total}} लागले आहेत, {{count}} दिवसांत.',
+        open: 'चेक-इन किंवा चेक-आउट',
+        stale: 'तुम्ही आधीच्या दिवसापासून अजूनही चेक-इन दिसत आहात. कधी निघालात ते सांगा.',
       },
       repeat: {
         heading: 'पुन्हा येणारा ग्राहक',

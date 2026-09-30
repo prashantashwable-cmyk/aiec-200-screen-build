@@ -27,6 +27,7 @@ import {
   formatDateTime,
   formatINR,
   formatPercent,
+  formatTime,
   relativeTimeParts,
 } from "@/design-system";
 import type { AscensionStep, BadgeTone } from "@/design-system";
@@ -131,6 +132,23 @@ export function TechnicianHomeView() {
           onCancel={() => h.sos && void s.cancelSos(h.sos)}
           onElapsed={() => void s.refresh()}
         />
+      )}
+
+      {h.checkedIn && (
+        <Card className="mb-3" style={{ borderColor: h.checkedIn.stale ? "var(--color-warning)" : "var(--color-success)" }}>
+          <div className="row-top gap-3">
+            <Warning size={22} color={h.checkedIn.stale ? "var(--color-warning)" : "var(--color-success)"} aria-hidden="true" />
+            <div className="stack gap-2 grow">
+              <strong className="t-sm">{h.checkedIn.stale ? t(K.checkIn.staleTitle) : t(K.checkIn.onSite, { site: h.checkedIn.siteName, time: formatTime(h.checkedIn.since, lang) })}</strong>
+              {h.checkedIn.stale && <p className="t-sm">{t(K.checkIn.staleBody, { site: h.checkedIn.siteName, since: formatDateTime(h.checkedIn.since, lang) })}</p>}
+              <div>
+                <Button size="sm" variant="secondary" onClick={() => navigate(`/technician/jobs/${h.checkedIn!.jobId}/checkin`)}>
+                  {h.checkedIn.stale ? t(K.checkIn.staleAction) : t(K.checkIn.open)}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </Card>
       )}
 
       {h.clashes.length > 0 && (

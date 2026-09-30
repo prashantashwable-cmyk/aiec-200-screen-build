@@ -114,6 +114,7 @@ export const JOB_KEYS = {
     steps: 'technicianJob.team.steps',
     call: 'technicianJob.team.call',
   },
+  onSite: { heading: 'technicianJob.onSite.heading', none: 'technicianJob.onSite.none', now: 'technicianJob.onSite.now', total: 'technicianJob.onSite.total', open: 'technicianJob.onSite.open', stale: 'technicianJob.onSite.stale' },
   repeat: {
     heading: 'technicianJob.repeat.heading',
     body: 'technicianJob.repeat.body',

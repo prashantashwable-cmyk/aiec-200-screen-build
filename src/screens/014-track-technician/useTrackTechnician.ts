@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useData } from '@/data/DataProvider';
+import { useSession } from '@/session/SessionProvider';
+import { leaveSeverity } from '@/features/technician/presence';
 import { haversineKm } from '@/design-system';
 import { CHECKIN_RADIUS_METRES, HIGH_RISK_STEP_IDS } from './track-technician.types';
 import type {
@@ -29,6 +31,7 @@ const POLL_MS = 20_000;
 export function useTrackTechnician(): TrackTechnicianState {
   const { userId } = useParams<{ userId: string }>();
   const repository = useData();
+  const { user: viewer } = useSession();
 
   const [status, setStatus] = useState<TechTrackStatus>('loading');
   const [data, setData] = useState<TechTrackData | null>(null);
@@ -81,6 +84,16 @@ export function useTrackTechnician(): TrackTechnicianState {
         ? Math.floor((Date.now() - new Date(technician.lastSeenAt).getTime()) / 60_000)
         : -1;
 
+      // Who was on site and when is the check-in record (125), one per person and visit: this screen reads it, never a second guess.
+      const site = viewer ? await repository.getSiteTime(job.id, viewer.id).catch(() => null) : null;
+      const mine = (site?.visits ?? []).filter((v) => v.userId === userId);
+      const latest = mine[0] ?? null;
+      const openVisit = mine.find((v) => !v.checkOutAt && !v.stale) ?? null;
+      const person = site?.team.find((p) => p.userId === userId);
+      const checkInAt = latest?.checkInAt ?? null;
+      const checkOutAt = latest?.checkOutAt ?? null;
+      const hoursOnSite = person ? Math.round((person.minutes / 60) * 10) / 10 : null;
+
       // Everyone assigned to this site, so a multi-technician job reads as one
       // job rather than several disconnected screens.
       const crew: CrewMember[] = jobs
@@ -94,7 +107,7 @@ export function useTrackTechnician(): TrackTechnicianState {
             : null;
           return {
             user,
-            checkedIn: gap !== null && gap <= CHECKIN_RADIUS_METRES,
+            checkedIn: site ? !!site.team.find((p) => p.userId === user.id)?.onSiteNow : gap !== null && gap <= CHECKIN_RADIUS_METRES,
             distanceMetres: gap,
             minutesSincePing: user.lastSeenAt
               ? Math.floor((Date.now() - new Date(user.lastSeenAt).getTime()) / 60_000)
@@ -106,19 +119,9 @@ export function useTrackTechnician(): TrackTechnicianState {
       const currentStep = job.steps.find((s) => s.status === 'current') ?? null;
       const evidenceCount = job.steps.reduce((sum, s) => sum + s.evidenceCount, 0);
 
-      const checkInAt = job.startedAt ?? null;
-      const checkOutAt = job.completedAt ?? null;
-      const hoursOnSite = checkInAt
-        ? Math.round(
-            ((checkOutAt ? new Date(checkOutAt).getTime() : Date.now()) -
-              new Date(checkInAt).getTime()) /
-              360_000,
-          ) / 10
-        : null;
-
       const anomalies: AnomalyFinding[] = [];
 
-      if (checkInAt && distanceMetres !== null && distanceMetres > CHECKIN_RADIUS_METRES) {
+      if (openVisit && distanceMetres !== null && distanceMetres > CHECKIN_RADIUS_METRES) {
         // Two different problems share this shape, and which one it is depends
         // on whether a high-risk step is open right now.
         const onHighRiskStep = currentStep !== null && HIGH_RISK_STEP_IDS.includes(currentStep.id);
@@ -140,7 +143,8 @@ export function useTrackTechnician(): TrackTechnicianState {
       // A visit today that the schedule does not know about.
       const scheduledToday =
         new Date(job.scheduledFor).toDateString() === new Date().toDateString();
-      if (checkInAt && !scheduledToday && job.status === 'in_progress') {
+      // A job already under way is on site every day it takes: only a job not yet started is expected on its booked day.
+      if (openVisit && !scheduledToday && (job.status === 'scheduled' || job.status === 'materials_pending')) {
         anomalies.push({
           id: 'unscheduledCheckIn',
           severity: 'medium',
@@ -148,13 +152,20 @@ export function useTrackTechnician(): TrackTechnicianState {
         });
       }
 
-      if (checkOutAt && completedSteps < job.steps.length) {
-        anomalies.push({
-          id: 'checkoutIncomplete',
-          severity: 'critical',
-          context: `${job.code} · ${job.steps.length - completedSteps}`,
-        });
+      // Left the site with steps of their own still open (told at the moment they checked out, with their reason).
+      const left = mine.find((v) => v.checkOutAt && v.leave && v.leave.openSteps > 0 && Date.now() - new Date(v.checkOutAt).getTime() < 86_400_000);
+      if (left && left.leave) {
+        const level = leaveSeverity(left.leave.reason, HIGH_RISK_STEP_IDS.includes(currentStep?.id ?? ''));
+        anomalies.push({ id: 'checkoutIncomplete', severity: level === 'low' ? 'medium' : level, context: `${job.code} · ${left.leave.openSteps}` });
       }
+      // An arrival that did not match the site, or had no location, and the reason they gave.
+      const odd = mine.find((v) => (v.verdict === 'mismatch' || v.verdict === 'unverified') && Date.now() - new Date(v.checkInAt).getTime() < 86_400_000);
+      if (odd && !anomalies.some((a) => a.id === 'checkInOutOfRange')) {
+        anomalies.push({ id: 'checkInOutOfRange', severity: 'medium', context: `${job.code} · ${odd.driftM ?? '—'} m` });
+      }
+      // Still checked in from an earlier day: forgotten, and not counted until they say when they left.
+      const forgotten = mine.find((v) => v.stale);
+      if (forgotten) anomalies.push({ id: 'visitUnconfirmed', severity: 'medium', context: job.code });
 
       const blocked = job.steps.find(
         (s) => s.requiresEvidence && s.status === 'current' && s.evidenceCount === 0,
@@ -190,7 +201,7 @@ export function useTrackTechnician(): TrackTechnicianState {
     } catch {
       setStatus('error');
     }
-  }, [userId, repository]);
+  }, [userId, repository, viewer]);
 
   useEffect(() => {
     void load();

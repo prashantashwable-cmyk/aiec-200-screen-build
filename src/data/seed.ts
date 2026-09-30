@@ -1,4 +1,5 @@
 import type {
+  SiteCheckIn,
   ActivityEvent,
   Alert,
   AutomationRule,
@@ -3930,4 +3931,77 @@ export const seedDiscountRequests: DiscountRequest[] = [
     createdAt: hoursAgo(3),
     isDemo: true,
   },
+];
+
+/* ------------------------------------------ Site check-in / check-out (125) */
+
+/** A local wall-clock time `daysBack` days ago: a technician's day is the phone's own calendar day, so seeds are too. */
+const localAt = (daysBack: number, hour: number, minute = 0): string => {
+  const d = new Date();
+  d.setDate(d.getDate() - daysBack);
+  d.setHours(hour, minute, 0, 0);
+  return d.toISOString();
+};
+
+let sciSeed = 0;
+const visit = (
+  jobId: string,
+  userId: string,
+  userName: string,
+  site: Job['location'],
+  daysBack: number,
+  inAt: [number, number],
+  outAt: [number, number] | null,
+  extra: Partial<SiteCheckIn> = {},
+): SiteCheckIn => {
+  sciSeed += 1;
+  const drift = extra.checkInDriftM ?? 30 + ((sciSeed * 17) % 60);
+  return {
+    id: `sci-${sciSeed}`,
+    jobId,
+    userId,
+    userName,
+    checkInAt: localAt(daysBack, inAt[0], inAt[1]),
+    checkInLocation: { lat: site.lat + drift / 111_000, lng: site.lng },
+    checkInAccuracyM: 15 + (sciSeed % 12),
+    checkInDriftM: drift,
+    checkInVerdict: 'clean',
+    ...(outAt ? { checkOutAt: localAt(daysBack, outAt[0], outAt[1]), checkOutKind: 'manual' as const } : {}),
+    isDemo: true,
+    ...extra,
+  };
+};
+
+const daysOn = (jobId: string, userId: string, userName: string, site: Job['location'], days: number[], inAt: [number, number] = [9, 5], outAt: [number, number] = [17, 40]): SiteCheckIn[] =>
+  days.map((d, i) => visit(jobId, userId, userName, site, d, [inAt[0], inAt[1] + (i % 4) * 7], [outAt[0] + (i % 3), outAt[1] - (i % 2) * 20]));
+
+const SITE_J1 = { lat: 18.5913, lng: 73.7389 };
+const SITE_J2 = { lat: 18.5515, lng: 73.947 };
+const SITE_J5 = { lat: 18.5908, lng: 73.7378 };
+const SITE_J6 = { lat: 18.5509, lng: 73.9462 };
+const SITE_J7 = { lat: 18.559, lng: 73.7868 };
+const SITE_J8 = { lat: 18.4967, lng: 73.8146 };
+
+/** Who was on site and when, for the jobs already under way or done. Nothing for the two booked for later. Santosh (u-tech-1) has no visit
+ *  open, so the demo can arrive at Shree Ram Heights; Ajay (u-tech-3) forgot to check out yesterday, so the "still checked in" prompt shows. */
+export const seedSiteCheckIns: SiteCheckIn[] = [
+  // j-1 Shree Ram Heights: a multi-day job, most days on site, one borderline fix in a canyon of towers, one end of day with steps open.
+  ...daysOn('j-1', 'u-tech-1', 'Santosh Kale', SITE_J1, [21, 20, 19, 18, 15, 14, 13, 12, 11, 8, 7, 6, 3]),
+  visit('j-1', 'u-tech-1', 'Santosh Kale', SITE_J1, 5, [9, 12], [18, 5], { checkInDriftM: 205, checkInAccuracyM: 90, checkInVerdict: 'borderline', leaveReason: 'end_of_day', openStepIds: ['s8', 's9', 's10'] }),
+  visit('j-1', 'u-tech-1', 'Santosh Kale', SITE_J1, 2, [9, 0], [17, 55], { leaveReason: 'end_of_day', openStepIds: ['s8', 's9', 's10'] }),
+  // Vishal helped on two days, his own steps, independently.
+  visit('j-1', 'u-tech-2', 'Vishal More', SITE_J1, 12, [10, 20], [16, 10]),
+  visit('j-1', 'u-tech-2', 'Vishal More', SITE_J1, 11, [10, 0], [15, 45]),
+  // j-2 Kulkarni Signature, at QC.
+  ...daysOn('j-2', 'u-tech-2', 'Vishal More', SITE_J2, [28, 27, 26, 25, 22, 21, 20, 19, 18, 15, 14, 13]),
+  // j-5 Shree Ram service lift, completed: the record a typical install is read from.
+  ...daysOn('j-5', 'u-tech-2', 'Vishal More', SITE_J5, [56, 55, 54, 53, 52, 49, 48, 47, 46, 45, 42, 41, 40, 39, 38]),
+  // j-7 Balaji Residency, completed.
+  ...daysOn('j-7', 'u-tech-1', 'Santosh Kale', SITE_J7, [16, 15, 14, 13, 12, 9, 8, 7, 6, 5]),
+  // j-6 Kulkarni basement: one arrival that did not match the site, and the reason given.
+  visit('j-6', 'u-tech-3', 'Ajay Nikam', SITE_J6, 4, [9, 30], [17, 30], { checkInDriftM: 780, checkInAccuracyM: 22, checkInVerdict: 'mismatch', checkInReason: 'The basement gate is on the far side of the estate, I parked at the other entrance.' }),
+  visit('j-6', 'u-tech-3', 'Ajay Nikam', SITE_J6, 3, [9, 15], [17, 20]),
+  // j-8 Om Sai, on hold: days before it stopped, and yesterday's visit never closed.
+  ...daysOn('j-8', 'u-tech-3', 'Ajay Nikam', SITE_J8, [12, 11, 10, 9, 8, 5]),
+  visit('j-8', 'u-tech-3', 'Ajay Nikam', SITE_J8, 1, [9, 15], null),
 ];

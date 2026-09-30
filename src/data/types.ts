@@ -2420,6 +2420,45 @@ export interface JobEvidenceException {
   at: string;
 }
 
+/* ------------------------------------ Site check-in / check-out (125) */
+
+/** Why someone leaves the site with steps still open. It decides how loudly Admin is told: an ordinary end of day is not an emergency. */
+export type SiteLeaveReason = 'end_of_day' | 'waiting_material' | 'site_blocked' | 'emergency' | 'other';
+
+/** One person's one visit to a site: in, and (later) out. **The only record of who was on site and when.** The live map's technician view
+ *  (014), the job screen (122) and every on-site duration read these, so there is one true time, per person and never a blended job
+ *  presence. A person who forgets to check out has an open record that is closed by their own confirmation of when they left, never by a
+ *  guess. */
+export interface SiteCheckIn {
+  id: string;
+  jobId: string;
+  userId: string;
+  userName: string;
+  /** When they arrived on site: the moment on the phone, which is not the moment it reached the server. */
+  checkInAt: string;
+  /** Where the phone said it was, or null when it could not say (permission refused, no signal) and the person said so. */
+  checkInLocation: GeoPoint | null;
+  /** The phone's own reported accuracy radius in metres, when it gave one. */
+  checkInAccuracyM: number | null;
+  /** Metres from the fix to the job's site. */
+  checkInDriftM: number | null;
+  /** `clean` within the radius; `borderline` outside it but within the phone's own margin of error; `mismatch` clearly elsewhere;
+   *  `unverified` no location at all. The last two need the person's own reason and tell Admin. */
+  checkInVerdict: 'clean' | 'borderline' | 'mismatch' | 'unverified';
+  checkInReason?: string;
+  checkOutAt?: string;
+  checkOutLocation?: GeoPoint | null;
+  /** `confirmed_late`: they had forgotten, and told the app when they really left the next time they opened it. */
+  checkOutKind?: 'manual' | 'confirmed_late';
+  /** When a forgotten visit was actually closed by the person's confirmation (their `checkOutAt` is when they said they left). */
+  closedAt?: string;
+  leaveReason?: SiteLeaveReason;
+  leaveNote?: string;
+  /** The person's own steps that were not done when they left, so Admin is told rather than finding out. */
+  openStepIds?: string[];
+  isDemo: boolean;
+}
+
 /* ------------------------------------ Installation SOP (123) */
 
 export type InstallSopPhase = 'preparation' | 'rails' | 'machine' | 'car' | 'wiring' | 'safety' | 'final';
@@ -3064,6 +3103,7 @@ export type CommitmentKind =
   | 'delivery_receive'
   | 'shipment_status_update'
   | 'delivery_confirmation_sign'
+  | 'site_checkout_confirm'
   | 'discrepancy_report_review'
   | 'partner_feed_restore'
   | 'supplier_payment_approve'
@@ -3086,6 +3126,7 @@ export type CommitmentKind =
   | 'lead_revisit';
 
 export type CommitmentSubjectType =
+  | 'site_checkin'
   | 'payment'
   | 'job'
   | 'purchase_order'

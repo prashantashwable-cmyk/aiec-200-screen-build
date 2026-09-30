@@ -110,7 +110,32 @@ the module's section to `BUILD_README.md`.
 - **Module 11 Material Logistics & Delivery is done, including its checkpoint** (`101`–`110`, see
   BUILD_README's Module 11 section). Admin has a "Logistics" nav tab; every delivery screen declares
   `tab: 'logistics'` for Admin.
-- **Module 13 Installation & Technician in progress:** `121`–`124` built. **Next: `125`** (Technician Live Location Check-in/out).
+- **Module 13 Installation & Technician in progress:** `121`–`125` built. **Next: `126`** (Safety Compliance Checklist).
+  125 facts:
+  - **`SiteCheckIn` (memoryRepository `siteCheckIns`, seed `seedSiteCheckIns`) is the one record of who was on site and when**: one per person per visit
+    (in, and later out), never a blended job presence. Everything else is read from it: on-site minutes, the days a job spanned, who is on site
+    now (`@/features/technician/presence`: `readPresence`, `timeOf`, `daysOf`, `visitMinutes`, `isStale`, `leaveSeverity`, `jobVisitProblem`).
+    **014 (Admin's technician view) and 122 (job detail) now read it** (`getSiteTime`; 014's check-in/out/hours, its crew "checked in", the
+    checkout-incomplete and unconfirmed-visit findings), replacing 014's guess from `Job.startedAt`; 121's home shows "still checked in".
+  - **Arrival is judged like 017's site visit, not by a rigid radius**: `readPresence` weighs the drift against the phone's own accuracy: within the
+    radius (150 m, 600 m for a large-site lead) is `clean`; outside it but within the device's margin is `borderline` (recorded, no alert, a weak fix
+    is noted); otherwise `mismatch`; no fix at all is `unverified`. The last two need the person's own reason (15+ letters) and raise a `staffing`
+    alert to Admin; nobody is locked out. The radius constants are copied from 017/035/032 into `presence.ts` (they are separate copies of the same
+    numbers: consolidate when one of those screens is next touched). The screen judges live with the same function the repository uses.
+  - Rules in the repository: `checkInToSite` (only a job that is not on hold or finished, and not booked for a later day; one open visit per person,
+    so arriving while checked in elsewhere is refused; capturedAt never in the future or overlapping their other visits), `checkOutOfSite`
+    (leaving with the person's own steps still open needs a reason: `end_of_day` `waiting_material` `site_blocked` `emergency` `other`, and raises a
+    `checkoutIncomplete` alert whose severity comes from the reason and whether a safety step was in hand: an ordinary end of day is low, never an
+    alarm), `pingSiteLocation` (a minute while checked in, keeps `User.location`/`lastSeenAt` fresh for the live map).
+  - **Forgotten check-out**: a visit still open on a later day or past 14 hours (`STALE_AFTER`) is stale: it counts for no minutes, `checkOutOfSite`
+    refuses it (`stale_visit`), the next time the app opens 121 says so and 125 asks when they really left (`confirmLateCheckout`, kept as
+    `confirmed_late`, never guessed). Commitment `site_checkout_confirm` (owner the technician, due `STALE_AFTER` after arrival, escalates to Admin).
+  - **Works without signal**: arrive/leave are queued in localStorage (`aiec.siteQueue.<userId>`) with their real time and position, shown at once
+    through the pure `applySiteQueue` overlay ("not sent yet") and judged by the server when sent; the last record is cached to open offline.
+  - Context: `typical` on-site time of completed installations is offered once `MIN_TYPICAL_JOBS` (2, placeholder: AIEC completes few jobs) exist.
+    Nothing else feeds sales expectations yet; a later module should read `getSiteTime(...).typical`.
+  - `/technician/jobs/:jobId/checkin` (Technician only, tab `jobs`); reached from 122's "On site" card, 121's banner and the commitment. 014 still shows
+    only a technician's first non-completed job, so a forgotten visit on a second job shows on 125/121 but not on 014.
   124 facts:
   - **Evidence is append-only and guided.** `JobEvidence` (on `JobStep.evidence`) now has `kind` (`photo` | `video`), `mimeType`, `sizeBytes`,
     `durationS`, `location` (best effort, never waited on), `finding`/`note` and `supersededAt`. A retake **supersedes** the slot's earlier proof

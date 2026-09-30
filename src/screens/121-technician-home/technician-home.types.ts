@@ -28,6 +28,7 @@ export const HOME_KEYS = {
   lastSynced: 'technicianHome.lastSynced',
   error: { title: 'technicianHome.error.title', body: 'technicianHome.error.body' },
   clash: { title: 'technicianHome.clash.title', body: 'technicianHome.clash.body' },
+  checkIn: { staleTitle: 'technicianHome.checkIn.staleTitle', staleBody: 'technicianHome.checkIn.staleBody', staleAction: 'technicianHome.checkIn.staleAction', onSite: 'technicianHome.checkIn.onSite', open: 'technicianHome.checkIn.open' },
   today: {
     heading: 'technicianHome.today.heading',
     emptyTitle: 'technicianHome.today.emptyTitle',

@@ -66,6 +66,7 @@ import {
   seedBankTransactions,
   seedSiteNotes,
   seedInstallSopVersions,
+  seedSiteCheckIns,
   seedSupplierDisputes,
   seedSupplierInvoices,
   seedPaymentDeviations,
@@ -203,6 +204,12 @@ import type {
   BankSideView,
   FieldSosView,
   InstallationSopView,
+  SiteTimeView,
+  SiteVisitView,
+  SitePersonView,
+  SiteOpenStep,
+  CheckInInput,
+  CheckOutInput,
   SopStepView,
   JobMaterialView,
   JobNoteView,
@@ -318,6 +325,8 @@ import type {
   InstallSopVersion,
   JobEvidence,
   JobEvidenceException,
+  SiteCheckIn,
+  SiteLeaveReason,
   JobStep,
   BankFeed,
   FieldSosAttempt,
@@ -492,6 +501,7 @@ import { DISPUTE_TARGET, NOTE_MIN, POSITION_MIN, REOPEN_WINDOW, canPartial, deci
 import { SOS_CANCEL_WINDOW_MS, SOS_SAME_INCIDENT } from '@/features/safety/sos';
 import { capturedAtProblem, completionProblem, isDone, missingSlots, naProblem, qcReadiness, slotsFor, stepApplies, suggestedNext, unmetDependencies, versionInForce as installVersionInForce } from '@/features/technician/installSop';
 import type { SpecFacts } from '@/features/technician/installSop';
+import { LEAVE_NOTE_MIN, MIN_TYPICAL_JOBS, OVERRIDE_REASON_MIN, daysOf, isStale, jobVisitProblem, leaveSeverity, leaveTimeProblem, medianOf, radiusFor, readPresence, timeOf, visitMinutes } from '@/features/technician/presence';
 import { FINDING_SLOT, activeProofOf, evidenceProblem, exceptionKey, exceptionOf, exceptionProblem, findingKey, historyOf } from '@/features/technician/evidence';
 import { SOS_FOLLOW, actionOf, bucketOf, clashesOf, dayKey, isActiveJob, isOnJob, ownStepIds, peopleOn, roleOf, sameMonth } from '@/features/technician/jobs';
 import { RUN_HOUR, WINDOW as RECON_WINDOW, latestSlot, nextSlot, reasonsFor, reconcile, reconcileProblem, runStatusOf, severityOf } from '@/features/finance/reconciliation';
@@ -2149,6 +2159,7 @@ function commitmentSources(now: number): CommitmentSources {
     deliverySchedules,
     shipmentLegs,
     deliveryConfirmations,
+    siteCheckIns,
     deliveryChecklists,
     delayCases,
     discrepancyReports,
@@ -5186,6 +5197,100 @@ function jobMaterialsOf(dealId: string): TechnicianJobDetail['materials'] {
     }
   }
   return { lines, onSite: lines.filter((l) => l.state === 'on_site').length, total: lines.length, noOrders: pos.length === 0, materialsConfirmedAt: materialsConfirmedAt(dealId) };
+}
+
+/* ============================== Site check-in / check-out (125) */
+
+const siteCheckIns: SiteCheckIn[] = seedSiteCheckIns.map((v) => ({ ...v }));
+let siteCheckInCounter = 100;
+
+/** The steps of this person's own that are not done on a job under way: what leaving now would leave open. */
+function siteOpenStepsOf(job: Job, userId: string): SiteOpenStep[] {
+  if (job.status !== 'in_progress') return [];
+  const own = ownStepIds(job, userId);
+  const defs = sopVersionOf(job).steps;
+  return job.steps
+    .filter((st) => st.status !== 'complete' && (own === null || own.includes(st.id)))
+    .map((st) => ({ id: st.id, labelKey: st.labelKey, safetyCritical: !!defs.find((d) => d.id === st.id)?.safetyCritical, current: st.status === 'current' }));
+}
+
+function siteVisitViewOf(v: SiteCheckIn, now: number): SiteVisitView {
+  return {
+    id: v.id,
+    userId: v.userId,
+    name: v.userName,
+    checkInAt: v.checkInAt,
+    checkOutAt: v.checkOutAt ?? null,
+    minutes: visitMinutes(v, now),
+    verdict: v.checkInVerdict,
+    driftM: v.checkInDriftM,
+    accuracyM: v.checkInAccuracyM,
+    reason: v.checkInReason ?? null,
+    kind: v.checkOutKind ?? null,
+    leave: v.checkOutAt && v.leaveReason ? { reason: v.leaveReason, note: v.leaveNote ?? null, openSteps: (v.openStepIds ?? []).length } : null,
+    stale: isStale(v, now),
+  };
+}
+
+/** How long completed installations have taken on site: what expectations for the next one can honestly be built on. */
+function typicalInstallTime(): SiteTimeView['typical'] {
+  const done = jobs.filter((j) => j.status === 'completed');
+  const totals = done
+    .map((j) => siteCheckIns.filter((v) => v.jobId === j.id))
+    .filter((list) => list.length > 0)
+    .map((list) => ({ minutes: list.reduce((sum, v) => sum + visitMinutes(v, Date.now()), 0), days: new Set(list.map((v) => dayKey(v.checkInAt))).size }));
+  if (totals.length < MIN_TYPICAL_JOBS) return null;
+  return { jobs: totals.length, medianMinutes: medianOf(totals.map((t) => t.minutes)) ?? 0, medianDays: medianOf(totals.map((t) => t.days)) ?? 0 };
+}
+
+function siteTimeViewOf(job: Job, userId: string, now: number): SiteTimeView {
+  const viewer = byId(users, userId);
+  const role = roleOf(job, userId);
+  const all = siteCheckIns.filter((v) => v.jobId === job.id);
+  const own = all.filter((v) => v.userId === userId);
+  const open = own.find((v) => !v.checkOutAt);
+  const elsewhere = siteCheckIns.find((v) => v.userId === userId && !v.checkOutAt && v.jobId !== job.id);
+  const elsewhereJob = elsewhere ? byId(jobs, elsewhere.jobId) : null;
+  const lead = resolveLead(byId(deals, job.dealId)?.leadId ?? '');
+  const radiusM = radiusFor(lead?.id);
+  const problem: SiteTimeView['problem'] = open ? 'already_checked_in' : elsewhere ? 'checked_in_elsewhere' : (jobVisitProblem(job, now) as SiteTimeView['problem']);
+  const listed = viewer?.role === 'admin' ? all : own;
+  return {
+    job: { id: job.id, code: job.code, siteName: job.siteName, address: job.address, status: job.status, location: job.location, scheduledFor: job.scheduledFor, radiusM, largeSite: radiusM > 150 },
+    role,
+    mine: open ? siteVisitViewOf(open, now) : null,
+    elsewhere: elsewhere && elsewhereJob ? { jobId: elsewhereJob.id, code: elsewhereJob.code, siteName: elsewhereJob.siteName } : null,
+    problem,
+    visits: [...listed].sort((a, b) => b.checkInAt.localeCompare(a.checkInAt)).map((v) => siteVisitViewOf(v, now)),
+    team: peopleOn(job).map((id): SitePersonView => {
+      const t = timeOf(all, id, now);
+      return { userId: id, name: byId(users, id)?.name ?? '', role: roleOf(job, id) ?? 'assistant', onSiteNow: t.onSiteNow, since: t.since, minutes: t.minutes, days: t.days, lastLeftAt: t.lastLeftAt, unconfirmed: t.unconfirmed };
+    }),
+    days: daysOf(all, now).map((d) => ({ date: d.date, minutes: d.minutes, people: d.people.map((p) => ({ userId: p.userId, name: byId(users, p.userId)?.name ?? '', minutes: p.minutes })) })),
+    totals: { minutes: all.reduce((sum, v) => sum + visitMinutes(v, now), 0), days: new Set(all.filter((v) => v.checkOutAt || !isStale(v, now)).map((v) => dayKey(v.checkInAt))).size, unconfirmed: all.filter((v) => isStale(v, now)).length },
+    openSteps: siteOpenStepsOf(job, userId),
+    typical: typicalInstallTime(),
+  };
+}
+
+/** Whoever asks must be on the job (or Admin, who reads the whole job). */
+function siteActor(jobId: string, userId: string, forWrite: boolean): { job: Job; user: User } {
+  const user = byId(users, userId);
+  const job = byId(jobs, jobId);
+  if (!user) throw new RepositoryError('forbidden');
+  if (!job) throw new RepositoryError('not_found');
+  if (user.role === 'admin' && !forWrite) return { job, user };
+  if (user.role !== 'technician' || !isOnJob(job, userId)) throw new RepositoryError('forbidden');
+  return { job, user };
+}
+
+/** A time the phone says something happened is believable only if it is not in the future and reads as a date. */
+function siteTimeOrThrow(at: string | undefined, now: number): string {
+  if (!at) return new Date(now).toISOString();
+  const t = new Date(at).getTime();
+  if (Number.isNaN(t)) throw new RepositoryError('captured_invalid');
+  if (t > now + 60_000) throw new RepositoryError('captured_in_future');
+  return new Date(t).toISOString();
 }
 
 /* ============================== Installation SOP (123) */
@@ -11041,6 +11146,11 @@ export const memoryRepository: Repository = {
         },
         sos: last && now - new Date(last.startedAt).getTime() <= SOS_FOLLOW ? fieldSosViewOf(last) : null,
         onDuty: !!user.onDuty,
+        checkedIn: (() => {
+          const open = siteCheckIns.filter((v) => v.userId === technicianId && !v.checkOutAt).sort((a, b) => b.checkInAt.localeCompare(a.checkInAt))[0];
+          const job = open ? byId(jobs, open.jobId) : null;
+          return open && job ? { visitId: open.id, jobId: job.id, code: job.code, siteName: job.siteName, since: open.checkInAt, stale: isStale(open, now) } : null;
+        })(),
       };
     }),
 
@@ -11097,6 +11207,19 @@ export const memoryRepository: Repository = {
           const member = (job.crew ?? []).find((c) => c.userId === id);
           return { userId: id, name: u?.name ?? '', role: id === job.technicianId ? 'lead' : 'assistant', phone: u?.phone ?? '', stepCount: id === job.technicianId ? 0 : (member?.stepIds.length ?? 0), isYou: id === technicianId };
         }),
+        onSite: (() => {
+          const visits = siteCheckIns.filter((v) => v.jobId === job.id);
+          const mineOpen = visits.find((v) => v.userId === technicianId && !v.checkOutAt);
+          return {
+            now: peopleOn(job).flatMap((id) => {
+              const t = timeOf(visits, id, Date.now());
+              return t.onSiteNow && t.since ? [{ name: byId(users, id)?.name ?? '', since: t.since }] : [];
+            }),
+            minutes: visits.reduce((sum, v) => sum + visitMinutes(v, Date.now()), 0),
+            days: new Set(visits.filter((v) => v.checkOutAt || !isStale(v, Date.now())).map((v) => dayKey(v.checkInAt))).size,
+            mine: mineOpen ? (isStale(mineOpen, Date.now()) ? ('stale' as const) : ('in' as const)) : ('out' as const),
+          };
+        })(),
         notes,
         repeat: earlier.length
           ? {
@@ -11299,6 +11422,122 @@ export const memoryRepository: Repository = {
       if (unmetDependencies(def as InstallSopStepDef, job.steps).length > 0) throw new RepositoryError('depends_on');
       const updated = patchInPlace(jobs, job.id, { steps: withCurrent(job.steps, sopVersionOf(job).steps, stepId) });
       return installationSopViewOf(updated, technicianId);
+    }),
+
+  /* --------------------------------- Site check-in / check-out (125) */
+  getSiteTime: (jobId, userId) =>
+    simulateRead((): SiteTimeView => {
+      const { job } = siteActor(jobId, userId, false);
+      return siteTimeViewOf(job, userId, Date.now());
+    }),
+
+  checkInToSite: (jobId, technicianId, input) =>
+    simulateWrite((): SiteTimeView => {
+      const { job, user } = siteActor(jobId, technicianId, true);
+      const now = Date.now();
+      const view = siteTimeViewOf(job, technicianId, now);
+      if (view.problem) throw new RepositoryError(view.problem);
+      const at = siteTimeOrThrow(input.capturedAt, now);
+      // A visit made without signal keeps its own time, but it cannot overlap one the person already has.
+      if (siteCheckIns.some((v) => v.userId === technicianId && (!v.checkOutAt || v.checkOutAt > at) && v.checkInAt <= at && v.jobId !== job.id)) throw new RepositoryError('captured_invalid');
+      if (siteCheckIns.some((v) => v.userId === technicianId && v.jobId === job.id && v.checkOutAt && v.checkOutAt > at)) throw new RepositoryError('captured_invalid');
+      const driftM = input.location ? Math.round(haversineKm(input.location, job.location) * 1000) : null;
+      const read = readPresence({ driftM, accuracyM: input.accuracyM, radiusM: view.job.radiusM });
+      const reason = (input.reason ?? '').trim();
+      if ((read.verdict === 'mismatch' || read.verdict === 'unverified') && reason.length < OVERRIDE_REASON_MIN) throw new RepositoryError('reason_required');
+      siteCheckInCounter += 1;
+      const created: SiteCheckIn = {
+        id: `sci-new-${siteCheckInCounter}`,
+        jobId: job.id,
+        userId: user.id,
+        userName: user.name,
+        checkInAt: at,
+        checkInLocation: input.location,
+        checkInAccuracyM: input.accuracyM,
+        checkInDriftM: driftM,
+        checkInVerdict: read.verdict,
+        ...(reason ? { checkInReason: reason } : {}),
+        isDemo: user.isDemo,
+      };
+      siteCheckIns.push(created);
+      patchInPlace(users, user.id, { onDuty: true, lastSeenAt: at, ...(input.location ? { location: input.location } : {}) });
+      // Borderline is recorded and left alone (no alert fatigue). A fix that cannot be explained, or none at all, is Admin's to know.
+      if (read.verdict === 'mismatch' || read.verdict === 'unverified') {
+        raiseAlert({
+          titleKey: read.verdict === 'mismatch' ? 'siteCheckIn.alert.offSite' : 'siteCheckIn.alert.unverified',
+          context: `${job.code} · ${job.siteName} · ${user.name}${driftM !== null ? ` · ${driftM} m` : ''}: ${reason}`,
+          severity: read.verdict === 'mismatch' ? 'medium' : 'low',
+          category: 'staffing',
+          relatedId: `sitein:${created.id}`,
+          sourceRoute: `/admin/tracking/technician/${user.id}`,
+          ...(input.location ? { location: input.location } : {}),
+        });
+      }
+      return siteTimeViewOf(job, technicianId, now);
+    }),
+
+  checkOutOfSite: (jobId, technicianId, input) =>
+    simulateWrite((): SiteTimeView => {
+      const { job, user } = siteActor(jobId, technicianId, true);
+      const now = Date.now();
+      const open = siteCheckIns.find((v) => v.userId === technicianId && v.jobId === job.id && !v.checkOutAt);
+      if (!open) throw new RepositoryError('not_checked_in');
+      // A visit left open over a day has no honest end: the person says when they really left (confirmLateCheckout).
+      if (isStale(open, now)) throw new RepositoryError('stale_visit');
+      const at = siteTimeOrThrow(input.capturedAt, now);
+      if (new Date(at).getTime() < new Date(open.checkInAt).getTime()) throw new RepositoryError('captured_invalid');
+      const openSteps = siteOpenStepsOf(job, technicianId);
+      const note = (input.note ?? '').trim();
+      if (openSteps.length > 0) {
+        if (!input.leaveReason) throw new RepositoryError('leave_reason_required');
+        if (input.leaveReason === 'other' && note.length < LEAVE_NOTE_MIN) throw new RepositoryError('reason_required');
+      }
+      patchInPlace(siteCheckIns, open.id, {
+        checkOutAt: at,
+        checkOutKind: 'manual',
+        checkOutLocation: input.location ?? null,
+        ...(input.leaveReason ? { leaveReason: input.leaveReason } : {}),
+        ...(note ? { leaveNote: note } : {}),
+        ...(openSteps.length > 0 ? { openStepIds: openSteps.map((st) => st.id) } : {}),
+      });
+      patchInPlace(users, user.id, { lastSeenAt: at, ...(input.location ? { location: input.location } : {}) });
+      // Leaving with steps open is told to Admin, and how loudly depends on why and on whether a safety step was in hand.
+      if (openSteps.length > 0 && input.leaveReason) {
+        const safety = openSteps.some((st) => st.current && st.safetyCritical);
+        const severity = leaveSeverity(input.leaveReason, safety);
+        raiseAlert({
+          titleKey: 'siteCheckIn.alert.checkoutIncomplete',
+          context: `${job.code} · ${job.siteName} · ${user.name}: ${openSteps.length} steps open${note ? ` (${note})` : ''}`,
+          severity,
+          category: safety && (severity === 'high' || severity === 'critical') ? 'safety' : 'quality',
+          relatedId: `siteout:${open.id}`,
+          sourceRoute: `/admin/tracking/technician/${user.id}`,
+        });
+      }
+      return siteTimeViewOf(job, technicianId, now);
+    }),
+
+  confirmLateCheckout: (visitId, technicianId, leftAt, note) =>
+    simulateWrite((): SiteTimeView => {
+      const v = byId(siteCheckIns, visitId);
+      if (!v) throw new RepositoryError('not_found');
+      if (v.userId !== technicianId) throw new RepositoryError('forbidden');
+      const { job, user } = siteActor(v.jobId, technicianId, true);
+      const now = Date.now();
+      if (v.checkOutAt || !isStale(v, now)) throw new RepositoryError('invalid_state');
+      const bad = leaveTimeProblem(v.checkInAt, leftAt, now);
+      if (bad) throw new RepositoryError(`leave_${bad}`);
+      patchInPlace(siteCheckIns, v.id, { checkOutAt: new Date(leftAt).toISOString(), checkOutKind: 'confirmed_late', closedAt: new Date(now).toISOString(), ...((note ?? '').trim() ? { leaveNote: (note as string).trim() } : {}) });
+      patchInPlace(users, user.id, { lastSeenAt: new Date(now).toISOString() });
+      return siteTimeViewOf(job, technicianId, now);
+    }),
+
+  pingSiteLocation: (technicianId, point, at) =>
+    simulateWrite((): void => {
+      const now = Date.now();
+      const open = siteCheckIns.find((v) => v.userId === technicianId && !v.checkOutAt && !isStale(v, now));
+      if (!open || !byId(users, technicianId)) return;
+      patchInPlace(users, technicianId, { location: point, lastSeenAt: siteTimeOrThrow(at, now) });
     }),
 
   /* --------------------------------- Auto-reconciliation (120) */

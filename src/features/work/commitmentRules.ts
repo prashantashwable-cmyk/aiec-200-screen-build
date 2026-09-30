@@ -29,12 +29,14 @@ import type {
   User,
   DeliveryChecklist,
   DeliveryConfirmation,
+  SiteCheckIn,
   DeliveryDelayCase,
   DeliveryDiscrepancyReport,
   DeliveryPartner,
   SupplierPayment,
 } from '@/data/types';
 import { remainingBalance } from '@/features/payments/aging';
+import { STALE_AFTER } from '@/features/technician/presence';
 import { days, hours, minutes } from '@/features/sla/clock';
 import { AT_RISK_RATIO, poStageEnteredAt, poStageOf, typicalStageDays } from '@/features/suppliers/fulfilment';
 import { RENEWAL_NOTICE, agreementState, promisedDeliveryOf, versionsOf } from '@/features/suppliers/agreement';
@@ -90,6 +92,7 @@ export interface CommitmentSources {
   deliverySchedules: DeliverySchedule[];
   shipmentLegs: ShipmentLeg[];
   deliveryConfirmations: DeliveryConfirmation[];
+  siteCheckIns: SiteCheckIn[];
   deliveryChecklists: DeliveryChecklist[];
   delayCases: DeliveryDelayCase[];
   discrepancyReports: DeliveryDiscrepancyReport[];
@@ -996,6 +999,38 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
           oversightRoute: `/delivery-confirmation?confirmation=${c.id}`,
         };
       });
+    },
+  },
+  {
+    // Someone who arrived on site and has not said they left, past a working day, has forgotten (125). They are prompted the next time
+    // they open the app; if they still have not, Admin hears, so "still checked in" never quietly distorts the on-site time.
+    kind: 'site_checkout_confirm',
+    nudgeBefore: hours(1),
+    escalateAfter: hours(12),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'staffing',
+    collect(src) {
+      const admin = adminId(src);
+      // Only visits that were ever forgotten: an ordinary check-out is not an obligation, and history is not chased.
+      return src.siteCheckIns
+        .filter((v) => !v.checkOutAt || v.checkOutKind === 'confirmed_late')
+        .map((v) => {
+          const job = src.jobs.find((j) => j.id === v.jobId);
+          const owner = activeUser(src, v.userId);
+          return {
+            ...base('site_checkout_confirm', 'site_checkin', v.id),
+            ownerUserId: owner ? owner.id : admin,
+            titleKey: 'work.title.site_checkout_confirm',
+            titleParams: { code: job?.code ?? '', site: job?.siteName ?? '' },
+            dueAt: plus(v.checkInAt, STALE_AFTER),
+            state: v.checkOutAt ? ('done' as const) : ('open' as const),
+            paused: false,
+            completedAt: v.closedAt ?? v.checkOutAt,
+            actionRoute: `/technician/jobs/${v.jobId}/checkin`,
+            oversightRoute: `/admin/tracking/technician/${v.userId}`,
+          };
+        });
     },
   },
   {

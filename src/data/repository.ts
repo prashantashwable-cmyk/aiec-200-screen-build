@@ -3,6 +3,7 @@ import type {
   InstallSopPhase,
   JobEvidence,
   JobEvidenceException,
+  SiteLeaveReason,
   JobStep,
   JobStatus,
   AlertSeverity,
@@ -1293,6 +1294,8 @@ export interface TechnicianHome {
   };
   sos: FieldSosView | null;
   onDuty: boolean;
+  /** Checked in on site right now, or still checked in from an earlier day and forgotten (125). The home says so: the next time they open the app. */
+  checkedIn: { visitId: string; jobId: string; code: string; siteName: string; since: string; stale: boolean } | null;
 }
 
 /* ---------------------------------- Technician job detail (122) */
@@ -1361,6 +1364,8 @@ export interface TechnicianJobDetail {
   spec: JobSpecView | null;
   materials: { lines: JobMaterialView[]; onSite: number; total: number; noOrders: boolean; materialsConfirmedAt: string | null };
   team: JobTeamMember[];
+  /** Who is on site right now and how long the job has taken on site so far: read from the check-in record (125), the one record everything shares. */
+  onSite: { now: { name: string; since: string }[]; minutes: number; days: number; mine: 'out' | 'in' | 'stale' };
   notes: JobNoteView[];
   /** A customer who has had AIEC installations before: what may sensibly carry over, always to be checked, never assumed. */
   repeat: { earlierJobs: { code: string; siteName: string; status: Job['status']; at: string }[]; carried: JobNoteView[] } | null;
@@ -1447,6 +1452,84 @@ export interface SopMediaInput {
   location?: GeoPoint;
   /** The technician says this shows a problem, not a clean pass. Needs a note. */
   finding?: boolean;
+  note?: string;
+}
+
+/* ------------------------------ Site check-in / check-out (125) */
+
+export interface SiteVisitView {
+  id: string;
+  userId: string;
+  name: string;
+  checkInAt: string;
+  checkOutAt: string | null;
+  minutes: number;
+  verdict: 'clean' | 'borderline' | 'mismatch' | 'unverified';
+  driftM: number | null;
+  accuracyM: number | null;
+  reason: string | null;
+  kind: 'manual' | 'confirmed_late' | null;
+  leave: { reason: SiteLeaveReason; note: string | null; openSteps: number } | null;
+  /** Still open, and from an earlier day or past a working day: forgotten, waiting for the person to say when they left. */
+  stale: boolean;
+  /** Only on this phone so far. */
+  local?: boolean;
+}
+
+export interface SitePersonView {
+  userId: string;
+  name: string;
+  role: 'lead' | 'assistant';
+  onSiteNow: boolean;
+  since: string | null;
+  minutes: number;
+  days: number;
+  lastLeftAt: string | null;
+  unconfirmed: boolean;
+}
+
+export interface SiteOpenStep {
+  id: string;
+  labelKey: string;
+  safetyCritical: boolean;
+  current: boolean;
+}
+
+export interface SiteTimeView {
+  job: { id: string; code: string; siteName: string; address: string; status: Job['status']; location: GeoPoint; scheduledFor: string; radiusM: number; largeSite: boolean };
+  role: 'lead' | 'assistant' | null;
+  /** This person's own open visit on this job, and whether it is a forgotten one. */
+  mine: SiteVisitView | null;
+  /** Checked in on a different job: check out there first. */
+  elsewhere: { jobId: string; code: string; siteName: string } | null;
+  /** Why arriving here is not possible right now, if it is not. */
+  problem: 'job_on_hold' | 'read_only' | 'not_scheduled_yet' | 'checked_in_elsewhere' | 'already_checked_in' | null;
+  /** This person's visits to this job, newest first. */
+  visits: SiteVisitView[];
+  team: SitePersonView[];
+  days: { date: string; minutes: number; people: { userId: string; name: string; minutes: number }[] }[];
+  totals: { minutes: number; days: number; unconfirmed: number };
+  /** Steps of this person's own not yet done, when the job is under way: what leaving now would leave open. */
+  openSteps: SiteOpenStep[];
+  /** How long completed installations have taken on site, as context for setting expectations. Null until enough are done. */
+  typical: { jobs: number; medianMinutes: number; medianDays: number } | null;
+}
+
+export interface CheckInInput {
+  /** The phone's fix, or null when it cannot give one. */
+  location: GeoPoint | null;
+  accuracyM: number | null;
+  /** When the person actually arrived: a check-in made without signal keeps its own time. */
+  capturedAt?: string;
+  /** Required when the fix does not match the site, or when there is no fix. */
+  reason?: string;
+}
+
+export interface CheckOutInput {
+  location?: GeoPoint | null;
+  capturedAt?: string;
+  /** Required when steps of the person's own are still open: they say why, so Admin hears it from them. */
+  leaveReason?: SiteLeaveReason;
   note?: string;
 }
 
@@ -3972,6 +4055,14 @@ export interface Repository {
   completeSopStep(jobId: string, stepId: string, technicianId: string, capturedAt?: string): Promise<InstallationSopView>;
   /** Sets a step aside as not applicable, with a reason. Never a safety-critical step that applies. */
   markStepNotApplicable(jobId: string, stepId: string, reason: string, technicianId: string, capturedAt?: string): Promise<InstallationSopView>;
+  /** One person's presence on one job: who is on site, for how long, across every visit (125). Admin may read it for the whole job. */
+  getSiteTime(jobId: string, userId: string): Promise<SiteTimeView>;
+  checkInToSite(jobId: string, technicianId: string, input: CheckInInput): Promise<SiteTimeView>;
+  checkOutOfSite(jobId: string, technicianId: string, input: CheckOutInput): Promise<SiteTimeView>;
+  /** They forgot to check out: say when they really left. Closes the open visit at that time. */
+  confirmLateCheckout(visitId: string, technicianId: string, leftAt: string, note?: string): Promise<SiteTimeView>;
+  /** While checked in, the phone keeps the live position fresh for the map. Does nothing when nobody is checked in. */
+  pingSiteLocation(technicianId: string, point: GeoPoint, at?: string): Promise<void>;
   /** Picks which step to do next, when the site does not allow the suggested order. Only steps whose prerequisites are done. */
   focusSopStep(jobId: string, stepId: string, technicianId: string): Promise<InstallationSopView>;
 

@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, Buildings, CheckCircle, Clock, MapPin, NavigationArrow, Package, Phone, Truck, UsersThree, Warning } from '@phosphor-icons/react';
-import { ActionBar, Badge, Button, Card, EmptyState, ErrorState, LoadingState, MapCanvas, ProgressBar, Screen, ScreenHeader, formatDate, formatDateTime } from '@/design-system';
+import { ActionBar, Badge, Button, Card, EmptyState, ErrorState, LoadingState, MapCanvas, ProgressBar, Screen, ScreenHeader, formatDate, formatDateTime, formatTime } from '@/design-system';
 import type { BadgeTone } from '@/design-system';
 import type { JobMaterialState, JobMaterialView, JobNoteView, JobSpecView, TechnicianJobDetail } from '@/data/repository';
 import { useJobDetailSiteInfo } from './useJobDetailSiteInfo';
@@ -103,6 +103,7 @@ export function JobDetailSiteInfoView() {
           <SiteCard d={d} t={t} />
           <CustomerCard d={d} t={t} />
           <TeamCard d={d} t={t} />
+          <OnSiteCard d={d} t={t} lang={lang} onOpen={() => navigate(`/technician/jobs/${job.id}/checkin`)} />
           {d.repeat && <RepeatCard repeat={d.repeat} t={t} lang={lang} />}
         </div>
       </div>
@@ -118,6 +119,27 @@ export function JobDetailSiteInfoView() {
 }
 
 /* ---------------------------------------------------------------- pieces */
+
+function OnSiteCard({ d, t, lang, onOpen }: { d: TechnicianJobDetail; t: T; lang: string; onOpen: () => void }) {
+  const on = d.onSite;
+  return (
+    <Card>
+      <div className="stack gap-2">
+        <h2 className="t-md t-semibold row gap-2" style={{ alignItems: 'center' }}>
+          <MapPin size={18} aria-hidden="true" /> {t(K.onSite.heading)}
+        </h2>
+        {on.now.length === 0 ? <p className="t-sm t-muted">{t(K.onSite.none)}</p> : on.now.map((p) => <p key={p.name} className="t-sm">{t(K.onSite.now, { name: p.name, time: formatTime(p.since, lang) })}</p>)}
+        {on.days > 0 && <p className="t-xs t-muted">{t(K.onSite.total, { total: `${Math.floor(on.minutes / 60)}h ${on.minutes % 60}m`, count: on.days })}</p>}
+        {on.mine === 'stale' && <p className="t-sm t-warning">{t(K.onSite.stale)}</p>}
+        <div>
+          <Button size="sm" variant="secondary" onClick={onOpen}>
+            {t(K.onSite.open)}
+          </Button>
+        </div>
+      </div>
+    </Card>
+  );
+}
 
 function ChangedBanner({ change, onAck, t }: { change: SpecChange; onAck: () => void; t: T }) {
   return (

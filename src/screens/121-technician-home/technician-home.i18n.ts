@@ -11,6 +11,13 @@ const translations: ScreenTranslations = {
       offlineNote: 'You are offline. Showing your jobs as of {{time}}.',
       lastSynced: 'Last synced {{time}}',
       error: { title: 'Could not load your jobs', body: 'Check your connection and try again.' },
+      checkIn: {
+        staleTitle: 'You are still checked in',
+        staleBody: 'You checked in at {{site}} on {{since}} and never checked out. Say when you left so your time on site is right.',
+        staleAction: 'Say when I left',
+        onSite: 'On site at {{site}} since {{time}}',
+        open: 'Open',
+      },
       clash: {
         title: 'Two jobs are booked for the same day',
         body: '{{codes}} are both booked for {{date}}. Admin has been told so one can be moved. Until then, ask Admin which to do first.',
@@ -85,6 +92,13 @@ const translations: ScreenTranslations = {
       offlineNote: 'आप ऑफ़लाइन हैं। आपके काम {{time}} तक के दिख रहे हैं।',
       lastSynced: 'आख़िरी सिंक {{time}}',
       error: { title: 'आपके काम लोड नहीं हो सके', body: 'अपना कनेक्शन जाँचें और फिर कोशिश करें।' },
+      checkIn: {
+        staleTitle: 'आप अभी भी चेक-इन दिख रहे हैं',
+        staleBody: 'आपने {{site}} पर {{since}} को चेक-इन किया था और कभी चेक-आउट नहीं किया। बताएँ कि आपने कब छोड़ा ताकि साइट पर आपका समय सही रहे।',
+        staleAction: 'बताएँ कि कब छोड़ा',
+        onSite: '{{site}} पर {{time}} से साइट पर',
+        open: 'खोलें',
+      },
       clash: {
         title: 'दो काम एक ही दिन के लिए बुक हैं',
         body: '{{codes}} दोनों {{date}} के लिए बुक हैं। एडमिन को बता दिया गया है ताकि एक को हटाया जा सके। तब तक एडमिन से पूछें कि पहले कौन-सा करना है।',
@@ -159,6 +173,13 @@ const translations: ScreenTranslations = {
       offlineNote: 'तुम्ही ऑफलाइन आहात. तुमची कामं {{time}} पर्यंतची दिसत आहेत.',
       lastSynced: 'शेवटचं सिंक {{time}}',
       error: { title: 'तुमची कामं लोड करता आली नाहीत', body: 'तुमचं कनेक्शन तपासा आणि पुन्हा प्रयत्न करा.' },
+      checkIn: {
+        staleTitle: 'तुम्ही अजूनही चेक-इन दिसत आहात',
+        staleBody: 'तुम्ही {{site}} येथे {{since}} रोजी चेक-इन केले होते आणि कधी चेक-आउट केले नाही. तुम्ही कधी निघालात ते सांगा, म्हणजे साइटवरील तुमची वेळ बरोबर राहील.',
+        staleAction: 'कधी निघालो ते सांगा',
+        onSite: '{{site}} येथे {{time}} पासून साइटवर',
+        open: 'उघडा',
+      },
       clash: {
         title: 'दोन कामं एकाच दिवसासाठी बुक आहेत',
         body: '{{codes}} दोन्ही {{date}} साठी बुक आहेत. अ‍ॅडमिनला कळवलं आहे म्हणजे एक हलवता येईल. तोपर्यंत आधी कोणतं करायचं ते अ‍ॅडमिनला विचारा.',
