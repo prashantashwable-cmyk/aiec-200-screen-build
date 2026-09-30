@@ -7,7 +7,7 @@ const route: ScreenRoute = {
   roles: ['admin'],
   titleKey: 'supplierPaymentAnalytics.title',
   Component: SupplierPaymentAnalyticsView,
-  tab: 'suppliers',
+  tab: 'supplierPay',
 };
 
 export default route;

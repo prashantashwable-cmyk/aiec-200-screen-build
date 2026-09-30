@@ -7,7 +7,7 @@ const route: ScreenRoute = {
   roles: ['admin'],
   titleKey: 'advanceRetention.title',
   Component: AdvancePaymentRetentionView,
-  tab: 'suppliers',
+  tab: 'supplierPay',
 };
 
 export default route;

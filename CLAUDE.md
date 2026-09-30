@@ -94,7 +94,7 @@ the module's section to `BUILD_README.md`.
 
 ## Current status (as of 2026-09-28)
 
-- Modules 1–10 (`001`–`100`) are built. Modules 5–10 are checkpoint-verified.
+- Modules 1–12 (`001`–`120`) are built. Modules 5–12 are checkpoint-verified.
 - **Module 9 Payments & Financing is done**, including its checkpoint (all 10 screens clicked
   through as both Admin and Customer, 4 earlier-module screens spot-checked, nothing regressed —
   see `BUILD_README.md`'s Module 9 section for the full writeup, including the shared aging
@@ -110,7 +110,7 @@ the module's section to `BUILD_README.md`.
 - **Module 11 Material Logistics & Delivery is done, including its checkpoint** (`101`–`110`, see
   BUILD_README's Module 11 section). Admin has a "Logistics" nav tab; every delivery screen declares
   `tab: 'logistics'` for Admin.
-- **Module 12 Supplier Payment Processing in progress:** `111`–`120` built. **Next: the Module 12 checkpoint**, then Module 13 (`121`).
+- **Module 12 Supplier Payment Processing is done, including its checkpoint** (`111`–`120`, see BUILD_README's Module 12 section). Admin has a "Supplier pay" nav tab; 111–119 declare `tab: 'supplierPay'` (120 sits under Analytics). **Next: Module 13, `121`.**
   120 facts:
   - Reconciliation compares a stored bank statement (`BankTransaction`, memoryRepository `bankTransactions`, seeded sample) with
     a *derived* ledger (`ledgerEntriesOf`: executed supplier payments, amounts received from customers, refunds; a financing partner's

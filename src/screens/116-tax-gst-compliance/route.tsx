@@ -7,7 +7,7 @@ const route: ScreenRoute = {
   roles: ['admin'],
   titleKey: 'gstCompliance.title',
   Component: TaxGstComplianceView,
-  tab: 'suppliers',
+  tab: 'supplierPay',
 };
 
 export default route;

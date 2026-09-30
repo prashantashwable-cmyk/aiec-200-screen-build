@@ -49,6 +49,8 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
     { id: 'quotes', labelKey: 'nav.quotes', path: '/admin/quotes', icon: <Receipt size={ICON_SIZE} /> },
     { id: 'deals', labelKey: 'nav.deals', path: '/admin/deals/bot-config', icon: <Handshake size={ICON_SIZE} /> },
     { id: 'suppliers', labelKey: 'nav.suppliers', path: '/admin/suppliers', icon: <Storefront size={ICON_SIZE} /> },
+    // Every supplier-payment screen (111–119) lives here for Admin; the directory and its hub stay under Suppliers.
+    { id: 'supplierPay', labelKey: 'nav.supplierPay', path: '/supplier-payments', icon: <Coins size={ICON_SIZE} /> },
     // Every delivery screen (101–110) lives here for Admin; suppliers and technicians reach their own from their own tabs.
     { id: 'logistics', labelKey: 'nav.logistics', path: '/shipments', icon: <Truck size={ICON_SIZE} /> },
     {

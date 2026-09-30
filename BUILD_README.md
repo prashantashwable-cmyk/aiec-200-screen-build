@@ -953,3 +953,81 @@ Fixes made at the checkpoint:
   damaged-parts report is open on that order.
 - **Photo evidence.** `DocumentSlot` previews are data URLs, so a delivery photo still shows on the
   report after the capture screen is gone.
+
+## Module 12 — Supplier Payment Processing (`111`–`120`, checkpoint-verified)
+
+Cash goes to a supplier only when the terms say it should, and only after a person has looked at anything
+that is not routine. A payment exists only once its configured milestone (100) has really fired; every screen
+reads the one `SupplierPayment` (111) and the same block/hold flags. Nothing about a match, a schedule, a GST
+split, an exposure or a metric is stored: each is derived on read from the records below it.
+
+| # | Screen | What it owns |
+|---|---|---|
+| 111 | Supplier Payment Approval | `SupplierPayment`, the approval gate, hold flags, a 10-minute reversal window, routine batches |
+| 112 | Milestone Payment Release | The payment chain of an order, one-off split deviations, early release with a reason |
+| 113 | Supplier Invoice Matching | Invoice lines matched on read against the PO and what was accepted on site; the balance gate |
+| 114 | Supplier Payment Schedule | Upcoming outflow by date, heavy weeks, slippage; the one figure Finance reads |
+| 115 | Supplier Payment History | The ledger a supplier and Admin both see, adjustments beside a payment, queries, CSV |
+| 116 | Tax & GST Compliance | GST split by supply type, supplier standing, credit at risk, hand-over to the accountant |
+| 117 | Supplier Dispute Resolution | Disputes decided with a real correction (adjustment, amount, retention, invoice), process flags |
+| 118 | Advance Payment & Retention | Money out early and money held back, read from the order and the installation job; recovery |
+| 119 | Supplier Payment Analytics | Spend, days to pay, retention over time, dispute rate; flags a supplier whose disputes stand out |
+| 120 | Auto-Reconciliation | The bank statement against the app's money in and out; serious mismatches; run log |
+
+**Shared vocabulary worth knowing before building on this module**
+
+- **A payment is blocked, held or informational, never silently fine.** `paymentFlags` (111) is the one place:
+  `invoice_unmatched` and `supplier_blocked` cannot be approved; `open_report`, `supplier_dispute` and `orphaned`
+  need an explicit acknowledgement; `rating_dispute`, `high_value` and `early_release` are shown. Anything
+  flagged, or above ₹1,00,000, is never "routine" and is refused in a batch. Later screens that create a supplier
+  payment must go through these flags.
+- **Retention release is manual by default** (118). The heartbeat only releases by itself when Admin turns it on,
+  and never over an open damaged-parts report (108) or dispute (117). This changes what 100 did; its copy says so.
+- **`@/features/suppliers/paymentAnalytics` and `@/features/finance/reconciliation` are the only definitions** of
+  "days to pay", "a month that stands out", "a supplier whose disputes stand out", "matched", "serious" and "small
+  expected difference". Target for paying is 111's own two days, not a second constant.
+- **A run with no bank data is "could not run", never a clean pass** (120). A payment made or recorded twice is a
+  critical alert and cannot be explained away as a fee. Small expected differences are listed and reconciled by hand
+  with a reason, and raise no alert.
+- Every dated obligation added here is a `commitmentRules.ts` rule: `supplier_payment_approve`,
+  `supplier_payment_hold_review`, `supplier_invoice_submit`, `supplier_invoice_mismatch_review`,
+  `gst_period_handover`, `gst_status_check`, `supplier_dispute_resolve`, `supplier_dispute_process_review`,
+  `advance_recovery_followup`, `retention_release_ready`, `reconciliation_exception_review`,
+  `reconciliation_feed_restore`.
+
+**Placeholder business decisions Admin should set** (all stated on screen where they apply): the ₹1,00,000 routine
+limit and 10-minute reversal window (111); the heavy-week rule of 2× an average week and at least ₹2,00,000 (114);
+a 30-day GST recheck and the 7th-day hand-over (116); dispute targets of 7 days, or 3 when the supplier threatens to
+stop (117); a 14-day advance recovery threshold and retention auto-release off (118); a spike at 1.8× a typical
+month and at least ₹1,00,000, and 3 payments before a supplier's average stops being an "early look" (119); a
+₹1,000 small-difference ceiling and 2-day pending grace (120).
+
+**Honest limits.** There is no payment rail: `executeSupplierPayments` stands in for the transfer and mints an
+`AIEC-TRF-` reference. The bank statement in 120 is a seeded sample and its connection is a demo switch; a real
+bank-feed connector would replace `bankTransactions` and report its own status. GST portal look-ups (116) are
+recorded by Admin, not fetched. Adjustments (115) and recovered advances (118) are not separate bank lines in 120:
+only the payments themselves are compared. Spend in 119 starts from the seeded history, so a month with nothing
+before it reads "Nothing earlier to compare" rather than a percentage.
+
+**Module 12 checkpoint (passed):**
+
+- Clicked through all 10 screens (111–120) as Admin at 390 and 1440px (and 820 while building each): no
+  horizontal overflow, no untranslated keys, no console errors beyond a blocked external font. 113 and 115 opened
+  as a supplier (Vertex, real phone login); the Admin-only screens correctly show the supplier home instead.
+- Exercised the paths each spec names: an invoice mismatch blocking a balance; an early release needing
+  acknowledgement; a GST-suspended supplier's credit at risk; a dispute decided into a real payment adjustment; an
+  advance recovered in part beside its payment; a batch release skipping what a person should judge; a spike month
+  explained by one order and by Admin's note; a first slow payment set aside as an early look; a supplier's repeat
+  disputes raising one alert; a bank-feed outage reported as "could not run", with the open list marked unchecked;
+  a double debit refusing to be reconciled as a fee.
+- Spot-checked 028 (Finance), 082 (collections), 091, 097, 100 (retention wording) and 110 from earlier modules.
+
+Fixes made at the checkpoint:
+
+- **Admin's "Supplier pay" tab.** 111–119 were reachable only from 091's hub. Admin now has a nav tab and each
+  declares it (113 and 115 keep the supplier's own tabs).
+- **Auto-release over an open dispute.** With 118's setting on, `settleRetentions` released a retention that had an
+  open supplier dispute. It now waits for the dispute as it does for a report.
+- **A mistranslated alert.** 118's advance-exposure alert used a title key that no translation carried.
+- **A blind spot in the totals.** 120's "matched" figure read 0 while the bank was down; it now shows the last real
+  comparison, beside a hero that says nothing was compared.
