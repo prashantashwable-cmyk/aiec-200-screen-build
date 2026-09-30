@@ -3280,6 +3280,42 @@ const templateSeeds: TemplateSeed[] = [
     },
   },
   {
+    groupId: 'tpl-amc-reconsider',
+    name: 'AMC: a gentle second look',
+    channel: 'whatsapp',
+    associatedStage: 'won',
+    mergeFields: ['customerName', 'buildingName'],
+    body: {
+      en: 'Hi {{customerName}}, we hope the lift at {{buildingName}} is serving you well. When we handed it over you kept the AMC for later. If you would like regular servicing and a quick response when you need us, just reply here and we will set it up. No pressure at all.',
+      hi: 'नमस्ते {{customerName}}, हमें उम्मीद है कि {{buildingName}} की लिफ़्ट आपकी अच्छी सेवा कर रही है। हैंडओवर के समय आपने AMC बाद के लिए रखा था। अगर आप नियमित सर्विसिंग और ज़रूरत पर तुरंत जवाब चाहें, तो यहीं जवाब दें और हम इसे शुरू कर देंगे। कोई दबाव नहीं है।',
+      mr: 'नमस्कार {{customerName}}, आम्हाला आशा आहे की {{buildingName}} येथील लिफ्ट तुम्हाला चांगली सेवा देत आहे. हस्तांतरणाच्या वेळी तुम्ही AMC नंतरसाठी ठेवले होते. नियमित सर्व्हिसिंग आणि गरजेच्या वेळी जलद प्रतिसाद हवा असेल तर इथेच उत्तर द्या, आम्ही ते सुरू करू. अजिबात दबाव नाही.',
+    },
+  },
+  {
+    groupId: 'tpl-warranty-ending',
+    name: 'Warranty ending soon',
+    channel: 'whatsapp',
+    associatedStage: 'won',
+    mergeFields: ['customerName', 'buildingName', 'endDate'],
+    body: {
+      en: 'Hi {{customerName}}, the service warranty on the lift at {{buildingName}} ends on {{endDate}}. An AMC keeps it serviced and covered after that. Reply here and we will show you the options.',
+      hi: 'नमस्ते {{customerName}}, {{buildingName}} की लिफ़्ट की सर्विस वारंटी {{endDate}} को ख़त्म हो रही है। उसके बाद AMC उसे सर्विस और कवर में रखता है। यहीं जवाब दें और हम आपको विकल्प दिखाएँगे।',
+      mr: 'नमस्कार {{customerName}}, {{buildingName}} येथील लिफ्टची सर्व्हिस वॉरंटी {{endDate}} रोजी संपत आहे. त्यानंतर AMC तिला सर्व्हिस आणि संरक्षणात ठेवते. इथेच उत्तर द्या, आम्ही तुम्हाला पर्याय दाखवू.',
+    },
+  },
+  {
+    groupId: 'tpl-amc-renewal',
+    name: 'AMC renewal',
+    channel: 'whatsapp',
+    associatedStage: 'won',
+    mergeFields: ['customerName', 'buildingName', 'endDate'],
+    body: {
+      en: 'Hi {{customerName}}, your AMC for the lift at {{buildingName}} runs until {{endDate}}. Reply here and we will renew it so the servicing carries on without a gap.',
+      hi: 'नमस्ते {{customerName}}, {{buildingName}} की लिफ़्ट का आपका AMC {{endDate}} तक चलता है। यहीं जवाब दें और हम इसे नवीनीकृत कर देंगे ताकि सर्विसिंग बिना रुकावट चलती रहे।',
+      mr: 'नमस्कार {{customerName}}, {{buildingName}} येथील लिफ्टचे तुमचे AMC {{endDate}} पर्यंत चालते. इथेच उत्तर द्या, आम्ही ते नूतनीकरण करू म्हणजे सर्व्हिसिंग खंडित न होता सुरू राहील.',
+    },
+  },
+  {
     groupId: 'tpl-site-visit-confirm',
     name: 'Site Visit Confirmation',
     channel: 'sms',

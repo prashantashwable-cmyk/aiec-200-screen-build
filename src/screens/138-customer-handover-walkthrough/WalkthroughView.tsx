@@ -6,7 +6,7 @@ import type { WalkthroughView } from '@/data/repository';
 import { NAME_MIN, QUESTION_MIN } from '@/features/qc/walkthrough';
 import { useWalkthrough } from './useWalkthrough';
 import type { ActionResult, WalkState } from './useWalkthrough';
-import { DOCS, GROUPS, MODES, SCORES, STEPS, WALK_KEYS as K, boardPath, checklistPath } from './walkthrough.types';
+import { DOCS, GROUPS, MODES, SCORES, STEPS, WALK_KEYS as K, boardPath, checklistPath, warrantyPath } from './walkthrough.types';
 import type { StepId } from './walkthrough.types';
 
 type T = ReturnType<typeof useTranslation>['t'];
@@ -502,6 +502,7 @@ function ReviewStep({ s, v, t }: { s: WalkState; v: WalkthroughView; t: T }) {
           {row(t(K.review.feedback), v.feedback ? `${v.feedback.score} / 5` : t(K.review.none), !!v.feedback)}
         </div>
       </Card>
+      {v.conducted && <Button variant="secondary" style={{ width: 'fit-content' }} data-warranty-link onClick={() => s.goto(warrantyPath(v.job.id))}>{t(K.review.warranty)}</Button>}
       <Card>
         <div className="stack gap-3" data-questions>
           <strong className="t-md">{t(K.ask.heading)}</strong>

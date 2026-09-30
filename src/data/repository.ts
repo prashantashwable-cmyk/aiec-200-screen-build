@@ -1,6 +1,7 @@
 import type { ItemState, SignOffProblem } from '@/features/qc/mechanical';
 import type { ElecSignOffProblem, ElecState } from '@/features/qc/electrical';
 import type { DisputeDecision, SnagProblem, SnagSeverity } from '@/features/qc/snags';
+import type { AmcTierId, ReminderDef, WarrantyProblem } from '@/features/qc/warranty';
 import type { ScriptGroup, WalkthroughMode, WalkthroughProblem } from '@/features/qc/walkthrough';
 import type { DocBasis, DocBlock, DocState, HandoverDocKind, HandoverProblem, ReadinessProblem as HandoverReadinessProblem } from '@/features/qc/handover';
 import type { PartStatus, ReworkProblem, Urgency } from '@/features/qc/rework';
@@ -19,6 +20,7 @@ import type {
   ReworkRequest,
   HandoverReadiness,
   HandoverWalkthrough,
+  WarrantyRegistration,
   AmcPricingTier,
   SnagEvent,
   InspectorUnavailability,
@@ -1730,6 +1732,59 @@ export interface QcElecInput {
   clientId?: string;
   capturedAt?: string;
 }
+
+/* ------------------------------------ Warranty & AMC registration (139) */
+
+export interface WarrantyTermsView {
+  basis: WarrantyRegistration['terms']['basis'];
+  parts: WarrantyRegistration['terms']['parts'];
+  service: WarrantyRegistration['terms']['service'];
+}
+
+export interface AmcTierView {
+  tier: AmcTierId;
+  annualPrice: number;
+  responseTimeHours: number;
+  includedVisits: number;
+}
+
+export interface WarrantyView {
+  job: { id: string; code: string; siteName: string; address: string; status: Job['status'] };
+  viewer: 'admin' | 'customer';
+  customerName: string;
+  /** `not_ready` until the handover walkthrough has been done: the warranty starts on the handover day. */
+  status: 'not_ready' | 'ready' | 'registered';
+  startsOn: string | null;
+  terms: WarrantyTermsView | null;
+  /** The terms as registered (true), or as they would read now (false). */
+  frozen: boolean;
+  amcTiers: AmcTierView[];
+  /** What the customer said about AMC at the walkthrough (138): the starting point here. */
+  walkthroughAmc: HandoverWalkthrough['amc'] | null;
+  registration: { registeredAt: string; registeredByName: string; registeredByRole: 'customer' | 'admin' } | null;
+  amc: (NonNullable<WarrantyRegistration['amc']> & { begins: string }) | null;
+  /** The day the AMC would begin: the day after the service warranty ends. */
+  amcBegins: string | null;
+  reminders: { id: string; kind: 'warranty_ending' | 'amc_renewal' | 'amc_reengage'; dueAt: string; sentAt: string | null; skipped: string | null }[];
+  actions: { register: boolean; enrol: boolean; customize: boolean; renew: boolean };
+  /** When a renewal can be taken: from this many days before the term ends. */
+  renewFrom: string | null;
+}
+
+export interface WarrantyBoardView {
+  viewer: 'admin' | 'customer';
+  rows: { jobId: string; code: string; siteName: string; status: WarrantyView['status']; amcStatus: 'active' | 'later' | 'declined' | null }[];
+}
+
+export interface WarrantyAmcInput {
+  choice: 'enrol' | 'later' | 'declined';
+  tier?: AmcTierId;
+  /** Admin only: visits beyond what the tier includes, for a site that needs more. Priced pro rata on the tier. */
+  extraVisits?: number;
+  note?: string;
+}
+
+export type WarrantyPreviewReminder = ReminderDef;
 
 /* ------------------------------------ Customer handover walkthrough (138) */
 
@@ -4991,6 +5046,16 @@ export interface Repository {
   pingSiteLocation(technicianId: string, point: GeoPoint, at?: string): Promise<void>;
   /** Picks which step to do next, when the site does not allow the suggested order. Only steps whose prerequisites are done. */
   focusSopStep(jobId: string, stepId: string, technicianId: string): Promise<InstallationSopView>;
+
+  /* Warranty & AMC registration (139) */
+  getWarrantyBoard(userId: string): Promise<WarrantyBoardView>;
+  getWarranty(jobId: string, userId: string): Promise<WarrantyView>;
+  /** Registers the warranty (frozen from what was sold and installed) and records the AMC choice. Customer or Admin. */
+  registerWarrantyAndAmc(jobId: string, input: WarrantyAmcInput, userId: string): Promise<WarrantyView>;
+  /** A customer who kept AMC for later, or declined, enrols. */
+  enrolAmc(jobId: string, input: { tier: AmcTierId; extraVisits?: number; note?: string }, userId: string): Promise<WarrantyView>;
+  /** Adds the next annual term at the price in force now. */
+  renewAmc(jobId: string, userId: string): Promise<WarrantyView>;
 
   /* Customer handover walkthrough (138) */
   getWalkthroughBoard(userId: string): Promise<WalkthroughBoardView>;

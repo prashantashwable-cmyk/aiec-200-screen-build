@@ -2598,6 +2598,41 @@ export interface QcElecCheck {
   isDemo: boolean;
 }
 
+/* ------------------------------------ Warranty & AMC registration (139) */
+
+/** What the customer's lift is covered by and for how long, registered at handover. The terms are frozen when registered: they are read from
+ *  the accepted configuration and the parts actually installed, never from a template. */
+export interface WarrantyRegistration {
+  jobId: string;
+  registeredAt: string;
+  registeredByName: string;
+  registeredByRole: 'customer' | 'admin';
+  /** The handover day: when every warranty starts. */
+  startsOn: string;
+  terms: {
+    basis: { quotationCode: string; version: number; finishTier: string; driveType: string; materialsConfirmedAt: string | null };
+    /** The manufacturer's warranty, part by part. A substituted part carries its own supplier's terms. `months` is null where only the purchase receipt states it. */
+    parts: { category: string; description: string; quantity: number; substituted: boolean; supplierName: string | null; poCode: string | null; months: number | null; endsOn: string | null }[];
+    service: { months: number; endsOn: string };
+  };
+  amc?: {
+    status: 'active' | 'later' | 'declined';
+    tier?: 'basic' | 'standard' | 'comprehensive';
+    annualPrice?: number;
+    responseTimeHours?: number;
+    includedVisits?: number;
+    extraVisits: number;
+    note?: string;
+    decidedAt: string;
+    decidedByName: string;
+    /** One annual term per year: the first begins the day after the service warranty ends. */
+    terms: { n: number; startsOn: string; endsOn: string; price: number; addedByName: string; at: string }[];
+  };
+  /** Everything the registration sets up by itself to say something to the customer later. */
+  reminders: { id: string; kind: 'warranty_ending' | 'amc_renewal' | 'amc_reengage'; dueAt: string; sentAt?: string; skipped?: 'opted_out' | 'no_contact' | 'enrolled' | 'superseded' }[];
+  isDemo: boolean;
+}
+
 /* ------------------------------------ Customer handover walkthrough (138) */
 
 /** The in-person (or video, or site-representative) walkthrough of a finished lift, and everything that comes of it. One per job. */
@@ -3743,6 +3778,8 @@ export type CommitmentKind =
   | 'walkthrough_conduct'
   | 'walkthrough_signoff'
   | 'walkthrough_followup'
+  | 'warranty_register'
+  | 'amc_renewal_review'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'

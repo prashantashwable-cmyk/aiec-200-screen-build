@@ -18,6 +18,7 @@ export const FINAL_ERRORS = [
 
 const rec = <T extends string>(ns: string, keys: readonly T[]) => Object.fromEntries(keys.map((k) => [k, `${ns}.${k}`])) as Record<T, string>;
 export const boardPath = '/handover-walkthrough';
+export const warrantyPath = (id: string) => `/warranty/${id}`;
 export const checklistPath = (id: string) => `/handover-checklist/${id}`;
 const SCRIPT_IDS = SCRIPT.map((i) => i.id);
 
@@ -152,6 +153,7 @@ export const WALK_KEYS = {
     none: 'walkthrough.review.none',
     notYet: 'walkthrough.review.notYet',
     questions: 'walkthrough.review.questions',
+    warranty: 'walkthrough.review.warranty',
   },
   ask: {
     heading: 'walkthrough.ask.heading',

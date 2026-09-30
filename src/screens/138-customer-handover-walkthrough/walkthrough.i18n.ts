@@ -245,6 +245,7 @@ const translations: ScreenTranslations = {
         "amc": "AMC choice",
         "feedback": "Feedback",
         "none": "Not given",
+        "warranty": "Warranty and AMC registration",
         "notYet": "Not yet",
         "questions": "Questions"
       },
@@ -512,6 +513,7 @@ const translations: ScreenTranslations = {
         "amc": "AMC की पसंद",
         "feedback": "प्रतिक्रिया",
         "none": "नहीं दी गई",
+        "warranty": "वारंटी और AMC पंजीकरण",
         "notYet": "अभी नहीं",
         "questions": "सवाल"
       },
@@ -779,6 +781,7 @@ const translations: ScreenTranslations = {
         "amc": "AMC ची निवड",
         "feedback": "अभिप्राय",
         "none": "दिलेला नाही",
+        "warranty": "वॉरंटी आणि AMC नोंदणी",
         "notYet": "अजून नाही",
         "questions": "प्रश्न"
       },

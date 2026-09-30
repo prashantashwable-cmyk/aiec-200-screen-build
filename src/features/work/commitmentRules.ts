@@ -1,6 +1,6 @@
 import { ASSIGN_DUE, DISPUTE_DECIDE_DUE, REVERIFY_DUE } from '@/features/qc/snags';
 import { ARRANGE_DUE, FOLLOWUP_DUE, SIGNOFF_DUE_PRESENT, SIGNOFF_DUE_REMOTE } from '@/features/qc/walkthrough';
-import type { HandoverWalkthrough, ReworkRequest,
+import type { WarrantyRegistration, HandoverWalkthrough, ReworkRequest,
   Alert,
   AlertSeverity,
   CatalogPriceChange,
@@ -123,6 +123,8 @@ export interface CommitmentSources {
   handoverReviews: { jobId: string; addedAt: string; reason: string; done: boolean; doneAt?: string }[];
   /** Every job past Ready for Handover, with its customer walkthrough (138). */
   walkthroughs: { jobId: string; unlockedAt: string; leadId: string | null; customerId: string | null; w: HandoverWalkthrough }[];
+  /** Warranty and AMC registrations (139). */
+  warranties: WarrantyRegistration[];
   /** Mechanical quality-check attempts and the differences from the install record the inspector raised (132). */
   qcMechChecks: QcMechCheck[];
   qcFindings: QcFinding[];
@@ -1585,6 +1587,65 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
             completedAt: q.answer?.at,
             actionRoute: `/handover-walkthrough/${x.jobId}`,
             oversightRoute: `/handover-walkthrough/${x.jobId}`,
+          };
+        }),
+      );
+    },
+  },
+  {
+    // Once the handover walkthrough is done the warranty starts, and Admin makes sure it is registered within two days (139).
+    kind: 'warranty_register',
+    nudgeBefore: hours(6),
+    escalateAfter: hours(12),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'quality',
+    collect(src) {
+      const admin = adminId(src);
+      return src.walkthroughs
+        .filter((x) => !!x.w.conducted)
+        .map((x) => {
+          const job = src.jobs.find((j) => j.id === x.jobId);
+          const registered = src.warranties.find((w) => w.jobId === x.jobId);
+          return {
+            ...base('warranty_register', 'job', x.jobId),
+            ownerUserId: admin,
+            titleKey: 'work.title.warranty_register',
+            titleParams: { code: job?.code ?? '', site: job?.siteName ?? '' },
+            dueAt: plus((x.w.conducted as NonNullable<typeof x.w.conducted>).at, hours(48)),
+            state: registered ? ('done' as const) : ('open' as const),
+            paused: false,
+            completedAt: registered?.registeredAt,
+            actionRoute: `/warranty/${x.jobId}`,
+            oversightRoute: `/warranty/${x.jobId}`,
+          };
+        });
+    },
+  },
+  {
+    // An AMC term about to end: Admin makes sure it is renewed (139), a month before, so the servicing never has a gap.
+    kind: 'amc_renewal_review',
+    nudgeBefore: days(7),
+    escalateAfter: days(3),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'quality',
+    collect(src) {
+      const admin = adminId(src);
+      return src.warranties.flatMap((w) =>
+        (w.amc?.status === 'active' ? w.amc.terms : []).map((t) => {
+          const job = src.jobs.find((j) => j.id === w.jobId);
+          const later = (w.amc?.terms ?? []).some((x) => x.n > t.n);
+          return {
+            ...base('amc_renewal_review', 'job', `${w.jobId}:${t.n}`),
+            ownerUserId: admin,
+            titleKey: 'work.title.amc_renewal_review',
+            titleParams: { code: job?.code ?? '', site: job?.siteName ?? '', date: t.endsOn },
+            dueAt: new Date(new Date(`${t.endsOn}T00:00:00`).getTime() - 30 * 86_400_000).toISOString(),
+            state: later ? ('done' as const) : ('open' as const),
+            paused: false,
+            actionRoute: `/warranty/${w.jobId}`,
+            oversightRoute: `/warranty/${w.jobId}`,
           };
         }),
       );

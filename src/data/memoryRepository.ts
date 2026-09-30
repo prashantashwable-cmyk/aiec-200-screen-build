@@ -222,6 +222,8 @@ import type {
   HandoverDocView,
   WalkthroughBoardView,
   WalkthroughView,
+  WarrantyBoardView,
+  WarrantyView,
   ReworkPartOption,
   ReworkPartView,
   ReworkRoundView,
@@ -426,6 +428,7 @@ import type {
   SnagEvent,
   HandoverReadiness,
   HandoverWalkthrough,
+  WarrantyRegistration,
   ReworkRound,
   StateInspectionGuidance,
   JobStep,
@@ -604,6 +607,8 @@ import { capturedAtProblem, completionProblem, isDone, missingSlots, naProblem, 
 import type { SpecFacts } from '@/features/technician/installSop';
 import { ASSIGN_DUE, DISPUTE_DECIDE_DUE, REWORK_DUE, REVERIFY_DUE, blocksHandover as sgBlocks, decisionProblem as sgDecisionProblem, disputeProblem as sgDisputeProblem, isChecklistSnag as sgIsChecklist, isOpen as sgIsOpen, linkProblem as sgLinkProblem, raiseProblem as sgRaiseProblem, regradeProblem as sgRegradeProblem, severityOfSource as sgSeverityOfSource, severityRank as sgRank, verifyProblem as sgVerifyProblem, waiveProblem as sgWaiveProblem } from '@/features/qc/snags';
 import type { DisputeDecision, SnagSeverity } from '@/features/qc/snags';
+import { AMC_RENEWAL_DAYS as WR_RENEW_DAYS, INCLUDED_VISITS as WR_VISITS, SERVICE_WARRANTY_MONTHS as WR_SERVICE_MONTHS, addDays as wrAddDays, amcPrice as wrAmcPrice, amcProblem as wrAmcProblem, endOfTerm as wrEndOfTerm, reminderPlan as wrReminderPlan } from '@/features/qc/warranty';
+import type { AmcTierId as WrTierId } from '@/features/qc/warranty';
 import { ARRANGE_DUE as WT_ARRANGE_DUE, DOCS as WT_DOCS, FOLLOWUP_DUE as WT_FOLLOWUP_DUE, SIGNOFF_DUE_PRESENT as WT_SIGNOFF_PRESENT, SIGNOFF_DUE_REMOTE as WT_SIGNOFF_REMOTE, amcProblem as wtAmcProblem, arrangeProblem as wtArrangeProblem, conductProblem as wtConductProblem, isNegative as wtIsNegative, questionProblem as wtQuestionProblem, scoreProblem as wtScoreProblem, scriptFor as wtScriptFor, signoffProblem as wtSignoffProblem } from '@/features/qc/walkthrough';
 import { CORRECTION_MIN as HO_CORRECTION_MIN, DOC_KINDS as HO_DOC_KINDS, REVIEW_NOTE_MIN as HO_REVIEW_NOTE_MIN, REVIEW_REASON_MIN as HO_REVIEW_REASON_MIN, blockOf as hoBlockOf, correctionProblem as hoCorrectionProblem, docStateOf as hoDocState, issueProblem as hoIssueProblem, readinessOf as hoReadiness } from '@/features/qc/handover';
 import type { DocBasis as HoDocBasis, HandoverDocKind } from '@/features/qc/handover';
@@ -2288,6 +2293,7 @@ function commitmentSources(now: number): CommitmentSources {
     snags: (ensureSnagSeeds(), reworkRequests),
     handoverWaiting: handoverSignals().waiting,
     walkthroughs: walkthroughSignals(),
+    warranties: warrantyRegistrations,
     handoverReviews: handoverSignals().reviews,
     qcMechChecks,
     qcFindings,
@@ -2550,6 +2556,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   syncQcMechAlerts(now);
   syncQcElecAlerts(now);
   syncSnagAlerts(now);
+  syncWarrantyReminders(now);
   syncLeadDelegations(now);
   for (const j of jobs) syncIssueHold(j);
   syncSopHandoff();
@@ -7350,6 +7357,141 @@ function walkthroughSignals(): { jobId: string; unlockedAt: string; leadId: stri
   return jobs
     .filter((j) => (j.status === 'handover_pending' || j.status === 'completed') && handoverUnlocked(j.id) && handoverRecordOf(j.id).confirmations.length > 0)
     .map((j) => ({ jobId: j.id, unlockedAt: handoverRecordOf(j.id).confirmations[handoverRecordOf(j.id).confirmations.length - 1].at, leadId: j.technicianId ?? null, customerId: byId(deals, j.dealId)?.customerId ?? null, w: walkthroughOf(j.id) }));
+}
+
+/* ============================== Warranty & AMC registration (139) */
+
+const warrantyRegistrations: WarrantyRegistration[] = [];
+let warrantyCounter = 100;
+
+type WrRole = 'admin' | 'customer';
+function warrantyActor(jobId: string, userId: string): { job: Job; user: User; role: WrRole } {
+  const user = byId(users, userId);
+  const job = byId(jobs, jobId);
+  if (!user) throw new RepositoryError('forbidden');
+  if (!job) throw new RepositoryError('not_found');
+  if (user.role === 'admin') return { job, user, role: 'admin' };
+  if (user.role === 'customer' && byId(deals, job.dealId)?.customerId === user.id) return { job, user, role: 'customer' };
+  throw new RepositoryError('forbidden');
+}
+
+const registrationOf = (jobId: string) => warrantyRegistrations.find((r) => r.jobId === jobId);
+const handoverDayOf = (job: Job): string | null => {
+  const c = walkthroughOf(job.id).conducted;
+  return c && handoverUnlocked(job.id) ? qcDay(new Date(c.at).getTime()) : null;
+};
+
+/** The manufacturer's warranty on each part actually installed, read from the agreement it was bought under; the service warranty is AIEC's own. */
+function warrantyTermsOf(job: Job, startsOn: string): WarrantyRegistration['terms'] | null {
+  const basis = handoverBasisOf(job);
+  if (!basis) return null;
+  ensureMaterialSeeds();
+  const log = materialLogs.find((l) => l.jobId === job.id && l.status === 'confirmed');
+  const parts = (log?.uses ?? [])
+    .filter((u) => u.usedQty > 0)
+    .map((u) => {
+      const po = u.poCode ? supplierPurchaseOrders.find((p) => p.code === u.poCode) : undefined;
+      const supplierId = u.supplierId ?? po?.supplierId;
+      const fromPo = po?.agreementTerms ? byId(supplierAgreementVersions, po.agreementTerms.agreementVersionId)?.terms.warrantyMonths : undefined;
+      const months = fromPo ?? (supplierId ? versionInForce(versionsOf(supplierAgreementVersions, supplierId), Date.now())?.terms.warrantyMonths : undefined) ?? null;
+      return { category: u.category, description: u.description, quantity: u.usedQty, substituted: u.deviation?.kind === 'substitute', supplierName: supplierId ? (byId(suppliers, supplierId)?.name ?? null) : null, poCode: u.poCode ?? null, months, endsOn: months !== null ? wrEndOfTerm(startsOn, months) : null };
+    });
+  return { basis: { quotationCode: basis.quotationCode, version: basis.version, finishTier: basis.finishTier, driveType: basis.driveType, materialsConfirmedAt: basis.materialsConfirmedAt }, parts, service: { months: WR_SERVICE_MONTHS, endsOn: wrEndOfTerm(startsOn, WR_SERVICE_MONTHS) } };
+}
+
+const amcTiersView = () => pricingConfig.amcTiers.map((t) => ({ tier: t.tier, annualPrice: t.annualPrice, responseTimeHours: t.responseTimeHours, includedVisits: WR_VISITS[t.tier] }));
+
+function warrantyViewOf(job: Job, role: WrRole, now: number): WarrantyView {
+  const reg = registrationOf(job.id);
+  const startsOn = reg?.startsOn ?? handoverDayOf(job);
+  const terms = reg ? reg.terms : startsOn ? warrantyTermsOf(job, startsOn) : null;
+  const customerId = byId(deals, job.dealId)?.customerId;
+  const amcBegins = terms ? wrAddDays(terms.service.endsOn, 1) : null;
+  const amc = reg?.amc ? { ...reg.amc, terms: reg.amc.terms.map((t) => ({ ...t })), begins: amcBegins ?? '' } : null;
+  const last = reg?.amc?.terms[reg.amc.terms.length - 1];
+  const renewFrom = reg?.amc?.status === 'active' && last ? wrAddDays(last.endsOn, -WR_RENEW_DAYS[0]) : null;
+  const today = qcDay(now);
+  return {
+    job: { id: job.id, code: job.code, siteName: job.siteName, address: job.address, status: job.status },
+    viewer: role,
+    customerName: customerId ? (byId(users, customerId)?.name ?? '') : '',
+    status: reg ? 'registered' : startsOn && terms ? 'ready' : 'not_ready',
+    startsOn,
+    terms: terms ? { basis: { ...terms.basis }, parts: terms.parts.map((p) => ({ ...p })), service: { ...terms.service } } : null,
+    frozen: !!reg,
+    amcTiers: amcTiersView(),
+    walkthroughAmc: walkthroughOf(job.id).amc ? { ...walkthroughOf(job.id).amc! } : null,
+    registration: reg ? { registeredAt: reg.registeredAt, registeredByName: reg.registeredByName, registeredByRole: reg.registeredByRole } : null,
+    amc,
+    amcBegins,
+    reminders: (reg?.reminders ?? []).map((r) => ({ id: r.id, kind: r.kind, dueAt: r.dueAt, sentAt: r.sentAt ?? null, skipped: r.skipped ?? null })),
+    actions: {
+      register: !reg && !!startsOn && !!terms,
+      enrol: !!reg && reg.amc?.status !== 'active',
+      customize: role === 'admin',
+      renew: !!reg && reg.amc?.status === 'active' && !!renewFrom && today >= renewFrom,
+    },
+    renewFrom,
+  };
+}
+
+function buildAmc(input: { tier: WrTierId; extraVisits: number; note?: string }, serviceEnd: string, by: string, at: string): NonNullable<WarrantyRegistration['amc']> {
+  const tier = pricingConfig.amcTiers.find((t) => t.tier === input.tier)!;
+  const start = wrAddDays(serviceEnd, 1);
+  const price = wrAmcPrice(tier, input.tier, input.extraVisits);
+  return { status: 'active', tier: input.tier, annualPrice: tier.annualPrice, responseTimeHours: tier.responseTimeHours, includedVisits: WR_VISITS[input.tier], extraVisits: input.extraVisits, ...(input.note?.trim() ? { note: input.note.trim() } : {}), decidedAt: at, decidedByName: by, terms: [{ n: 1, startsOn: start, endsOn: wrEndOfTerm(start, 12), price, addedByName: by, at }] };
+}
+
+function planReminders(reg: WarrantyRegistration): void {
+  const existing = new Set(reg.reminders.filter((r) => !r.skipped).map((r) => `${r.kind}:${r.dueAt}`));
+  const last = reg.amc?.terms[reg.amc.terms.length - 1];
+  for (const d of wrReminderPlan({ registeredAt: reg.registeredAt, serviceEnd: reg.terms.service.endsOn, amc: reg.amc ? { status: reg.amc.status, ...(last ? { endsOn: last.endsOn } : {}) } : null })) {
+    if (existing.has(`${d.kind}:${d.dueAt}`)) continue;
+    warrantyCounter += 1;
+    reg.reminders.push({ id: `wrm-${warrantyCounter}`, kind: d.kind, dueAt: d.dueAt });
+  }
+}
+
+/** Says something to the customer through the Communication Engine, in their language, unless they opted out. One message per reminder, ever. */
+function syncWarrantyReminders(now: number): void {
+  const at = new Date(now).toISOString();
+  for (const reg of warrantyRegistrations) {
+    const job = byId(jobs, reg.jobId);
+    const lead = job ? resolveLead(byId(deals, job.dealId)?.leadId ?? '') : null;
+    for (const r of reg.reminders) {
+      if (r.sentAt || r.skipped || r.dueAt > at) continue;
+      const active = reg.amc?.status === 'active';
+      if (r.kind !== 'amc_renewal' && active) {
+        r.skipped = 'enrolled';
+        continue;
+      }
+      if (!job || !lead) {
+        r.skipped = 'no_contact';
+        continue;
+      }
+      const groupId = r.kind === 'amc_renewal' ? 'tpl-amc-renewal' : r.kind === 'warranty_ending' ? 'tpl-warranty-ending' : 'tpl-amc-reconsider';
+      const language = lead.preferredLanguage ?? 'en';
+      const template = templateInGroup(groupId, language) ?? templateInGroup(groupId, 'en');
+      if (!template) continue;
+      if (isOptedOutSync(lead.contactPhone, template.channel)) {
+        r.skipped = 'opted_out';
+        continue;
+      }
+      const endDate = r.kind === 'amc_renewal' ? (reg.amc?.terms[reg.amc.terms.length - 1]?.endsOn ?? '') : reg.terms.service.endsOn;
+      const body = renderTemplateBody(template.body, { customerName: lead.contactName, buildingName: lead.siteName, endDate: endDate ? formatDate(`${endDate}T12:00:00Z`, language) : '' });
+      let conversation = conversations.find((c) => c.leadId === lead.id) ?? null;
+      if (!conversation) {
+        conversationCounter += 1;
+        conversation = { id: `conv-new-${conversationCounter}`, leadId: lead.id, lastMessageAt: at, isDemo: true };
+        conversations.push(conversation);
+      }
+      messageCounter += 1;
+      commMessages.push({ id: `cm-new-${messageCounter}`, conversationId: conversation.id, channel: template.channel, sender: 'bot', body, templateGroupId: groupId, status: 'sent', at, handled: true });
+      patchInPlace(conversations, conversation.id, { lastMessageAt: at });
+      r.sentAt = at;
+      logAutomatedAction({ sourceKey: 'warranty.reminder', triggeringCondition: `${r.kind.replace('_', ' ')} for ${job.code} came due`, actionTaken: `Messaged ${lead.contactName} on ${template.channel}`, affectedRecordId: job.id, affectedRecordType: 'other', subjectLabel: job.code });
+    }
+  }
 }
 
 /* ============================== Installation SOP (123) */
@@ -13547,6 +13689,80 @@ export const memoryRepository: Repository = {
       if (problem) throw new RepositoryError(problem);
       check.signedOff = { at: new Date().toISOString(), byUserId: user.id, byName: user.name };
       return elecViewOf(job, viewer, assignment);
+    }),
+
+  /* --------------------------------- Warranty & AMC registration (139) */
+  getWarrantyBoard: (userId) =>
+    simulateRead((): WarrantyBoardView => {
+      const user = byId(users, userId);
+      if (!user || (user.role !== 'admin' && user.role !== 'customer')) throw new RepositoryError('forbidden');
+      const mine = jobs.filter((j) => (user.role === 'admin' || byId(deals, j.dealId)?.customerId === userId) && (j.status === 'handover_pending' || j.status === 'completed'));
+      return {
+        viewer: user.role === 'admin' ? 'admin' : 'customer',
+        rows: mine
+          .map((j) => ({ jobId: j.id, code: j.code, siteName: j.siteName, view: warrantyViewOf(j, user.role as WrRole, Date.now()) }))
+          .filter((r) => r.view.status !== 'not_ready' || user.role === 'admin')
+          .map((r) => ({ jobId: r.jobId, code: r.code, siteName: r.siteName, status: r.view.status, amcStatus: r.view.amc?.status ?? null })),
+      };
+    }),
+
+  getWarranty: (jobId, userId) =>
+    simulateRead((): WarrantyView => {
+      const { job, role } = warrantyActor(jobId, userId);
+      return warrantyViewOf(job, role, Date.now());
+    }),
+
+  registerWarrantyAndAmc: (jobId, input, userId) =>
+    simulateWrite((): WarrantyView => {
+      const { job, user, role } = warrantyActor(jobId, userId);
+      if (registrationOf(job.id)) throw new RepositoryError('already_registered');
+      const startsOn = handoverDayOf(job);
+      const terms = startsOn ? warrantyTermsOf(job, startsOn) : null;
+      if (!startsOn || !terms) throw new RepositoryError('not_ready');
+      const extra = input.extraVisits ?? 0;
+      const problem = wrAmcProblem({ choice: input.choice, ...(input.tier ? { tier: input.tier } : {}), extraVisits: extra, ...(input.note ? { note: input.note } : {}), isAdmin: role === 'admin', tierExists: !!input.tier && pricingConfig.amcTiers.some((t) => t.tier === input.tier) });
+      if (problem) throw new RepositoryError(problem);
+      const at = new Date().toISOString();
+      const reg: WarrantyRegistration = { jobId: job.id, registeredAt: at, registeredByName: user.name, registeredByRole: role, startsOn, terms, reminders: [], isDemo: true };
+      reg.amc = input.choice === 'enrol' ? buildAmc({ tier: input.tier as WrTierId, extraVisits: extra, ...(input.note ? { note: input.note } : {}) }, terms.service.endsOn, user.name, at) : { status: input.choice, extraVisits: 0, ...(input.note?.trim() ? { note: input.note.trim() } : {}), decidedAt: at, decidedByName: user.name, terms: [] };
+      planReminders(reg);
+      warrantyRegistrations.push(reg);
+      return warrantyViewOf(job, role, Date.now());
+    }),
+
+  enrolAmc: (jobId, input, userId) =>
+    simulateWrite((): WarrantyView => {
+      const { job, user, role } = warrantyActor(jobId, userId);
+      const reg = registrationOf(job.id);
+      if (!reg) throw new RepositoryError('not_registered');
+      if (reg.amc?.status === 'active') throw new RepositoryError('invalid_state');
+      const extra = input.extraVisits ?? 0;
+      const problem = wrAmcProblem({ choice: 'enrol', tier: input.tier, extraVisits: extra, ...(input.note ? { note: input.note } : {}), isAdmin: role === 'admin', tierExists: pricingConfig.amcTiers.some((t) => t.tier === input.tier) });
+      if (problem) throw new RepositoryError(problem);
+      const at = new Date().toISOString();
+      reg.amc = buildAmc({ tier: input.tier, extraVisits: extra, ...(input.note ? { note: input.note } : {}) }, reg.terms.service.endsOn, user.name, at);
+      // Whatever was waiting to raise AMC again is no longer needed.
+      for (const r of reg.reminders) if (!r.sentAt && !r.skipped && r.kind !== 'amc_renewal') r.skipped = 'enrolled';
+      planReminders(reg);
+      return warrantyViewOf(job, role, Date.now());
+    }),
+
+  renewAmc: (jobId, userId) =>
+    simulateWrite((): WarrantyView => {
+      const { job, user, role } = warrantyActor(jobId, userId);
+      const reg = registrationOf(job.id);
+      if (!reg?.amc || reg.amc.status !== 'active' || !reg.amc.tier) throw new RepositoryError('not_registered');
+      const last = reg.amc.terms[reg.amc.terms.length - 1];
+      if (qcDay(Date.now()) < wrAddDays(last.endsOn, -WR_RENEW_DAYS[0])) throw new RepositoryError('too_early');
+      const tier = pricingConfig.amcTiers.find((t) => t.tier === reg.amc!.tier);
+      if (!tier) throw new RepositoryError('no_amc_tiers');
+      const start = wrAddDays(last.endsOn, 1);
+      const at = new Date().toISOString();
+      reg.amc.terms.push({ n: last.n + 1, startsOn: start, endsOn: wrEndOfTerm(start, 12), price: wrAmcPrice(tier, reg.amc.tier, reg.amc.extraVisits), addedByName: user.name, at });
+      // The reminders for the term that has just been renewed are finished with; the new term gets its own.
+      for (const r of reg.reminders) if (!r.sentAt && !r.skipped && r.kind === 'amc_renewal') r.skipped = 'superseded';
+      planReminders(reg);
+      return warrantyViewOf(job, role, Date.now());
     }),
 
   /* --------------------------------- Customer handover walkthrough (138) */
