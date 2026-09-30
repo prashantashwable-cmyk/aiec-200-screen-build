@@ -220,6 +220,8 @@ import type {
   ComplianceView,
   HandoverChecklistView,
   HandoverDocView,
+  WalkthroughBoardView,
+  WalkthroughView,
   ReworkPartOption,
   ReworkPartView,
   ReworkRoundView,
@@ -423,6 +425,7 @@ import type {
   ComplianceCertificate,
   SnagEvent,
   HandoverReadiness,
+  HandoverWalkthrough,
   ReworkRound,
   StateInspectionGuidance,
   JobStep,
@@ -601,6 +604,7 @@ import { capturedAtProblem, completionProblem, isDone, missingSlots, naProblem, 
 import type { SpecFacts } from '@/features/technician/installSop';
 import { ASSIGN_DUE, DISPUTE_DECIDE_DUE, REWORK_DUE, REVERIFY_DUE, blocksHandover as sgBlocks, decisionProblem as sgDecisionProblem, disputeProblem as sgDisputeProblem, isChecklistSnag as sgIsChecklist, isOpen as sgIsOpen, linkProblem as sgLinkProblem, raiseProblem as sgRaiseProblem, regradeProblem as sgRegradeProblem, severityOfSource as sgSeverityOfSource, severityRank as sgRank, verifyProblem as sgVerifyProblem, waiveProblem as sgWaiveProblem } from '@/features/qc/snags';
 import type { DisputeDecision, SnagSeverity } from '@/features/qc/snags';
+import { ARRANGE_DUE as WT_ARRANGE_DUE, DOCS as WT_DOCS, FOLLOWUP_DUE as WT_FOLLOWUP_DUE, SIGNOFF_DUE_PRESENT as WT_SIGNOFF_PRESENT, SIGNOFF_DUE_REMOTE as WT_SIGNOFF_REMOTE, amcProblem as wtAmcProblem, arrangeProblem as wtArrangeProblem, conductProblem as wtConductProblem, isNegative as wtIsNegative, questionProblem as wtQuestionProblem, scoreProblem as wtScoreProblem, scriptFor as wtScriptFor, signoffProblem as wtSignoffProblem } from '@/features/qc/walkthrough';
 import { CORRECTION_MIN as HO_CORRECTION_MIN, DOC_KINDS as HO_DOC_KINDS, REVIEW_NOTE_MIN as HO_REVIEW_NOTE_MIN, REVIEW_REASON_MIN as HO_REVIEW_REASON_MIN, blockOf as hoBlockOf, correctionProblem as hoCorrectionProblem, docStateOf as hoDocState, issueProblem as hoIssueProblem, readinessOf as hoReadiness } from '@/features/qc/handover';
 import type { DocBasis as HoDocBasis, HandoverDocKind } from '@/features/qc/handover';
 import { completeProblem as rwCompleteProblem, escalateProblem as rwEscalateProblem, handBackProblem as rwHandBackProblem, partProblem as rwPartProblem, partStatusOf as rwPartStatus, reassignProblem as rwReassignProblem, urgencyOf as rwUrgency } from '@/features/qc/rework';
@@ -2283,6 +2287,7 @@ function commitmentSources(now: number): CommitmentSources {
     qcCertificateWaiting: qcCertificateWaiting(),
     snags: (ensureSnagSeeds(), reworkRequests),
     handoverWaiting: handoverSignals().waiting,
+    walkthroughs: walkthroughSignals(),
     handoverReviews: handoverSignals().reviews,
     qcMechChecks,
     qcFindings,
@@ -7252,6 +7257,99 @@ function handoverSignals(): { waiting: { jobId: string; readyAt: string; ownerId
     if (g.rec.adminReview) reviews.push({ jobId: job.id, addedAt: g.rec.adminReview.addedAt, reason: g.rec.adminReview.reason, done: !!g.rec.adminReview.completedAt, ...(g.rec.adminReview.completedAt ? { doneAt: g.rec.adminReview.completedAt } : {}) });
   }
   return { waiting, reviews };
+}
+
+/* ============================== Customer handover walkthrough (138) */
+
+const walkthroughs: HandoverWalkthrough[] = [];
+let walkthroughCounter = 100;
+const walkthroughOf = (jobId: string): HandoverWalkthrough => {
+  let w = walkthroughs.find((x) => x.jobId === jobId);
+  if (!w) {
+    w = { jobId, script: {}, documents: {}, followUps: [], events: [], isDemo: true };
+    walkthroughs.push(w);
+  }
+  return w;
+};
+const wtEvent = (w: HandoverWalkthrough, kind: string, byName: string, note?: string) => {
+  walkthroughCounter += 1;
+  w.events.push({ id: `wte-${walkthroughCounter}`, at: new Date().toISOString(), kind, byName, ...(note?.trim() ? { note: note.trim() } : {}) });
+};
+
+type WtRole = 'admin' | 'conductor' | 'customer';
+function walkthroughActor(jobId: string, userId: string): { job: Job; user: User; role: WtRole } {
+  const user = byId(users, userId);
+  const job = byId(jobs, jobId);
+  if (!user) throw new RepositoryError('forbidden');
+  if (!job) throw new RepositoryError('not_found');
+  if (user.role === 'admin') return { job, user, role: 'admin' };
+  if (user.role === 'customer' && byId(deals, job.dealId)?.customerId === user.id) return { job, user, role: 'customer' };
+  if (user.role === 'technician' && (isOnJob(job, userId) || qcOf(job.id)?.inspectorId === userId)) return { job, user, role: 'conductor' };
+  throw new RepositoryError('forbidden');
+}
+
+const walkthroughStatusOf = (job: Job, w: HandoverWalkthrough): WalkthroughView['status'] =>
+  !handoverUnlocked(job.id) ? 'locked' : w.signoff ? 'signed_off' : w.conducted ? 'conducted' : w.mode && w.conductorId ? 'arranged' : 'not_started';
+
+function walkthroughViewOf(job: Job, role: WtRole): WalkthroughView {
+  const w = walkthroughOf(job.id);
+  const status = walkthroughStatusOf(job, w);
+  const unlocked = status !== 'locked';
+  const customerId = byId(deals, job.dealId)?.customerId;
+  const gate = handoverGateOf(job);
+  const powerBackup = !!sopSpecOf(job)?.powerBackup;
+  const items = wtScriptFor(powerBackup);
+  const script = items.map((i) => ({ id: i.id, group: i.group, mandatory: i.mandatory, done: w.script[i.id] ? { ...w.script[i.id] } : null }));
+  const documents = WT_DOCS.map((kind) => ({ kind, ready: kind === 'emergency_contacts' ? true : gate.docs.find((d) => d.kind === kind)?.state === 'ready', provided: w.documents[kind] ? { ...w.documents[kind]! } : null }));
+  const staff = role !== 'customer';
+  const open = !w.conducted;
+  const scriptOpen = script.filter((i) => i.mandatory && !i.done).length;
+  const docsOpen = documents.filter((d) => !d.provided).length;
+  const conductorPool = [...users.filter((u) => u.role === 'admin' && u.status === 'active'), ...users.filter((u) => u.role === 'technician' && u.status === 'active' && isOnJob(job, u.id))];
+  const signoffDue = w.conducted && !w.signoff ? new Date(new Date(w.conducted.at).getTime() + (w.mode === 'in_person' ? WT_SIGNOFF_PRESENT : WT_SIGNOFF_REMOTE)).toISOString() : null;
+  const canSignOnDevice = staff && status === 'conducted' && w.mode === 'in_person';
+  return {
+    job: { id: job.id, code: job.code, siteName: job.siteName, address: job.address, status: job.status },
+    viewer: role,
+    customerName: customerId ? (byId(users, customerId)?.name ?? '') : '',
+    status,
+    mode: w.mode ?? null,
+    scheduledFor: w.scheduledFor ? { ...w.scheduledFor } : null,
+    conductor: w.conductorId ? { id: w.conductorId, name: w.conductorName ?? '' } : null,
+    representative: w.representative ? { ...w.representative } : null,
+    script,
+    documents,
+    conducted: w.conducted ? { ...w.conducted } : null,
+    signoff: w.signoff ? { at: w.signoff.at, signerName: w.signoff.signerName, mode: w.signoff.mode, recordedByName: w.signoff.recordedByName, note: w.signoff.note ?? null, signature: staff ? (w.signoff.signature ?? null) : null } : null,
+    signoffDue,
+    amc: w.amc ? { ...w.amc } : null,
+    amcTiers: pricingConfig.amcTiers.map((t) => ({ ...t })),
+    feedback: w.feedback ? { ...w.feedback } : null,
+    negativeSignal: staff && !!w.feedback && wtIsNegative(w.feedback.score),
+    followUps: w.followUps.map((f) => ({ ...f, ...(f.answer ? { answer: { ...f.answer } } : {}) })),
+    events: staff ? w.events.map((e) => ({ ...e })) : [],
+    conductors: staff ? conductorPool.map((u) => ({ id: u.id, name: u.name })) : [],
+    actions: {
+      arrange: staff && unlocked && open,
+      tick: staff && unlocked && open && !!w.mode,
+      provide: staff && unlocked && open && !!w.mode,
+      conduct: staff && unlocked && open && !!w.mode && !!w.conductorId,
+      sign: role === 'customer' && status === 'conducted',
+      signOnDevice: canSignOnDevice,
+      amc: unlocked && !!w.conducted,
+      feedback: unlocked && !!w.signoff && !w.feedback && (role === 'customer' || w.signoff.mode === 'on_device'),
+      ask: unlocked,
+      answer: role === 'admin' && w.followUps.some((f) => !f.answer),
+    },
+    conductProblem: wtConductProblem({ arranged: !!w.mode && !!w.conductorId, scriptOpen, docsOpen }),
+  };
+}
+
+/** What the commitments read: who owes the next step of each handover walkthrough. */
+function walkthroughSignals(): { jobId: string; unlockedAt: string; leadId: string | null; customerId: string | null; w: HandoverWalkthrough }[] {
+  return jobs
+    .filter((j) => (j.status === 'handover_pending' || j.status === 'completed') && handoverUnlocked(j.id) && handoverRecordOf(j.id).confirmations.length > 0)
+    .map((j) => ({ jobId: j.id, unlockedAt: handoverRecordOf(j.id).confirmations[handoverRecordOf(j.id).confirmations.length - 1].at, leadId: j.technicianId ?? null, customerId: byId(deals, j.dealId)?.customerId ?? null, w: walkthroughOf(j.id) }));
 }
 
 /* ============================== Installation SOP (123) */
@@ -13449,6 +13547,167 @@ export const memoryRepository: Repository = {
       if (problem) throw new RepositoryError(problem);
       check.signedOff = { at: new Date().toISOString(), byUserId: user.id, byName: user.name };
       return elecViewOf(job, viewer, assignment);
+    }),
+
+  /* --------------------------------- Customer handover walkthrough (138) */
+  getWalkthroughBoard: (userId) =>
+    simulateRead((): WalkthroughBoardView => {
+      const user = byId(users, userId);
+      if (!user) throw new RepositoryError('forbidden');
+      const mine = jobs.filter((j) => {
+        if (user.role === 'admin') return j.status === 'handover_pending' || j.status === 'completed' || j.status === 'qc_pending';
+        if (user.role === 'customer') return byId(deals, j.dealId)?.customerId === userId && (j.status === 'handover_pending' || j.status === 'completed');
+        return user.role === 'technician' && (isOnJob(j, userId) || qcOf(j.id)?.inspectorId === userId) && (j.status === 'handover_pending' || j.status === 'completed');
+      });
+      if (user.role !== 'admin' && user.role !== 'customer' && user.role !== 'technician') throw new RepositoryError('forbidden');
+      return {
+        viewer: user.role === 'admin' ? 'admin' : user.role === 'customer' ? 'customer' : 'conductor',
+        rows: mine
+          .map((j) => ({ j, w: walkthroughOf(j.id) }))
+          .map(({ j, w }) => ({ jobId: j.id, code: j.code, siteName: j.siteName, status: walkthroughStatusOf(j, w), scheduledFor: w.scheduledFor ? { ...w.scheduledFor } : null, mode: w.mode ?? null }))
+          .filter((r) => r.status !== 'locked' || user.role === 'admin'),
+      };
+    }),
+
+  getWalkthrough: (jobId, userId) =>
+    simulateRead((): WalkthroughView => {
+      const { job, role } = walkthroughActor(jobId, userId);
+      return walkthroughViewOf(job, role);
+    }),
+
+  arrangeWalkthrough: (jobId, input, userId) =>
+    simulateWrite((): WalkthroughView => {
+      const { job, user, role } = walkthroughActor(jobId, userId);
+      const w = walkthroughOf(job.id);
+      if (role === 'customer') throw new RepositoryError('forbidden');
+      if (!handoverUnlocked(job.id)) throw new RepositoryError('not_unlocked');
+      if (w.conducted) throw new RepositoryError('invalid_state');
+      const conductor = walkthroughViewOf(job, role).conductors.find((c) => c.id === input.conductorId);
+      const problem = wtArrangeProblem({ mode: input.mode, conductorId: conductor?.id, ...(input.representative ? { representative: input.representative } : {}) });
+      if (problem) throw new RepositoryError(problem);
+      if (input.date && (!/^\d{4}-\d{2}-\d{2}$/.test(input.date) || input.date < qcDay(Date.now()))) throw new RepositoryError('date_required');
+      Object.assign(w, { mode: input.mode, conductorId: conductor!.id, conductorName: conductor!.name });
+      if (input.date) w.scheduledFor = { date: input.date, window: input.window ?? 'morning' };
+      else delete w.scheduledFor;
+      if (input.mode === 'site_representative' && input.representative) w.representative = { name: input.representative.name.trim(), phone: input.representative.phone.trim(), relationship: input.representative.relationship.trim() };
+      else delete w.representative;
+      wtEvent(w, 'arranged', user.name, `${input.mode}${input.date ? ` ${input.date}` : ''}: ${conductor!.name}`);
+      return walkthroughViewOf(job, role);
+    }),
+
+  tickWalkthroughItem: (jobId, itemId, done, userId) =>
+    simulateWrite((): WalkthroughView => {
+      const { job, user, role } = walkthroughActor(jobId, userId);
+      const w = walkthroughOf(job.id);
+      if (role === 'customer') throw new RepositoryError('forbidden');
+      if (!handoverUnlocked(job.id)) throw new RepositoryError('not_unlocked');
+      if (w.conducted || !w.mode) throw new RepositoryError('invalid_state');
+      if (!wtScriptFor(!!sopSpecOf(job)?.powerBackup).some((i) => i.id === itemId)) throw new RepositoryError('not_found');
+      if (done) w.script[itemId] = { at: new Date().toISOString(), byName: user.name };
+      else delete w.script[itemId];
+      return walkthroughViewOf(job, role);
+    }),
+
+  provideWalkthroughDocument: (jobId, kind, how, userId) =>
+    simulateWrite((): WalkthroughView => {
+      const { job, user, role } = walkthroughActor(jobId, userId);
+      const w = walkthroughOf(job.id);
+      if (role === 'customer') throw new RepositoryError('forbidden');
+      if (!handoverUnlocked(job.id)) throw new RepositoryError('not_unlocked');
+      if (w.conducted || !w.mode) throw new RepositoryError('invalid_state');
+      const doc = walkthroughViewOf(job, role).documents.find((d) => d.kind === kind);
+      if (!doc) throw new RepositoryError('not_found');
+      if (!doc.ready) throw new RepositoryError('documents_open');
+      w.documents[kind] = { at: new Date().toISOString(), how, byName: user.name };
+      return walkthroughViewOf(job, role);
+    }),
+
+  completeWalkthrough: (jobId, userId) =>
+    simulateWrite((): WalkthroughView => {
+      const { job, user, role } = walkthroughActor(jobId, userId);
+      const w = walkthroughOf(job.id);
+      if (role === 'customer') throw new RepositoryError('forbidden');
+      if (!handoverUnlocked(job.id)) throw new RepositoryError('not_unlocked');
+      if (w.conducted) throw new RepositoryError('invalid_state');
+      const view = walkthroughViewOf(job, role);
+      if (view.conductProblem) throw new RepositoryError(view.conductProblem);
+      w.conducted = { at: new Date().toISOString(), byName: user.name };
+      wtEvent(w, 'conducted', user.name, w.mode);
+      return walkthroughViewOf(job, role);
+    }),
+
+  signOffWalkthrough: (jobId, input, userId) =>
+    simulateWrite((): WalkthroughView => {
+      const { job, user, role } = walkthroughActor(jobId, userId);
+      const w = walkthroughOf(job.id);
+      if (!handoverUnlocked(job.id)) throw new RepositoryError('not_unlocked');
+      const onDevice = role !== 'customer';
+      if (onDevice && w.mode !== 'in_person') throw new RepositoryError('forbidden');
+      const problem = wtSignoffProblem({ conducted: !!w.conducted, signed: !!w.signoff, understood: input.understood, onDevice, signature: input.signature ?? '', signer: input.signerName ?? '' });
+      if (problem) throw new RepositoryError(problem);
+      const at = new Date().toISOString();
+      w.signoff = { at, signerName: onDevice ? (input.signerName as string).trim() : user.name, mode: onDevice ? 'on_device' : 'own_account', recordedByName: user.name, ...(onDevice && input.signature ? { signature: input.signature } : {}), ...(input.note?.trim() ? { note: input.note.trim() } : {}) };
+      wtEvent(w, 'signed_off', user.name, onDevice ? 'on the conductor’s device' : 'in their own account');
+      return walkthroughViewOf(job, role);
+    }),
+
+  recordWalkthroughAmc: (jobId, input, userId) =>
+    simulateWrite((): WalkthroughView => {
+      const { job, user, role } = walkthroughActor(jobId, userId);
+      const w = walkthroughOf(job.id);
+      if (!handoverUnlocked(job.id)) throw new RepositoryError('not_unlocked');
+      if (!w.conducted) throw new RepositoryError('not_conducted');
+      const problem = wtAmcProblem(input);
+      if (problem) throw new RepositoryError(problem);
+      if (input.tier && !pricingConfig.amcTiers.some((t) => t.tier === input.tier)) throw new RepositoryError('tier_required');
+      w.amc = { choice: input.choice, ...(input.choice === 'enrol' && input.tier ? { tier: input.tier } : {}), at: new Date().toISOString(), byName: user.name, ...(input.note?.trim() ? { note: input.note.trim() } : {}) };
+      wtEvent(w, 'amc', user.name, `${input.choice}${input.tier ? ` ${input.tier}` : ''}`);
+      return walkthroughViewOf(job, role);
+    }),
+
+  submitWalkthroughFeedback: (jobId, input, userId) =>
+    simulateWrite((): WalkthroughView => {
+      const { job, user, role } = walkthroughActor(jobId, userId);
+      const w = walkthroughOf(job.id);
+      if (!w.signoff) throw new RepositoryError('not_conducted');
+      if (role !== 'customer' && w.signoff.mode !== 'on_device') throw new RepositoryError('forbidden');
+      if (w.feedback) throw new RepositoryError('invalid_state');
+      const problem = wtScoreProblem(input.score);
+      if (problem) throw new RepositoryError(problem);
+      const at = new Date().toISOString();
+      w.feedback = { score: input.score, ...(input.comment?.trim() ? { comment: input.comment.trim() } : {}), at, byName: user.name };
+      wtEvent(w, 'feedback', user.name, String(input.score));
+      // A low score on a lift that passed every check is a relationship signal worth understanding, beside the technical record.
+      if (wtIsNegative(input.score)) raiseAlert({ titleKey: 'walkthrough.alert.negative', context: `${job.code} · ${job.siteName}: ${input.score}/5${w.feedback.comment ? ` · ${w.feedback.comment}` : ''}`, severity: 'medium', category: 'quality', relatedId: `wtfb:${job.id}`, sourceRoute: `/handover-walkthrough/${job.id}`, location: job.location });
+      return walkthroughViewOf(job, role);
+    }),
+
+  addWalkthroughQuestion: (jobId, text, userId) =>
+    simulateWrite((): WalkthroughView => {
+      const { job, user, role } = walkthroughActor(jobId, userId);
+      const w = walkthroughOf(job.id);
+      if (!handoverUnlocked(job.id)) throw new RepositoryError('not_unlocked');
+      const problem = wtQuestionProblem(text);
+      if (problem) throw new RepositoryError(problem);
+      walkthroughCounter += 1;
+      w.followUps.push({ id: `wtq-${walkthroughCounter}`, text: text.trim(), at: new Date().toISOString(), byName: user.name });
+      wtEvent(w, 'question', user.name, text);
+      return walkthroughViewOf(job, role);
+    }),
+
+  answerWalkthroughQuestion: (jobId, questionId, text, adminId) =>
+    simulateWrite((): WalkthroughView => {
+      const admin = adminOnly(adminId);
+      const job = byId(jobs, jobId);
+      if (!job) throw new RepositoryError('not_found');
+      const w = walkthroughOf(job.id);
+      const q = w.followUps.find((f) => f.id === questionId);
+      if (!q) throw new RepositoryError('not_found');
+      if (q.answer) throw new RepositoryError('invalid_state');
+      if (text.trim().length < 5) throw new RepositoryError('answer_required');
+      q.answer = { text: text.trim(), at: new Date().toISOString(), byName: admin.name };
+      wtEvent(w, 'answered', admin.name, text);
+      return walkthroughViewOf(job, 'admin');
     }),
 
   /* --------------------------------- Final handover checklist (137) */

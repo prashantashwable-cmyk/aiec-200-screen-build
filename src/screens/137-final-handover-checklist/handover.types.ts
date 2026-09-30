@@ -11,6 +11,7 @@ const rec = <T extends string>(ns: string, keys: readonly T[]) => Object.fromEnt
 export const boardPath = '/qc-assignments';
 export const assignmentPath = (id: string) => `/qc-assignments/${id}`;
 export const snagsPath = (id: string) => `/snags/${id}`;
+export const walkthroughPath = (id: string) => `/handover-walkthrough/${id}`;
 export const compliancePath = (id: string) => `/compliance/${id}`;
 export const mechanicalPath = (id: string) => `/qc-mechanical/${id}`;
 export const electricalPath = (id: string) => `/qc-electrical/${id}`;
@@ -72,6 +73,6 @@ export const HANDOVER_KEYS = {
     corrections: 'handover.docs.corrections',
   },
   review: { add: 'handover.review.add', title: 'handover.review.title', body: 'handover.review.body', reason: 'handover.review.reason', hint: 'handover.review.hint', go: 'handover.review.go', toast: 'handover.review.toast' },
-  confirm: { button: 'handover.confirm.button', waiting: 'handover.confirm.waiting', title: 'handover.confirm.title', body: 'handover.confirm.body', go: 'handover.confirm.go', back: 'handover.confirm.back', toast: 'handover.confirm.toast', done: 'handover.confirm.done', unlocked: 'handover.confirm.unlocked', reopened: 'handover.confirm.reopened', reconfirm: 'handover.confirm.reconfirm', readonly: 'handover.confirm.readonly', legacy: 'handover.confirm.legacy' },
+  confirm: { button: 'handover.confirm.button', waiting: 'handover.confirm.waiting', title: 'handover.confirm.title', body: 'handover.confirm.body', go: 'handover.confirm.go', back: 'handover.confirm.back', toast: 'handover.confirm.toast', done: 'handover.confirm.done', unlocked: 'handover.confirm.unlocked', openWalkthrough: 'handover.confirm.openWalkthrough', reopened: 'handover.confirm.reopened', reconfirm: 'handover.confirm.reconfirm', readonly: 'handover.confirm.readonly', legacy: 'handover.confirm.legacy' },
   cancel: 'handover.cancel',
 } as const;

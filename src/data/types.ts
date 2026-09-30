@@ -2598,6 +2598,31 @@ export interface QcElecCheck {
   isDemo: boolean;
 }
 
+/* ------------------------------------ Customer handover walkthrough (138) */
+
+/** The in-person (or video, or site-representative) walkthrough of a finished lift, and everything that comes of it. One per job. */
+export interface HandoverWalkthrough {
+  jobId: string;
+  mode?: 'in_person' | 'video_call' | 'site_representative';
+  scheduledFor?: { date: string; window: 'morning' | 'afternoon' };
+  conductorId?: string;
+  conductorName?: string;
+  /** When the customer is not on site: who receives the handover for them. The customer still signs off for themselves. */
+  representative?: { name: string; phone: string; relationship: string };
+  /** What has been shown, by whom. */
+  script: Record<string, { at: string; byName: string }>;
+  documents: Partial<Record<'warranty_terms' | 'amc_options' | 'user_manual' | 'emergency_contacts', { at: string; how: 'printed' | 'digital'; byName: string }>>;
+  conducted?: { at: string; byName: string };
+  /** The customer's own confirmation that they were shown and understand the basics: separate from, and after, every technical gate. */
+  signoff?: { at: string; signerName: string; mode: 'own_account' | 'on_device'; recordedByName: string; signature?: string; note?: string };
+  amc?: { choice: 'enrol' | 'later' | 'declined'; tier?: 'basic' | 'standard' | 'comprehensive'; at: string; byName: string; note?: string };
+  feedback?: { score: number; comment?: string; at: string; byName: string };
+  /** Questions beyond the script: a warm handoff to whoever supports the customer, never something the conductor must answer on the spot. */
+  followUps: { id: string; text: string; at: string; byName: string; answer?: { text: string; at: string; byName: string } }[];
+  events: { id: string; at: string; kind: string; byName: string; note?: string }[];
+  isDemo: boolean;
+}
+
 /* ------------------------------------ Final handover checklist (137) */
 
 /** The documentation package's checks and the final gate's own record, one per job. What the gate says is read from the snag list and the
@@ -3714,6 +3739,10 @@ export type CommitmentKind =
   | 'snag_part_order'
   | 'handover_confirm'
   | 'handover_admin_review'
+  | 'walkthrough_arrange'
+  | 'walkthrough_conduct'
+  | 'walkthrough_signoff'
+  | 'walkthrough_followup'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'

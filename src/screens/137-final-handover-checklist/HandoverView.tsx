@@ -7,7 +7,7 @@ import { CORRECTION_MIN, ISSUE_MIN, REVIEW_NOTE_MIN, REVIEW_REASON_MIN } from '@
 import type { HandoverDocKind } from '@/features/qc/handover';
 import { useHandover } from './useHandover';
 import type { ActionResult, HandoverState } from './useHandover';
-import { DOCS, HANDOVER_KEYS as K, assignmentPath, boardPath, compliancePath, electricalPath, mechanicalPath, snagsPath } from './handover.types';
+import { DOCS, HANDOVER_KEYS as K, assignmentPath, boardPath, compliancePath, electricalPath, mechanicalPath, snagsPath, walkthroughPath } from './handover.types';
 
 type T = ReturnType<typeof useTranslation>['t'];
 const errorKey = (code?: string) => (code && code in K.problem ? K.problem[code as keyof typeof K.problem] : K.problem.generic);
@@ -161,6 +161,7 @@ function Checklist({ s, v, t }: { s: HandoverState; v: HandoverChecklistView; t:
           <div className="stack gap-1" data-confirmed>
             <p className="t-sm row gap-2" style={{ alignItems: 'center' }}><CheckCircle size={20} weight="fill" color="var(--color-success)" aria-hidden="true" /> {beforeRecords ? t(K.confirm.legacy) : t(K.confirm.done, { name: v.confirmed?.byName ?? '', when: v.confirmed ? formatDateTime(v.confirmed.at, lang) : '' })}</p>
             <p className="t-xs t-muted">{t(K.confirm.unlocked)}</p>
+            <Button size="sm" variant="secondary" style={{ width: 'fit-content' }} onClick={() => s.goto(walkthroughPath(v.job.id))} data-open-walkthrough>{t(K.confirm.openWalkthrough)}</Button>
           </div>
         ) : (
           <div className="stack gap-1">

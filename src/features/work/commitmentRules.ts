@@ -1,5 +1,6 @@
 import { ASSIGN_DUE, DISPUTE_DECIDE_DUE, REVERIFY_DUE } from '@/features/qc/snags';
-import type { ReworkRequest,
+import { ARRANGE_DUE, FOLLOWUP_DUE, SIGNOFF_DUE_PRESENT, SIGNOFF_DUE_REMOTE } from '@/features/qc/walkthrough';
+import type { HandoverWalkthrough, ReworkRequest,
   Alert,
   AlertSeverity,
   CatalogPriceChange,
@@ -120,6 +121,8 @@ export interface CommitmentSources {
   handoverWaiting: { jobId: string; readyAt: string; ownerId: string | null; confirmed: boolean }[];
   /** Admin's optional final reviews (137). */
   handoverReviews: { jobId: string; addedAt: string; reason: string; done: boolean; doneAt?: string }[];
+  /** Every job past Ready for Handover, with its customer walkthrough (138). */
+  walkthroughs: { jobId: string; unlockedAt: string; leadId: string | null; customerId: string | null; w: HandoverWalkthrough }[];
   /** Mechanical quality-check attempts and the differences from the install record the inspector raised (132). */
   qcMechChecks: QcMechCheck[];
   qcFindings: QcFinding[];
@@ -1471,6 +1474,120 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
           oversightRoute: `/handover-checklist/${r.jobId}`,
         };
       });
+    },
+  },
+  {
+    // Once a job is ready for handover someone arranges the customer walkthrough within two days (138).
+    kind: 'walkthrough_arrange',
+    nudgeBefore: hours(6),
+    escalateAfter: hours(12),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'quality',
+    collect(src) {
+      const admin = adminId(src);
+      return src.walkthroughs.map((x) => {
+        const job = src.jobs.find((j) => j.id === x.jobId);
+        return {
+          ...base('walkthrough_arrange', 'job', x.jobId),
+          ownerUserId: x.leadId ?? admin,
+          titleKey: 'work.title.walkthrough_arrange',
+          titleParams: { code: job?.code ?? '', site: job?.siteName ?? '' },
+          dueAt: plus(x.unlockedAt, ARRANGE_DUE),
+          state: x.w.mode && x.w.conductorId ? ('done' as const) : ('open' as const),
+          paused: false,
+          actionRoute: `/handover-walkthrough/${x.jobId}`,
+          oversightRoute: `/handover-walkthrough/${x.jobId}`,
+        };
+      });
+    },
+  },
+  {
+    // The person named to conduct the walkthrough does it on the day agreed (138): the most human step of the whole job.
+    kind: 'walkthrough_conduct',
+    nudgeBefore: hours(12),
+    escalateAfter: hours(6),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'quality',
+    collect(src) {
+      return src.walkthroughs
+        .filter((x) => x.w.mode && x.w.conductorId)
+        .map((x) => {
+          const job = src.jobs.find((j) => j.id === x.jobId);
+          const end = x.w.scheduledFor ? new Date(`${x.w.scheduledFor.date}T00:00:00`).getTime() + (x.w.scheduledFor.window === 'afternoon' ? 18 : 13) * 3_600_000 : new Date(x.unlockedAt).getTime() + 7 * 86_400_000;
+          return {
+            ...base('walkthrough_conduct', 'job', x.jobId),
+            ownerUserId: x.w.conductorId as string,
+            titleKey: 'work.title.walkthrough_conduct',
+            titleParams: { code: job?.code ?? '', site: job?.siteName ?? '' },
+            dueAt: new Date(end).toISOString(),
+            state: x.w.conducted ? ('done' as const) : ('open' as const),
+            paused: false,
+            completedAt: x.w.conducted?.at,
+            actionRoute: `/handover-walkthrough/${x.jobId}`,
+            oversightRoute: `/handover-walkthrough/${x.jobId}`,
+          };
+        });
+    },
+  },
+  {
+    // The customer's own sign-off follows the walkthrough (138): a day if they were there, three if they were not. It is theirs to give, and it escalates to Admin.
+    kind: 'walkthrough_signoff',
+    nudgeBefore: hours(12),
+    escalateAfter: hours(24),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'quality',
+    collect(src) {
+      const admin = adminId(src);
+      return src.walkthroughs
+        .filter((x) => !!x.w.conducted)
+        .map((x) => {
+          const job = src.jobs.find((j) => j.id === x.jobId);
+          const at = (x.w.conducted as NonNullable<typeof x.w.conducted>).at;
+          return {
+            ...base('walkthrough_signoff', 'job', x.jobId),
+            ownerUserId: x.customerId ?? admin,
+            titleKey: 'work.title.walkthrough_signoff',
+            titleParams: { code: job?.code ?? '', site: job?.siteName ?? '' },
+            dueAt: plus(at, x.w.mode === 'in_person' ? SIGNOFF_DUE_PRESENT : SIGNOFF_DUE_REMOTE),
+            state: x.w.signoff ? ('done' as const) : ('open' as const),
+            paused: false,
+            completedAt: x.w.signoff?.at,
+            actionRoute: `/handover-walkthrough/${x.jobId}`,
+            oversightRoute: `/handover-walkthrough/${x.jobId}`,
+          };
+        });
+    },
+  },
+  {
+    // A question the customer raised beyond the script goes to Admin to answer within a day (138), so the conductor never has to know everything on the spot.
+    kind: 'walkthrough_followup',
+    nudgeBefore: hours(4),
+    escalateAfter: hours(12),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'quality',
+    collect(src) {
+      const admin = adminId(src);
+      return src.walkthroughs.flatMap((x) =>
+        x.w.followUps.map((q) => {
+          const job = src.jobs.find((j) => j.id === x.jobId);
+          return {
+            ...base('walkthrough_followup', 'job', `${x.jobId}:${q.id}`),
+            ownerUserId: admin,
+            titleKey: 'work.title.walkthrough_followup',
+            titleParams: { code: job?.code ?? '', site: job?.siteName ?? '' },
+            dueAt: plus(q.at, FOLLOWUP_DUE),
+            state: q.answer ? ('done' as const) : ('open' as const),
+            paused: false,
+            completedAt: q.answer?.at,
+            actionRoute: `/handover-walkthrough/${x.jobId}`,
+            oversightRoute: `/handover-walkthrough/${x.jobId}`,
+          };
+        }),
+      );
     },
   },
   {

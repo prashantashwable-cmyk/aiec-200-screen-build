@@ -1,6 +1,7 @@
 import type { ItemState, SignOffProblem } from '@/features/qc/mechanical';
 import type { ElecSignOffProblem, ElecState } from '@/features/qc/electrical';
 import type { DisputeDecision, SnagProblem, SnagSeverity } from '@/features/qc/snags';
+import type { ScriptGroup, WalkthroughMode, WalkthroughProblem } from '@/features/qc/walkthrough';
 import type { DocBasis, DocBlock, DocState, HandoverDocKind, HandoverProblem, ReadinessProblem as HandoverReadinessProblem } from '@/features/qc/handover';
 import type { PartStatus, ReworkProblem, Urgency } from '@/features/qc/rework';
 import type { GuidanceProblem, ReadinessProblem, ReissueProblem, StandardsProblem } from '@/features/qc/compliance';
@@ -17,6 +18,8 @@ import type {
   QcVerdict,
   ReworkRequest,
   HandoverReadiness,
+  HandoverWalkthrough,
+  AmcPricingTier,
   SnagEvent,
   InspectorUnavailability,
   QcAssignment,
@@ -1726,6 +1729,49 @@ export interface QcElecInput {
   evidence: SopMediaInput[];
   clientId?: string;
   capturedAt?: string;
+}
+
+/* ------------------------------------ Customer handover walkthrough (138) */
+
+export interface WalkthroughView {
+  job: { id: string; code: string; siteName: string; address: string; status: Job['status'] };
+  viewer: 'admin' | 'conductor' | 'customer';
+  customerName: string;
+  /** `locked` until Ready for Handover (137) has been said: there is no other way to this moment. */
+  status: 'locked' | 'not_started' | 'arranged' | 'conducted' | 'signed_off';
+  mode: HandoverWalkthrough['mode'] | null;
+  scheduledFor: HandoverWalkthrough['scheduledFor'] | null;
+  conductor: { id: string; name: string } | null;
+  representative: HandoverWalkthrough['representative'] | null;
+  script: { id: string; group: ScriptGroup; mandatory: boolean; done: { at: string; byName: string } | null }[];
+  documents: { kind: 'warranty_terms' | 'amc_options' | 'user_manual' | 'emergency_contacts'; ready: boolean; provided: { at: string; how: 'printed' | 'digital'; byName: string } | null }[];
+  conducted: { at: string; byName: string } | null;
+  signoff: { at: string; signerName: string; mode: 'own_account' | 'on_device'; recordedByName: string; note: string | null; signature: string | null } | null;
+  signoffDue: string | null;
+  amc: HandoverWalkthrough['amc'] | null;
+  amcTiers: AmcPricingTier[];
+  feedback: HandoverWalkthrough['feedback'] | null;
+  /** A low score on a lift that passed everything: a relationship signal for Admin, separate from the technical record. */
+  negativeSignal: boolean;
+  followUps: HandoverWalkthrough['followUps'];
+  events: HandoverWalkthrough['events'];
+  conductors: { id: string; name: string }[];
+  actions: { arrange: boolean; tick: boolean; provide: boolean; conduct: boolean; sign: boolean; signOnDevice: boolean; amc: boolean; feedback: boolean; ask: boolean; answer: boolean };
+  /** Why "walkthrough done" cannot be said yet, if it cannot. */
+  conductProblem: WalkthroughProblem | null;
+}
+
+export interface WalkthroughBoardView {
+  viewer: 'admin' | 'conductor' | 'customer';
+  rows: { jobId: string; code: string; siteName: string; status: WalkthroughView['status']; scheduledFor: HandoverWalkthrough['scheduledFor'] | null; mode: HandoverWalkthrough['mode'] | null }[];
+}
+
+export interface WalkthroughArrangeInput {
+  mode: WalkthroughMode;
+  date?: string;
+  window?: 'morning' | 'afternoon';
+  conductorId: string;
+  representative?: { name: string; phone: string; relationship: string };
 }
 
 /* ------------------------------------ Final handover checklist (137) */
@@ -4945,6 +4991,21 @@ export interface Repository {
   pingSiteLocation(technicianId: string, point: GeoPoint, at?: string): Promise<void>;
   /** Picks which step to do next, when the site does not allow the suggested order. Only steps whose prerequisites are done. */
   focusSopStep(jobId: string, stepId: string, technicianId: string): Promise<InstallationSopView>;
+
+  /* Customer handover walkthrough (138) */
+  getWalkthroughBoard(userId: string): Promise<WalkthroughBoardView>;
+  getWalkthrough(jobId: string, userId: string): Promise<WalkthroughView>;
+  arrangeWalkthrough(jobId: string, input: WalkthroughArrangeInput, userId: string): Promise<WalkthroughView>;
+  tickWalkthroughItem(jobId: string, itemId: string, done: boolean, userId: string): Promise<WalkthroughView>;
+  provideWalkthroughDocument(jobId: string, kind: 'warranty_terms' | 'amc_options' | 'user_manual' | 'emergency_contacts', how: 'printed' | 'digital', userId: string): Promise<WalkthroughView>;
+  /** The conductor says everything was shown and handed over. It is not the customer's sign-off. */
+  completeWalkthrough(jobId: string, userId: string): Promise<WalkthroughView>;
+  /** The customer's own confirmation, in their account, or (in person only) drawn on the conductor's device. */
+  signOffWalkthrough(jobId: string, input: { understood: boolean; note?: string; signerName?: string; signature?: string }, userId: string): Promise<WalkthroughView>;
+  recordWalkthroughAmc(jobId: string, input: { choice: 'enrol' | 'later' | 'declined'; tier?: 'basic' | 'standard' | 'comprehensive'; note?: string }, userId: string): Promise<WalkthroughView>;
+  submitWalkthroughFeedback(jobId: string, input: { score: number; comment?: string }, userId: string): Promise<WalkthroughView>;
+  addWalkthroughQuestion(jobId: string, text: string, userId: string): Promise<WalkthroughView>;
+  answerWalkthroughQuestion(jobId: string, questionId: string, text: string, adminId: string): Promise<WalkthroughView>;
 
   /* Final handover checklist (137) */
   getHandoverChecklist(jobId: string, userId: string): Promise<HandoverChecklistView>;
