@@ -1,4 +1,5 @@
 import type {
+  JobIssue,
   JobSafetyTest,
   SafetyAttempt,
   SafetyStateItem,
@@ -4053,4 +4054,33 @@ export const seedJobSafetyTests: JobSafetyTest[] = [
   ...allPassed('j-2', ['u-tech-2', 'Vishal More'], 16),
   // j-8 Om Sai (on hold): governor out of tolerance, a fundamental fault, held for Admin.
   test('j-8', 'governor', [attempt(1, 'fail', 3, ['u-tech-3', 'Ajay Nikam'], { note: 'Safety gear test was out of tolerance: the car slid before the gear caught.', fix: { kind: 'needs_rework', note: 'The governor rope groove is worn; it needs replacing, not adjusting.', at: localAt(3, 15, 10), byName: 'Ajay Nikam' } })], { holds: [{ reason: 'needs_rework', at: localAt(3, 15, 10) }] }),
+];
+
+/* ------------------------------------------ Issue / blocker reports (127) */
+
+let issueSeed = 0;
+const issueEvent = (kind: JobIssue['events'][number]['kind'], at: string, by: [string, string, 'technician' | 'admin' | 'system'], note?: string): JobIssue['events'][number] => ({ id: `ise-${(issueSeed += 1)}`, kind, at, byUserId: by[0], byName: by[1], byRole: by[2], ...(note ? { note } : {}) });
+const issue = (jobId: string, by: [string, string], daysBack: number, category: JobIssue['category'], severity: JobIssue['severity'], description: string, extra: Partial<JobIssue> = {}, resolved?: { how: NonNullable<JobIssue['resolution']>['how']; note: string; afterHours: number; byAdmin?: boolean }): JobIssue => {
+  const n = issueSeed + 1;
+  const createdAt = localAt(daysBack, 11, 20);
+  const id = `iss-${n}`;
+  const events = [issueEvent('reported', createdAt, [by[0], by[1], 'technician'], description)];
+  const resolution = resolved
+    ? { how: resolved.how, note: resolved.note, byName: resolved.byAdmin ? 'Prashant Wable' : by[1], byRole: resolved.byAdmin ? ('admin' as const) : ('technician' as const), at: new Date(new Date(createdAt).getTime() + resolved.afterHours * 3_600_000).toISOString() }
+    : undefined;
+  if (resolution) events.push(issueEvent('resolved', resolution.at, [resolved?.byAdmin ? 'u-admin-1' : by[0], resolution.byName, resolution.byRole], resolved?.note));
+  return { id, code: `AIEC-ISS-${1000 + n}`, jobId, category, severity, description, sopGap: false, evidence: [], status: resolved ? 'resolved' : 'open', groupId: id, reportedByUserId: by[0], reportedByName: by[1], createdAt, ...(resolution ? { resolution } : {}), events, isDemo: true, ...extra };
+};
+
+/** What has been reported on the jobs so far. The guide-rail step (s3) has been called unclear on three different jobs, which is the
+ *  pattern Admin is shown; the rest are the ordinary run of problems, resolved or still open. */
+export const seedJobIssues: JobIssue[] = [
+  issue('j-5', ['u-tech-2', 'Vishal More'], 50, 'parts', 'blocking', 'The machine bed brackets that arrived are one size too small for the frame.', { stepId: 's4' }, { how: 'admin_resolved', note: 'Correct brackets couriered the same day.', afterHours: 30, byAdmin: true }),
+  issue('j-5', ['u-tech-2', 'Vishal More'], 47, 'other', 'minor', 'The guide rail alignment step says to check "tolerance" but not which tolerance; had to phone the supplier.', { stepId: 's3', sopGap: true }, { how: 'fixed_on_site', note: 'Supplier gave the figure.', afterHours: 2 }),
+  issue('j-7', ['u-tech-1', 'Santosh Kale'], 14, 'other', 'minor', 'The guide rail step does not say whether the gap gauge goes at the joint or mid-bracket.', { stepId: 's3', sopGap: true }, { how: 'fixed_on_site', note: 'Asked Admin; used the joint.', afterHours: 3 }),
+  issue('j-7', ['u-tech-1', 'Santosh Kale'], 12, 'site_condition', 'minor', 'Water seepage in the pit after the rain; pumped it out and carried on.', { stepId: 's1' }, { how: 'self_resolved', note: 'Pumped out, dry again by noon.', afterHours: 5 }),
+  issue('j-2', ['u-tech-2', 'Vishal More'], 20, 'other', 'minor', 'Guide rail alignment: it is unclear when to stop adjusting. The step needs a target reading.', { stepId: 's3', sopGap: true }, { how: 'fixed_on_site', note: 'Agreed a target with Admin.', afterHours: 4 }),
+  issue('j-2', ['u-tech-2', 'Vishal More'], 6, 'customer_readiness', 'blocking', 'The building has no permanent power in the machine room yet, so the panel cannot be energised.', { stepId: 's7' }, { how: 'admin_resolved', note: 'Customer connected the supply.', afterHours: 40, byAdmin: true }),
+  issue('j-6', ['u-tech-3', 'Ajay Nikam'], 3, 'site_condition', 'minor', 'The basement lift pit has an uneven floor near the ladder; noted for the record.', { stepId: 's1' }),
+  issue('j-1', ['u-tech-1', 'Santosh Kale'], 9, 'parts', 'minor', 'Two door-operator screws were missing from the pack; used spares from the van.', { stepId: 's6' }, { how: 'fixed_on_site', note: 'Used spares.', afterHours: 1 }),
 ];

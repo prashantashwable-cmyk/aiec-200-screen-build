@@ -102,6 +102,7 @@ export const SOP_KEYS = {
   },
   finished: { title: 'installSop.finished.title', body: 'installSop.finished.body', local: 'installSop.finished.local', admin: 'installSop.finished.admin', safety: 'installSop.finished.safety' },
   safetyChecks: 'installSop.safetyChecks',
+  reportIssue: 'installSop.reportIssue',
   toast: { started: 'installSop.toast.started' },
   problem: rec('installSop.problem', [...FINAL_ERRORS, 'generic'] as const),
 } as const;

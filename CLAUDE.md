@@ -110,7 +110,31 @@ the module's section to `BUILD_README.md`.
 - **Module 11 Material Logistics & Delivery is done, including its checkpoint** (`101`–`110`, see
   BUILD_README's Module 11 section). Admin has a "Logistics" nav tab; every delivery screen declares
   `tab: 'logistics'` for Admin.
-- **Module 13 Installation & Technician in progress:** `121`–`126` built. **Next: `127`** (Issue/Blocker Reporting).
+- **Module 13 Installation & Technician in progress:** `121`–`127` built. **Next: `128`** (Material Usage Logging).
+  127 facts:
+  - **`JobIssue` (memoryRepository `jobIssues`) is the one record of a problem reported from the field**, never deleted, with append-only `events`
+    (reported / note / admin_note / severity / evidence / linked / resolved / reopened / paused / resumed). Category `parts` / `site_condition` /
+    `customer_readiness` / `safety_concern` / `other`; severity `minor` (logged, work continues) / `blocking` / `safety`. Pure rules in
+    `@/features/technician/issues` (`reportProblem`, `canResolve`, `canReopen`, `blockedMs`, `patternsOf`, `relatedCandidates`). A `safety_concern` can
+    never be filed as minor.
+  - **Severity drives behaviour**: blocking and safety put the job on hold (`Job.status` `on_hold`, `heldBy: 'issue-report'`, and the new
+    `Job.resumeStatus` to go back to) via `syncIssueHold`, which never touches a hold someone else put on the job (089) and releases only when the last
+    pausing report is resolved; the heartbeat re-applies it if that other hold lifts while a report is still open. Blocking raises a high alert,
+    safety a critical `safety` alert with the site's location (same escalation path as an SOS); both `sourceRoute` `/job-issues/:jobId?issue=`, and
+    commitment `job_issue_resolve` (Admin: 4 h for safety, 24 h blocking). A safety stop can only be closed by Admin; a technician may only raise a
+    report's severity.
+  - **Work paused by reports is measured**: `getJobIssues(...).blocked.ms` (overlapping pauses counted once) is what moves a job's expected completion;
+    **129 (Installation Progress Timeline) must read it** rather than recompute.
+  - **Linking**: a report can join an open report on the same job (`linkTo`; the screen offers same-category reports from the last 48 h as "the same
+    problem?"), sharing a `groupId`, so Admin sees one problem, not several.
+  - **Patterns / SOP gaps**: a report may say the procedure itself was unclear at a step (`sopGap`); `patternsOf` flags a step with 3+ such reports on 2+
+    jobs in 90 days (`PATTERN_MIN_REPORTS`/`PATTERN_MIN_JOBS`: placeholders), the heartbeat raises one alert per step, and Admin records a review
+    (`IssuePatternReview`: procedure updated / no change / training). New reports after a review are needed to bring it back. There is still no Admin
+    editor for the installation SOP template, so "procedure updated" is a record of a decision made elsewhere.
+  - `/job-issues/:jobId?` serves Technician (report form with sections, live checks, draft auto-saved, evidence inline, sticky send) and Admin (the
+    board: open / resolved / patterns and category counts; with a job id, that job's reports). Reports and notes work offline (`issueQueue.ts`,
+    `aiec.issueQueue.<userId>`, a report keeps the time it was found; one with a video is held in memory only); a safety report waiting for signal shows
+    a "call Admin" link. Reached from 122, 123 and 014.
   126 facts:
   - **The safety checks are read from the evidence already captured (124) and recorded as results**: `SAFETY_ITEMS` (`@/features/technician/safety`, in the
     inspector's order: wiring/earthing, door sensors, governor + safety gear, buffers, alarm, ARD, overload device, no-load trial, full-load trial),

@@ -31,6 +31,7 @@ import type {
   DeliveryConfirmation,
   SiteCheckIn,
   JobSafetyTest,
+  JobIssue,
   DeliveryDelayCase,
   DeliveryDiscrepancyReport,
   DeliveryPartner,
@@ -38,6 +39,7 @@ import type {
 } from '@/data/types';
 import { remainingBalance } from '@/features/payments/aging';
 import { STALE_AFTER } from '@/features/technician/presence';
+import { RESOLVE_TARGET, pausesWork } from '@/features/technician/issues';
 import { days, hours, minutes } from '@/features/sla/clock';
 import { AT_RISK_RATIO, poStageEnteredAt, poStageOf, typicalStageDays } from '@/features/suppliers/fulfilment';
 import { RENEWAL_NOTICE, agreementState, promisedDeliveryOf, versionsOf } from '@/features/suppliers/agreement';
@@ -95,6 +97,7 @@ export interface CommitmentSources {
   deliveryConfirmations: DeliveryConfirmation[];
   siteCheckIns: SiteCheckIn[];
   jobSafetyTests: JobSafetyTest[];
+  jobIssues: JobIssue[];
   deliveryChecklists: DeliveryChecklist[];
   delayCases: DeliveryDelayCase[];
   discrepancyReports: DeliveryDiscrepancyReport[];
@@ -1071,6 +1074,36 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
           },
         ];
       });
+    },
+  },
+  {
+    // A problem that pauses work is Admin's to see through (127): a safety stop is chased in hours, a blocked job by the next day. The
+    // alert is the beacon; this is who owns getting it resolved, and by when.
+    kind: 'job_issue_resolve',
+    nudgeBefore: hours(1),
+    escalateAfter: hours(6),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'quality',
+    collect(src) {
+      const admin = adminId(src);
+      return src.jobIssues
+        .filter((i) => pausesWork(i.severity))
+        .map((i) => {
+          const job = src.jobs.find((j) => j.id === i.jobId);
+          return {
+            ...base('job_issue_resolve', 'job_issue', i.id),
+            ownerUserId: admin,
+            titleKey: 'work.title.job_issue_resolve',
+            titleParams: { code: i.code, site: job?.siteName ?? '' },
+            dueAt: plus(i.createdAt, RESOLVE_TARGET[i.severity as 'blocking' | 'safety']),
+            state: i.status === 'resolved' ? ('done' as const) : ('open' as const),
+            paused: false,
+            completedAt: i.resolution?.at,
+            actionRoute: `/job-issues/${i.jobId}?issue=${i.id}`,
+            oversightRoute: `/job-issues/${i.jobId}?issue=${i.id}`,
+          };
+        });
     },
   },
   {

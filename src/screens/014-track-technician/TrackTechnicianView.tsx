@@ -180,6 +180,9 @@ export function TrackTechnicianView() {
                 <Button size="sm" variant="secondary" onClick={() => navigate(`/safety-checklist/${s.data?.job?.id}`)}>
                   {t(K.safety)}
                 </Button>
+                <Button size="sm" variant="secondary" onClick={() => navigate(`/job-issues/${s.data?.job?.id}`)}>
+                  {t(K.issues)}
+                </Button>
               </div>
             </Card>
 

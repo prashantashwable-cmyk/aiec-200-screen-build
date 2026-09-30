@@ -114,9 +114,14 @@ export function JobDetailSiteInfoView() {
           {blocked ? t(job.action === 'on_hold' ? K.action.hold : K.action.waiting) : t(assistant ? K.action.mine : K.action.sop)} {!blocked && <ArrowRight size={16} aria-hidden="true" />}
         </Button>
         {!blocked && (
-          <Button block variant="secondary" className="mt-2" onClick={() => navigate(`/safety-checklist/${job.id}`)}>
-            {t(K.action.safety)}
-          </Button>
+          <div className="grid-2 mt-2">
+            <Button variant="secondary" onClick={() => navigate(`/safety-checklist/${job.id}`)}>
+              {t(K.action.safety)}
+            </Button>
+            <Button variant="secondary" onClick={() => navigate(`/job-issues/${job.id}`)}>
+              {t(K.action.issue)}
+            </Button>
+          </div>
         )}
       </ActionBar>
     </Screen>

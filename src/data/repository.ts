@@ -4,6 +4,11 @@ import type {
   JobEvidence,
   JobEvidenceException,
   SiteLeaveReason,
+  IssueCategory,
+  IssuePatternReview,
+  IssueResolutionKind,
+  IssueSeverity,
+  JobIssueEvent,
   SafetyAttempt,
   SafetyDisagreement,
   SafetyFixKind,
@@ -1614,6 +1619,83 @@ export interface PreInspectionSummaryView {
   state: string | null;
   stateFallback: boolean;
   lines: { itemId: string; label: string | null; labelKey: string | null; state: SafetyItemState; attempts: number; fixes: number; lastResult: SafetyResult | null; overriddenBy: string | null }[];
+}
+
+/* ------------------------------ Issue / blocker reports (127) */
+
+export interface JobIssueView {
+  id: string;
+  code: string;
+  jobId: string;
+  jobCode: string;
+  siteName: string;
+  category: IssueCategory;
+  severity: IssueSeverity;
+  description: string;
+  stepId: string | null;
+  stepLabelKey: string | null;
+  sopGap: boolean;
+  evidence: JobEvidence[];
+  status: 'open' | 'resolved';
+  groupId: string;
+  /** How many reports are the same problem, this one included. */
+  groupSize: number;
+  reportedByUserId: string;
+  reportedByName: string;
+  createdAt: string;
+  resolution: { how: IssueResolutionKind; note: string; byName: string; byRole: 'technician' | 'admin'; at: string } | null;
+  events: JobIssueEvent[];
+  mine: boolean;
+  canResolve: boolean;
+  canReopen: boolean;
+  /** Only on this phone so far. */
+  local?: boolean;
+}
+
+export interface JobIssuesView {
+  job: { id: string; code: string; siteName: string; status: Job['status']; role: 'lead' | 'assistant' | null };
+  issues: JobIssueView[];
+  steps: { id: string; labelKey: string }[];
+  /** Whom to call first when it is a safety matter and there is no signal. */
+  adminPhone: string | null;
+  /** How long this job's work has been paused by reports (overlapping pauses count once): what moves its expected completion (129). */
+  blocked: { ms: number; open: number; since: string | null };
+  /** The job is on hold right now because of a report. */
+  paused: boolean;
+  /** Reports can be made while the job is under way or waiting; not once it is finished. */
+  canReport: boolean;
+}
+
+export interface IssuePatternView {
+  stepId: string;
+  stepLabelKey: string | null;
+  reports: number;
+  jobs: number;
+  people: number;
+  lastAt: string;
+  issueIds: string[];
+  needsReview: boolean;
+  review: IssuePatternReview | null;
+}
+
+export interface IssueBoardView {
+  issues: JobIssueView[];
+  patterns: IssuePatternView[];
+  categories: { category: IssueCategory; count: number }[];
+  totals: { open: number; blocking: number; safety: number; resolved: number };
+}
+
+export interface ReportIssueInput {
+  category: IssueCategory;
+  severity: IssueSeverity;
+  description: string;
+  stepId?: string;
+  sopGap?: boolean;
+  evidence: SopMediaInput[];
+  /** Ids of open reports on this job that are the same problem: this one joins their group. */
+  linkTo?: string;
+  /** When it was found: a report made without signal keeps its own time. */
+  capturedAt?: string;
 }
 
 /* ---------------------------------- Auto-reconciliation (120) */
@@ -4148,6 +4230,21 @@ export interface Repository {
   pingSiteLocation(technicianId: string, point: GeoPoint, at?: string): Promise<void>;
   /** Picks which step to do next, when the site does not allow the suggested order. Only steps whose prerequisites are done. */
   focusSopStep(jobId: string, stepId: string, technicianId: string): Promise<InstallationSopView>;
+
+  /* Issue / blocker reports (127) */
+  getJobIssues(jobId: string, userId: string): Promise<JobIssuesView>;
+  listIssueBoard(adminId: string): Promise<IssueBoardView>;
+  reportJobIssue(jobId: string, input: ReportIssueInput, technicianId: string): Promise<JobIssuesView>;
+  addIssueNote(issueId: string, note: string, userId: string): Promise<JobIssuesView>;
+  /** The reporter may only raise the severity; Admin may set any. */
+  setIssueSeverity(issueId: string, severity: IssueSeverity, note: string, userId: string): Promise<JobIssuesView>;
+  addIssueEvidence(issueId: string, media: SopMediaInput, userId: string): Promise<JobIssuesView>;
+  resolveJobIssue(issueId: string, how: IssueResolutionKind, note: string, userId: string): Promise<JobIssuesView>;
+  reopenJobIssue(issueId: string, note: string, userId: string): Promise<JobIssuesView>;
+  /** Says this report is the same problem as another on the same job. */
+  linkJobIssues(issueId: string, otherIssueId: string, userId: string): Promise<JobIssuesView>;
+  /** Admin only: decides what to do about a step that keeps being reported as a problem with the procedure. */
+  reviewIssuePattern(stepId: string, outcome: IssuePatternReview['outcome'], note: string, adminId: string): Promise<IssueBoardView>;
 
   /* Safety compliance checklist (126) */
   getSafetyChecklist(jobId: string, userId: string): Promise<SafetyChecklistView>;

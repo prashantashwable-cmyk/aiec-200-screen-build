@@ -68,6 +68,7 @@ import {
   seedInstallSopVersions,
   seedSiteCheckIns,
   seedJobSafetyTests,
+  seedJobIssues,
   seedSafetyStateItems,
   seedSupplierDisputes,
   seedSupplierInvoices,
@@ -208,6 +209,10 @@ import type {
   InstallationSopView,
   SiteTimeView,
   SafetyChecklistView,
+  JobIssuesView,
+  JobIssueView,
+  IssueBoardView,
+  IssuePatternView,
   SafetyItemView,
   SafetyItemState,
   SafetyResultInput,
@@ -335,6 +340,11 @@ import type {
   SiteCheckIn,
   SiteLeaveReason,
   JobSafetyTest,
+  JobIssue,
+  JobIssueEvent,
+  IssuePatternReview,
+  IssueSeverity,
+  IssueResolutionKind,
   PreInspectionSummary,
   SafetyAttempt,
   SafetyFixKind,
@@ -513,6 +523,7 @@ import { DISPUTE_TARGET, NOTE_MIN, POSITION_MIN, REOPEN_WINDOW, canPartial, deci
 import { SOS_CANCEL_WINDOW_MS, SOS_SAME_INCIDENT } from '@/features/safety/sos';
 import { capturedAtProblem, completionProblem, isDone, missingSlots, naProblem, qcReadiness, slotsFor, stepApplies, suggestedNext, unmetDependencies, versionInForce as installVersionInForce } from '@/features/technician/installSop';
 import type { SpecFacts } from '@/features/technician/installSop';
+import { RESOLVE_TARGET, blockedMs, canReopen, canResolve, categoryCounts, minSeverityFor, patternsOf, pausesWork, reportProblem, severityAtLeast, NOTE_MIN as ISSUE_NOTE_MIN } from '@/features/technician/issues';
 import { MAX_FAILS, SAFETY_ITEMS, defOf as safetyDefOf, disagreementProblem, failCount, fixProblem, isCleared, itemsFor as safetyItemsForSpec, overrideProblem, readiness as safetyReadiness, resultProblem, safetyState, DISAGREEMENT_NOTE_MIN, RESOLUTION_NOTE_MIN } from '@/features/technician/safety';
 import { LEAVE_NOTE_MIN, MIN_TYPICAL_JOBS, OVERRIDE_REASON_MIN, daysOf, isStale, jobVisitProblem, leaveSeverity, leaveTimeProblem, medianOf, radiusFor, readPresence, timeOf, visitMinutes } from '@/features/technician/presence';
 import { FINDING_SLOT, activeProofOf, evidenceProblem, exceptionKey, exceptionOf, exceptionProblem, findingKey, historyOf } from '@/features/technician/evidence';
@@ -2174,6 +2185,7 @@ function commitmentSources(now: number): CommitmentSources {
     deliveryConfirmations,
     siteCheckIns,
     jobSafetyTests,
+    jobIssues,
     deliveryChecklists,
     delayCases,
     discrepancyReports,
@@ -2426,6 +2438,8 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   sendDueSos(now);
   syncTechnicianClashes(now);
   syncSafetyAlerts(true, now);
+  syncIssueAlerts(true, now);
+  for (const j of jobs) syncIssueHold(j);
   syncSopHandoff();
   syncAdvanceExposure(now);
   advanceShipments(now);
@@ -5500,6 +5514,129 @@ function preInspectionViewOf(job: Job, stored?: PreInspectionSummary): PreInspec
     stateFallback: configured === 0,
     lines,
   };
+}
+
+/* ============================== Issue / blocker reports (127) */
+
+const jobIssues: JobIssue[] = seedJobIssues.map((i) => ({ ...i, evidence: i.evidence.map((e) => ({ ...e })), events: i.events.map((e) => ({ ...e })) }));
+const issuePatternReviews: IssuePatternReview[] = [];
+let issueCounter = 100;
+/** `heldBy` on a job that a report paused, so nothing else's hold (a payments hold, 089) is ever released by a report being closed. */
+const ISSUE_HOLD = 'issue-report';
+
+const issueEvent = (kind: JobIssueEvent['kind'], by: { id: string; name: string; role: JobIssueEvent['byRole'] }, note?: string, extra: Partial<JobIssueEvent> = {}): JobIssueEvent => {
+  issueCounter += 1;
+  return { id: `ise-new-${issueCounter}`, kind, at: new Date().toISOString(), byUserId: by.id, byName: by.name, byRole: by.role, ...(note ? { note } : {}), ...extra };
+};
+const actorOf = (u: User) => ({ id: u.id, name: u.name, role: (u.role === 'admin' ? 'admin' : 'technician') as 'admin' | 'technician' });
+
+/** A job is on hold for as long as one of its reports pauses the work, and goes back to where it was when the last one is closed. A hold
+ *  someone else put on it (payments, 089) is never touched; a report that is still open after that hold lifts re-applies the pause. */
+function syncIssueHold(job: Job, reason?: string): Job {
+  const pausing = jobIssues.filter((i) => i.jobId === job.id && i.status === 'open' && pausesWork(i.severity));
+  if (pausing.length > 0) {
+    if (job.status === 'on_hold' || job.status === 'completed' || job.status === 'handover_pending') return job;
+    const first = [...pausing].sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+    return patchInPlace(jobs, job.id, { status: 'on_hold' as const, resumeStatus: job.status, holdReason: reason ?? `${first.code}: ${first.description}`, heldBy: ISSUE_HOLD, heldAt: new Date().toISOString() });
+  }
+  if (job.status === 'on_hold' && job.heldBy === ISSUE_HOLD) {
+    return patchInPlace(jobs, job.id, { status: job.resumeStatus ?? ('in_progress' as const), resumeStatus: undefined, holdReason: undefined, heldBy: undefined, heldAt: undefined });
+  }
+  return job;
+}
+
+function issueViewOf(i: JobIssue, userId: string, now: number): JobIssueView {
+  const job = byId(jobs, i.jobId);
+  const user = byId(users, userId);
+  const role = user?.role === 'admin' ? 'admin' : 'technician';
+  const step = job?.steps.find((x) => x.id === i.stepId);
+  return {
+    id: i.id,
+    code: i.code,
+    jobId: i.jobId,
+    jobCode: job?.code ?? '',
+    siteName: job?.siteName ?? '',
+    category: i.category,
+    severity: i.severity,
+    description: i.description,
+    stepId: i.stepId ?? null,
+    stepLabelKey: step?.labelKey ?? null,
+    sopGap: i.sopGap,
+    evidence: i.evidence,
+    status: i.status,
+    groupId: i.groupId,
+    groupSize: jobIssues.filter((x) => x.groupId === i.groupId).length,
+    reportedByUserId: i.reportedByUserId,
+    reportedByName: i.reportedByName,
+    createdAt: i.createdAt,
+    resolution: i.resolution ?? null,
+    events: i.events,
+    mine: i.reportedByUserId === userId,
+    canResolve: i.status === 'open' && canResolve(i, role, userId),
+    canReopen: canReopen(i, role, now) && (role === 'admin' || i.reportedByUserId === userId),
+  };
+}
+
+function jobIssuesViewOf(job: Job, userId: string, now: number): JobIssuesView {
+  const list = jobIssues.filter((i) => i.jobId === job.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const open = list.filter((i) => i.status === 'open' && pausesWork(i.severity));
+  return {
+    job: { id: job.id, code: job.code, siteName: job.siteName, status: job.status, role: roleOf(job, userId) },
+    issues: list.map((i) => issueViewOf(i, userId, now)),
+    steps: job.steps.map((x) => ({ id: x.id, labelKey: x.labelKey })),
+    adminPhone: users.find((u) => u.role === 'admin')?.phone ?? null,
+    blocked: { ms: blockedMs(list, now), open: open.length, since: open.length ? open.map((i) => i.createdAt).sort()[0] : null },
+    paused: job.status === 'on_hold' && job.heldBy === ISSUE_HOLD,
+    canReport: job.status !== 'completed' && job.status !== 'handover_pending',
+  };
+}
+
+/** Whoever asks must be on the job (or Admin, who sees every job). */
+function issueActor(jobId: string, userId: string, forWrite: boolean): { job: Job; user: User } {
+  const user = byId(users, userId);
+  const job = byId(jobs, jobId);
+  if (!user) throw new RepositoryError('forbidden');
+  if (!job) throw new RepositoryError('not_found');
+  if (user.role === 'admin') return { job, user };
+  if (user.role !== 'technician' || !isOnJob(job, userId)) throw new RepositoryError('forbidden');
+  void forWrite;
+  return { job, user };
+}
+
+function issueOrThrow(id: string): JobIssue {
+  const found = byId(jobIssues, id);
+  if (!found) throw new RepositoryError('not_found');
+  return found;
+}
+
+/** One alert while a report pauses work (safety is critical, in the same escalation path as an SOS), cleared when it is closed; and
+ *  one when a step keeps being reported as a problem with the procedure. */
+function syncIssueAlerts(automated: boolean, now: number): void {
+  const at = new Date(now).toISOString();
+  const live = new Set<string>();
+  for (const i of jobIssues) {
+    if (i.status !== 'open' || !pausesWork(i.severity)) continue;
+    const job = byId(jobs, i.jobId);
+    if (!job) continue;
+    const key = `issue:${i.id}`;
+    live.add(key);
+    const titleKey = i.severity === 'safety' ? 'issueReport.alert.safety' : 'issueReport.alert.blocking';
+    const existing = alerts.find((a) => a.relatedId === key && a.status !== 'resolved');
+    if (existing && existing.titleKey === titleKey) continue;
+    if (existing) patchInPlace(alerts, existing.id, { status: 'resolved', resolvedAt: at, resolvedBy: 'system', resolutionNote: 'Severity changed.' });
+    raiseAlert({ titleKey, context: `${job.code} · ${job.siteName} · ${i.reportedByName}: ${i.description}`, severity: i.severity === 'safety' ? 'critical' : 'high', category: i.severity === 'safety' ? 'safety' : i.category === 'parts' ? 'supplier' : 'quality', relatedId: key, sourceRoute: `/job-issues/${job.id}?issue=${i.id}`, location: job.location });
+  }
+  for (const p of patternsOf(jobIssues, issuePatternReviews, now)) {
+    const key = `issuepattern:${p.stepId}`;
+    if (!p.needsReview) continue;
+    live.add(key);
+    if (alerts.some((a) => a.relatedId === key && a.status !== 'resolved')) continue;
+    raiseAlert({ titleKey: 'issueReport.alert.pattern', context: `${p.stepId} · ${p.reports} reports on ${p.jobs} jobs`, severity: 'medium', category: 'quality', relatedId: key, sourceRoute: '/job-issues?tab=patterns' });
+    if (automated) logAutomatedAction({ sourceKey: 'issues.pattern', triggeringCondition: `Step ${p.stepId} has been reported as a problem with the procedure ${p.reports} times on ${p.jobs} jobs`, actionTaken: 'Raised an alert so the procedure is reviewed', affectedRecordId: p.stepId, affectedRecordType: 'other', subjectLabel: p.stepId });
+  }
+  for (const a of alerts) {
+    if ((a.relatedId?.startsWith('issue:') || a.relatedId?.startsWith('issuepattern:')) && a.status !== 'resolved' && !live.has(a.relatedId)) patchInPlace(alerts, a.id, { status: 'resolved', resolvedAt: at, resolvedBy: 'system', resolutionNote: 'Closed.' });
+  }
 }
 
 /* ============================== Installation SOP (123) */
@@ -11634,6 +11771,176 @@ export const memoryRepository: Repository = {
       if (unmetDependencies(def as InstallSopStepDef, job.steps).length > 0) throw new RepositoryError('depends_on');
       const updated = patchInPlace(jobs, job.id, { steps: withCurrent(job.steps, sopVersionOf(job).steps, stepId) });
       return installationSopViewOf(updated, technicianId);
+    }),
+
+  /* --------------------------------- Issue / blocker reports (127) */
+  getJobIssues: (jobId, userId) =>
+    simulateRead((): JobIssuesView => {
+      const { job } = issueActor(jobId, userId, false);
+      return jobIssuesViewOf(job, userId, Date.now());
+    }),
+
+  listIssueBoard: (adminId) =>
+    simulateRead((): IssueBoardView => {
+      adminOnly(adminId);
+      const now = Date.now();
+      const list = [...jobIssues].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      return {
+        issues: list.map((i) => issueViewOf(i, adminId, now)),
+        patterns: patternsOf(jobIssues, issuePatternReviews, now).map((p): IssuePatternView => ({ ...p, stepLabelKey: jobs.flatMap((j) => j.steps).find((st) => st.id === p.stepId)?.labelKey ?? null })),
+        categories: categoryCounts(jobIssues, now),
+        totals: { open: list.filter((i) => i.status === 'open').length, blocking: list.filter((i) => i.status === 'open' && i.severity === 'blocking').length, safety: list.filter((i) => i.status === 'open' && i.severity === 'safety').length, resolved: list.filter((i) => i.status === 'resolved').length },
+      };
+    }),
+
+  reportJobIssue: (jobId, input, technicianId) =>
+    simulateWrite((): JobIssuesView => {
+      const { job, user } = issueActor(jobId, technicianId, true);
+      if (user.role === 'admin') throw new RepositoryError('forbidden');
+      if (job.status === 'completed' || job.status === 'handover_pending') throw new RepositoryError('job_finished');
+      const problem = reportProblem({ category: input.category, severity: input.severity, description: input.description, attachments: input.evidence.length });
+      if (problem) throw new RepositoryError(problem);
+      if (input.stepId && !job.steps.some((x) => x.id === input.stepId)) throw new RepositoryError('unknown_step');
+      const now = Date.now();
+      const at = input.capturedAt ? new Date(input.capturedAt).getTime() : now;
+      if (Number.isNaN(at)) throw new RepositoryError('captured_invalid');
+      if (at > now + 60_000) throw new RepositoryError('captured_in_future');
+      const linked = input.linkTo ? byId(jobIssues, input.linkTo) : undefined;
+      if (input.linkTo && (!linked || linked.jobId !== job.id)) throw new RepositoryError('not_found');
+      issueCounter += 1;
+      const id = `iss-new-${issueCounter}`;
+      const createdAt = new Date(at).toISOString();
+      const evidence = input.evidence.map((m, n) => {
+        const bad = evidenceProblem('photo' === m.kind ? 'photo' : 'video', { kind: m.kind, mimeType: m.mimeType, sizeBytes: m.sizeBytes, durationS: m.durationS });
+        if (bad) throw new RepositoryError(bad);
+        return { id: `${id}-ev${n + 1}`, slotId: 'issue', kind: m.kind, fileName: m.fileName, previewUrl: m.previewUrl, ...(m.mediaUrl ? { mediaUrl: m.mediaUrl } : {}), mimeType: m.mimeType, sizeBytes: m.sizeBytes, ...(m.durationS !== undefined ? { durationS: m.durationS } : {}), capturedAt: m.capturedAt, ...(m.location ? { location: m.location } : {}), byUserId: user.id, byName: user.name };
+      });
+      const created: JobIssue = {
+        id,
+        code: `AIEC-ISS-${1000 + issueCounter}`,
+        jobId: job.id,
+        category: input.category,
+        severity: input.severity,
+        description: input.description.trim(),
+        ...(input.stepId ? { stepId: input.stepId } : {}),
+        sopGap: !!input.sopGap && !!input.stepId,
+        evidence,
+        status: 'open',
+        groupId: linked ? linked.groupId : id,
+        reportedByUserId: user.id,
+        reportedByName: user.name,
+        createdAt,
+        events: [issueEvent('reported', actorOf(user), input.description.trim(), { at: createdAt }), ...(linked ? [issueEvent('linked', actorOf(user), `Same problem as ${linked.code}`)] : [])],
+        isDemo: true,
+      };
+      jobIssues.push(created);
+      const after = syncIssueHold(job);
+      if (after.status === 'on_hold' && after.heldBy === ISSUE_HOLD && job.status !== 'on_hold') created.events.push(issueEvent('paused', { id: 'system', name: 'AIEC', role: 'system' }, 'Work on this job is paused until this is resolved.'));
+      syncIssueAlerts(false, now);
+      return jobIssuesViewOf(byId(jobs, job.id) as Job, technicianId, now);
+    }),
+
+  addIssueNote: (issueId, note, userId) =>
+    simulateWrite((): JobIssuesView => {
+      const issue = issueOrThrow(issueId);
+      const { job, user } = issueActor(issue.jobId, userId, true);
+      if (note.trim().length < ISSUE_NOTE_MIN) throw new RepositoryError('note_required');
+      patchInPlace(jobIssues, issue.id, { events: [...issue.events, issueEvent(user.role === 'admin' ? 'admin_note' : 'note', actorOf(user), note.trim())] });
+      return jobIssuesViewOf(job, userId, Date.now());
+    }),
+
+  setIssueSeverity: (issueId, severity, note, userId) =>
+    simulateWrite((): JobIssuesView => {
+      const issue = issueOrThrow(issueId);
+      const { job, user } = issueActor(issue.jobId, userId, true);
+      if (issue.status !== 'open') throw new RepositoryError('invalid_state');
+      if (note.trim().length < ISSUE_NOTE_MIN) throw new RepositoryError('note_required');
+      if (severity === issue.severity) throw new RepositoryError('invalid_state');
+      // A safety concern is never quietly downgraded, and a technician can only make a report more serious, never less.
+      if (!severityAtLeast(severity, minSeverityFor(issue.category))) throw new RepositoryError('severity_too_low');
+      if (user.role !== 'admin' && !severityAtLeast(severity, issue.severity)) throw new RepositoryError('forbidden');
+      patchInPlace(jobIssues, issue.id, { severity, events: [...issue.events, issueEvent('severity', actorOf(user), note.trim(), { from: issue.severity, to: severity })] });
+      syncIssueHold(job);
+      syncIssueAlerts(false, Date.now());
+      return jobIssuesViewOf(byId(jobs, job.id) as Job, userId, Date.now());
+    }),
+
+  addIssueEvidence: (issueId, media, userId) =>
+    simulateWrite((): JobIssuesView => {
+      const issue = issueOrThrow(issueId);
+      const { job, user } = issueActor(issue.jobId, userId, true);
+      if (issue.evidence.length >= 8) throw new RepositoryError('too_many_attachments');
+      const bad = evidenceProblem(media.kind, { kind: media.kind, mimeType: media.mimeType, sizeBytes: media.sizeBytes, durationS: media.durationS });
+      if (bad) throw new RepositoryError(bad);
+      issueCounter += 1;
+      const ev = { id: `${issue.id}-ev${issueCounter}`, slotId: 'issue', kind: media.kind, fileName: media.fileName, previewUrl: media.previewUrl, ...(media.mediaUrl ? { mediaUrl: media.mediaUrl } : {}), mimeType: media.mimeType, sizeBytes: media.sizeBytes, ...(media.durationS !== undefined ? { durationS: media.durationS } : {}), capturedAt: media.capturedAt, ...(media.location ? { location: media.location } : {}), byUserId: user.id, byName: user.name };
+      patchInPlace(jobIssues, issue.id, { evidence: [...issue.evidence, ev], events: [...issue.events, issueEvent('evidence', actorOf(user))] });
+      return jobIssuesViewOf(job, userId, Date.now());
+    }),
+
+  resolveJobIssue: (issueId, how, note, userId) =>
+    simulateWrite((): JobIssuesView => {
+      const issue = issueOrThrow(issueId);
+      const { job, user } = issueActor(issue.jobId, userId, true);
+      const role = user.role === 'admin' ? 'admin' : 'technician';
+      if (issue.status !== 'open') throw new RepositoryError('invalid_state');
+      if (!canResolve(issue, role, userId)) throw new RepositoryError(issue.severity === 'safety' ? 'safety_admin_only' : 'forbidden');
+      if (note.trim().length < ISSUE_NOTE_MIN) throw new RepositoryError('note_required');
+      const resolution = { how, note: note.trim(), byName: user.name, byRole: role as 'admin' | 'technician', at: new Date().toISOString() };
+      patchInPlace(jobIssues, issue.id, { status: 'resolved' as const, resolution, events: [...issue.events, issueEvent('resolved', actorOf(user), note.trim())] });
+      const before = byId(jobs, job.id) as Job;
+      const after = syncIssueHold(before);
+      if (before.status === 'on_hold' && after.status !== 'on_hold') {
+        const closed = byId(jobIssues, issue.id) as JobIssue;
+        closed.events.push(issueEvent('resumed', { id: 'system', name: 'AIEC', role: 'system' }, 'Work on this job can continue.'));
+      }
+      syncIssueAlerts(false, Date.now());
+      return jobIssuesViewOf(byId(jobs, job.id) as Job, userId, Date.now());
+    }),
+
+  reopenJobIssue: (issueId, note, userId) =>
+    simulateWrite((): JobIssuesView => {
+      const issue = issueOrThrow(issueId);
+      const { job, user } = issueActor(issue.jobId, userId, true);
+      const role = user.role === 'admin' ? 'admin' : 'technician';
+      if (!canReopen(issue, role, Date.now()) || (role !== 'admin' && issue.reportedByUserId !== userId)) throw new RepositoryError('invalid_state');
+      if (note.trim().length < ISSUE_NOTE_MIN) throw new RepositoryError('note_required');
+      patchInPlace(jobIssues, issue.id, { status: 'open' as const, resolution: undefined, events: [...issue.events, issueEvent('reopened', actorOf(user), note.trim())] });
+      syncIssueHold(byId(jobs, job.id) as Job);
+      syncIssueAlerts(false, Date.now());
+      return jobIssuesViewOf(byId(jobs, job.id) as Job, userId, Date.now());
+    }),
+
+  linkJobIssues: (issueId, otherIssueId, userId) =>
+    simulateWrite((): JobIssuesView => {
+      const issue = issueOrThrow(issueId);
+      const other = issueOrThrow(otherIssueId);
+      const { job, user } = issueActor(issue.jobId, userId, true);
+      if (other.jobId !== issue.jobId || other.id === issue.id) throw new RepositoryError('invalid_state');
+      if (other.groupId === issue.groupId) throw new RepositoryError('invalid_state');
+      // Two groups become one, named by the earlier report.
+      const keep = issue.createdAt <= other.createdAt ? issue.groupId : other.groupId;
+      const drop = keep === issue.groupId ? other.groupId : issue.groupId;
+      for (const x of jobIssues.filter((i) => i.groupId === drop)) patchInPlace(jobIssues, x.id, { groupId: keep });
+      patchInPlace(jobIssues, issue.id, { events: [...(byId(jobIssues, issue.id) as JobIssue).events, issueEvent('linked', actorOf(user), `Same problem as ${other.code}`)] });
+      return jobIssuesViewOf(job, userId, Date.now());
+    }),
+
+  reviewIssuePattern: (stepId, outcome, note, adminId) =>
+    simulateWrite((): IssueBoardView => {
+      const admin = adminOnly(adminId);
+      if (note.trim().length < ISSUE_NOTE_MIN) throw new RepositoryError('note_required');
+      if (!patternsOf(jobIssues, issuePatternReviews, Date.now()).some((p) => p.stepId === stepId)) throw new RepositoryError('not_found');
+      issuePatternReviews.push({ stepId, outcome, note: note.trim(), byName: admin.name, at: new Date().toISOString() });
+      syncIssueAlerts(false, Date.now());
+      const now = Date.now();
+      const list = [...jobIssues].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      return {
+        issues: list.map((i) => issueViewOf(i, adminId, now)),
+        patterns: patternsOf(jobIssues, issuePatternReviews, now).map((p): IssuePatternView => ({ ...p, stepLabelKey: jobs.flatMap((j) => j.steps).find((st) => st.id === p.stepId)?.labelKey ?? null })),
+        categories: categoryCounts(jobIssues, now),
+        totals: { open: list.filter((i) => i.status === 'open').length, blocking: list.filter((i) => i.status === 'open' && i.severity === 'blocking').length, safety: list.filter((i) => i.status === 'open' && i.severity === 'safety').length, resolved: list.filter((i) => i.status === 'resolved').length },
+      };
     }),
 
   /* --------------------------------- Safety compliance checklist (126) */

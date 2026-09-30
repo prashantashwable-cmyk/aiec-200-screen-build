@@ -26,6 +26,7 @@ const translations: ScreenTranslations = {
       loading: 'Loading the job',
       mapLabel: 'Job site and the technician’s current position',
       safety: 'Safety checks',
+      issues: 'Field issues',
       escalate: 'Escalate this',
       openTimeline: 'Open the installation timeline',
       oneSourceNote:
@@ -105,6 +106,7 @@ const translations: ScreenTranslations = {
       loading: 'काम लोड हो रहा है',
       mapLabel: 'काम की साइट और तकनीशियन की मौजूदा जगह',
       safety: 'सुरक्षा जाँचें',
+      issues: 'फ़ील्ड की समस्याएँ',
       escalate: 'इसे आगे बढ़ाएँ',
       openTimeline: 'इंस्टॉलेशन टाइमलाइन खोलें',
       oneSourceNote:
@@ -184,6 +186,7 @@ const translations: ScreenTranslations = {
       loading: 'काम लोड होत आहे',
       mapLabel: 'कामाची साइट आणि तंत्रज्ञाची सध्याची जागा',
       safety: 'सुरक्षा तपासण्या',
+      issues: 'फील्डमधील समस्या',
       escalate: 'हे वर कळवा',
       openTimeline: 'बसवणुकीची कालरेषा उघडा',
       oneSourceNote:

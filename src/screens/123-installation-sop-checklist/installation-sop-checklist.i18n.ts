@@ -5,6 +5,7 @@ const translations: ScreenTranslations = {
     installSop: {
       title: 'Installation checklist',
       safetyChecks: 'Safety checks',
+      reportIssue: 'Report a problem',
       loading: 'Loading the checklist',
       back: 'Job details',
       error: { title: 'Could not load the checklist', body: 'Check your connection and try again.' },
@@ -153,6 +154,7 @@ const translations: ScreenTranslations = {
     installSop: {
       title: 'इंस्टॉलेशन चेकलिस्ट',
       safetyChecks: 'सुरक्षा जाँचें',
+      reportIssue: 'समस्या बताएँ',
       loading: 'चेकलिस्ट लोड हो रही है',
       back: 'काम का ब्योरा',
       error: { title: 'चेकलिस्ट लोड नहीं हो सकी', body: 'अपना कनेक्शन जाँचें और फिर कोशिश करें।' },
@@ -301,6 +303,7 @@ const translations: ScreenTranslations = {
     installSop: {
       title: 'इन्स्टॉलेशन चेकलिस्ट',
       safetyChecks: 'सुरक्षा तपासण्या',
+      reportIssue: 'समस्या कळवा',
       loading: 'चेकलिस्ट लोड होत आहे',
       back: 'कामाचा तपशील',
       error: { title: 'चेकलिस्ट लोड करता आली नाही', body: 'तुमचं कनेक्शन तपासा आणि पुन्हा प्रयत्न करा.' },

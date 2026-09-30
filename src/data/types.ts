@@ -2568,6 +2568,61 @@ export interface PreInspectionSummary {
   isDemo: boolean;
 }
 
+/* ------------------------------------ Issue / blocker reports (127) */
+
+/** What kind of real-world problem it is: the ones the procedure has no step for. */
+export type IssueCategory = 'parts' | 'site_condition' | 'customer_readiness' | 'safety_concern' | 'other';
+/** `minor` is noted and work carries on; `blocking` pauses the work and tells Admin; `safety` stops it now and escalates at once. */
+export type IssueSeverity = 'minor' | 'blocking' | 'safety';
+export type IssueResolutionKind = 'self_resolved' | 'fixed_on_site' | 'admin_resolved' | 'no_longer_relevant';
+
+export interface JobIssueEvent {
+  id: string;
+  kind: 'reported' | 'note' | 'admin_note' | 'severity' | 'evidence' | 'linked' | 'resolved' | 'reopened' | 'paused' | 'resumed';
+  at: string;
+  byUserId: string;
+  byName: string;
+  byRole: 'technician' | 'admin' | 'system';
+  note?: string;
+  from?: IssueSeverity;
+  to?: IssueSeverity;
+}
+
+/** One problem reported from the field. Never deleted: it is part of the job's permanent history, showing what was found and how it was
+ *  handled, which protects AIEC and the technician alike. */
+export interface JobIssue {
+  id: string;
+  code: string;
+  jobId: string;
+  category: IssueCategory;
+  severity: IssueSeverity;
+  description: string;
+  /** The installation step it is about, when it is about one. */
+  stepId?: string;
+  /** The person says the procedure itself was unclear or wrong here: the signal that turns repeated reports into a change to the SOP. */
+  sopGap: boolean;
+  evidence: JobEvidence[];
+  status: 'open' | 'resolved';
+  /** Reports that are the same problem share a group; the first report's id names it. */
+  groupId: string;
+  reportedByUserId: string;
+  reportedByName: string;
+  /** When it was found on site (a report made without signal keeps its own time). */
+  createdAt: string;
+  resolution?: { how: IssueResolutionKind; note: string; byName: string; byRole: 'technician' | 'admin'; at: string };
+  events: JobIssueEvent[];
+  isDemo: boolean;
+}
+
+/** Admin looked at a repeating pattern on one step and decided what to do about it. */
+export interface IssuePatternReview {
+  stepId: string;
+  outcome: 'sop_updated' | 'no_change' | 'training_planned';
+  note: string;
+  byName: string;
+  at: string;
+}
+
 /* ------------------------------------ Installation SOP (123) */
 
 export type InstallSopPhase = 'preparation' | 'rails' | 'machine' | 'car' | 'wiring' | 'safety' | 'final';
@@ -2639,6 +2694,8 @@ export interface Job {
   crew?: JobCrewMember[];
   /** The installation procedure version this job is being done under, pinned when it starts (123). */
   sopVersion?: number;
+  /** Where a job goes back to when a hold that an issue report put on it is lifted (127). Set only while such a hold is in place. */
+  resumeStatus?: JobStatus;
   isDemo: boolean;
 }
 
@@ -3214,6 +3271,7 @@ export type CommitmentKind =
   | 'delivery_confirmation_sign'
   | 'site_checkout_confirm'
   | 'safety_review'
+  | 'job_issue_resolve'
   | 'discrepancy_report_review'
   | 'partner_feed_restore'
   | 'supplier_payment_approve'
@@ -3236,6 +3294,7 @@ export type CommitmentKind =
   | 'lead_revisit';
 
 export type CommitmentSubjectType =
+  | 'job_issue'
   | 'safety_test'
   | 'site_checkin'
   | 'payment'
