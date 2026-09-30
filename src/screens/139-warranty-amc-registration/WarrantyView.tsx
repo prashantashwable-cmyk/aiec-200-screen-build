@@ -7,7 +7,7 @@ import { MAX_EXTRA_VISITS, NOTE_MIN, amcPrice, endOfTerm, reminderPlan } from '@
 import type { AmcTierId } from '@/features/qc/warranty';
 import { useWarranty } from './useWarranty';
 import type { ActionResult, WarrantyState } from './useWarranty';
-import { CHOICES, WARRANTY_KEYS as K, boardPath, walkthroughPath } from './warranty.types';
+import { CHOICES, WARRANTY_KEYS as K, boardPath, certificatePath, walkthroughPath } from './warranty.types';
 import type { Choice } from './warranty.types';
 
 type T = ReturnType<typeof useTranslation>['t'];
@@ -300,6 +300,7 @@ function Registered({ s, v, t, staff }: { s: WarrantyState; v: WarrantyView; t: 
           <CheckCircle size={22} weight="fill" aria-hidden="true" color="var(--color-success)" />
           <strong className="t-md">{t(K.registered.heading)}</strong>
         </div>
+        <Button variant="secondary" style={{ width: 'fit-content' }} data-certificate-link onClick={() => s.goto(certificatePath(v.job.id))}>{t(K.registered.certificate)}</Button>
         {v.registration && <p className="t-xs t-muted">{t(K.registered.line, { name: v.registration.registeredByName, date: formatDate(v.registration.registeredAt, lang) })}</p>}
         {amc?.status === 'active' && amc.tier ? (
           <div className="stack gap-2" data-amc-active>

@@ -224,6 +224,10 @@ import type {
   WalkthroughView,
   WarrantyBoardView,
   WarrantyView,
+  CompletionBoardView,
+  CompletionDocument,
+  CompletionPayoutLineView,
+  CompletionView,
   ReworkPartOption,
   ReworkPartView,
   ReworkRoundView,
@@ -429,6 +433,10 @@ import type {
   HandoverReadiness,
   HandoverWalkthrough,
   WarrantyRegistration,
+  HandoverCompletion,
+  FinalPayoutLine,
+  PayoutJudgement,
+  CompletionMilestone,
   ReworkRound,
   StateInspectionGuidance,
   JobStep,
@@ -609,6 +617,9 @@ import { ASSIGN_DUE, DISPUTE_DECIDE_DUE, REWORK_DUE, REVERIFY_DUE, blocksHandove
 import type { DisputeDecision, SnagSeverity } from '@/features/qc/snags';
 import { AMC_RENEWAL_DAYS as WR_RENEW_DAYS, INCLUDED_VISITS as WR_VISITS, SERVICE_WARRANTY_MONTHS as WR_SERVICE_MONTHS, addDays as wrAddDays, amcPrice as wrAmcPrice, amcProblem as wrAmcProblem, endOfTerm as wrEndOfTerm, reminderPlan as wrReminderPlan } from '@/features/qc/warranty';
 import type { AmcTierId as WrTierId } from '@/features/qc/warranty';
+import { issueProblem as coIssueProblem, readinessOf as coReadiness, signoffDueAt as coSignoffDue } from '@/features/qc/completion';
+import { QC_FEE as FP_QC_FEE, crewShares as fpCrewShares, installPoolOf as fpInstallPool, judgementProblem as fpJudgementProblem, qcShares as fpQcShares, salesCloseOf as fpSalesClose } from '@/features/commission/finalPayout';
+import type { Contributor as FpContributor } from '@/features/commission/finalPayout';
 import { ARRANGE_DUE as WT_ARRANGE_DUE, DOCS as WT_DOCS, FOLLOWUP_DUE as WT_FOLLOWUP_DUE, SIGNOFF_DUE_PRESENT as WT_SIGNOFF_PRESENT, SIGNOFF_DUE_REMOTE as WT_SIGNOFF_REMOTE, amcProblem as wtAmcProblem, arrangeProblem as wtArrangeProblem, conductProblem as wtConductProblem, isNegative as wtIsNegative, questionProblem as wtQuestionProblem, scoreProblem as wtScoreProblem, scriptFor as wtScriptFor, signoffProblem as wtSignoffProblem } from '@/features/qc/walkthrough';
 import { CORRECTION_MIN as HO_CORRECTION_MIN, DOC_KINDS as HO_DOC_KINDS, REVIEW_NOTE_MIN as HO_REVIEW_NOTE_MIN, REVIEW_REASON_MIN as HO_REVIEW_REASON_MIN, blockOf as hoBlockOf, correctionProblem as hoCorrectionProblem, docStateOf as hoDocState, issueProblem as hoIssueProblem, readinessOf as hoReadiness } from '@/features/qc/handover';
 import type { DocBasis as HoDocBasis, HandoverDocKind } from '@/features/qc/handover';
@@ -2294,6 +2305,7 @@ function commitmentSources(now: number): CommitmentSources {
     handoverWaiting: handoverSignals().waiting,
     walkthroughs: walkthroughSignals(),
     warranties: warrantyRegistrations,
+    completions: completionSignals(),
     handoverReviews: handoverSignals().reviews,
     qcMechChecks,
     qcFindings,
@@ -7492,6 +7504,256 @@ function syncWarrantyReminders(now: number): void {
       logAutomatedAction({ sourceKey: 'warranty.reminder', triggeringCondition: `${r.kind.replace('_', ' ')} for ${job.code} came due`, actionTaken: `Messaged ${lead.contactName} on ${template.channel}`, affectedRecordId: job.id, affectedRecordType: 'other', subjectLabel: job.code });
     }
   }
+}
+
+/* ============================== Handover completion certificate (140) */
+
+const handoverCompletions: HandoverCompletion[] = [];
+let finalPayoutCounter = 0;
+let judgementCounter = 0;
+let certificateCounter = 0;
+const COMPLETION_REASONS = { converted: 'commission.reason.leadConverted', install: 'commission.reason.installationCompleted', closed: 'commission.reason.dealClosed', qc: 'commission.reason.qcCompleted' } as const;
+
+const completionOf = (jobId: string) => handoverCompletions.find((c) => c.jobId === jobId);
+
+function completionActor(jobId: string, userId: string): { job: Job; user: User; role: WrRole } {
+  return warrantyActor(jobId, userId);
+}
+
+type PlannedLine = Omit<FinalPayoutLine, 'id' | 'commissionId'> & { existingId: string | null };
+interface PayoutPlan {
+  lines: PlannedLine[];
+  pools: HandoverCompletion['payout']['pools'];
+  basis: CompletionPayoutBasis;
+  notPaid: { userId: string; name: string }[];
+  team: HandoverCompletion['team'];
+}
+type CompletionPayoutBasis = 'time' | 'steps' | 'equal';
+
+/**
+ * Who is paid what from this one event, worked out from the work each person actually recorded: the original surveyor's conversion commission
+ * (the one 077 already recorded), the closer of a reassigned lead, every installer by time on site (the lead keeps a bonus on top), and the
+ * independent quality inspector(s) by results recorded. Someone who left the job midway keeps what they did; someone with no recorded work on it is listed, not paid.
+ */
+function payoutPlanOf(job: Job, now: number): PayoutPlan {
+  const deal = byId(deals, job.dealId);
+  const lead = deal ? resolveLead(deal.leadId) : null;
+  const value = deal ? deal.agreedPrice || deal.quotedPrice : 0;
+  const lines: PlannedLine[] = [];
+  const team = new Map<string, HandoverCompletion['team'][number]>();
+  const touch = (userId: string, role: FinalPayoutLine['role'], more: Partial<Pick<HandoverCompletion['team'][number], 'minutes' | 'steps' | 'results'>> = {}) => {
+    const cur = team.get(userId) ?? { userId, name: nameOf(userId), roles: [], minutes: 0, steps: 0, results: 0 };
+    if (!cur.roles.includes(role)) cur.roles.push(role);
+    cur.minutes += more.minutes ?? 0;
+    cur.steps += more.steps ?? 0;
+    cur.results += more.results ?? 0;
+    team.set(userId, cur);
+  };
+  const existing = (userId: string, reasonKey: string) => commissions.find((c) => c.userId === userId && c.reasonKey === reasonKey && c.dealId === deal?.id && (!c.jobId || c.jobId === job.id) && c.status !== 'forfeited');
+
+  if (deal && lead?.originalSurveyorId) {
+    const e = existing(lead.originalSurveyorId, COMPLETION_REASONS.converted);
+    lines.push({ userId: lead.originalSurveyorId, name: nameOf(lead.originalSurveyorId), role: 'surveyor', reasonKey: COMPLETION_REASONS.converted, basis: e ? 'existing' : 'percent', amount: e ? e.amount : Math.round(value * 0.015), existingId: e?.id ?? null });
+    touch(lead.originalSurveyorId, 'surveyor');
+  }
+  if (deal && lead && lead.surveyorId && lead.surveyorId !== lead.originalSurveyorId) {
+    const e = existing(lead.surveyorId, COMPLETION_REASONS.closed);
+    lines.push({ userId: lead.surveyorId, name: nameOf(lead.surveyorId), role: 'sales', reasonKey: COMPLETION_REASONS.closed, basis: e ? 'existing' : 'percent', amount: e ? e.amount : fpSalesClose(value), existingId: e?.id ?? null });
+    touch(lead.surveyorId, 'sales');
+  }
+
+  // The installers: everyone who was on the job at any point, by what they did.
+  const sessions = siteCheckIns.filter((s) => s.jobId === job.id);
+  const onJob = new Set<string>([...(job.technicianId ? [job.technicianId] : []), ...(job.crew ?? []).map((c) => c.userId), ...sessions.map((s) => s.userId)]);
+  for (const st of job.steps) {
+    const who = st.status === 'complete' && st.completedByName ? users.find((u) => u.role === 'technician' && u.name === st.completedByName) : undefined;
+    if (who) onJob.add(who.id);
+  }
+  const contributors: FpContributor[] = [...onJob]
+    .map((id) => byId(users, id))
+    .filter((u): u is User => !!u && u.role === 'technician')
+    .map((u) => ({ userId: u.id, name: u.name, isLead: u.id === job.technicianId, minutes: timeOf(sessions, u.id, now).minutes, steps: job.steps.filter((st) => st.status === 'complete' && !st.notApplicable && st.completedByName === u.name).length }));
+  const pool = fpInstallPool(value);
+  const crew = fpCrewShares(pool, contributors);
+  const current = new Set<string>([...(job.technicianId ? [job.technicianId] : []), ...(job.crew ?? []).map((c) => c.userId)]);
+  for (const l of crew.lines) {
+    const c = contributors.find((x) => x.userId === l.userId) as FpContributor;
+    const e = existing(l.userId, COMPLETION_REASONS.install);
+    lines.push({
+      userId: l.userId,
+      name: c.name,
+      role: c.isLead ? 'technician_lead' : 'technician',
+      reasonKey: COMPLETION_REASONS.install,
+      basis: e ? 'existing' : crew.basis,
+      amount: e ? e.amount : l.amount,
+      share: l.share,
+      minutes: c.minutes,
+      steps: c.steps,
+      ...(l.leadBonus > 0 ? { leadBonus: l.leadBonus } : {}),
+      ...(current.has(l.userId) ? {} : { leftEarly: true }),
+      existingId: e?.id ?? null,
+    });
+    touch(l.userId, c.isLead ? 'technician_lead' : 'technician', { minutes: c.minutes, steps: c.steps });
+  }
+  for (const id of crew.notPaid) touch(id, 'technician', { minutes: 0, steps: 0 });
+
+  // The independent inspector(s): by the results each recorded.
+  const counts = new Map<string, number>();
+  for (const a of [...Object.values(mechCheckOf(job.id).attempts), ...Object.values(elecCheckOf(job.id).attempts)].flat()) {
+    if (a && byId(users, a.byUserId)?.role === 'technician') counts.set(a.byUserId, (counts.get(a.byUserId) ?? 0) + 1);
+  }
+  const assigned = qcOf(job.id)?.inspectorId;
+  if (counts.size === 0 && assigned && byId(users, assigned)?.role === 'technician') counts.set(assigned, 0);
+  const qc = fpQcShares(FP_QC_FEE, [...counts.entries()].map(([userId, results]) => ({ userId, name: nameOf(userId), results })));
+  for (const q of qc) {
+    const e = existing(q.userId, COMPLETION_REASONS.qc);
+    lines.push({ userId: q.userId, name: nameOf(q.userId), role: 'qc_inspector', reasonKey: COMPLETION_REASONS.qc, basis: e ? 'existing' : 'fixed', amount: e ? e.amount : q.amount, results: counts.get(q.userId) ?? 0, existingId: e?.id ?? null });
+    touch(q.userId, 'qc_inspector', { results: counts.get(q.userId) ?? 0 });
+  }
+  return {
+    lines,
+    pools: { installation: pool, qc: qc.length > 0 ? FP_QC_FEE : 0, salesClose: lines.find((l) => l.role === 'sales')?.amount ?? 0 },
+    basis: crew.basis,
+    notPaid: crew.notPaid.map((id) => ({ userId: id, name: nameOf(id) })),
+    team: [...team.values()],
+  };
+}
+
+const latestOf = (xs: (string | undefined | null)[]): string | null => xs.filter((x): x is string => !!x).sort().pop() ?? null;
+
+/** The project's life in nine milestones, read from the records each stage kept. Nothing here is typed in by anyone. */
+function completionSummaryOf(job: Job, now: number): HandoverCompletion['summary'] {
+  const deal = byId(deals, job.dealId);
+  const lead = deal ? resolveLead(deal.leadId) : null;
+  const spec = lead ? lockedSpecOf(lead.id) : null;
+  const visits = lead ? siteVisits.filter((v) => v.leadId === lead.id && v.status === 'verified').sort((a, b) => a.checkInAt.localeCompare(b.checkInAt)) : [];
+  const sig = contractSignatures.find((s) => s.dealId === job.dealId && !!s.aiecCountersignedAt);
+  const contract = contracts.filter((c) => c.dealId === job.dealId).sort((a, b) => b.version - a.version)[0];
+  const confirmations = deliveryConfirmations.filter((c) => c.dealId === job.dealId && c.status === 'signed');
+  const mech = mechCheckOf(job.id).signedOff;
+  const elec = elecCheckOf(job.id).signedOff;
+  const cert = currentCertOf(job.id);
+  const walk = walkthroughOf(job.id);
+  const reg = registrationOf(job.id);
+  const sessions = siteCheckIns.filter((s) => s.jobId === job.id);
+  const done = job.steps.filter((s) => s.status === 'complete' && !s.notApplicable);
+  const lastStep = latestOf(job.steps.map((s) => s.completedAt));
+  const first = job.startedAt ?? sessions.map((s) => s.checkInAt).sort()[0] ?? null;
+  const milestones: CompletionMilestone[] = [
+    { id: 'survey', at: visits[0]?.checkInAt ?? null, ref: null, byName: visits[0]?.surveyorName ?? (lead ? nameOf(lead.originalSurveyorId) : null), facts: { visits: visits.length } },
+    { id: 'quotation', at: spec?.acceptedAt ?? null, ref: spec ? `${spec.quotationCode} v${spec.version}` : null, byName: null, facts: { value: deal ? deal.agreedPrice || deal.quotedPrice : 0 } },
+    { id: 'contract', at: sig?.aiecCountersignedAt ?? deal?.closedAt ?? null, ref: contract ? `v${contract.version}` : null, byName: sig?.aiecCountersignedBy ?? null, facts: {} },
+    { id: 'delivery', at: latestOf(confirmations.map((c) => c.signedAt ?? c.createdAt)), ref: null, byName: null, facts: { count: confirmations.length } },
+    { id: 'installation', at: lastStep, ref: job.code, byName: job.technicianId ? nameOf(job.technicianId) : null, facts: { steps: done.length, people: new Set(sessions.map((s) => s.userId)).size || 1, days: first && lastStep ? Math.max(1, Math.round((new Date(lastStep).getTime() - new Date(first).getTime()) / 86_400_000) + 1) : 1 } },
+    { id: 'qc', at: latestOf([mech?.at, elec?.at]), ref: null, byName: elec?.byName ?? mech?.byName ?? null, facts: {} },
+    { id: 'compliance', at: cert?.issuedAt ?? null, ref: cert?.code ?? null, byName: cert?.issuedByName ?? null, facts: { standard: cert ? (cert.primary.id === 'other' ? (cert.primary.label ?? cert.primary.id) : cert.primary.id) : '' } },
+    { id: 'handover', at: walk.conducted?.at ?? null, ref: null, byName: walk.conducted?.byName ?? null, facts: { signed: walk.signoff ? 1 : 0 } },
+    { id: 'warranty', at: reg?.registeredAt ?? null, ref: null, byName: reg?.registeredByName ?? null, facts: { parts: reg?.terms.parts.length ?? 0 } },
+  ];
+  void now;
+  return {
+    customerName: deal?.customerId ? (byId(users, deal.customerId)?.name ?? '') : (lead?.contactName ?? ''),
+    siteName: job.siteName,
+    address: job.address,
+    city: lead?.city ?? '',
+    jobCode: job.code,
+    dealCode: deal?.code ?? '',
+    value: deal ? deal.agreedPrice || deal.quotedPrice : 0,
+    driveType: spec?.driveType ?? '',
+    finishTier: spec?.finishTier ?? '',
+    capacityPersons: spec?.capacityPersons ?? null,
+    stops: spec?.stopsCount ?? null,
+    milestones,
+    compliance: cert ? { code: cert.code, standard: cert.primary.id === 'other' ? (cert.primary.label ?? cert.primary.id) : cert.primary.id, state: cert.state, issuedAt: cert.issuedAt } : null,
+    warranty: reg ? { startsOn: reg.startsOn, serviceEndsOn: reg.terms.service.endsOn, partsCount: reg.terms.parts.length, amc: reg.amc ? { status: reg.amc.status, tier: reg.amc.tier ?? null, endsOn: reg.amc.terms[reg.amc.terms.length - 1]?.endsOn ?? null } : null } : null,
+  };
+}
+
+function completionDocumentsOf(job: Job, role: WrRole): CompletionDocument[] {
+  const s = completionSummaryOf(job, Date.now());
+  const m = (id: CompletionMilestone['id']) => s.milestones.find((x) => x.id === id) as CompletionMilestone;
+  const staff = role === 'admin';
+  const docs: CompletionDocument[] = [
+    { id: 'quotation', ref: m('quotation').ref, at: m('quotation').at, route: null },
+    { id: 'contract', ref: m('contract').ref, at: m('contract').at, route: null },
+    { id: 'delivery', ref: null, at: m('delivery').at, route: '/delivery-confirmation' },
+    { id: 'installation', ref: job.code, at: m('installation').at, route: `/installation-timeline/${job.id}` },
+    { id: 'compliance', ref: s.compliance?.code ?? null, at: s.compliance?.issuedAt ?? null, route: staff ? `/compliance/${job.id}` : null },
+    { id: 'walkthrough', ref: null, at: m('handover').at, route: `/handover-walkthrough/${job.id}` },
+    { id: 'warranty', ref: null, at: m('warranty').at, route: `/warranty/${job.id}` },
+  ];
+  if (staff) {
+    docs.splice(4, 0, { id: 'safety', ref: null, at: null, route: `/safety-checklist/${job.id}` }, { id: 'materials', ref: null, at: null, route: `/material-usage/${job.id}` });
+    docs.splice(7, 0, { id: 'handover_checklist', ref: null, at: null, route: `/handover-checklist/${job.id}` });
+  }
+  return docs;
+}
+
+function completionViewOf(job: Job, role: WrRole, now: number): CompletionView {
+  const rec = completionOf(job.id);
+  const walk = walkthroughOf(job.id);
+  const reg = registrationOf(job.id);
+  const readiness = coReadiness({ unlocked: handoverUnlocked(job.id), conducted: walk.conducted ? { at: walk.conducted.at } : null, mode: walk.mode, signedOff: !!walk.signoff, warrantyRegistered: !!reg }, now);
+  const status: CompletionView['status'] = rec ? 'issued' : readiness.problems.length === 0 || readiness.canWaiveSignoff ? 'ready' : 'not_ready';
+  const staff = role === 'admin';
+  const plan = rec ? null : staff ? payoutPlanOf(job, now) : null;
+  const summary = rec ? rec.summary : completionSummaryOf(job, now);
+  const last = reg?.amc?.terms[reg.amc.terms.length - 1];
+  const lineView = (l: FinalPayoutLine): CompletionPayoutLineView => {
+    const e = byId(commissions, l.commissionId);
+    return { ...l, status: e?.status ?? 'approved', currentAmount: e?.amount ?? l.amount, held: !!e?.heldBy };
+  };
+  return {
+    job: { id: job.id, code: job.code, siteName: job.siteName, address: job.address, status: job.status },
+    viewer: role,
+    status,
+    readiness: { problems: readiness.problems, canWaiveSignoff: readiness.canWaiveSignoff, signoffDueAt: walk.conducted ? coSignoffDue(walk.conducted.at, walk.mode) : null },
+    issued: !!rec,
+    certificateNo: rec?.certificateNo ?? null,
+    issuedAt: rec?.issuedAt ?? null,
+    issuedByName: rec?.issuedByName ?? null,
+    signoffWaived: rec?.signoffWaived && staff ? { ...rec.signoffWaived } : null,
+    summary,
+    team: (rec ? rec.team : (plan ?? payoutPlanOf(job, now)).team).map((x) => (staff ? { ...x } : { ...x, minutes: 0, steps: 0, results: 0 })),
+    documents: completionDocumentsOf(job, role),
+    ongoing: { warrantyEndsOn: reg?.terms.service.endsOn ?? null, amcStatus: reg?.amc?.status ?? null, amcEndsOn: last?.endsOn ?? null },
+    payout: !staff
+      ? null
+      : rec
+        ? { triggered: true, triggeredAt: rec.payout.triggeredAt, basis: 'time', lines: rec.payout.lines.map(lineView), pools: { ...rec.payout.pools }, notPaid: [] }
+        : { triggered: false, triggeredAt: null, basis: (plan as PayoutPlan).basis, lines: (plan as PayoutPlan).lines.map((l, i) => ({ ...l, id: `prev-${i}`, commissionId: l.existingId ?? '', status: (l.existingId ? byId(commissions, l.existingId)?.status : undefined) ?? 'projected', currentAmount: l.amount, held: false })), pools: { ...(plan as PayoutPlan).pools }, notPaid: (plan as PayoutPlan).notPaid },
+    judgements: staff && rec ? rec.judgements.map((j) => ({ ...j, changes: j.changes.map((c) => ({ ...c, before: { ...c.before }, after: { ...c.after } })) })) : [],
+    actions: { issue: staff && !rec && status === 'ready' && job.status === 'handover_pending', judge: staff && !!rec },
+  };
+}
+
+/** What the commitments read: a project that has everything it needs and is waiting for Admin to issue its certificate. */
+function completionSignals(): { jobId: string; readyAt: string; issued: boolean; issuedAt?: string }[] {
+  return walkthroughSignals().flatMap((x) => {
+    const reg = registrationOf(x.jobId);
+    const w = x.w;
+    const job = byId(jobs, x.jobId);
+    if (!job || !w.conducted || !w.signoff || !reg) return [];
+    const rec = completionOf(x.jobId);
+    return [{ jobId: x.jobId, readyAt: [w.conducted.at, w.signoff.at, reg.registeredAt].sort().pop() as string, issued: !!rec, ...(rec ? { issuedAt: rec.issuedAt } : {}) }];
+  });
+}
+
+/** One message to the customer through the Communication Engine, in their language, unless they opted out. */
+function messageLeadFromTemplate(lead: Lead, groupId: string, fields: Record<string, string>, at: string): CommChannel | null {
+  const language = lead.preferredLanguage ?? 'en';
+  const template = templateInGroup(groupId, language) ?? templateInGroup(groupId, 'en');
+  if (!template || isOptedOutSync(lead.contactPhone, template.channel)) return null;
+  let conversation = conversations.find((c) => c.leadId === lead.id) ?? null;
+  if (!conversation) {
+    conversationCounter += 1;
+    conversation = { id: `conv-new-${conversationCounter}`, leadId: lead.id, lastMessageAt: at, isDemo: true };
+    conversations.push(conversation);
+  }
+  messageCounter += 1;
+  commMessages.push({ id: `cm-new-${messageCounter}`, conversationId: conversation.id, channel: template.channel, sender: 'bot', body: renderTemplateBody(template.body, { customerName: lead.contactName, buildingName: lead.siteName, ...fields }), templateGroupId: groupId, status: 'sent', at, handled: true });
+  patchInPlace(conversations, conversation.id, { lastMessageAt: at });
+  return template.channel;
 }
 
 /* ============================== Installation SOP (123) */
@@ -13689,6 +13951,116 @@ export const memoryRepository: Repository = {
       if (problem) throw new RepositoryError(problem);
       check.signedOff = { at: new Date().toISOString(), byUserId: user.id, byName: user.name };
       return elecViewOf(job, viewer, assignment);
+    }),
+
+  /* --------------------------------- Handover completion certificate (140) */
+  getCompletionBoard: (userId) =>
+    simulateRead((): CompletionBoardView => {
+      const user = byId(users, userId);
+      if (!user || (user.role !== 'admin' && user.role !== 'customer')) throw new RepositoryError('forbidden');
+      const now = Date.now();
+      const mine = jobs.filter((j) => (user.role === 'admin' || byId(deals, j.dealId)?.customerId === userId) && (j.status === 'handover_pending' || !!completionOf(j.id)));
+      return {
+        viewer: user.role === 'admin' ? 'admin' : 'customer',
+        rows: mine
+          .map((j) => {
+            const v = completionViewOf(j, user.role as WrRole, now);
+            return { jobId: j.id, code: j.code, siteName: j.siteName, status: v.status, certificateNo: v.certificateNo, issuedAt: v.issuedAt };
+          })
+          .filter((r) => user.role === 'admin' || r.status === 'issued' || handoverUnlocked(r.jobId))
+          .sort((a, b) => (a.issuedAt ?? '9').localeCompare(b.issuedAt ?? '9')),
+      };
+    }),
+
+  getCompletion: (jobId, userId) =>
+    simulateRead((): CompletionView => {
+      const { job, role } = completionActor(jobId, userId);
+      return completionViewOf(job, role, Date.now());
+    }),
+
+  issueCompletionCertificate: (jobId, input, userId) =>
+    simulateWrite((): CompletionView => {
+      const { job, user, role } = completionActor(jobId, userId);
+      if (role !== 'admin') throw new RepositoryError('not_admin');
+      if (completionOf(job.id)) throw new RepositoryError('already_issued');
+      if (job.status !== 'handover_pending') throw new RepositoryError('invalid_state');
+      const now = Date.now();
+      const walk = walkthroughOf(job.id);
+      const readiness = coReadiness({ unlocked: handoverUnlocked(job.id), conducted: walk.conducted ? { at: walk.conducted.at } : null, mode: walk.mode, signedOff: !!walk.signoff, warrantyRegistered: !!registrationOf(job.id) }, now);
+      const problem = coIssueProblem({ readiness, waiveReason: input.waiveSignoffReason });
+      if (problem) throw new RepositoryError(problem);
+      const at = new Date(now).toISOString();
+      const deal = byId(deals, job.dealId) as Deal;
+      const lead = resolveLead(deal.leadId);
+      const plan = payoutPlanOf(job, now);
+      const summary = completionSummaryOf(job, now);
+
+      // Every payout, from this one event. An entry already on record for the deal is released, never duplicated.
+      const lines: FinalPayoutLine[] = plan.lines.map((l) => {
+        let entry = l.existingId ? byId(commissions, l.existingId) : undefined;
+        if (!entry && l.role === 'surveyor' && lead) entry = byId(commissions, createOrReuseLeadConvertedCommission(deal, lead));
+        if (!entry) {
+          finalPayoutCounter += 1;
+          entry = { id: `c-fin-${finalPayoutCounter}`, userId: l.userId, ...(lead ? { leadId: lead.id } : {}), dealId: deal.id, reasonKey: l.reasonKey, amount: l.amount, status: 'approved', earnedAt: at, isDemo: true };
+          commissions.push(entry);
+        }
+        patchInPlace(commissions, entry.id, { jobId: job.id, payoutRole: l.role, ...(entry.status === 'projected' ? { status: 'approved' as const } : {}) });
+        const { existingId: _existing, ...rest } = l;
+        void _existing;
+        return { ...rest, id: `fp-${entry.id}`, commissionId: entry.id, amount: entry.amount };
+      });
+
+      certificateCounter += 1;
+      const rec: HandoverCompletion = {
+        jobId: job.id,
+        certificateNo: `AIEC-HC-${5000 + certificateCounter}`,
+        issuedAt: at,
+        issuedByName: user.name,
+        ...(readiness.problems.length > 0 ? { signoffWaived: { reason: (input.waiveSignoffReason ?? '').trim() } } : {}),
+        summary,
+        team: plan.team,
+        payout: { triggeredAt: at, lines, pools: plan.pools },
+        judgements: [],
+        isDemo: true,
+      };
+      handoverCompletions.push(rec);
+      patchInPlace(jobs, job.id, { status: 'completed' as const, completedAt: at });
+      if (lead) {
+        pushTimelineEvent({ leadId: lead.id, kind: 'note_added', actorName: user.name, at, detail: `Handover certificate ${rec.certificateNo} issued; project complete and final payouts triggered` });
+        messageLeadFromTemplate(lead, 'tpl-handover-certificate', { certificateNo: rec.certificateNo }, at);
+      }
+      return completionViewOf(byId(jobs, job.id) as Job, 'admin', now);
+    }),
+
+  recordPayoutJudgement: (jobId, input, userId) =>
+    simulateWrite((): CompletionView => {
+      const { job, user, role } = completionActor(jobId, userId);
+      if (role !== 'admin') throw new RepositoryError('not_admin');
+      const rec = completionOf(job.id);
+      if (!rec) throw new RepositoryError('not_issued');
+      const allowed = new Set(rec.payout.lines.map((l) => l.commissionId));
+      const ids = input.decision === 'no_change' ? [] : [...new Set(input.commissionIds ?? [])].filter((id) => allowed.has(id));
+      const entries = ids.map((id) => byId(commissions, id)).filter((e): e is CommissionEntry => !!e);
+      const problem = fpJudgementProblem({
+        decision: input.decision,
+        issue: input.issue,
+        reason: input.reason,
+        targets: entries.map((e) => ({ status: e.status, held: !!e.heldBy, amount: e.amount, ...(input.amounts && input.amounts[e.id] !== undefined ? { newAmount: input.amounts[e.id] } : {}) })),
+      });
+      if (problem) throw new RepositoryError(problem);
+      judgementCounter += 1;
+      const at = new Date().toISOString();
+      const id = `pj-${judgementCounter}`;
+      const changes: PayoutJudgement['changes'] = entries.map((e) => {
+        const before = { status: e.status, amount: e.amount };
+        if (input.decision === 'hold') patchInPlace(commissions, e.id, { status: 'projected' as const, heldBy: id });
+        else if (input.decision === 'release') patchInPlace(commissions, e.id, { status: 'approved' as const, heldBy: undefined });
+        else patchInPlace(commissions, e.id, { amount: (input.amounts as Record<string, number>)[e.id] });
+        const now = byId(commissions, e.id) as CommissionEntry;
+        return { commissionId: e.id, userId: e.userId, name: nameOf(e.userId), before, after: { status: now.status, amount: now.amount } };
+      });
+      rec.judgements.unshift({ id, at, byName: user.name, issue: input.issue.trim(), decision: input.decision, reason: input.reason.trim(), changes });
+      return completionViewOf(job, 'admin', Date.now());
     }),
 
   /* --------------------------------- Warranty & AMC registration (139) */

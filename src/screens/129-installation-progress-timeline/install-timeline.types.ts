@@ -25,6 +25,7 @@ export const TIMELINE_KEYS = {
   loading: 'installTimeline.loading',
   back: 'installTimeline.back',
   offline: 'installTimeline.offline',
+  certificate: 'installTimeline.certificate',
   error: { title: 'installTimeline.error.title', body: 'installTimeline.error.body' },
   notFound: { title: 'installTimeline.notFound.title', body: 'installTimeline.notFound.body', action: 'installTimeline.notFound.action' },
   empty: { title: 'installTimeline.empty.title', body: 'installTimeline.empty.body' },

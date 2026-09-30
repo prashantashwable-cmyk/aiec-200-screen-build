@@ -125,6 +125,8 @@ export interface CommitmentSources {
   walkthroughs: { jobId: string; unlockedAt: string; leadId: string | null; customerId: string | null; w: HandoverWalkthrough }[];
   /** Warranty and AMC registrations (139). */
   warranties: WarrantyRegistration[];
+  /** Projects with everything the completion certificate needs, and whether it has been issued (140). */
+  completions: { jobId: string; readyAt: string; issued: boolean; issuedAt?: string }[];
   /** Mechanical quality-check attempts and the differences from the install record the inspector raised (132). */
   qcMechChecks: QcMechCheck[];
   qcFindings: QcFinding[];
@@ -1620,6 +1622,33 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
             oversightRoute: `/warranty/${x.jobId}`,
           };
         });
+    },
+  },
+  {
+    // Everything the completion certificate needs is in place: Admin issues it, which closes the project and triggers every final payout (140).
+    kind: 'handover_certificate_issue',
+    nudgeBefore: hours(12),
+    escalateAfter: hours(24),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'quality',
+    collect(src) {
+      const admin = adminId(src);
+      return src.completions.map((x) => {
+        const job = src.jobs.find((j) => j.id === x.jobId);
+        return {
+          ...base('handover_certificate_issue', 'job', x.jobId),
+          ownerUserId: admin,
+          titleKey: 'work.title.handover_certificate_issue',
+          titleParams: { code: job?.code ?? '', site: job?.siteName ?? '' },
+          dueAt: plus(x.readyAt, hours(48)),
+          state: x.issued ? ('done' as const) : ('open' as const),
+          paused: false,
+          completedAt: x.issuedAt,
+          actionRoute: `/handover-certificate/${x.jobId}`,
+          oversightRoute: `/handover-certificate/${x.jobId}`,
+        };
+      });
     },
   },
   {

@@ -12,6 +12,7 @@ export const FINAL_ERRORS = ['not_ready', 'already_registered', 'not_registered'
 
 const rec = <T extends string>(ns: string, keys: readonly T[]) => Object.fromEntries(keys.map((k) => [k, `${ns}.${k}`])) as Record<T, string>;
 export const boardPath = '/warranty';
+export const certificatePath = (id: string) => `/handover-certificate/${id}`;
 export const walkthroughPath = (id: string) => `/handover-walkthrough/${id}`;
 
 export const WARRANTY_KEYS = {
@@ -98,5 +99,6 @@ export const WARRANTY_KEYS = {
     renewToast: 'warranty.registered.renewToast',
     renewFrom: 'warranty.registered.renewFrom',
     custom: 'warranty.registered.custom',
+    certificate: 'warranty.registered.certificate',
   },
 } as const;

@@ -2,6 +2,8 @@ import type { ItemState, SignOffProblem } from '@/features/qc/mechanical';
 import type { ElecSignOffProblem, ElecState } from '@/features/qc/electrical';
 import type { DisputeDecision, SnagProblem, SnagSeverity } from '@/features/qc/snags';
 import type { AmcTierId, ReminderDef, WarrantyProblem } from '@/features/qc/warranty';
+import type { CompletionProblem, IssueProblem, MilestoneId } from '@/features/qc/completion';
+import type { JudgementDecision, JudgementProblem, ShareBasis } from '@/features/commission/finalPayout';
 import type { ScriptGroup, WalkthroughMode, WalkthroughProblem } from '@/features/qc/walkthrough';
 import type { DocBasis, DocBlock, DocState, HandoverDocKind, HandoverProblem, ReadinessProblem as HandoverReadinessProblem } from '@/features/qc/handover';
 import type { PartStatus, ReworkProblem, Urgency } from '@/features/qc/rework';
@@ -21,6 +23,10 @@ import type {
   HandoverReadiness,
   HandoverWalkthrough,
   WarrantyRegistration,
+  HandoverCompletion,
+  FinalPayoutLine,
+  PayoutJudgement,
+  CompletionMilestone,
   AmcPricingTier,
   SnagEvent,
   InspectorUnavailability,
@@ -1732,6 +1738,64 @@ export interface QcElecInput {
   clientId?: string;
   capturedAt?: string;
 }
+
+/* ------------------------------------ Handover completion certificate (140) */
+
+export interface CompletionDocument {
+  id: 'quotation' | 'contract' | 'delivery' | 'installation' | 'safety' | 'compliance' | 'handover_checklist' | 'walkthrough' | 'warranty' | 'materials';
+  ref: string | null;
+  at: string | null;
+  /** Where the document can be opened by this person; null when it is kept on the record and summarised on the certificate. */
+  route: string | null;
+}
+
+export interface CompletionPayoutLineView extends FinalPayoutLine {
+  /** What the entry stands at now: a judgement may have held or changed it since. */
+  status: CommissionEntry['status'];
+  currentAmount: number;
+  held: boolean;
+}
+
+export interface CompletionView {
+  job: { id: string; code: string; siteName: string; address: string; status: Job['status'] };
+  viewer: 'admin' | 'customer';
+  status: 'not_ready' | 'ready' | 'issued';
+  readiness: { problems: CompletionProblem[]; canWaiveSignoff: boolean; signoffDueAt: string | null };
+  /** The frozen summary once issued, else the summary as it reads now. */
+  issued: boolean;
+  certificateNo: string | null;
+  issuedAt: string | null;
+  issuedByName: string | null;
+  signoffWaived: { reason: string } | null;
+  summary: HandoverCompletion['summary'];
+  team: HandoverCompletion['team'];
+  documents: CompletionDocument[];
+  /** What happens next for the customer: the lift's warranty and service, which carry on. */
+  ongoing: { warrantyEndsOn: string | null; amcStatus: 'active' | 'later' | 'declined' | null; amcEndsOn: string | null };
+  /** Admin only. */
+  payout: { triggered: boolean; triggeredAt: string | null; basis: ShareBasis; lines: CompletionPayoutLineView[]; pools: HandoverCompletion['payout']['pools']; notPaid: { userId: string; name: string }[] } | null;
+  judgements: PayoutJudgement[];
+  actions: { issue: boolean; judge: boolean };
+}
+
+export interface CompletionBoardView {
+  viewer: 'admin' | 'customer';
+  rows: { jobId: string; code: string; siteName: string; status: CompletionView['status']; certificateNo: string | null; issuedAt: string | null }[];
+}
+
+export interface PayoutJudgementInput {
+  decision: JudgementDecision;
+  issue: string;
+  reason: string;
+  /** The entries the decision touches (not needed for `no_change`). */
+  commissionIds?: string[];
+  /** For `adjust`: the new amount of each entry. */
+  amounts?: Record<string, number>;
+}
+
+export type CompletionError = IssueProblem | JudgementProblem;
+
+export type { MilestoneId, CompletionMilestone };
 
 /* ------------------------------------ Warranty & AMC registration (139) */
 
@@ -5046,6 +5110,14 @@ export interface Repository {
   pingSiteLocation(technicianId: string, point: GeoPoint, at?: string): Promise<void>;
   /** Picks which step to do next, when the site does not allow the suggested order. Only steps whose prerequisites are done. */
   focusSopStep(jobId: string, stepId: string, technicianId: string): Promise<InstallationSopView>;
+
+  /* Handover completion certificate (140) */
+  getCompletionBoard(userId: string): Promise<CompletionBoardView>;
+  getCompletion(jobId: string, userId: string): Promise<CompletionView>;
+  /** Closes the project: issues the certificate, sets the job completed and triggers every final payout. Admin only, once. */
+  issueCompletionCertificate(jobId: string, input: { waiveSignoffReason?: string }, userId: string): Promise<CompletionView>;
+  /** Admin's documented judgement on a defect found after the payouts were triggered. */
+  recordPayoutJudgement(jobId: string, input: PayoutJudgementInput, userId: string): Promise<CompletionView>;
 
   /* Warranty & AMC registration (139) */
   getWarrantyBoard(userId: string): Promise<WarrantyBoardView>;

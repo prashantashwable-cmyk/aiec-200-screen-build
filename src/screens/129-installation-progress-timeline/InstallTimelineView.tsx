@@ -224,6 +224,7 @@ function JobTimeline({ s, v, t }: { s: TimelineState; v: InstallTimelineView; t:
             </h2>
             <p className="t-sm t-muted">{hero.sub}</p>
           </div>
+          {finished && (s.role === 'customer' || s.role === 'admin') && <Button variant="secondary" style={{ width: 'fit-content' }} data-certificate-link onClick={() => s.goto(`/handover-certificate/${v.job.id}`)}>{t(K.certificate)}</Button>}
           <ProgressBar value={v.progress.percent / 100} label={t(K.progress.label)} tone={finished ? 'success' : v.freshness === 'blocked' ? 'warning' : 'accent'} />
           <div className="grid-auto" style={{ ['--min' as string]: '160px' }}>
             <StatTile label={t(K.progress.label)} value={<span className="num">{v.progress.percent}%</span>} />

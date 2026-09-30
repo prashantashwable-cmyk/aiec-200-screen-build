@@ -3316,6 +3316,18 @@ const templateSeeds: TemplateSeed[] = [
     },
   },
   {
+    groupId: 'tpl-handover-certificate',
+    name: 'Handover completion certificate',
+    channel: 'whatsapp',
+    associatedStage: 'won',
+    mergeFields: ['customerName', 'buildingName', 'certificateNo'],
+    body: {
+      en: 'Hi {{customerName}}, your lift at {{buildingName}} is now fully handed over. Your completion certificate {{certificateNo}} is in your AIEC account. It stays there permanently, with your warranty, service terms and every document from your project, so you can open it whenever you need it.',
+      hi: 'नमस्ते {{customerName}}, {{buildingName}} की आपकी लिफ़्ट अब पूरी तरह सौंप दी गई है। आपका पूर्णता प्रमाणपत्र {{certificateNo}} आपके AIEC खाते में है। वह वारंटी, सर्विस शर्तों और आपके प्रोजेक्ट के हर दस्तावेज़ के साथ स्थायी रूप से वहीं रहेगा, जब चाहें खोल सकते हैं।',
+      mr: 'नमस्कार {{customerName}}, {{buildingName}} येथील तुमची लिफ्ट आता पूर्णपणे सुपूर्द झाली आहे. तुमचे पूर्णत्व प्रमाणपत्र {{certificateNo}} तुमच्या AIEC खात्यात आहे. ते वॉरंटी, सेवा अटी आणि तुमच्या प्रकल्पातील प्रत्येक कागदपत्रासह कायमस्वरूपी तिथेच राहील, हवे तेव्हा उघडू शकता.',
+    },
+  },
+  {
     groupId: 'tpl-site-visit-confirm',
     name: 'Site Visit Confirmation',
     channel: 'sms',

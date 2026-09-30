@@ -2633,6 +2633,80 @@ export interface WarrantyRegistration {
   isDemo: boolean;
 }
 
+/* ------------------------------------ Handover completion certificate (140) */
+
+export interface FinalPayoutLine {
+  id: string;
+  userId: string;
+  name: string;
+  role: 'surveyor' | 'sales' | 'technician_lead' | 'technician' | 'qc_inspector';
+  commissionId: string;
+  reasonKey: string;
+  /** What the amount is based on: the commission already on record for the deal, time on site, steps finished, an equal split, or a flat fee. */
+  basis: 'existing' | 'time' | 'steps' | 'equal' | 'fixed' | 'percent';
+  amount: number;
+  /** The part of the crew pool this person received. */
+  share?: number;
+  minutes?: number;
+  steps?: number;
+  results?: number;
+  leadBonus?: number;
+  /** The person was no longer on the job at the end: what they did is still theirs. */
+  leftEarly?: boolean;
+}
+
+/** Admin's documented decision about a defect found after payouts were triggered. Append-only. */
+export interface PayoutJudgement {
+  id: string;
+  at: string;
+  byName: string;
+  issue: string;
+  decision: 'no_change' | 'hold' | 'release' | 'adjust';
+  reason: string;
+  changes: { commissionId: string; userId: string; name: string; before: { status: CommissionEntry['status']; amount: number }; after: { status: CommissionEntry['status']; amount: number } }[];
+}
+
+export interface CompletionMilestone {
+  id: 'survey' | 'quotation' | 'contract' | 'delivery' | 'installation' | 'qc' | 'compliance' | 'handover' | 'warranty';
+  at: string | null;
+  /** The record's own reference (quotation code, contract, certificate number ...). */
+  ref: string | null;
+  byName: string | null;
+  /** Small facts in a fixed shape the screen words itself, so the summary is translated in whatever language is read. */
+  facts: Record<string, string | number>;
+}
+
+/** What closes a project. One per job, never edited: it freezes the project's summary at the moment of issue, so it reads the same years later. */
+export interface HandoverCompletion {
+  jobId: string;
+  certificateNo: string;
+  issuedAt: string;
+  issuedByName: string;
+  /** The customer had not signed off at the walkthrough and Admin closed the project anyway, with this reason. */
+  signoffWaived?: { reason: string };
+  summary: {
+    customerName: string;
+    siteName: string;
+    address: string;
+    city: string;
+    jobCode: string;
+    dealCode: string;
+    value: number;
+    driveType: string;
+    finishTier: string;
+    capacityPersons: number | null;
+    stops: number | null;
+    milestones: CompletionMilestone[];
+    compliance: { code: string; standard: string; state: string | null; issuedAt: string } | null;
+    warranty: { startsOn: string; serviceEndsOn: string; partsCount: number; amc: { status: 'active' | 'later' | 'declined'; tier: string | null; endsOn: string | null } | null } | null;
+  };
+  /** The people who took part, and how each took part. Frozen with the summary. */
+  team: { userId: string; name: string; roles: FinalPayoutLine['role'][]; minutes: number; steps: number; results: number }[];
+  payout: { triggeredAt: string; lines: FinalPayoutLine[]; pools: { installation: number; qc: number; salesClose: number } };
+  judgements: PayoutJudgement[];
+  isDemo: boolean;
+}
+
 /* ------------------------------------ Customer handover walkthrough (138) */
 
 /** The in-person (or video, or site-representative) walkthrough of a finished lift, and everything that comes of it. One per job. */
@@ -3678,6 +3752,11 @@ export interface CommissionEntry {
   status: 'projected' | 'approved' | 'paid' | 'forfeited';
   earnedAt: string;
   paidAt?: string;
+  /** Set on a final-stage payout triggered by a project's handover certificate (140). */
+  jobId?: string;
+  payoutRole?: 'surveyor' | 'sales' | 'technician_lead' | 'technician' | 'qc_inspector';
+  /** The judgement (140) that is holding this entry back: it stays `projected` until Admin releases it. */
+  heldBy?: string;
   isDemo: boolean;
 }
 
@@ -3780,6 +3859,7 @@ export type CommitmentKind =
   | 'walkthrough_followup'
   | 'warranty_register'
   | 'amc_renewal_review'
+  | 'handover_certificate_issue'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'
