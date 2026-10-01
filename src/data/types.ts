@@ -2945,6 +2945,18 @@ export interface TierReview {
   resolved?: { at: string; byName: string; reason: string };
 }
 
+/** A surveyor's areas changed by Admin from the directory (149): the reason is kept, and what changed is the zones' own assignment. */
+export interface PartnerTerritoryChange {
+  id: string;
+  partnerId: string;
+  from: string[];
+  to: string[];
+  reason: string;
+  byName: string;
+  at: string;
+  isDemo: boolean;
+}
+
 /* ------------------------------------ Handover completion certificate (140) */
 
 export interface FinalPayoutLine {

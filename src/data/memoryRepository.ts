@@ -236,6 +236,12 @@ import type {
   InterviewRowView,
   DashboardPerson,
   PartnerTierBoardView,
+  DirectoryRoleView,
+  DirectoryStatus,
+  PartnerDirectoryFilter,
+  PartnerDirectoryProfileView,
+  PartnerDirectoryRowView,
+  PartnerDirectoryView,
   PartnerTierDetailView,
   PartnerTierRowView,
   TierCriteriaView,
@@ -482,6 +488,7 @@ import type {
   PartnerOffer,
   PartnerVerification,
   PartnerTierEntry,
+  PartnerTerritoryChange,
   TierCriteriaVersion,
   TierDeferral,
   TierDispute,
@@ -8612,6 +8619,77 @@ function tcAssign(id: string, input: { tier: string; reason: string; effectiveFr
   if (dir === 'up') for (let i = tierDeferrals.length - 1; i >= 0; i -= 1) if (tierDeferrals[i].userId === id) tierDeferrals.splice(i, 1);
 }
 
+/* ============================== Partner directory (149) */
+
+const partnerTerritoryChanges: PartnerTerritoryChange[] = [];
+let territoryChangeCounter = 0;
+const PD_REASON_MIN = 15;
+
+const pdStatusOf = (s: string): DirectoryStatus => (s === 'active' ? 'active' : s === 'suspended' ? 'deactivated' : s === 'rejected' ? 'rejected' : 'pending');
+const pdPhoneKey = (phone: string | undefined) => (phone ?? '').replace(/\D/g, '').slice(-10);
+
+/** One directory record per role a person holds; nothing here is stored, every figure is read from the record the role's own screen keeps. */
+function pdRolesOf(now: number): { phone: string; name: string; role: DirectoryRoleView }[] {
+  tcEnsure(now);
+  const out: { phone: string; name: string; role: DirectoryRoleView }[] = [];
+  for (const u of users) {
+    if (u.role !== 'surveyor' && u.role !== 'technician') continue;
+    const app = partnerApplications.find((a) => a.offer?.activation?.userId === u.id);
+    const base = { partnerId: u.id, status: pdStatusOf(u.status), tier: tierNow(u.id, now), city: u.city ?? '', joinedAt: u.joinedAt ?? null, applicationId: app?.id ?? null };
+    if (u.role === 'surveyor') {
+      const mine = leads.filter((l) => l.surveyorId === u.id);
+      out.push({ phone: u.phone, name: u.name, role: { ...base, type: 'surveyor', territory: zones.filter((z) => z.assignedUserIds.includes(u.id)).map((z) => ({ kind: 'zone' as const, value: z.name })), perf: { leads: mine.length, won: deals.filter((d) => d.status === 'won' && resolveLead(d.leadId)?.originalSurveyorId === u.id).length }, inFlight: mine.filter((l) => l.stage !== 'won' && l.stage !== 'lost').length, profileRoute: `/admin/tracking/surveyor/${u.id}` } });
+    } else {
+      const own = jobs.filter((j) => j.technicianId === u.id || (j.crew ?? []).some((c) => c.userId === u.id));
+      const sc = technicianScoreOf(u);
+      out.push({ phone: u.phone, name: u.name, role: { ...base, type: 'technician', territory: normalizeSkills(u.skills).map((v) => ({ kind: 'skill' as const, value: v })), perf: { jobsCompleted: sc.jobsCompleted, qcPassRate: sc.jobsCompleted ? Math.round(sc.qcPassRate * 100) : null }, inFlight: own.filter((j) => j.status !== 'completed').length, profileRoute: `/admin/tracking/technician/${u.id}` } });
+    }
+  }
+  for (const sup of suppliers) {
+    if (sup.mergedIntoSupplierId) continue;
+    const portal = supplierUserFor(sup);
+    const { score, rated } = supplierScoreNow(sup.id);
+    const open = supplierPurchaseOrders.filter((po) => po.supplierId === sup.id && po.status === 'sent' && poStageOf(po) !== 'delivered').length;
+    out.push({ phone: portal?.phone ?? sup.contactPhone ?? '', name: sup.name, role: { type: 'supplier', partnerId: sup.id, status: pdStatusOf(sup.status), tier: tierOf(sup), city: sup.city, joinedAt: portal?.joinedAt ?? sup.invitedAt ?? null, applicationId: partnerApplications.find((a) => a.offer?.activation?.supplierId === sup.id)?.id ?? null, territory: sup.categories.map((v) => ({ kind: 'category' as const, value: v })), perf: { score: score === null ? null : Math.round(score * 100), rated, onTimeRate: rated ? Math.round(sup.onTimeRate * 100) : null }, inFlight: open, profileRoute: `/scorecard?supplierId=${sup.id}` } });
+  }
+  return out;
+}
+
+function pdRows(now: number): PartnerDirectoryRowView[] {
+  const byKey = new Map<string, PartnerDirectoryRowView>();
+  for (const r of pdRolesOf(now)) {
+    const key = pdPhoneKey(r.phone) ? `p:${pdPhoneKey(r.phone)}` : `r:${r.role.partnerId}`;
+    const row = byKey.get(key) ?? { key, name: r.name, phone: r.phone, city: r.role.city, roles: [] };
+    row.roles.push(r.role);
+    byKey.set(key, row);
+  }
+  return [...byKey.values()];
+}
+
+const pdHaystack = (row: PartnerDirectoryRowView) => [row.name, row.phone, pdPhoneKey(row.phone), row.city, ...row.roles.flatMap((r) => [r.partnerId, r.type, r.city, r.tier, ...r.territory.map((t) => t.value)])].join(' ').toLowerCase();
+
+function pdFilter(rows: PartnerDirectoryRowView[], f: PartnerDirectoryFilter, skip?: 'type' | 'status'): PartnerDirectoryRowView[] {
+  const tokens = (f.query ?? '').toLowerCase().split(/\s+/).filter(Boolean);
+  const zone = f.zoneId ? byId(zones, f.zoneId)?.name : undefined;
+  const [tierType, tierId] = (f.tier ?? '').split(':');
+  return rows.filter((row) => {
+    if (tokens.length && !tokens.every((t) => pdHaystack(row).includes(t))) return false;
+    return row.roles.some((r) => (skip === 'type' || !f.type || f.type === 'all' || r.type === f.type) && (skip === 'status' || !f.status || f.status === 'all' || r.status === f.status) && (!tierId || (r.type === tierType && r.tier === tierId)) && (!zone || r.territory.some((t) => t.kind === 'zone' && t.value === zone)));
+  });
+}
+
+function pdProfile(key: string, now: number): PartnerDirectoryProfileView {
+  const row = pdRows(now).find((r) => r.key === key);
+  if (!row) throw new RepositoryError('not_found');
+  const surveyor = row.roles.find((r) => r.type === 'surveyor');
+  const ids = row.roles.map((r) => r.partnerId);
+  return {
+    row,
+    zoneOptions: surveyor ? zones.filter((z) => z.status === 'active').map((z) => ({ id: z.id, name: z.name, assigned: z.assignedUserIds.includes(surveyor.partnerId) })) : [],
+    changes: partnerTerritoryChanges.filter((c) => ids.includes(c.partnerId)).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 5),
+  };
+}
+
 /* ============================== Handover completion certificate (140) */
 
 const handoverCompletions: HandoverCompletion[] = [];
@@ -15898,6 +15976,58 @@ export const memoryRepository: Repository = {
       if (!app.waitlist) throw new RepositoryError('not_open');
       delete app.waitlist;
       return rdBuild(90, Date.now());
+    }),
+
+  /* --------------------------------- Partner directory (149) */
+  searchPartnerDirectory: (filter, userId) =>
+    simulateRead((): PartnerDirectoryView => {
+      ofAdmin(userId);
+      const rows = pdRows(Date.now());
+      const hit = pdFilter(rows, filter);
+      const sorted = [...hit].sort((a, b) => (filter.sort === 'joined' ? (b.roles[0].joinedAt ?? '').localeCompare(a.roles[0].joinedAt ?? '') : a.name.localeCompare(b.name)));
+      const offset = filter.offset ?? 0;
+      const page = filter.limit === 0 ? sorted : sorted.slice(offset, offset + (filter.limit ?? 25));
+      const count = (list: PartnerDirectoryRowView[], pick: (r: DirectoryRoleView) => string, key: string) => list.reduce((n, row) => n + (row.roles.some((r) => pick(r) === key) ? 1 : 0), 0);
+      const forType = pdFilter(rows, filter, 'type');
+      const forStatus = pdFilter(rows, filter, 'status');
+      return {
+        rows: page,
+        total: hit.length,
+        typeCounts: { all: forType.length, surveyor: count(forType, (r) => r.type, 'surveyor'), technician: count(forType, (r) => r.type, 'technician'), supplier: count(forType, (r) => r.type, 'supplier') },
+        statusCounts: { all: forStatus.length, active: count(forStatus, (r) => r.status, 'active'), pending: count(forStatus, (r) => r.status, 'pending'), deactivated: count(forStatus, (r) => r.status, 'deactivated'), rejected: count(forStatus, (r) => r.status, 'rejected') },
+        zones: zones.filter((z) => z.status === 'active').map((z) => ({ id: z.id, name: z.name })),
+      };
+    }),
+
+  getPartnerDirectoryProfile: (key, userId) =>
+    simulateRead((): PartnerDirectoryProfileView => {
+      ofAdmin(userId);
+      return pdProfile(key, Date.now());
+    }),
+
+  reassignPartnerTerritory: (partnerId, input, userId) =>
+    simulateWrite((): PartnerDirectoryProfileView => {
+      const admin = ofAdmin(userId);
+      const u = byId(users, partnerId);
+      if (!u) throw new RepositoryError('not_found');
+      if (u.role !== 'surveyor') throw new RepositoryError('not_surveyor');
+      if (u.status !== 'active') throw new RepositoryError('not_active');
+      if (input.reason.replace(/[^\p{L}\p{N}]/gu, '').length < PD_REASON_MIN) throw new RepositoryError('reason_required');
+      const active = zones.filter((z) => z.status === 'active');
+      if (input.zoneIds.some((id) => !active.some((z) => z.id === id))) throw new RepositoryError('unknown_zone');
+      const before = active.filter((z) => z.assignedUserIds.includes(partnerId)).map((z) => z.id);
+      const next = [...new Set(input.zoneIds)];
+      if (before.length === next.length && before.every((id) => next.includes(id))) throw new RepositoryError('no_change');
+      for (const z of active) {
+        const has = z.assignedUserIds.includes(partnerId);
+        const want = next.includes(z.id);
+        if (has && !want) patchInPlace(zones, z.id, { assignedUserIds: z.assignedUserIds.filter((x) => x !== partnerId) });
+        if (!has && want) patchInPlace(zones, z.id, { assignedUserIds: [...z.assignedUserIds, partnerId] });
+      }
+      territoryChangeCounter += 1;
+      partnerTerritoryChanges.push({ id: `ptc-${territoryChangeCounter}`, partnerId, from: before, to: next, reason: input.reason.trim(), byName: admin.name, at: new Date().toISOString(), isDemo: true });
+      const phone = pdPhoneKey(u.phone);
+      return pdProfile(phone ? `p:${phone}` : `r:${partnerId}`, Date.now());
     }),
 
   /* --------------------------------- Partner tier and category assignment (148) */

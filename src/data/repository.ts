@@ -40,6 +40,7 @@ import type {
   PartnerAgreementTemplate,
   PartnerOffer,
   PartnerTierEntry,
+  PartnerTerritoryChange,
   PartnerVerification,
   TierCriteriaVersion,
   TierDeferral,
@@ -2306,6 +2307,66 @@ export type TierError =
   | 'unknown_metric'
   | 'effective_past'
   | 'tier_cannot_lead';
+
+/* ------------------------------------ Partner directory (149) */
+
+export type DirectoryType = 'surveyor' | 'technician' | 'supplier';
+export type DirectoryStatus = 'active' | 'pending' | 'deactivated' | 'rejected';
+export type DirectorySort = 'name' | 'joined';
+
+export interface DirectoryRoleView {
+  type: DirectoryType;
+  partnerId: string;
+  status: DirectoryStatus;
+  tier: string;
+  /** Where they work: zone names (surveyor), verified skills (technician), component categories (supplier). */
+  territory: { kind: 'zone' | 'skill' | 'category'; value: string }[];
+  city: string;
+  joinedAt: string | null;
+  /** The summary each role's own screen owns: nothing here is kept in the directory. */
+  perf: { leads?: number; won?: number; jobsCompleted?: number; qcPassRate?: number | null; score?: number | null; rated?: number; onTimeRate?: number | null };
+  /** Work in hand that would need a new owner if they left: open leads, unfinished jobs, orders not yet delivered. */
+  inFlight: number;
+  profileRoute: string;
+  applicationId: string | null;
+}
+
+export interface PartnerDirectoryRowView {
+  key: string;
+  name: string;
+  phone: string;
+  city: string;
+  roles: DirectoryRoleView[];
+}
+
+export interface PartnerDirectoryFilter {
+  query?: string;
+  type?: DirectoryType | 'all';
+  status?: DirectoryStatus | 'all';
+  /** `<type>:<tier>` */
+  tier?: string;
+  zoneId?: string;
+  sort?: DirectorySort;
+  offset?: number;
+  /** 0 returns every match (the export). */
+  limit?: number;
+}
+
+export interface PartnerDirectoryView {
+  rows: PartnerDirectoryRowView[];
+  total: number;
+  typeCounts: Record<DirectoryType | 'all', number>;
+  statusCounts: Record<DirectoryStatus | 'all', number>;
+  zones: { id: string; name: string }[];
+}
+
+export interface PartnerDirectoryProfileView {
+  row: PartnerDirectoryRowView;
+  zoneOptions: { id: string; name: string; assigned: boolean }[];
+  changes: PartnerTerritoryChange[];
+}
+
+export type DirectoryError = 'not_admin' | 'not_found' | 'reason_required' | 'not_surveyor' | 'not_active' | 'no_change' | 'unknown_zone';
 
 /* ------------------------------------ Recruitment: the public front door (141) */
 
@@ -5765,6 +5826,11 @@ export interface Repository {
   getRecruitmentDashboard(period: DashboardPeriod, userId: string): Promise<RecruitmentDashboardView>;
   waitlistApplicant(applicationId: string, reason: string, userId: string): Promise<RecruitmentDashboardView>;
   releaseWaitlisted(applicationId: string, userId: string): Promise<RecruitmentDashboardView>;
+  // Partner directory (149)
+  searchPartnerDirectory(filter: PartnerDirectoryFilter, userId: string): Promise<PartnerDirectoryView>;
+  getPartnerDirectoryProfile(key: string, userId: string): Promise<PartnerDirectoryProfileView>;
+  reassignPartnerTerritory(partnerId: string, input: { zoneIds: string[]; reason: string }, userId: string): Promise<PartnerDirectoryProfileView>;
+
   // Partner tier and category assignment (148)
   getTierBoard(userId: string): Promise<PartnerTierBoardView>;
   getPartnerTier(partnerId: string, userId: string): Promise<PartnerTierDetailView>;
