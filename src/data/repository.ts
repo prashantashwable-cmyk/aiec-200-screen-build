@@ -34,6 +34,9 @@ import type {
   InterviewConcernCategory,
   InterviewMode,
   PartnerInterview,
+  AgreementTerms,
+  PartnerAgreementTemplate,
+  PartnerOffer,
   PartnerVerification,
   VerificationHow,
   VerificationRecord,
@@ -1794,6 +1797,8 @@ export interface PartnerApplicationView {
   /** What AIEC has said to this applicant (a template key, filled in the reader's language) and, while it is open, what was asked for. */
   messages: PartnerApplication['messages'];
   infoRequest: { sections: string[]; note: string; at: string } | null;
+  /** The agreement waiting to be read and signed, or already signed. */
+  offer: { status: 'sent' | 'signed' } | null;
   /** Once moved forward: where the interview stands, and whether they can pick a time themselves. */
   interview: { phase: InterviewPhase; slot: { start: string; end: string; mode: InterviewMode } | null; canSelfServe: boolean } | null;
 }
@@ -2066,6 +2071,108 @@ export type VerificationError =
   | 'deadline_invalid'
   | 'too_many'
   | 'already_resolved';
+
+/* ------------------------------------ Recruitment: offer and onboarding agreement (146) */
+
+export type OfferStage = 'interview_open' | 'verifying' | 'to_prepare' | 'draft' | 'sent' | 'signed' | 'withdrawn';
+
+export interface OfferRowView {
+  id: string;
+  code: string;
+  name: string;
+  role: PartnerApplication['role'];
+  stage: OfferStage;
+  gate: Gate['state'];
+  signal: DecisionSignal['level'];
+  templateVersion: number | null;
+  capability: 'none' | 'basic' | 'full';
+  daysSinceSent: number | null;
+  openRequest: boolean;
+  approvedAt: string | null;
+}
+
+export interface OfferBoardView {
+  rows: OfferRowView[];
+  counts: { toPrepare: number; sent: number; signed: number; requests: number; stepsOpen: number };
+}
+
+export interface OfferTermDef {
+  key: keyof AgreementTerms;
+  unit: 'pct' | 'inr' | 'days' | 'score' | 'months';
+  min: number;
+  max: number;
+  negotiable: boolean;
+  standard: number;
+}
+
+export interface OfferDetailView {
+  row: OfferRowView;
+  applicant: { name: string; phone: string; city: string; languages: ('en' | 'hi' | 'mr')[] };
+  gate: Gate;
+  signal: DecisionSignal;
+  interviewOutcome: string | null;
+  template: { id: string; version: number; effectiveFrom: string; newerExists: boolean };
+  offer: PartnerOffer | null;
+  /** The terms that bind: the standard ones with any approved addendum over them. */
+  terms: AgreementTerms;
+  clauses: { id: string; heading: string; body: string }[];
+  zones: { id: string; name: string }[];
+  termDefs: OfferTermDef[];
+  canPrepare: boolean;
+  blockedBy: 'interview_open' | 'verifying' | 'signed' | 'sent' | null;
+  needsOverride: boolean;
+  phoneTaken: boolean;
+}
+
+export interface OfferApplicantView {
+  applicationId: string;
+  code: string;
+  name: string;
+  role: PartnerApplication['role'];
+  status: 'none' | 'sent' | 'signed' | 'withdrawn';
+  documentNo: string | null;
+  templateVersion: number | null;
+  wording: 'v1';
+  terms: AgreementTerms;
+  addendum: PartnerOffer['addendum'] | null;
+  clauses: { id: string; heading: string; body: string }[];
+  zoneNames: string[];
+  requests: PartnerOffer['requests'];
+  signature: { at: string; signerName: string; method: 'drawn' | 'typed'; language: 'en' | 'hi' | 'mr'; data: string } | null;
+  activation: { at: string; capability: 'basic' | 'full'; steps: PartnerOffer['activation'] extends infer A ? (A extends { steps: infer S } ? S : never) : never } | null;
+  sentAt: string | null;
+}
+
+export interface AgreementTemplatesView {
+  roles: { role: PartnerApplication['role']; current: PartnerAgreementTemplate; versions: PartnerAgreementTemplate[]; defs: OfferTermDef[] }[];
+}
+
+export type OfferError =
+  | ApplicationError
+  | 'not_approved'
+  | 'interview_open'
+  | 'verification_open'
+  | 'concern_override_required'
+  | 'territory_required'
+  | 'phone_taken'
+  | 'already_signed'
+  | 'already_sent'
+  | 'not_open'
+  | 'addendum_empty'
+  | 'addendum_too_many'
+  | 'addendum_term'
+  | 'addendum_range'
+  | 'addendum_same'
+  | 'addendum_reason'
+  | 'request_open'
+  | 'request_short'
+  | 'reason_required'
+  | 'consent_required'
+  | 'identity_required'
+  | 'signature_required'
+  | 'name_required'
+  | 'invalid_terms'
+  | 'effective_past';
 
 /* ------------------------------------ Recruitment: the public front door (141) */
 
@@ -5509,6 +5616,20 @@ export interface Repository {
   grantConditionalVerification(applicationId: string, itemKey: string, input: { reason: string; dueDate: string }, userId: string): Promise<VerificationDetailView>;
   /** Demo control standing in for the ID service's own availability: a real connector reports it. */
   setVerificationService(status: 'up' | 'down', userId: string): Promise<VerificationServiceView>;
+  // Recruitment: offer and onboarding agreement (146)
+  getOfferBoard(userId: string): Promise<OfferBoardView>;
+  getOfferDetail(applicationId: string, userId: string): Promise<OfferDetailView>;
+  prepareOffer(applicationId: string, input: { territoryZoneIds: string[]; overrideReason?: string }, userId: string): Promise<OfferDetailView>;
+  setOfferAddendum(applicationId: string, input: { items: { key: keyof AgreementTerms; value: number }[]; reason: string }, userId: string): Promise<OfferDetailView>;
+  sendOffer(applicationId: string, userId: string): Promise<OfferDetailView>;
+  withdrawOffer(applicationId: string, reason: string, userId: string): Promise<OfferDetailView>;
+  respondTermRequest(applicationId: string, requestId: string, input: { outcome: 'approved' | 'declined'; note: string; items?: { key: keyof AgreementTerms; value: number }[] }, userId: string): Promise<OfferDetailView>;
+  markActivationStep(applicationId: string, step: string, done: boolean, userId: string): Promise<OfferDetailView>;
+  getAgreementTemplates(userId: string): Promise<AgreementTemplatesView>;
+  publishAgreementTemplate(role: PartnerApplication['role'], input: { terms: AgreementTerms; effectiveFrom: string; changeNote: string }, userId: string): Promise<AgreementTemplatesView>;
+  getOfferForApplicant(applicationId: string, key: string): Promise<OfferApplicantView>;
+  requestTermChange(applicationId: string, key: string, text: string): Promise<OfferApplicantView>;
+  signPartnerAgreement(applicationId: string, key: string, input: { method: 'drawn' | 'typed'; data: string; signerName: string; language: 'en' | 'hi' | 'mr'; consentGiven: boolean; otpVerified: boolean; viaFallback: boolean }): Promise<OfferApplicantView>;
   chooseInterviewSlot(applicationId: string, key: string, input: { start: string; mode: InterviewMode }): Promise<InterviewApplicantView>;
 
   /* Recruitment: the public front door (141) */

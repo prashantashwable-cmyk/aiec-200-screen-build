@@ -235,6 +235,12 @@ import type {
   InterviewDetailView,
   InterviewRowView,
   InterviewSaveResult,
+  OfferApplicantView,
+  OfferBoardView,
+  OfferDetailView,
+  OfferRowView,
+  OfferStage,
+  AgreementTemplatesView,
   ScreeningDecision,
   VerificationBoardView,
   VerificationDetailView,
@@ -462,7 +468,10 @@ import type {
   ApplicationScreening,
   InterviewAvailability,
   InterviewMode,
+  AgreementTerms,
+  PartnerAgreementTemplate,
   PartnerInterview,
+  PartnerOffer,
   PartnerVerification,
   ScreeningFactorRow,
   VerificationRecord,
@@ -656,6 +665,7 @@ import { issueProblem as coIssueProblem, readinessOf as coReadiness, signoffDueA
 import { QC_FEE as FP_QC_FEE, crewShares as fpCrewShares, installPoolOf as fpInstallPool, judgementProblem as fpJudgementProblem, qcShares as fpQcShares, salesCloseOf as fpSalesClose } from '@/features/commission/finalPayout';
 import type { Contributor as FpContributor } from '@/features/commission/finalPayout';
 import { SECTIONS as APP_SECTIONS, EMPTY_FORM as APP_EMPTY, maskId as apMask, outstandingOf as apOutstanding, progressOf as apProgress, sectionStates as apSections, submitProblem as apSubmitProblem } from '@/features/recruitment/application';
+import { ACTIVATION_STEPS as ofSteps, REASON_MIN as OF_REASON_MIN, REQUEST_MIN as OF_REQUEST_MIN, SIGN_WAIT as OF_SIGN_WAIT, TERM_DEFS as ofTermDefs, addendumProblem as ofAddendumProblem, bindingTermsOf as ofBinding, capabilityOf as ofCapability, clausesOf as ofClauses, defaultTermsOf as ofDefaultTerms, signProblem as ofSignProblem } from '@/features/recruitment/agreement';
 import { conditionalProblem as vfConditionalProblem, gateOf as vfGate, itemStateOf as vfItemState, manualProblem as vfManualProblem, requiredItemsOf as vfRequired, serviceCheck as vfServiceCheck } from '@/features/recruitment/verification';
 import type { RequiredItem } from '@/features/recruitment/verification';
 import { ARRANGE_DUE as IV_ARRANGE_DUE, DEFAULT_AVAILABILITY as IV_DEFAULT_AVAILABILITY, GRACE as IV_GRACE, INVITE_WAIT as IV_INVITE_WAIT, MAX_MISSES as IV_MAX_MISSES, REASON_MIN as IV_REASON_MIN, REMINDERS as IV_REMINDERS, adminSlotProblem as ivAdminSlotProblem, availabilityProblem as ivAvailabilityProblem, completeProblem as ivCompleteProblem, decisionSignal as ivSignal, icsOf as ivIcs, phaseOf as ivPhaseOf, selfServiceOpen as ivSelfServe, slotProblem as ivSlotProblem, slotsFor as ivSlots, stillFits as ivFits, NOTE_MIN as IV_NOTE_MIN } from '@/features/recruitment/interview';
@@ -2607,6 +2617,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   syncRecruitmentIntake(now);
   syncPartnerInterviews(now);
   syncVerification(now);
+  syncOffers(now);
   syncSafetyAlerts(true, now);
   syncIssueAlerts(true, now);
   syncMaterialDeviations(true, now);
@@ -7563,7 +7574,7 @@ function stepFinisherName(job: Job, st: Job['steps'][number]): string | null {
 
 /* ============================== Recruitment: the applicant's full details (142) */
 
-const partnerApplications: PartnerApplication[] = seedPartnerApplications.map((a) => ({ ...a, form: JSON.parse(JSON.stringify(a.form)) as ApplicationForm, events: a.events.map((e) => ({ ...e })), messages: a.messages.map((m) => ({ ...m, params: { ...m.params } })), ...(a.screening ? { screening: JSON.parse(JSON.stringify(a.screening)) as ApplicationScreening } : {}), ...(a.interview ? { interview: JSON.parse(JSON.stringify(a.interview)) as PartnerInterview } : {}), ...(a.verification ? { verification: JSON.parse(JSON.stringify(a.verification)) as PartnerVerification } : {}) }));
+const partnerApplications: PartnerApplication[] = seedPartnerApplications.map((a) => ({ ...a, form: JSON.parse(JSON.stringify(a.form)) as ApplicationForm, events: a.events.map((e) => ({ ...e })), messages: a.messages.map((m) => ({ ...m, params: { ...m.params } })), ...(a.screening ? { screening: JSON.parse(JSON.stringify(a.screening)) as ApplicationScreening } : {}), ...(a.interview ? { interview: JSON.parse(JSON.stringify(a.interview)) as PartnerInterview } : {}), ...(a.verification ? { verification: JSON.parse(JSON.stringify(a.verification)) as PartnerVerification } : {}), ...(a.offer ? { offer: JSON.parse(JSON.stringify(a.offer)) as PartnerOffer } : {}) }));
 /** A form can be changed by its applicant until screening has decided it; an asked-for correction reopens it. */
 const apLocked = (status: PartnerApplication['status']): boolean => status === 'approved' || status === 'rejected' || status === 'withdrawn';
 let applicationCounter = 100;
@@ -7617,6 +7628,7 @@ function applicationViewOf(app: PartnerApplication, viewer: 'applicant' | 'admin
     events: app.events.map((e) => ({ ...e })),
     messages: app.messages.map((m) => ({ ...m, params: { ...m.params } })),
     infoRequest: app.status === 'info_requested' && app.screening?.infoRequest ? { sections: [...app.screening.infoRequest.sections], note: app.screening.infoRequest.note, at: app.screening.infoRequest.at } : null,
+    offer: app.offer && (app.offer.status === 'sent' || app.offer.status === 'signed') ? { status: app.offer.status } : null,
     interview: app.status === 'approved' ? { phase: ivPhaseOf(app.interview, Date.now()), slot: app.interview?.slot && app.interview.status === 'scheduled' ? { start: app.interview.slot.start, end: app.interview.slot.end, mode: app.interview.slot.mode } : null, canSelfServe: ivSelfServe(app.interview, Date.now()) } : null,
   };
 }
@@ -8021,6 +8033,182 @@ function syncVerification(now: number): void {
       vfAlert(`verif:${app.id}:${it.key}:lapsed`, VERIFY_ALERT_LAPSED, `${app.form.personal.fullName}: the allowance for ${it.key} has passed its deadline`, 'high', app, st === 'lapsed', at);
       if (st === 'lapsed' && !v.events.some((e) => e.kind === 'lapsed' && e.item === it.key && e.at >= (v.records[it.key]?.at ?? ''))) v.events.push(vfEvent('lapsed', 'AIEC', it.key));
     }
+  }
+}
+
+/* ============================== Recruitment: offer and onboarding agreement (146) */
+
+const agreementTemplates: PartnerAgreementTemplate[] = (['surveyor', 'technician', 'supplier'] as const).map((role) => ({ id: `pat-${role}-1`, role, version: 1, effectiveFrom: '2026-01-01', terms: ofDefaultTerms(role), wording: 'v1' as const, changeNote: 'First standard terms.', createdByName: 'Prashant Vasant Wable', createdAt: '2026-01-01T00:00:00.000Z', isDemo: true }));
+let offerCounter = 0;
+let offerEventCounter = 0;
+const OFFER_REQUEST_ALERT = 'agreement.alert.request';
+
+const ofEvent = (kind: PartnerOffer['events'][number]['kind'], byName: string, note?: string): PartnerOffer['events'][number] => {
+  offerEventCounter += 1;
+  return { id: `ofev-${offerEventCounter}`, at: new Date().toISOString(), kind, byName, ...(note ? { note } : {}) };
+};
+function ofAdmin(userId: string): User {
+  const u = byId(users, userId);
+  if (!u || u.role !== 'admin') throw new RepositoryError('not_admin');
+  return u;
+}
+function ofApp(applicationId: string): PartnerApplication {
+  const app = byId(partnerApplications, applicationId);
+  if (!app) throw new RepositoryError('not_found');
+  if (app.status !== 'approved') throw new RepositoryError('not_approved');
+  return app;
+}
+const templateInForce = (role: PartnerApplication['role'], now: number): PartnerAgreementTemplate => agreementTemplates.filter((t) => t.role === role && new Date(`${t.effectiveFrom}T00:00:00`).getTime() <= now).sort((a, b) => b.version - a.version)[0];
+const ofDefs = (role: PartnerApplication['role']) => ofTermDefs[role].map((d) => ({ ...d, standard: Number((ofDefaultTerms(role) as Record<string, unknown>)[d.key]) }));
+const ofInterviewOpen = (app: PartnerApplication): boolean => !!app.interview && ['invited', 'scheduled', 'missed'].includes(app.interview.status);
+const ofGateOf = (app: PartnerApplication, now: number) => vfGate(vfRequired(app.role, app.form), app.verification, now);
+
+function ofStage(app: PartnerApplication, now: number): OfferStage {
+  const o = app.offer;
+  if (o && o.status !== 'withdrawn') return o.status;
+  if (ofInterviewOpen(app)) return 'interview_open';
+  if (ofGateOf(app, now).state === 'blocked') return 'verifying';
+  return o ? 'withdrawn' : 'to_prepare';
+}
+
+function ofRowOf(app: PartnerApplication, now: number): OfferRowView {
+  const o = app.offer;
+  return {
+    id: app.id,
+    code: app.code,
+    name: app.form.personal.fullName,
+    role: app.role,
+    stage: ofStage(app, now),
+    gate: ofGateOf(app, now).state,
+    signal: ivSignal(app.interview).level,
+    templateVersion: o?.templateVersion ?? null,
+    capability: o ? ofCapability(o) : 'none',
+    daysSinceSent: o?.sentAt ? Math.floor((now - new Date(o.sentAt).getTime()) / 86_400_000) : null,
+    openRequest: !!o?.requests.some((r) => !r.response),
+    approvedAt: app.screening?.decision?.at ?? null,
+  };
+}
+
+/** A phone number already belonging to someone else cannot become a second account (a pending supplier from onboarding may be activated). */
+function ofPhoneTaken(app: PartnerApplication): boolean {
+  const u = users.find((x) => x.phone === app.form.personal.phone);
+  return !!u && !(app.role === 'supplier' && u.role === 'supplier' && u.status === 'pending_approval');
+}
+
+function ofDetailOf(app: PartnerApplication, now: number): OfferDetailView {
+  const row = ofRowOf(app, now);
+  const tpl = templateInForce(app.role, now);
+  const o = app.offer ?? null;
+  const sig = ivSignal(app.interview);
+  const base: AgreementTerms = o ? ofBinding(o) : { ...tpl.terms, ...(app.role !== 'supplier' ? { territoryZoneIds: app.form.territory.zoneIds.filter((z) => zones.some((x) => x.id === z && x.status === 'active')) } : {}) };
+  const stage = row.stage;
+  return {
+    row,
+    applicant: { name: app.form.personal.fullName, phone: app.form.personal.phone, city: app.form.personal.city, languages: [...app.form.personal.languages] },
+    gate: ofGateOf(app, now),
+    signal: sig,
+    interviewOutcome: app.interview?.completed?.outcome ?? (app.interview?.status === 'skipped' ? 'skipped' : null),
+    template: { id: tpl.id, version: tpl.version, effectiveFrom: tpl.effectiveFrom, newerExists: !!o && o.status !== 'signed' && o.templateVersion < tpl.version },
+    offer: o ? (JSON.parse(JSON.stringify(o)) as PartnerOffer) : null,
+    terms: base,
+    clauses: ofClauses(app.role),
+    zones: zones.filter((z) => z.status === 'active').map((z) => ({ id: z.id, name: z.name })),
+    termDefs: ofDefs(app.role),
+    canPrepare: stage === 'to_prepare' || stage === 'draft' || stage === 'withdrawn',
+    blockedBy: stage === 'interview_open' ? 'interview_open' : stage === 'verifying' ? 'verifying' : stage === 'signed' ? 'signed' : stage === 'sent' ? 'sent' : null,
+    needsOverride: sig.level === 'block',
+    phoneTaken: ofPhoneTaken(app),
+  };
+}
+
+function ofApplicantViewOf(app: PartnerApplication): OfferApplicantView {
+  const o = app.offer;
+  const act = o?.activation;
+  return {
+    applicationId: app.id,
+    code: app.code,
+    name: app.form.personal.fullName,
+    role: app.role,
+    status: !o || o.status === 'draft' ? 'none' : o.status,
+    documentNo: o && o.status !== 'draft' ? o.documentNo : null,
+    templateVersion: o && o.status !== 'draft' ? o.templateVersion : null,
+    wording: 'v1',
+    terms: o && o.status !== 'draft' ? ofBinding(o) : {},
+    addendum: o?.addendum ? JSON.parse(JSON.stringify(o.addendum)) : null,
+    clauses: ofClauses(app.role),
+    zoneNames: o && o.status !== 'draft' ? (ofBinding(o).territoryZoneIds ?? []).map((z) => zones.find((x) => x.id === z)?.name ?? z) : [],
+    requests: o ? o.requests.map((r) => ({ ...r })) : [],
+    signature: o?.signature ? { at: o.signature.at, signerName: o.signature.signerName, method: o.signature.method, language: o.signature.language, data: o.signature.data } : null,
+    activation: act ? { at: act.at, capability: ofCapability(o as PartnerOffer) as 'basic' | 'full', steps: JSON.parse(JSON.stringify(act.steps)) } : null,
+    sentAt: o?.sentAt ?? null,
+  };
+}
+
+/** The one event that makes someone a partner: an active account (and for a supplier the firm and its agreement), with payouts still waiting on the remaining steps. */
+function ofActivate(app: PartnerApplication, offer: PartnerOffer, at: string): void {
+  const f = app.form;
+  const terms = ofBinding(offer);
+  const lang = f.personal.languages[0] ?? 'en';
+  let supplierId: string | undefined;
+  let userId: string;
+  if (app.role === 'supplier') {
+    const gstin = f.identity.gstin.trim().toUpperCase();
+    let supplier = suppliers.find((x) => x.gstin?.toUpperCase() === gstin);
+    if (!supplier) {
+      supplierCounter += 1;
+      supplier = { id: `sp-new-${supplierCounter}`, name: f.personal.fullName, status: 'active', kycStatus: 'approved', kycReviewedBy: 'AIEC verification', kycReviewedAt: at, city: f.personal.city, gstin, contactName: f.personal.fullName, contactPhone: f.personal.phone, categories: [...f.experience.skills], driveTypeSpecialties: [], regionsServed: [], onTimeRate: 0, qualityScore: 0, avgLeadTimeDays: 0, openOrders: 0, totalOrderValue: 0, rating: 0, invitedBy: 'Recruitment', invitedAt: at, isDemo: true };
+      suppliers.push(supplier);
+    } else patchInPlace(suppliers, supplier.id, { status: 'active' as const, kycStatus: 'approved' as const, kycReviewedBy: 'AIEC verification', kycReviewedAt: at });
+    supplierId = supplier.id;
+    const existing = users.find((u) => u.phone === f.personal.phone);
+    if (existing) {
+      patchInPlace(users, existing.id, { status: 'active' as const, joinedAt: at });
+      userId = existing.id;
+    } else {
+      userCounter += 1;
+      userId = `u-sup-new-${userCounter}`;
+      users.push({ id: userId, role: 'supplier', name: f.personal.fullName, phone: f.personal.phone, status: 'active', preferredLanguage: lang, themePreference: 'light', isDemo: true, city: f.personal.city, companyName: supplier.name, gstin, joinedAt: at });
+    }
+    const hadAgreement = versionsOf(supplierAgreementVersions, supplier.id).length > 0;
+    if (!hadAgreement) {
+      agreementCounter += 1;
+      supplierAgreementVersions.push({ id: `sag-new-${agreementCounter}`, supplierId: supplier.id, version: 1, kind: 'initial', terms: { deliverySlaDays: terms.deliverySlaDays ?? 14, paymentTermsDays: terms.paymentTermsDays ?? 30, minQualityScore: terms.minQualityScore ?? 3.5, qualityStandards: terms.qualityStandards ?? '', warrantyMonths: terms.warrantyMonths ?? 12 }, effectiveFrom: at.slice(0, 10), expiresOn: new Date(new Date(at).getTime() + 365 * 86_400_000).toISOString().slice(0, 10), documentName: `${offer.documentNo}.html`, warrantyPassThrough: true, recordedBy: 'Partner agreement', recordedAt: at, acknowledgedBy: f.personal.fullName, acknowledgedAt: at, isDemo: true });
+    }
+  } else {
+    userCounter += 1;
+    userId = `u-${app.role === 'surveyor' ? 'srv' : 'tech'}-new-${userCounter}`;
+    const skills = app.role === 'technician' ? Object.entries(app.verification?.records ?? {}).filter(([k, r]) => k.startsWith('skill:') && r.status !== 'failed').map(([k]) => k.slice(6)) : undefined;
+    users.push({ id: userId, role: app.role, name: f.personal.fullName, phone: f.personal.phone, status: 'active', preferredLanguage: lang, themePreference: 'light', isDemo: true, city: f.personal.city, joinedAt: at, ...(skills ? { skills } : {}) });
+    // They can now receive leads in the areas the agreement names.
+    for (const zid of terms.territoryZoneIds ?? []) {
+      const z = byId(zones, zid);
+      if (z && z.status === 'active' && !z.assignedUserIds.includes(userId)) patchInPlace(zones, zid, { assignedUserIds: [...z.assignedUserIds, userId] });
+    }
+  }
+  offer.activation = { at, userId, ...(supplierId ? { supplierId } : {}), steps: Object.fromEntries(ofSteps[app.role].map((k) => [k, { done: false }])) };
+  offer.events.push(ofEvent('activated', 'AIEC', userId));
+  logAutomatedAction({ sourceKey: 'partner.activated', triggeringCondition: `${f.personal.fullName} signed the ${app.role} agreement ${offer.documentNo}`, actionTaken: `Activated the account for basic access; payouts wait for ${ofSteps[app.role].join(' and ')}`, affectedRecordId: app.id, affectedRecordType: 'other', subjectLabel: app.code });
+}
+
+/** One gentle nudge for an offer left unsigned, and an alert while a partner's question about a term is unanswered. */
+function syncOffers(now: number): void {
+  const at = new Date(now).toISOString();
+  for (const app of partnerApplications) {
+    const o = app.offer;
+    if (!o || o.status !== 'sent') continue;
+    if (o.sentAt && !o.nudgedAt && now - new Date(o.sentAt).getTime() >= OF_SIGN_WAIT) {
+      o.nudgedAt = at;
+      o.events.push(ofEvent('nudged', 'AIEC'));
+      screeningMessage(app, 'offer_nudge', 'agreement.message.nudge', 'AIEC');
+      logAutomatedAction({ sourceKey: 'offer.nudge', triggeringCondition: `${app.form.personal.fullName} has not signed the agreement after the waiting period`, actionTaken: 'Sent one gentle reminder on their application link', affectedRecordId: app.id, affectedRecordType: 'other', subjectLabel: app.code });
+    }
+  }
+  for (const app of partnerApplications) {
+    const open = app.offer?.requests.find((r) => !r.response);
+    const rel = `offerreq:${app.id}`;
+    const alert = alerts.find((a) => a.relatedId === rel && a.titleKey === OFFER_REQUEST_ALERT && a.status !== 'resolved');
+    if (open && app.offer?.status === 'sent' && !alert) raiseAlert({ titleKey: OFFER_REQUEST_ALERT, context: `${app.form.personal.fullName} asked about a term in their agreement`, severity: 'medium', category: 'staffing', relatedId: rel, sourceRoute: `/offers/${app.id}` });
+    if ((!open || app.offer?.status !== 'sent') && alert) patchInPlace(alerts, alert.id, { status: 'resolved', resolvedAt: at, resolvedBy: 'system', resolutionNote: 'The question was answered.' });
   }
 }
 
@@ -15071,6 +15259,216 @@ export const memoryRepository: Repository = {
       verificationService.changedAt = new Date().toISOString();
       verificationService.changedByName = admin.name;
       return { ...verificationService };
+    }),
+
+  /* --------------------------------- Recruitment: offer and onboarding agreement (146) */
+  getOfferBoard: (userId) =>
+    simulateRead((): OfferBoardView => {
+      ofAdmin(userId);
+      const now = Date.now();
+      const order: Record<OfferStage, number> = { to_prepare: 0, draft: 1, sent: 2, withdrawn: 3, interview_open: 4, verifying: 5, signed: 6 };
+      const rows = partnerApplications.filter((a) => a.status === 'approved' && (!!a.offer || !!a.interview || !!a.verification || now - new Date(a.screening?.decision?.at ?? 0).getTime() < IV_ARRANGE_DUE * 10)).map((a) => ofRowOf(a, now)).sort((a, b) => Number(b.openRequest) - Number(a.openRequest) || order[a.stage] - order[b.stage] || (a.approvedAt ?? '').localeCompare(b.approvedAt ?? ''));
+      return { rows, counts: { toPrepare: rows.filter((r) => r.stage === 'to_prepare').length, sent: rows.filter((r) => r.stage === 'sent').length, signed: rows.filter((r) => r.stage === 'signed').length, requests: rows.filter((r) => r.openRequest).length, stepsOpen: rows.filter((r) => r.stage === 'signed' && r.capability === 'basic').length } };
+    }),
+
+  getOfferDetail: (applicationId, userId) =>
+    simulateRead((): OfferDetailView => {
+      ofAdmin(userId);
+      return ofDetailOf(ofApp(applicationId), Date.now());
+    }),
+
+  prepareOffer: (applicationId, input, userId) =>
+    simulateWrite((): OfferDetailView => {
+      const admin = ofAdmin(userId);
+      const app = ofApp(applicationId);
+      const now = Date.now();
+      if (app.offer?.status === 'signed') throw new RepositoryError('already_signed');
+      if (app.offer?.status === 'sent') throw new RepositoryError('already_sent');
+      if (ofInterviewOpen(app)) throw new RepositoryError('interview_open');
+      const gate = ofGateOf(app, now);
+      // The offer cannot even be drafted while a required check is open, failed or lapsed (145's gate).
+      if (gate.state === 'blocked') throw new RepositoryError('verification_open');
+      const sig = ivSignal(app.interview);
+      if (sig.level === 'block' && (input.overrideReason ?? '').replace(/[^\p{L}\p{N}]/gu, '').length < OF_REASON_MIN) throw new RepositoryError('concern_override_required');
+      if (ofPhoneTaken(app)) throw new RepositoryError('phone_taken');
+      const activeZones = zones.filter((z) => z.status === 'active').map((z) => z.id);
+      const territory = [...new Set(input.territoryZoneIds)].filter((z) => activeZones.includes(z));
+      if (app.role !== 'supplier' && territory.length === 0) throw new RepositoryError('territory_required');
+      const tpl = templateInForce(app.role, now);
+      const prior = app.offer;
+      offerCounter += 1;
+      const at = new Date(now).toISOString();
+      const kept = prior?.addendum?.items.filter((it) => ofTermDefs[app.role].some((d) => d.key === it.key && d.negotiable)) ?? [];
+      app.offer = {
+        status: 'draft',
+        documentNo: prior?.documentNo ?? `AIEC-PA-${1000 + offerCounter + partnerApplications.filter((a) => a.offer).length}`,
+        role: app.role,
+        templateId: tpl.id,
+        templateVersion: tpl.version,
+        wording: tpl.wording,
+        terms: { ...tpl.terms, ...(app.role !== 'supplier' ? { territoryZoneIds: territory } : {}) },
+        ...(prior?.addendum && kept.length ? { addendum: { ...prior.addendum, items: kept } } : {}),
+        requests: prior?.requests ?? [],
+        ...(sig.level === 'block' ? { concernOverride: { reason: (input.overrideReason ?? '').trim(), byName: admin.name, at } } : {}),
+        gateAtPrepare: gate.state === 'conditional' ? 'conditional' : 'clear',
+        preparedAt: at,
+        preparedByName: admin.name,
+        events: [...(prior?.events ?? []), ofEvent('prepared', admin.name, `v${tpl.version}`)],
+      };
+      return ofDetailOf(app, now);
+    }),
+
+  setOfferAddendum: (applicationId, input, userId) =>
+    simulateWrite((): OfferDetailView => {
+      const admin = ofAdmin(userId);
+      const app = ofApp(applicationId);
+      const o = app.offer;
+      if (!o || (o.status !== 'draft' && o.status !== 'sent')) throw new RepositoryError('not_open');
+      const problem = ofAddendumProblem(app.role, o.terms, input.items, input.reason);
+      if (problem) throw new RepositoryError(problem);
+      const at = new Date().toISOString();
+      o.addendum = { items: input.items.map((i) => ({ key: i.key, value: i.value })), reason: input.reason.trim(), approvedByName: admin.name, approvedAt: at };
+      o.events.push(ofEvent('addendum', admin.name, input.items.map((i) => `${i.key}=${i.value}`).join(', ')));
+      return ofDetailOf(app, Date.now());
+    }),
+
+  sendOffer: (applicationId, userId) =>
+    simulateWrite((): OfferDetailView => {
+      const admin = ofAdmin(userId);
+      const app = ofApp(applicationId);
+      const o = app.offer;
+      if (!o || o.status !== 'draft') throw new RepositoryError('not_open');
+      const now = Date.now();
+      // The gate is checked again at the moment of sending, not only when it was drafted.
+      if (ofGateOf(app, now).state === 'blocked') throw new RepositoryError('verification_open');
+      o.status = 'sent';
+      o.sentAt = new Date(now).toISOString();
+      o.events.push(ofEvent('sent', admin.name));
+      screeningMessage(app, 'offer_sent', 'agreement.message.sent', admin.name);
+      app.updatedAt = o.sentAt;
+      return ofDetailOf(app, now);
+    }),
+
+  withdrawOffer: (applicationId, reason, userId) =>
+    simulateWrite((): OfferDetailView => {
+      const admin = ofAdmin(userId);
+      const app = ofApp(applicationId);
+      const o = app.offer;
+      if (!o || (o.status !== 'draft' && o.status !== 'sent')) throw new RepositoryError('not_open');
+      if (reason.replace(/[^\p{L}\p{N}]/gu, '').length < 10) throw new RepositoryError('reason_required');
+      const wasSent = o.status === 'sent';
+      o.status = 'withdrawn';
+      o.withdrawn = { at: new Date().toISOString(), byName: admin.name, reason: reason.trim() };
+      o.events.push(ofEvent('withdrawn', admin.name, reason.trim()));
+      if (wasSent) screeningMessage(app, 'offer_term_response', 'agreement.message.withdrawn', admin.name, reason);
+      return ofDetailOf(app, Date.now());
+    }),
+
+  respondTermRequest: (applicationId, requestId, input, userId) =>
+    simulateWrite((): OfferDetailView => {
+      const admin = ofAdmin(userId);
+      const app = ofApp(applicationId);
+      const o = app.offer;
+      const req = o?.requests.find((r) => r.id === requestId);
+      if (!o || o.status !== 'sent' || !req || req.response) throw new RepositoryError('not_open');
+      const note = input.note.trim();
+      if (input.outcome === 'approved') {
+        const problem = ofAddendumProblem(app.role, o.terms, input.items ?? [], note);
+        if (problem) throw new RepositoryError(problem);
+        o.addendum = { items: (input.items ?? []).map((i) => ({ key: i.key, value: i.value })), reason: note, approvedByName: admin.name, approvedAt: new Date().toISOString() };
+        o.events.push(ofEvent('addendum', admin.name, (input.items ?? []).map((i) => `${i.key}=${i.value}`).join(', ')));
+      } else if (note.replace(/[^\p{L}\p{N}]/gu, '').length < OF_REQUEST_MIN) throw new RepositoryError('reason_required');
+      req.response = { at: new Date().toISOString(), byName: admin.name, outcome: input.outcome, note };
+      o.events.push(ofEvent('response', admin.name, input.outcome));
+      screeningMessage(app, 'offer_term_response', input.outcome === 'approved' ? 'agreement.message.approved' : 'agreement.message.declined', admin.name, note);
+      syncOffers(Date.now());
+      return ofDetailOf(app, Date.now());
+    }),
+
+  markActivationStep: (applicationId, step, done, userId) =>
+    simulateWrite((): OfferDetailView => {
+      const admin = ofAdmin(userId);
+      const app = ofApp(applicationId);
+      const a = app.offer?.activation;
+      if (!app.offer || !a || !a.steps[step]) throw new RepositoryError('not_open');
+      a.steps[step] = done ? { done: true, at: new Date().toISOString(), byName: admin.name } : { done: false };
+      app.offer.events.push(ofEvent('step', admin.name, `${step}:${done ? 'done' : 'open'}`));
+      return ofDetailOf(app, Date.now());
+    }),
+
+  getAgreementTemplates: (userId) =>
+    simulateRead((): AgreementTemplatesView => {
+      ofAdmin(userId);
+      const now = Date.now();
+      return { roles: (['surveyor', 'technician', 'supplier'] as const).map((role) => ({ role, current: JSON.parse(JSON.stringify(templateInForce(role, now))) as PartnerAgreementTemplate, versions: agreementTemplates.filter((t) => t.role === role).sort((a, b) => b.version - a.version).map((t) => JSON.parse(JSON.stringify(t)) as PartnerAgreementTemplate), defs: ofDefs(role) })) };
+    }),
+
+  publishAgreementTemplate: (role, input, userId) =>
+    simulateWrite((): AgreementTemplatesView => {
+      const admin = ofAdmin(userId);
+      const now = Date.now();
+      if (input.changeNote.replace(/[^\p{L}\p{N}]/gu, '').length < OF_REASON_MIN) throw new RepositoryError('reason_required');
+      const today = new Date(now);
+      const p = (n: number) => String(n).padStart(2, '0');
+      const todayKey = `${today.getFullYear()}-${p(today.getMonth() + 1)}-${p(today.getDate())}`;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(input.effectiveFrom) || input.effectiveFrom < todayKey) throw new RepositoryError('effective_past');
+      const defs = ofTermDefs[role];
+      const terms: AgreementTerms = {};
+      for (const d of defs) {
+        const v = Number((input.terms as Record<string, unknown>)[d.key]);
+        if (!Number.isFinite(v) || v < d.min || v > d.max) throw new RepositoryError('invalid_terms');
+        (terms as Record<string, unknown>)[d.key] = v;
+      }
+      if (role === 'supplier') terms.qualityStandards = (input.terms.qualityStandards ?? '').trim() || ofDefaultTerms('supplier').qualityStandards;
+      const last = agreementTemplates.filter((t) => t.role === role).sort((a, b) => b.version - a.version)[0];
+      // A new version is for agreements prepared from now on: nothing already offered or signed is touched.
+      agreementTemplates.push({ id: `pat-${role}-${last.version + 1}`, role, version: last.version + 1, effectiveFrom: input.effectiveFrom, terms, wording: 'v1', changeNote: input.changeNote.trim(), createdByName: admin.name, createdAt: new Date(now).toISOString(), isDemo: true });
+      return { roles: (['surveyor', 'technician', 'supplier'] as const).map((r) => ({ role: r, current: JSON.parse(JSON.stringify(templateInForce(r, now))) as PartnerAgreementTemplate, versions: agreementTemplates.filter((t) => t.role === r).sort((a, b) => b.version - a.version).map((t) => JSON.parse(JSON.stringify(t)) as PartnerAgreementTemplate), defs: ofDefs(r) })) };
+    }),
+
+  getOfferForApplicant: (applicationId, key) =>
+    simulateRead((): OfferApplicantView => {
+      const { app } = applicationFor(applicationId, { key });
+      if (app.status !== 'approved') throw new RepositoryError('not_approved');
+      return ofApplicantViewOf(app);
+    }),
+
+  requestTermChange: (applicationId, key, text) =>
+    simulateWrite((): OfferApplicantView => {
+      const { app } = applicationFor(applicationId, { key });
+      if (app.status !== 'approved') throw new RepositoryError('not_approved');
+      const o = app.offer;
+      if (!o || o.status !== 'sent') throw new RepositoryError('not_open');
+      if (o.requests.some((r) => !r.response)) throw new RepositoryError('request_open');
+      if (text.replace(/[^\p{L}\p{N}]/gu, '').length < OF_REQUEST_MIN) throw new RepositoryError('request_short');
+      offerEventCounter += 1;
+      o.requests.push({ id: `ofreq-${offerEventCounter}`, at: new Date().toISOString(), text: text.trim() });
+      o.events.push(ofEvent('request', app.form.personal.fullName));
+      syncOffers(Date.now());
+      return ofApplicantViewOf(app);
+    }),
+
+  signPartnerAgreement: (applicationId, key, input) =>
+    simulateWrite((): OfferApplicantView => {
+      const { app } = applicationFor(applicationId, { key });
+      if (app.status !== 'approved') throw new RepositoryError('not_approved');
+      const o = app.offer;
+      if (!o) throw new RepositoryError('not_open');
+      if (o.status === 'signed') throw new RepositoryError('already_signed');
+      if (o.status !== 'sent') throw new RepositoryError('not_open');
+      const problem = ofSignProblem({ consent: input.consentGiven, otpVerified: input.otpVerified, method: input.method, data: input.data, signerName: input.signerName });
+      if (problem) throw new RepositoryError(problem);
+      // A question about a term waits for its answer: signing over an unanswered request would sign something they have said they want to discuss.
+      if (o.requests.some((r) => !r.response)) throw new RepositoryError('request_open');
+      if (ofPhoneTaken(app)) throw new RepositoryError('phone_taken');
+      const at = new Date().toISOString();
+      o.signature = { at, method: input.method, data: input.data, signerName: input.signerName.trim(), language: input.language, otpVerified: input.otpVerified, viaFallback: input.viaFallback, consentGiven: true };
+      o.status = 'signed';
+      o.events.push(ofEvent('signed', input.signerName.trim(), input.viaFallback ? 'fallback' : 'otp'));
+      ofActivate(app, o, at);
+      screeningMessage(app, 'offer_signed', 'agreement.message.signed', 'AIEC');
+      app.updatedAt = at;
+      return ofApplicantViewOf(app);
     }),
 
   /* --------------------------------- Recruitment: the public front door (141) */

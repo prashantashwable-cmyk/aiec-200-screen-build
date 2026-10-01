@@ -61,6 +61,7 @@ import { FEED_RESTORE_DUE, REVIEW_DUE, severityOf } from '@/features/finance/rec
 import { MANUAL_UPDATE_EVERY } from '@/features/logistics/shipmentTracking';
 import { SCREEN_DUE } from '@/features/recruitment/screening';
 import { ARRANGE_DUE as INTERVIEW_ARRANGE_DUE, INVITE_WAIT } from '@/features/recruitment/interview';
+import { PREPARE_DUE as OFFER_PREPARE_DUE, SIGN_WAIT as OFFER_SIGN_WAIT, STEPS_DUE as OFFER_STEPS_DUE } from '@/features/recruitment/agreement';
 import { VERIFY_DUE, gateOf as verificationGate, requiredItemsOf as requiredVerification } from '@/features/recruitment/verification';
 
 /**
@@ -1861,6 +1862,99 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
           ];
         }),
       );
+    },
+  },
+  {
+    // Everything is in place for an approved applicant: Admin prepares and sends the agreement (146).
+    kind: 'offer_prepare',
+    nudgeBefore: hours(12),
+    escalateAfter: hours(48),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'staffing',
+    collect(src) {
+      const admin = adminId(src);
+      const now = Date.now();
+      return src.applications
+        .filter((a) => a.status === 'approved' && a.screening?.decision && (a.offer || a.interview || a.verification || now - new Date(a.screening.decision.at).getTime() < INTERVIEW_ARRANGE_DUE * 10))
+        .filter((a) => !(a.interview && ['invited', 'scheduled', 'missed'].includes(a.interview.status)))
+        .filter((a) => verificationGate(requiredVerification(a.role, a.form), a.verification, now).state !== 'blocked' || (a.offer && a.offer.status !== 'withdrawn'))
+        .map((a) => {
+          const sent = !!a.offer && (a.offer.status === 'sent' || a.offer.status === 'signed');
+          const readyAt = [a.screening?.decision?.at, a.interview?.completed?.at, a.interview?.skipped?.at, ...Object.values(a.verification?.records ?? {}).map((r) => r.at)].filter(Boolean).sort().pop() as string;
+          return {
+            ...base('offer_prepare', 'application', a.id),
+            ownerUserId: admin,
+            titleKey: 'work.title.offer_prepare',
+            titleParams: { name: a.form.personal.fullName },
+            dueAt: plus(readyAt, OFFER_PREPARE_DUE),
+            state: sent ? ('done' as const) : ('open' as const),
+            paused: false,
+            completedAt: sent ? a.offer?.sentAt : undefined,
+            actionRoute: `/offers/${a.id}`,
+            oversightRoute: `/offers/${a.id}`,
+          };
+        });
+    },
+  },
+  {
+    // An agreement sent and not signed: Admin follows up (the automatic nudge goes out once) (146).
+    kind: 'offer_signature_wait',
+    nudgeBefore: hours(6),
+    escalateAfter: hours(48),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'staffing',
+    collect(src) {
+      const admin = adminId(src);
+      return src.applications
+        .filter((a) => a.offer && (a.offer.status === 'sent' || a.offer.status === 'signed') && a.offer.sentAt)
+        .map((a) => {
+          const o = a.offer as NonNullable<typeof a.offer>;
+          return {
+            ...base('offer_signature_wait', 'application', a.id),
+            ownerUserId: admin,
+            titleKey: 'work.title.offer_signature_wait',
+            titleParams: { name: a.form.personal.fullName },
+            dueAt: plus(o.sentAt as string, OFFER_SIGN_WAIT),
+            state: o.status === 'signed' ? ('done' as const) : ('open' as const),
+            paused: false,
+            completedAt: o.signature?.at,
+            actionRoute: `/offers/${a.id}`,
+            oversightRoute: `/offers/${a.id}`,
+          };
+        });
+    },
+  },
+  {
+    // Signed, but the remaining onboarding steps (bank, photo) are not finished: payouts wait for them, so Admin chases (146).
+    kind: 'partner_onboarding_finish',
+    nudgeBefore: days(1),
+    escalateAfter: hours(48),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'staffing',
+    collect(src) {
+      const admin = adminId(src);
+      return src.applications
+        .filter((a) => a.offer?.status === 'signed' && a.offer.activation)
+        .map((a) => {
+          const act = (a.offer as NonNullable<typeof a.offer>).activation as NonNullable<NonNullable<typeof a.offer>['activation']>;
+          const steps = Object.values(act.steps);
+          const done = steps.every((x) => x.done);
+          return {
+            ...base('partner_onboarding_finish', 'application', a.id),
+            ownerUserId: admin,
+            titleKey: 'work.title.partner_onboarding_finish',
+            titleParams: { name: a.form.personal.fullName, count: String(steps.filter((x) => !x.done).length) },
+            dueAt: plus(act.at, OFFER_STEPS_DUE),
+            state: done ? ('done' as const) : ('open' as const),
+            paused: false,
+            completedAt: done ? steps.map((x) => x.at ?? '').sort().pop() || act.at : undefined,
+            actionRoute: `/offers/${a.id}`,
+            oversightRoute: `/offers/${a.id}`,
+          };
+        });
     },
   },
   {

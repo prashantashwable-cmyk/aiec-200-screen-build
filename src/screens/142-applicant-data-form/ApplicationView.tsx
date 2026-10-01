@@ -69,7 +69,7 @@ function Applicant({ s, v, t }: { s: ApplicationState; v: PartnerApplicationView
     <div className="ds-screen ds-screen--narrow pb-action-bar">
       <Header t={t} s={s} />
       <ScreenHeader title={t(K.title)} subtitle={`${v.code} · ${t(K.admin.role[v.role])}`} action={<span data-status={v.status}><Badge tone={statusTone(v.status)} dot>{t(K.status[v.status])}</Badge></span>} />
-      <Notes t={t} v={v} lang={lang} go={go} onInterview={() => s.goto(`/interview/${v.id}`)} />
+      <Notes t={t} v={v} lang={lang} go={go} onInterview={() => s.goto(`/interview/${v.id}`)} onAgreement={() => s.goto(`/agreement/${v.id}`)} />
 
       <Card className="mb-3">
         <div className="stack gap-2" data-progress>
@@ -317,7 +317,7 @@ function Identity({ s, v, t, f, state }: SectionProps & { v: PartnerApplicationV
 /** A message's wording is a key; a time or a way of talking in it is filled in here, in the reader's language. */
 const messageParams = (t: T, m: PartnerApplicationView['messages'][number], lang: string): Record<string, string> => ({ ...m.params, ...(m.params.at ? { when: formatDateTime(m.params.at, lang) } : {}), ...(m.params.mode ? { mode: t(`interview.mode.${m.params.mode}`) } : {}) });
 
-function Notes({ t, v, lang, go, onInterview }: { t: T; v: PartnerApplicationView; lang: string; go: (id: SectionId) => void; onInterview: () => void }) {
+function Notes({ t, v, lang, go, onInterview, onAgreement }: { t: T; v: PartnerApplicationView; lang: string; go: (id: SectionId) => void; onInterview: () => void; onAgreement: () => void }) {
   const messages = [...v.messages].reverse();
   const iv = v.interview;
   return (
@@ -331,6 +331,14 @@ function Notes({ t, v, lang, go, onInterview }: { t: T; v: PartnerApplicationVie
             <div className="row gap-2 wrap">
               {v.infoRequest.sections.map((id) => <span key={id} data-ask={id}><Chip onClick={() => go(id as SectionId)}>{t(K.section.title[id as SectionId])}</Chip></span>)}
             </div>
+          </div>
+        </Card>
+      )}
+      {v.offer && (
+        <Card className="mb-3">
+          <div className="stack gap-2" data-offer-card={v.offer.status}>
+            <strong className="t-md">{v.offer.status === 'sent' ? t('agreement.applicant.signHeading') : t('agreement.applicant.doneHeading')}</strong>
+            <Button style={{ width: 'fit-content' }} data-open-agreement onClick={onAgreement}>{t('agreement.applicant.heading')}</Button>
           </div>
         </Card>
       )}

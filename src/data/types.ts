@@ -2706,12 +2706,14 @@ export interface PartnerApplication {
   form: ApplicationForm;
   events: { id: string; at: string; kind: 'started' | 'saved' | 'submitted' | 'resubmitted' | 'reference_outcome' | 'info_requested' | 'info_answered' | 'approved' | 'rejected' | 'adjusted' | 'outcome'; byName: string; note?: string }[];
   /** What AIEC said to the applicant: shown on their own link, in their own language, rendered from a key at the time it is read. */
-  messages: { id: string; at: string; kind: 'info_request' | 'decline' | 'approved' | 'interview_invite' | 'interview_confirmed' | 'interview_move' | 'interview_reminder' | 'interview_missed' | 'interview_nudge' | 'interview_cancelled'; templateKey: string; params: Record<string, string>; note?: string; byName: string }[];
+  messages: { id: string; at: string; kind: 'info_request' | 'decline' | 'approved' | 'interview_invite' | 'interview_confirmed' | 'interview_move' | 'interview_reminder' | 'interview_missed' | 'interview_nudge' | 'interview_cancelled' | 'offer_sent' | 'offer_nudge' | 'offer_term_response' | 'offer_signed'; templateKey: string; params: Record<string, string>; note?: string; byName: string }[];
   screening?: ApplicationScreening;
   /** The one conversation AIEC has before an offer (144); optional, an approved applicant may go straight to the offer. */
   interview?: PartnerInterview;
   /** What AIEC has checked before an offer can be made (145): role-aware, with the method, the evidence and who did it. */
   verification?: PartnerVerification;
+  /** The agreement AIEC offers and the partner signs (146): signing activates the account. */
+  offer?: PartnerOffer;
   isDemo: boolean;
 }
 
@@ -2813,6 +2815,68 @@ export interface PartnerVerification {
   /** Items already sent to the ID service automatically, so each goes once. */
   autoSent: string[];
   events: { id: string; at: string; kind: 'service_check' | 'manual' | 'conditional' | 'lapsed' | 'service_down' | 'cleared'; byName: string; item?: string; note?: string }[];
+}
+
+/* ------------------------------------ Offer & onboarding agreement (146) */
+
+/** Starting terms in numbers: only the ones a role has are set. Wording is versioned separately so a signed document never changes. */
+export interface AgreementTerms {
+  /** Surveyor: share of a converted deal paid to the original surveyor; and to the current owner of a reassigned lead. */
+  conversionPct?: number;
+  closePct?: number;
+  /** Technician: share of a deal's value pooled for installers, the lead's extra share of that pool, and the independent QC inspector's fee. */
+  installPoolPct?: number;
+  leadBonusPct?: number;
+  qcFee?: number;
+  /** Supplier: the same terms 098 holds for a supplier's agreement. */
+  deliverySlaDays?: number;
+  paymentTermsDays?: number;
+  minQualityScore?: number;
+  qualityStandards?: string;
+  warrantyMonths?: number;
+  /** Field roles: where they start, as zone ids. */
+  territoryZoneIds?: string[];
+}
+
+export interface PartnerAgreementTemplate {
+  id: string;
+  role: 'surveyor' | 'technician' | 'supplier';
+  version: number;
+  effectiveFrom: string;
+  terms: AgreementTerms;
+  /** Which frozen wording the clauses use (`agreement.wording.<wording>.*`): a signed document keeps the wording it was signed under. */
+  wording: 'v1';
+  changeNote: string;
+  createdByName: string;
+  createdAt: string;
+  isDemo: boolean;
+}
+
+export interface PartnerOffer {
+  status: 'draft' | 'sent' | 'signed' | 'withdrawn';
+  documentNo: string;
+  role: 'surveyor' | 'technician' | 'supplier';
+  templateId: string;
+  templateVersion: number;
+  wording: 'v1';
+  /** Frozen when the offer is prepared; a newer template never changes it. */
+  terms: AgreementTerms;
+  /** Admin-approved custom terms for this person, over the standard ones, with the reason kept. */
+  addendum?: { items: { key: keyof AgreementTerms; value: number }[]; reason: string; approvedByName: string; approvedAt: string };
+  /** The partner asked to talk about a term; Admin answers by approving an addendum or declining with a reason. */
+  requests: { id: string; at: string; text: string; response?: { at: string; byName: string; outcome: 'approved' | 'declined'; note: string } }[];
+  /** Proceeding although the interview was not recommended: said out loud and kept. */
+  concernOverride?: { reason: string; byName: string; at: string };
+  gateAtPrepare: 'clear' | 'conditional';
+  preparedAt: string;
+  preparedByName: string;
+  sentAt?: string;
+  nudgedAt?: string;
+  withdrawn?: { at: string; byName: string; reason: string };
+  signature?: { at: string; method: 'drawn' | 'typed'; data: string; signerName: string; language: 'en' | 'hi' | 'mr'; otpVerified: boolean; viaFallback: boolean; consentGiven: boolean };
+  /** Signing is the one event that activates the account; full capability (payouts) still waits for the remaining steps. */
+  activation?: { at: string; userId: string; supplierId?: string; steps: Record<string, { done: boolean; at?: string; byName?: string }> };
+  events: { id: string; at: string; kind: 'prepared' | 'addendum' | 'sent' | 'nudged' | 'request' | 'response' | 'withdrawn' | 'signed' | 'activated' | 'step'; byName: string; note?: string }[];
 }
 
 /* ------------------------------------ Handover completion certificate (140) */
@@ -4049,6 +4113,9 @@ export type CommitmentKind =
   | 'interview_conduct'
   | 'verification_pending'
   | 'verification_conditional_due'
+  | 'offer_prepare'
+  | 'offer_signature_wait'
+  | 'partner_onboarding_finish'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'
