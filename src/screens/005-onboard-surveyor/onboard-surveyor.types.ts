@@ -1,6 +1,7 @@
 /** Screen 005 — Surveyor onboarding wizard. Types and translation keys only. */
 
 import type { DocumentSlotValue } from '@/features/onboarding/DocumentSlot';
+import { DRAFT_KEYS } from '@/features/onboarding/handoff';
 
 /**
  * Bank verification is a penny-drop: a token deposit is made and the account
@@ -46,7 +47,7 @@ export const EMPTY_SURVEYOR_DRAFT: SurveyorDraft = {
   twoWheelerOwned: false,
 };
 
-export const SURVEYOR_DRAFT_KEY = 'aiec.onboarding.surveyor';
+export const SURVEYOR_DRAFT_KEY = DRAFT_KEYS.surveyor;
 
 export const SURVEYOR_KEYS = {
   title: 'onbSurveyor.title',

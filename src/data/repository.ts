@@ -3,6 +3,7 @@ import type { ElecSignOffProblem, ElecState } from '@/features/qc/electrical';
 import type { DisputeDecision, SnagProblem, SnagSeverity } from '@/features/qc/snags';
 import type { AmcTierId, ReminderDef, WarrantyProblem } from '@/features/qc/warranty';
 import type { CompletionProblem, IssueProblem, MilestoneId } from '@/features/qc/completion';
+import type { Demand, GuideAnswers, InterestProblem, InterestRole, RecruitRole, RecruitSource } from '@/features/recruitment/interest';
 import type { JudgementDecision, JudgementProblem, ShareBasis } from '@/features/commission/finalPayout';
 import type { ScriptGroup, WalkthroughMode, WalkthroughProblem } from '@/features/qc/walkthrough';
 import type { DocBasis, DocBlock, DocState, HandoverDocKind, HandoverProblem, ReadinessProblem as HandoverReadinessProblem } from '@/features/qc/handover';
@@ -1738,6 +1739,32 @@ export interface QcElecInput {
   clientId?: string;
   capturedAt?: string;
 }
+
+/* ------------------------------------ Recruitment: the public front door (141) */
+
+export interface RecruitmentLandingView {
+  /** The areas AIEC works in now, from the zones set up for surveyors. */
+  areas: string[];
+  /** How busy intake has been in the last day, and the first-reply wait to honestly expect. */
+  demand: { level: Demand; expectedReplyDays: number };
+}
+
+export interface RecruitmentInterestInput {
+  name: string;
+  phone: string;
+  roles: InterestRole[];
+  source: RecruitSource;
+  language: 'en' | 'hi' | 'mr';
+  consent: boolean;
+  guided?: { answers: GuideAnswers; suggested: RecruitRole | null };
+}
+
+export interface RecruitmentInterestResult {
+  items: { id: string; code: string; role: InterestRole; /** False when this role was already asked about with this number. */ created: boolean }[];
+  demand: RecruitmentLandingView['demand'];
+}
+
+export type RecruitmentError = InterestProblem;
 
 /* ------------------------------------ Handover completion certificate (140) */
 
@@ -5110,6 +5137,14 @@ export interface Repository {
   pingSiteLocation(technicianId: string, point: GeoPoint, at?: string): Promise<void>;
   /** Picks which step to do next, when the site does not allow the suggested order. Only steps whose prerequisites are done. */
   focusSopStep(jobId: string, stepId: string, technicianId: string): Promise<InstallationSopView>;
+
+  /* Recruitment: the public front door (141) */
+  /** Public: no session. */
+  getRecruitmentLanding(): Promise<RecruitmentLandingView>;
+  /** Public: records one interest per role asked about, never merging two roles and never recording the same role twice for one number. */
+  submitRecruitmentInterest(input: RecruitmentInterestInput): Promise<RecruitmentInterestResult>;
+  /** Public: the person went on into the onboarding wizard. The phone must be the one the interest was made with. */
+  markRecruitmentStarted(interestId: string, phone: string): Promise<void>;
 
   /* Handover completion certificate (140) */
   getCompletionBoard(userId: string): Promise<CompletionBoardView>;

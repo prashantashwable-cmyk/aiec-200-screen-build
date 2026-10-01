@@ -1,6 +1,7 @@
 /** Screen 007 — Supplier / manufacturer KYC wizard. Types and keys only. */
 
 import type { DocumentSlotValue } from '@/features/onboarding/DocumentSlot';
+import { DRAFT_KEYS } from '@/features/onboarding/handoff';
 
 /**
  * GSTIN verification has more than two outcomes, and the difference matters:
@@ -62,7 +63,7 @@ export const EMPTY_SUPPLIER_DRAFT: SupplierDraft = {
   paymentTermsAccepted: false,
 };
 
-export const SUPPLIER_DRAFT_KEY = 'aiec.onboarding.supplier';
+export const SUPPLIER_DRAFT_KEY = DRAFT_KEYS.supplier;
 
 export const SUPPLIER_KEYS = {
   title: 'onbSupplier.title',

@@ -2633,6 +2633,31 @@ export interface WarrantyRegistration {
   isDemo: boolean;
 }
 
+/* ------------------------------------ Recruitment: the public front door (141) */
+
+/** One person asking about one role. Never merged across roles; the same role asked twice is one interest with another touch. */
+export interface RecruitmentInterest {
+  id: string;
+  code: string;
+  name: string;
+  /** Ten digits. */
+  phone: string;
+  role: 'surveyor' | 'technician' | 'supplier' | 'undecided';
+  /** Where the first ask came from. Later asks never overwrite it. */
+  source: { channel: 'qr' | 'social' | 'referral' | 'whatsapp' | 'walk_in' | 'event' | 'website' | 'other'; campaign?: string; referrerCode?: string };
+  interestedAt: string;
+  language: 'en' | 'hi' | 'mr';
+  /** What the person agreed to: being contacted about this application. */
+  contactConsent: boolean;
+  /** For someone not sure of a role: what they answered and what it pointed to (null when it pointed nowhere). */
+  guided?: { answers: Record<string, string>; suggested: 'surveyor' | 'technician' | 'supplier' | null };
+  status: 'interested' | 'started' | 'submitted' | 'withdrawn';
+  /** Every later ask for the same role, from whichever channel, kept for the record. */
+  touches: { at: string; channel: RecruitmentInterest['source']['channel']; campaign?: string }[];
+  startedAt?: string;
+  isDemo: boolean;
+}
+
 /* ------------------------------------ Handover completion certificate (140) */
 
 export interface FinalPayoutLine {

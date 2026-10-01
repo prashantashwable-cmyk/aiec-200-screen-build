@@ -10,6 +10,7 @@ import {
   seedCommSequences,
   seedCommTemplates,
   seedCommissions,
+  seedRecruitmentInterests,
   seedContractSignatures,
   seedContracts,
   seedConversations,
@@ -224,6 +225,8 @@ import type {
   WalkthroughView,
   WarrantyBoardView,
   WarrantyView,
+  RecruitmentInterestResult,
+  RecruitmentLandingView,
   CompletionBoardView,
   CompletionDocument,
   CompletionPayoutLineView,
@@ -433,6 +436,7 @@ import type {
   HandoverReadiness,
   HandoverWalkthrough,
   WarrantyRegistration,
+  RecruitmentInterest,
   HandoverCompletion,
   FinalPayoutLine,
   PayoutJudgement,
@@ -620,6 +624,7 @@ import type { AmcTierId as WrTierId } from '@/features/qc/warranty';
 import { issueProblem as coIssueProblem, readinessOf as coReadiness, signoffDueAt as coSignoffDue } from '@/features/qc/completion';
 import { QC_FEE as FP_QC_FEE, crewShares as fpCrewShares, installPoolOf as fpInstallPool, judgementProblem as fpJudgementProblem, qcShares as fpQcShares, salesCloseOf as fpSalesClose } from '@/features/commission/finalPayout';
 import type { Contributor as FpContributor } from '@/features/commission/finalPayout';
+import { INTAKE_SURGE_PER_DAY, INTAKE_WINDOW, RECRUIT_CHANNELS, demandOf as rcDemandOf, interestProblem as rcInterestProblem, normalisePhone as rcPhone } from '@/features/recruitment/interest';
 import { ARRANGE_DUE as WT_ARRANGE_DUE, DOCS as WT_DOCS, FOLLOWUP_DUE as WT_FOLLOWUP_DUE, SIGNOFF_DUE_PRESENT as WT_SIGNOFF_PRESENT, SIGNOFF_DUE_REMOTE as WT_SIGNOFF_REMOTE, amcProblem as wtAmcProblem, arrangeProblem as wtArrangeProblem, conductProblem as wtConductProblem, isNegative as wtIsNegative, questionProblem as wtQuestionProblem, scoreProblem as wtScoreProblem, scriptFor as wtScriptFor, signoffProblem as wtSignoffProblem } from '@/features/qc/walkthrough';
 import { CORRECTION_MIN as HO_CORRECTION_MIN, DOC_KINDS as HO_DOC_KINDS, REVIEW_NOTE_MIN as HO_REVIEW_NOTE_MIN, REVIEW_REASON_MIN as HO_REVIEW_REASON_MIN, blockOf as hoBlockOf, correctionProblem as hoCorrectionProblem, docStateOf as hoDocState, issueProblem as hoIssueProblem, readinessOf as hoReadiness } from '@/features/qc/handover';
 import type { DocBasis as HoDocBasis, HandoverDocKind } from '@/features/qc/handover';
@@ -2560,6 +2565,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   syncReconciliation(now);
   sendDueSos(now);
   syncTechnicianClashes(now);
+  syncRecruitmentIntake(now);
   syncSafetyAlerts(true, now);
   syncIssueAlerts(true, now);
   syncMaterialDeviations(true, now);
@@ -7512,6 +7518,27 @@ function stepFinisherName(job: Job, st: Job['steps'][number]): string | null {
   if (st.status !== 'complete' || !job.technicianId) return null;
   const alone = !(job.crew ?? []).some((c) => c.role === 'assistant');
   return alone ? nameOf(job.technicianId) : null;
+}
+
+/* ============================== Recruitment: the public front door (141) */
+
+const recruitmentInterests: RecruitmentInterest[] = seedRecruitmentInterests.map((x) => ({ ...x, source: { ...x.source }, touches: x.touches.map((t) => ({ ...t })) }));
+let recruitmentCounter = 100;
+const RECRUIT_SURGE_ALERT = 'alerts.type.recruitmentSurge';
+
+const recruitmentLastDay = (now: number): number => recruitmentInterests.filter((i) => new Date(i.interestedAt).getTime() > now - INTAKE_WINDOW).length;
+
+/** One alert while a day's intake is a surge, so the person who plans screening hears of it before a backlog forms; it clears itself. */
+function syncRecruitmentIntake(now: number): void {
+  const at = new Date(now).toISOString();
+  const count = recruitmentLastDay(now);
+  const surge = count >= INTAKE_SURGE_PER_DAY;
+  const open = alerts.find((a) => a.titleKey === RECRUIT_SURGE_ALERT && a.status !== 'resolved');
+  if (surge && !open) {
+    raiseAlert({ titleKey: RECRUIT_SURGE_ALERT, context: `${count} new interests in the last day`, severity: 'medium', category: 'staffing', relatedId: 'recruit:surge', sourceRoute: '/admin/escalations' });
+    logAutomatedAction({ sourceKey: 'recruitment.surge', triggeringCondition: `${count} people showed interest in a day, past the surge line`, actionTaken: 'Raised an alert and told new applicants to expect a longer first reply', affectedRecordId: 'recruit:surge', affectedRecordType: 'other', subjectLabel: 'Recruitment intake' });
+  }
+  if (!surge && open) patchInPlace(alerts, open.id, { status: 'resolved', resolvedAt: at, resolvedBy: 'system', resolutionNote: 'Intake is back to a normal day.' });
 }
 
 /* ============================== Handover completion certificate (140) */
@@ -13959,6 +13986,64 @@ export const memoryRepository: Repository = {
       if (problem) throw new RepositoryError(problem);
       check.signedOff = { at: new Date().toISOString(), byUserId: user.id, byName: user.name };
       return elecViewOf(job, viewer, assignment);
+    }),
+
+  /* --------------------------------- Recruitment: the public front door (141) */
+  getRecruitmentLanding: () =>
+    simulateRead((): RecruitmentLandingView => ({
+      areas: zones.filter((z) => z.status === 'active').map((z) => z.name),
+      demand: rcDemandOf(recruitmentLastDay(Date.now())),
+    })),
+
+  submitRecruitmentInterest: (input) =>
+    simulateWrite((): RecruitmentInterestResult => {
+      const phone = rcPhone(input.phone);
+      const roles = [...new Set(input.roles)];
+      const problem = rcInterestProblem({ name: input.name, phone, roles, consent: input.consent });
+      if (problem) throw new RepositoryError(problem);
+      const now = Date.now();
+      const at = new Date(now).toISOString();
+      const channel = (RECRUIT_CHANNELS as readonly string[]).includes(input.source.channel) ? input.source.channel : 'other';
+      // Someone who already works with AIEC in that role is pointed to sign in, never recorded as a new applicant.
+      const partnerRoles = new Set(users.filter((u) => u.phone === phone && u.status === 'active').map((u) => u.role as string));
+      const asking = roles.filter((r) => r === 'undecided' || !partnerRoles.has(r));
+      if (asking.length === 0) throw new RepositoryError('already_partner');
+      const items: RecruitmentInterestResult['items'] = [];
+      for (const role of asking) {
+        const existing = recruitmentInterests.find((i) => i.phone === phone && i.role === role && i.status !== 'withdrawn');
+        if (existing) {
+          existing.touches.push({ at, channel, ...(input.source.campaign ? { campaign: input.source.campaign } : {}) });
+          items.push({ id: existing.id, code: existing.code, role, created: false });
+          continue;
+        }
+        recruitmentCounter += 1;
+        const rec: RecruitmentInterest = {
+          id: `ri-${recruitmentCounter}`,
+          code: `AIEC-RI-${1000 + recruitmentCounter}`,
+          name: input.name.trim(),
+          phone,
+          role,
+          source: { channel, ...(input.source.campaign ? { campaign: input.source.campaign } : {}), ...(input.source.referrerCode ? { referrerCode: input.source.referrerCode } : {}) },
+          interestedAt: at,
+          language: input.language,
+          contactConsent: true,
+          ...(input.guided ? { guided: { answers: Object.fromEntries(Object.entries(input.guided.answers).filter(([, v]) => !!v)) as Record<string, string>, suggested: input.guided.suggested } } : {}),
+          status: 'interested',
+          touches: [],
+          isDemo: true,
+        };
+        recruitmentInterests.push(rec);
+        items.push({ id: rec.id, code: rec.code, role, created: true });
+      }
+      syncRecruitmentIntake(now);
+      return { items, demand: rcDemandOf(recruitmentLastDay(now)) };
+    }),
+
+  markRecruitmentStarted: (interestId, phone) =>
+    simulateWrite(() => {
+      const i = byId(recruitmentInterests, interestId);
+      if (!i || i.phone !== rcPhone(phone)) throw new RepositoryError('not_found');
+      if (i.status === 'interested') patchInPlace(recruitmentInterests, i.id, { status: 'started' as const, startedAt: new Date().toISOString() });
     }),
 
   /* --------------------------------- Handover completion certificate (140) */

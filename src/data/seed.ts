@@ -1,4 +1,5 @@
 import type {
+  RecruitmentInterest,
   JobIssue,
   JobSafetyTest,
   SafetyAttempt,
@@ -4174,4 +4175,34 @@ export const seedJobIssues: JobIssue[] = [
   issue('j-2', ['u-tech-2', 'Vishal More'], 6, 'customer_readiness', 'blocking', 'The building has no permanent power in the machine room yet, so the panel cannot be energised.', { stepId: 's7' }, { how: 'admin_resolved', note: 'Customer connected the supply.', afterHours: 40, byAdmin: true }),
   issue('j-6', ['u-tech-3', 'Ajay Nikam'], 3, 'site_condition', 'minor', 'The basement lift pit has an uneven floor near the ladder; noted for the record.', { stepId: 's1' }),
   issue('j-1', ['u-tech-1', 'Santosh Kale'], 9, 'parts', 'minor', 'Two door-operator screws were missing from the pack; used spares from the van.', { stepId: 's6' }, { how: 'fixed_on_site', note: 'Used spares.', afterHours: 1 }),
+];
+
+/* ------------------------------------ Recruitment interests (141) */
+
+const rec = (id: number, name: string, phone: string, role: RecruitmentInterest['role'], channel: RecruitmentInterest['source']['channel'], hours: number, extra: Partial<RecruitmentInterest> = {}): RecruitmentInterest => ({
+  id: `ri-${id}`,
+  code: `AIEC-RI-${1000 + id}`,
+  name,
+  phone,
+  role,
+  source: { channel, ...(extra.source ?? {}) },
+  interestedAt: hoursAgo(hours),
+  language: 'hi',
+  contactConsent: true,
+  status: 'interested',
+  touches: [],
+  isDemo: true,
+  ...Object.fromEntries(Object.entries(extra).filter(([k]) => k !== 'source')),
+});
+
+export const seedRecruitmentInterests: RecruitmentInterest[] = [
+  rec(1, 'Rahul Jadhav', '9890011101', 'technician', 'qr', 140, { source: { channel: 'qr', campaign: 'flyer-pune-1' }, status: 'started', startedAt: hoursAgo(139) }),
+  rec(2, 'Sneha Kulkarni', '9890011102', 'surveyor', 'qr', 130, { source: { channel: 'qr', campaign: 'flyer-pune-1' } }),
+  rec(3, 'Mahesh Pawar', '9890011103', 'technician', 'referral', 96, { source: { channel: 'referral', referrerCode: 'REF-U-TECH-2' }, language: 'mr' }),
+  rec(4, 'Mahesh Pawar', '9890011103', 'surveyor', 'referral', 90, { source: { channel: 'referral', referrerCode: 'REF-U-TECH-2' }, language: 'mr' }),
+  rec(5, 'Imran Shaikh', '9890011105', 'supplier', 'website', 70, { language: 'en' }),
+  rec(6, 'Deepa Nair', '9890011106', 'undecided', 'social', 50, { source: { channel: 'social', campaign: 'insta-oct' }, language: 'en', guided: { answers: { enjoy: 'people', business: 'no', experience: 'none', travel: 'yes' }, suggested: 'surveyor' } }),
+  rec(7, 'Vikas More', '9890011107', 'technician', 'walk_in', 30),
+  rec(8, 'Anita Gaikwad', '9890011108', 'surveyor', 'whatsapp', 12, { language: 'mr' }),
+  rec(9, 'Sagar Bhosale', '9890011109', 'technician', 'qr', 3, { source: { channel: 'qr', campaign: 'flyer-pune-1' } }),
 ];
