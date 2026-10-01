@@ -139,6 +139,8 @@ export interface CommitmentSources {
   /** Questions raised about a partner's tier, and partners put up for review after the criteria were raised (148). */
   tierDisputes: TierDispute[];
   tierReviews: TierReview[];
+  /** Time-limited certifications: when each ends and whether a newer one has taken its place (155). */
+  certRenewals: { badgeId: string; userId: string; moduleId: string; moduleCode: string; expiresAt: string; renewed: boolean; ownerActive: boolean }[];
   /** Exits under way and how much of the partner's work is still in their hands (150). */
   exits: { exit: PartnerExit; workOpen: number; finishing: number }[];
   /** Mechanical quality-check attempts and the differences from the install record the inspector raised (132). */
@@ -2037,6 +2039,30 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
         actionRoute: `/partner-tiers/${r.userId}`,
         oversightRoute: `/partner-tiers/${r.userId}`,
       }));
+    },
+  },
+  {
+    // A time-limited certification ends: its holder renews it by passing the test again, reminded a month ahead the way any expiring credential is (155).
+    kind: 'certification_renewal',
+    nudgeBefore: days(30),
+    escalateAfter: days(7),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'staffing',
+    collect(src) {
+      return src.certRenewals
+        .filter((c) => c.ownerActive)
+        .map((c) => ({
+          ...base('certification_renewal', 'application', c.badgeId),
+          ownerUserId: c.userId,
+          titleKey: 'work.title.certification_renewal',
+          titleParams: { module: c.moduleCode },
+          dueAt: c.expiresAt,
+          state: c.renewed ? ('done' as const) : ('open' as const),
+          paused: false,
+          actionRoute: `/assessment/${c.moduleId}`,
+          oversightRoute: `/assessment?partner=${c.userId}`,
+        }));
     },
   },
   {

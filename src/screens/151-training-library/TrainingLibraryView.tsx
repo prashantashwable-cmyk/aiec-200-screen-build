@@ -5,7 +5,7 @@ import { ArrowClockwise, CaretRight, ChatsCircle, CheckCircle, CloudCheck, Cloud
 import { Badge, Button, Card, Chip, EmptyState, ErrorState, Field, Input, LoadingState, ProgressBar, Screen, ScreenHeader, SegBar, Select, Sheet, formatDate } from '@/design-system';
 import type { TrainingModuleView } from '@/data/repository';
 import type { TrainingTopic } from '@/data/types';
-import { LIB_KEYS as K, SCOPES, STATUS_FILTERS, TOPICS, contentKey, sopPath, assessmentPath } from './training-library.types';
+import { LIB_KEYS as K, SCOPES, STATUS_FILTERS, TOPICS, contentKey, sopPath, assessmentPath, certificationsPath } from './training-library.types';
 import { useTrainingLibrary } from './useTrainingLibrary';
 import type { TrainingLibraryState } from './useTrainingLibrary';
 
@@ -113,6 +113,7 @@ function Hero({ s, t }: { s: TrainingLibraryState; t: T }) {
               <span className="t-sm" data-hero-done>{t(K.hero.done, { done: c.completed, total: c.required })}</span>
               <span className="t-xs t-muted">{c.minutesLeft > 0 ? t(K.hero.left, { minutes: c.minutesLeft }) : t(K.hero.allDone)}</span>
             </div>
+            <Button size="sm" variant="secondary" style={{ width: 'fit-content' }} data-certs-link onClick={() => s.goto(certificationsPath)}>{t(K.hero.certs)}</Button>
             {c.updateNeeded > 0 && <p className="t-xs" style={{ color: 'var(--color-warning)' }} data-hero-update>{t(K.hero.updateNeeded, { count: c.updateNeeded })}</p>}
           </>
         )}

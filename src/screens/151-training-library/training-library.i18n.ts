@@ -26,6 +26,7 @@ const translations: ScreenTranslations = {
         updateNeeded_one: '{{count}} module was revised and needs to be done again.',
         updateNeeded_other: '{{count}} modules were revised and need to be done again.',
         roles: 'Roles',
+        certs: 'My certifications',
       },
       gate: {
         heading: 'Training and jobs',
@@ -155,6 +156,7 @@ const translations: ScreenTranslations = {
         updateNeeded_one: '{{count}} मॉड्यूल में बदलाव हुआ है, इसे दोबारा करना होगा।',
         updateNeeded_other: '{{count}} मॉड्यूल में बदलाव हुए हैं, इन्हें दोबारा करना होगा।',
         roles: 'भूमिकाएँ',
+        certs: 'मेरे प्रमाणन',
       },
       gate: {
         heading: 'प्रशिक्षण और काम',
@@ -284,6 +286,7 @@ const translations: ScreenTranslations = {
         updateNeeded_one: '{{count}} मॉड्यूलमध्ये बदल झाला आहे, ते पुन्हा करावे लागेल.',
         updateNeeded_other: '{{count}} मॉड्यूलमध्ये बदल झाले आहेत, ते पुन्हा करावे लागतील.',
         roles: 'भूमिका',
+        certs: 'माझी प्रमाणने',
       },
       gate: {
         heading: 'प्रशिक्षण आणि कामे',

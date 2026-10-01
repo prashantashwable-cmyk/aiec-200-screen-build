@@ -60,7 +60,19 @@ function Overview({ s, t, view }: { s: AssessmentState; t: T; view: AssessmentVi
             <div className="stack gap-2" data-badge>
               <span className="row gap-2" style={{ alignItems: 'center' }}><Medal size={26} weight="fill" aria-hidden="true" style={{ color: 'var(--color-accent-primary)' }} /><strong className="t-lg">{t(K.badge.heading)}</strong></span>
               <p className="t-sm">{t(K.badge.body, { module: moduleTitle(t, code) })}</p>
-              {view.badge && <p className="t-xs t-muted">{t(K.badge.earned, { date: formatDateTime(view.badge.issuedAt, i18n.language) })} · {t(K.badge.score, { score: view.badge.score })}</p>}
+              {view.badge && <p className="t-xs t-muted">{t(K.badge.earned, { date: formatDateTime(view.badge.issuedAt, i18n.language) })} · {t(K.badge.score, { score: view.badge.score })} · {view.badge.expiresAt ? t(K.badge.expires, { date: formatDateTime(view.badge.expiresAt, i18n.language) }) : t(K.badge.noExpiry)}</p>}
+              {view.badge && <p className="t-xs t-muted" data-code>{t(K.badge.code, { code: view.badge.code })}</p>}
+              <Button size="sm" variant="secondary" style={{ width: 'fit-content' }} data-my-certs onClick={() => s.navigateTo('/certifications')}>{t(K.badge.mine)}</Button>
+            </div>
+          </Card>
+        )}
+        {view.state === 'certified' && view.canRenew && (
+          <Card>
+            <div className="stack gap-2" data-renewal="due_soon">
+              <strong className="t-md">{t(K.renewal.renew)}</strong>
+              <p className="t-sm">{t(K.renewal.dueSoon, { date: view.badge?.expiresAt ? formatDateTime(view.badge.expiresAt, i18n.language) : '' })}</p>
+              {problem && <p className="t-xs t-error" role="alert" data-problem={problem}>{t(problemKey(problem))}</p>}
+              <Button style={{ width: 'fit-content' }} data-start disabled={s.busy || !s.online || cooling} onClick={async () => { const r = await s.begin(); if (!r.ok) setProblem(r.code ?? 'generic'); }}>{view.state === 'certified' && view.draft ? t(K.action.resume) : t(K.action.start)}</Button>
             </div>
           </Card>
         )}
@@ -72,6 +84,7 @@ function Overview({ s, t, view }: { s: AssessmentState; t: T; view: AssessmentVi
                 <strong className="t-md">{t(K.state[view.state])}</strong>
               </span>
               <p className="t-sm">{t(K.stateBody[view.state])}</p>
+              {view.renewal === 'expired' && view.lastExpiredAt && <p className="t-sm" data-lapsed style={{ color: 'var(--color-warning)' }}>{t(K.renewal.expired, { date: formatDateTime(view.lastExpiredAt, i18n.language) })}</p>}
               {cooling && <p className="t-sm" role="status" data-cooldown><strong>{t(K.rules.cooldownLeft, { hours, minutes })}</strong> · {t(K.rules.cooldownEnds, { time: formatDateTime(view.cooldownUntil as string, i18n.language) })}</p>}
               <Rules view={view} t={t} />
               {view.gatesJobAssignment && <p className="t-xs" data-gates style={{ color: 'var(--color-warning)' }}>{t(K.rules.gates)}</p>}
@@ -113,6 +126,7 @@ function Rules({ view, t }: { view: AssessmentView; t: T }) {
         <li className="t-sm">{t(K.rules.attempt, { n: view.nextAttemptNumber })}</li>
         <li className="t-sm">{t(K.rules.version, { version: view.version })}</li>
         <li className="t-sm">{t(K.rules.retakeBody, { first: a, second: b, third: c })}</li>
+        {view.validMonths && <li className="t-sm">{t(K.renewal.validFor, { months: view.validMonths })}</li>}
       </ul>
     </div>
   );
@@ -305,7 +319,7 @@ function AdminOverview({ s, t }: { s: AssessmentState; t: T }) {
                   <strong className="t-md">{moduleTitle(t, r.moduleCode)}</strong>
                   <Button size="sm" variant="ghost" icon={<PencilSimple size={14} />} data-edit={r.assessmentId} onClick={() => setEditing(r)}>{t(K.admin.edit)}</Button>
                 </div>
-                <p className="t-xs t-muted">{t(K.admin.questionsOf, { count: r.questionCount, version: r.version })} · {t(K.admin.pass, { percent: r.passPercent })} · {t(K.admin.cooldowns, { first: r.cooldownHours[0], second: r.cooldownHours[1], third: r.cooldownHours[2] })}</p>
+                <p className="t-xs t-muted">{t(K.admin.questionsOf, { count: r.questionCount, version: r.version })} · {t(K.admin.pass, { percent: r.passPercent })} · {t(K.admin.cooldowns, { first: r.cooldownHours[0], second: r.cooldownHours[1], third: r.cooldownHours[2] })} · {r.validMonths ? t(K.admin.validRow, { months: r.validMonths }) : t(K.admin.noExpiryRow)}</p>
                 <p className="t-sm">{t(K.admin.attempts, { count: r.attempts })} · {t(K.admin.passes, { count: r.passes })} · {t(K.admin.certified, { count: r.certified })}</p>
                 <div className="stack gap-1" data-struggling>
                   <strong className="t-sm">{t(K.admin.struggling)}</strong>
@@ -313,6 +327,13 @@ function AdminOverview({ s, t }: { s: AssessmentState; t: T }) {
                     <span key={p.userId} className="t-sm" data-struggler={p.userId} style={s.partner === p.userId ? { background: 'var(--color-bg)', padding: 4, borderRadius: 8 } : undefined}>{t(K.admin.strugglingRow, { name: p.name, count: p.fails, date: formatDateTime(p.lastAt, i18n.language) })}</span>
                   ))}
                   {r.struggling.length > 0 && <span className="t-xs t-muted">{t(K.admin.coachingNote)}</span>}
+                </div>
+                <div className="stack gap-1" data-lapsed-list>
+                  <strong className="t-sm">{t(K.admin.lapsed)}</strong>
+                  {r.lapsed.length === 0 ? <span className="t-xs t-muted">{t(K.admin.lapsedNone)}</span> : r.lapsed.map((p) => (
+                    <span key={p.userId} className="t-sm" data-lapsed={p.userId}>{t(K.admin.lapsedRow, { name: p.name, date: formatDateTime(p.endedAt, i18n.language), count: p.openJobs })}</span>
+                  ))}
+                  {r.lapsed.length > 0 && <span className="t-xs t-muted">{t(K.admin.lapsedNote)}</span>}
                 </div>
               </div>
             </Card>
@@ -327,8 +348,9 @@ function AdminOverview({ s, t }: { s: AssessmentState; t: T }) {
 function ConfigSheet({ s, t, row, onClose }: { s: AssessmentState; t: T; row: AssessmentOverviewRow | null; onClose: () => void }) {
   const [pass, setPass] = useState('80');
   const [c, setC] = useState(['1', '4', '24']);
+  const [valid, setValid] = useState('');
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => { if (row) { setPass(String(row.passPercent)); setC(row.cooldownHours.map(String)); setError(null); } }, [row?.assessmentId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (row) { setPass(String(row.passPercent)); setC(row.cooldownHours.map(String)); setValid(row.validMonths ? String(row.validMonths) : ''); setError(null); } }, [row?.assessmentId]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <Sheet open={!!row} onClose={onClose} title={t(K.admin.editTitle)} closeLabel={t(K.close)}>
       {row && (
@@ -336,10 +358,11 @@ function ConfigSheet({ s, t, row, onClose }: { s: AssessmentState; t: T; row: As
           <p className="t-sm">{t(K.admin.editBody, { module: moduleTitle(t, row.moduleCode) })}</p>
           <Field label={t(K.admin.passPercent)} hint={t(K.admin.passHint)}>{(p) => <Input id={p.id} type="number" inputMode="numeric" min={50} max={100} value={pass} onChange={(e) => setPass(e.target.value)} data-f="pass" />}</Field>
           {[0, 1, 2].map((i) => <Field key={i} label={t([K.admin.cooldown1, K.admin.cooldown2, K.admin.cooldown3][i])} hint={i === 0 ? t(K.admin.cooldownHint) : undefined}>{(p) => <Input id={p.id} type="number" inputMode="numeric" min={0} max={168} value={c[i]} onChange={(e) => setC(c.map((x, n) => (n === i ? e.target.value : x)))} data-f={`cooldown${i + 1}`} />}</Field>)}
+          <Field label={t(K.admin.validMonths)} hint={t(K.admin.validHint)}>{(p) => <Input id={p.id} type="number" inputMode="numeric" min={1} max={60} value={valid} onChange={(e) => setValid(e.target.value)} data-f="valid" />}</Field>
           {error && <p className="t-xs t-error" role="alert" data-problem={error}>{t(problemKey(error))}</p>}
           <Footer>
             <Button variant="ghost" onClick={onClose}>{t(K.admin.cancel)}</Button>
-            <Button disabled={s.busy} data-save-config onClick={async () => { const r = await s.saveConfig(row, { passPercent: Number(pass), cooldownHours: [Number(c[0]), Number(c[1]), Number(c[2])] }); if (!r.ok) setError(r.code ?? 'generic'); else onClose(); }}>{t(K.admin.save)}</Button>
+            <Button disabled={s.busy} data-save-config onClick={async () => { const r = await s.saveConfig(row, { passPercent: Number(pass), cooldownHours: [Number(c[0]), Number(c[1]), Number(c[2])], validMonths: valid.trim() === '' ? null : Number(valid) }); if (!r.ok) setError(r.code ?? 'generic'); else onClose(); }}>{t(K.admin.save)}</Button>
           </Footer>
         </div>
       )}

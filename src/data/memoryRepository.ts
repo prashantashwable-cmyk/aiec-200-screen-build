@@ -247,6 +247,11 @@ import type {
   TrainingModuleView,
   LessonAnswerResult,
   AssessmentAttemptView,
+  CertBadgeView,
+  CertNextStep,
+  CertStanding,
+  CertStandingRow,
+  CertificationsView,
   AssessmentOverviewRow,
   AssessmentOverviewView,
   AssessmentResultView,
@@ -653,6 +658,7 @@ import type {
   AssessmentAnswer,
   AssessmentAttempt,
   CertificationBadge,
+  CertificationPref,
 } from './types';
 import { formatDate, formatDateTime, formatINR, formatINRCompact, formatTime, haversineKm } from '@/design-system/format';
 import { MAX_SAFE_BOT_DISCOUNT_PCT } from '@/features/communication/botRules';
@@ -740,7 +746,7 @@ import type { NowStage as RdNowStage, Period as RdPeriod, RecruitStage as RdRecr
 import { TOPICS as TN_TOPICS, currentVersionOf as tnCurrentVersion, curriculumOf as tnCurriculum, jobGateOf as tnJobGate, lockedBy as tnLockedBy, percentOfModule as tnPercent, relevantFor as tnRelevant, requiredFor as tnRequired, startProblem as tnStartProblem, statusOf as tnStatus, updatedSince as tnUpdated } from '@/features/training/curriculum';
 import type { ModuleStatus } from '@/features/training/curriculum';
 import { BUILT_IN_CATEGORIES as SOP_BUILT_IN, BUILT_IN_SINCE as SOP_SINCE, categoryProblem as sopCategoryProblem, currentOf as sopCurrent, diffItems as sopDiff, referenceProblem as sopReferenceProblem, stateOf as sopStateOf, upcomingOf as sopUpcoming } from '@/features/sop/library';
-import { badgeValid as asBadgeValid, answerProblem as asAnswerProblem, configProblem as asConfigProblem, cooldownUntilOf as asCooldownUntil, failedCountOf as asFailedCount, isStruggling as asStruggling, orderFor as asOrder, passedAt as asPassed, questionsFor as asQuestions, scoreOf as asScore } from '@/features/training/assessment';
+import { RENEWAL_WINDOW_DAYS as AS_RENEW_DAYS, badgeStatusOf as asBadgeStatus, countsForWork as asCounts, daysLeftOf as asDaysLeft, expiryOf as asExpiry, failsSinceLastPass as asFailsSince, badgeValid as asBadgeValid, answerProblem as asAnswerProblem, configProblem as asConfigProblem, cooldownUntilOf as asCooldownUntil, failedCountOf as asFailedCount, isStruggling as asStruggling, orderFor as asOrder, passedAt as asPassed, questionsFor as asQuestions, scoreOf as asScore } from '@/features/training/assessment';
 import { seedAssessmentAttempts, seedAssessments, seedCertBadges, seedTrainingLessonProgress, seedTrainingLessons, seedTrainingModules, seedTrainingProgress } from './trainingSeed';
 import { allowedFurthestS as lsAllowed, answerProblem as lsAnswerProblem, checkAtS as lsCheckAt, clampPlayback as lsClamp, clearedIds as lsCleared, completeProblem as lsCompleteProblem, durationOf as lsDuration, isCorrect as lsIsCorrect, lessonDone as lsDone, lessonStates as lsStates, lessonUpdated as lsUpdated, sceneStartS as lsSceneStart } from '@/features/training/lesson';
 import { GRADUATION_MIN_ORDERS, GRADUATION_MIN_SCORE } from '@/features/suppliers/paymentTerms';
@@ -2446,6 +2452,7 @@ function commitmentSources(now: number): CommitmentSources {
     applications: partnerApplications,
     tierDisputes: (tcEnsure(Date.now()), tierDisputes),
     tierReviews,
+    certRenewals: certRenewalSignals(Date.now()),
     exits: exitSignals(),
     handoverReviews: handoverSignals().reviews,
     qcMechChecks,
@@ -2704,6 +2711,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   syncRecruitmentIntake(now);
   syncPartnerExits(now);
   syncAssessmentAlerts(now);
+  syncCertifications(now);
   syncPartnerInterviews(now);
   syncVerification(now);
   syncOffers(now);
@@ -8762,6 +8770,8 @@ const assessments: Assessment[] = seedAssessments.map((a) => ({ ...a, cooldownHo
 const assessmentAttempts: AssessmentAttempt[] = seedAssessmentAttempts.map((a) => ({ ...a, questionIds: [...a.questionIds], answers: a.answers.map((x) => ({ questionId: x.questionId, selected: [...x.selected] })) }));
 const certBadges: CertificationBadge[] = seedCertBadges.map((b) => ({ ...b }));
 let assessmentAttemptCounter = 100;
+let certCounter = 1100;
+const certPrefs: CertificationPref[] = [];
 const lessonProgress: TrainingLessonProgress[] = seedTrainingLessonProgress.map((x) => ({ ...x, checks: x.checks.map((c) => ({ ...c, attempts: c.attempts.map((a) => ({ ...a })) })) }));
 
 /** One person across every role they hold (149 groups them the same way, by phone): what they have done in one account counts in another. */
@@ -8895,10 +8905,15 @@ function tnSyncModuleProgress(m: TrainingModule, userId: string, person: { roles
 const asOf = (moduleId: string) => assessments.find((a) => a.moduleId === moduleId);
 const ASSESSMENT_ALERT = 'assessment.alert.struggling';
 
-/** The person's certification for a module, if it still counts for the module as it reads now. */
+/** The person's current certification for a module: the newest one that still counts for the module as it reads now and has not run out. */
 function asBadgeOf(userIds: string[], m: TrainingModule, now: number): CertificationBadge | undefined {
   const min = tnCurrentVersion(m, now).minVersion;
-  return certBadges.filter((b) => b.moduleId === m.id && userIds.includes(b.userId) && asBadgeValid(b, min)).sort((a, b) => b.version - a.version)[0];
+  return certBadges.filter((b) => b.moduleId === m.id && userIds.includes(b.userId) && asBadgeValid(b, min) && (!b.expiresAt || Date.parse(b.expiresAt) > now)).sort((a, b) => b.issuedAt.localeCompare(a.issuedAt))[0];
+}
+
+/** A certification close to its end (or whose module is still current but whose badge ran out) can be renewed by passing the test again. */
+function asRenewable(b: CertificationBadge | undefined, now: number): boolean {
+  return !!b && !!b.expiresAt && Date.parse(b.expiresAt) - now <= AS_RENEW_DAYS * 86_400_000;
 }
 
 /** True when the module has no test, or the test is passed. */
@@ -8911,24 +8926,29 @@ function asCertified(userIds: string[], moduleId: string, now: number): boolean 
 
 const asAttemptsOf = (userIds: string[], assessmentId: string, version: number) => assessmentAttempts.filter((x) => x.assessmentId === assessmentId && userIds.includes(x.userId) && x.version === version);
 
-function asStateOf(m: TrainingModule, a: Assessment, userIds: string[], now: number): { state: AssessmentStateName; cooldownUntil: string | null; failed: number; attempts: AssessmentAttempt[] } {
+function asStateOf(m: TrainingModule, a: Assessment, userIds: string[], now: number): { state: AssessmentStateName; cooldownUntil: string | null; failed: number; attempts: AssessmentAttempt[]; renewable: boolean } {
   const version = tnCurrentVersion(m, now).version;
   const attempts = asAttemptsOf(userIds, a.id, version);
-  const failed = asFailedCount(attempts);
+  const failed = asFailsSince(attempts);
   const submitted = attempts.filter((x) => x.status === 'submitted').sort((x, y) => (y.submittedAt ?? '').localeCompare(x.submittedAt ?? ''));
   const cooldownUntil = asCooldownUntil(submitted[0]?.submittedAt ?? null, a.cooldownHours, failed);
-  if (asBadgeOf(userIds, m, now)) return { state: 'certified', cooldownUntil: null, failed, attempts };
-  if (tnStatus(m, tnProgressOf(userIds, m.id), now) !== 'completed') return { state: 'locked', cooldownUntil: null, failed, attempts };
-  if (attempts.some((x) => x.status === 'in_progress')) return { state: 'in_progress', cooldownUntil: null, failed, attempts };
-  if (cooldownUntil && Date.parse(cooldownUntil) > now) return { state: 'cooldown', cooldownUntil, failed, attempts };
-  return { state: 'to_take', cooldownUntil: null, failed, attempts };
+  const badge = asBadgeOf(userIds, m, now);
+  const renewable = asRenewable(badge, now);
+  if (badge) return { state: 'certified', cooldownUntil: cooldownUntil && Date.parse(cooldownUntil) > now ? cooldownUntil : null, failed, attempts, renewable };
+  if (tnStatus(m, tnProgressOf(userIds, m.id), now) !== 'completed') return { state: 'locked', cooldownUntil: null, failed, attempts, renewable: false };
+  if (attempts.some((x) => x.status === 'in_progress')) return { state: 'in_progress', cooldownUntil: null, failed, attempts, renewable: false };
+  if (cooldownUntil && Date.parse(cooldownUntil) > now) return { state: 'cooldown', cooldownUntil, failed, attempts, renewable: false };
+  return { state: 'to_take', cooldownUntil: null, failed, attempts, renewable: false };
 }
 
 function asSummaryOf(m: TrainingModule, userIds: string[], now: number): TrainingModuleView['assessment'] {
   const a = asOf(m.id);
   if (!a) return null;
   const st = asStateOf(m, a, userIds, now);
-  return { state: st.state, passPercent: a.passPercent, cooldownUntil: st.cooldownUntil };
+  const badge = asBadgeOf(userIds, m, now);
+  // A badge that ran out is no longer "certified": the state above is then to-take, and the renewal says why.
+  const lapsed = !badge && certBadges.some((b) => b.moduleId === m.id && userIds.includes(b.userId) && b.expiresAt && Date.parse(b.expiresAt) <= now && asBadgeValid(b, tnCurrentVersion(m, now).minVersion));
+  return { state: st.state, passPercent: a.passPercent, cooldownUntil: st.cooldownUntil, renewal: lapsed ? 'expired' : st.renewable ? 'due_soon' : 'none', expiresAt: badge?.expiresAt ?? null };
 }
 
 function asResultOf(att: AssessmentAttempt, a: Assessment, m: TrainingModule, person: { roles: TrainingRole[]; userIds: string[] }, now: number): AssessmentResultView {
@@ -8939,7 +8959,7 @@ function asResultOf(att: AssessmentAttempt, a: Assessment, m: TrainingModule, pe
     const q = questions.find((x) => x.id === r.questionId) as (typeof questions)[number];
     return { questionId: q.id, kind: q.kind, options: q.options, selected: r.selected, correct: r.correct, correctAnswer: [...q.correct] };
   });
-  const failed = asFailedCount(asAttemptsOf(person.userIds, a.id, att.version));
+  const failed = asFailsSince(asAttemptsOf(person.userIds, a.id, att.version));
   const next = att.passed ? null : asCooldownUntil(att.submittedAt ?? null, a.cooldownHours, failed);
   const technician = person.roles.includes('technician');
   return {
@@ -8959,7 +8979,9 @@ function asView(m: TrainingModule, a: Assessment, person: { roles: TrainingRole[
   return {
     assessmentId: a.id, moduleId: m.id, moduleCode: m.code, topic: m.topic, version, passPercent: a.passPercent, cooldownHours: [...a.cooldownHours] as [number, number, number], questionCount: asQuestions(a, version).length, state: st.state,
     attemptsThisVersion: st.attempts.filter((x) => x.status === 'submitted').length, failedThisVersion: st.failed, nextAttemptNumber: all.length + 1, cooldownUntil: st.cooldownUntil,
-    badge: badge ? { id: badge.id, issuedAt: badge.issuedAt, score: badge.score, version: badge.version } : null,
+    badge: badge ? { id: badge.id, issuedAt: badge.issuedAt, score: badge.score, version: badge.version, expiresAt: badge.expiresAt, code: badge.code } : null,
+    canRenew: st.renewable, validMonths: a.validMonths, renewal: asSummaryOf(m, person.userIds, now)?.renewal ?? 'none',
+    lastExpiredAt: certBadges.filter((b) => b.moduleId === m.id && person.userIds.includes(b.userId) && b.expiresAt && Date.parse(b.expiresAt) <= now).map((b) => b.expiresAt as string).sort().pop() ?? null,
     history: all.filter((x) => x.status === 'submitted').sort((x, y) => (x.submittedAt ?? '').localeCompare(y.submittedAt ?? '')).map((x) => ({ attemptNumber: x.attemptNumber, score: x.score ?? 0, passed: !!x.passed, submittedAt: x.submittedAt ?? x.updatedAt, version: x.version })),
     last: submitted[0] ? asResultOf(submitted[0], a, m, person, now) : null,
     draft: open ? { attemptId: open.id, answers: open.answers.map((x) => ({ questionId: x.questionId, selected: [...x.selected] })), startedAt: open.startedAt } : null,
@@ -8999,16 +9021,29 @@ function syncAssessmentAlerts(now: number): void {
       const person = tnPersonOf(userId);
       if (!person) continue;
       const rel = `assess:${a.id}:${userId}`;
-      const struggling = asStruggling(asFailedCount(list), !!asBadgeOf(person.userIds, m, now));
+      const struggling = asStruggling(asFailsSince(list), !!asBadgeOf(person.userIds, m, now));
       const open = alerts.find((x) => x.relatedId === rel && x.titleKey === ASSESSMENT_ALERT && x.status !== 'resolved');
       if (struggling && !open) {
-        raiseAlert({ titleKey: ASSESSMENT_ALERT, context: `${person.name} has not passed ${m.code} after ${asFailedCount(list)} attempts`, severity: 'medium', category: 'staffing', relatedId: rel, sourceRoute: `/assessment?partner=${userId}` });
-        logAutomatedAction({ sourceKey: 'assessment.coaching_flag', triggeringCondition: `${person.name} failed ${m.code}'s test ${asFailedCount(list)} times without passing`, actionTaken: 'Told Admin this may be a coaching opportunity', affectedRecordId: a.id, affectedRecordType: 'other' });
+        raiseAlert({ titleKey: ASSESSMENT_ALERT, context: `${person.name} has not passed ${m.code} after ${asFailsSince(list)} attempts`, severity: 'medium', category: 'staffing', relatedId: rel, sourceRoute: `/assessment?partner=${userId}` });
+        logAutomatedAction({ sourceKey: 'assessment.coaching_flag', triggeringCondition: `${person.name} failed ${m.code}'s test ${asFailsSince(list)} times without passing`, actionTaken: 'Told Admin this may be a coaching opportunity', affectedRecordId: a.id, affectedRecordType: 'other' });
       } else if (!struggling && open) {
         patchInPlace(alerts, open.id, { status: 'resolved', resolvedAt: new Date(now).toISOString(), resolvedBy: 'system', resolutionNote: 'They passed, or the content changed.' });
       }
     }
   }
+}
+
+function asLapsedOf(a: Assessment, now: number): AssessmentOverviewRow['lapsed'] {
+  const out: AssessmentOverviewRow['lapsed'] = [];
+  const seen = new Set<string>();
+  for (const b of [...certBadges].filter((x) => x.assessmentId === a.id).sort((x, y) => y.issuedAt.localeCompare(x.issuedAt))) {
+    if (seen.has(b.userId)) continue;
+    seen.add(b.userId);
+    const user = byId(users, b.userId);
+    if (!user || user.status !== 'active' || !b.expiresAt || Date.parse(b.expiresAt) > now) continue;
+    out.push({ userId: b.userId, name: user.name, endedAt: b.expiresAt, openJobs: jobs.filter((j) => j.status !== 'completed' && (j.technicianId === b.userId || (j.crew ?? []).some((c) => c.userId === b.userId))).length });
+  }
+  return out;
 }
 
 function asOverviewRow(a: Assessment, now: number): AssessmentOverviewRow {
@@ -9021,13 +9056,117 @@ function asOverviewRow(a: Assessment, now: number): AssessmentOverviewRow {
   for (const [userId, list] of people) {
     const person = tnPersonOf(userId);
     if (!person) continue;
-    const fails = asFailedCount(list);
+    const fails = asFailsSince(list);
     if (asStruggling(fails, !!asBadgeOf(person.userIds, m, now))) struggling.push({ userId, name: person.name, fails, lastAt: list.map((x) => x.submittedAt ?? '').sort().pop() ?? '' });
   }
   return {
-    assessmentId: a.id, moduleId: m.id, moduleCode: m.code, version, passPercent: a.passPercent, cooldownHours: [...a.cooldownHours] as [number, number, number], questionCount: asQuestions(a, version).length,
+    assessmentId: a.id, moduleId: m.id, moduleCode: m.code, version, passPercent: a.passPercent, cooldownHours: [...a.cooldownHours] as [number, number, number], validMonths: a.validMonths, questionCount: asQuestions(a, version).length,
+    lapsed: asLapsedOf(a, now),
     attempts: attempts.length, passes: attempts.filter((x) => x.passed).length, certified: new Set(certBadges.filter((b) => b.assessmentId === a.id && asBadgeValid(b, tnCurrentVersion(m, now).minVersion)).map((b) => b.userId)).size, struggling,
   };
+}
+
+/* ---- certification badges and progress (155) */
+
+const CERT_ALERT = 'certifications.alert.lapsedOnJob';
+const CERT_CHASE_DAYS = 60;
+const CERT_RECENT_DAYS = 90;
+const CERT_COHORT_MIN = 3;
+const CERT_TOP = 5;
+
+/** The newest certification of each module a person holds (older ones are the history of renewals). */
+function certLatestOf(userIds: string[]): CertificationBadge[] {
+  const out = new Map<string, CertificationBadge>();
+  for (const b of [...certBadges].filter((x) => userIds.includes(x.userId)).sort((a, c) => c.issuedAt.localeCompare(a.issuedAt))) if (!out.has(b.moduleId)) out.set(b.moduleId, b);
+  return [...out.values()];
+}
+
+function certStatusOf(b: CertificationBadge, now: number) {
+  const m = byId(trainingModules, b.moduleId);
+  return asBadgeStatus(b, { minVersion: m ? tnCurrentVersion(m, now).minVersion : 1, retired: m?.status === 'retired', now });
+}
+
+/** What the commitment engine reads: each time-limited certification, and whether a newer one has replaced it. */
+function certRenewalSignals(now: number): { badgeId: string; userId: string; moduleId: string; moduleCode: string; expiresAt: string; renewed: boolean; ownerActive: boolean }[] {
+  const out: { badgeId: string; userId: string; moduleId: string; moduleCode: string; expiresAt: string; renewed: boolean; ownerActive: boolean }[] = [];
+  for (const b of certBadges) {
+    if (!b.expiresAt) continue;
+    const m = byId(trainingModules, b.moduleId);
+    const user = byId(users, b.userId);
+    if (!m || !user || m.status === 'retired') continue;
+    const renewed = certBadges.some((x) => x.userId === b.userId && x.moduleId === b.moduleId && x.issuedAt > b.issuedAt);
+    // A lapse nobody has renewed for two months is history, not something to keep chasing.
+    if (now - Date.parse(b.expiresAt) > CERT_CHASE_DAYS * 86_400_000) continue;
+    out.push({ badgeId: b.id, userId: b.userId, moduleId: b.moduleId, moduleCode: m.code, expiresAt: b.expiresAt, renewed, ownerActive: user.status === 'active' });
+  }
+  return out;
+}
+
+const certShort = (name: string) => { const p = name.trim().split(/\s+/); return p.length > 1 ? `${p[0]} ${p[p.length - 1][0]}.` : p[0]; };
+
+function certBadgeViewOf(b: CertificationBadge, latest: boolean, now: number): CertBadgeView {
+  const m = byId(trainingModules, b.moduleId) as TrainingModule;
+  const status = certStatusOf(b, now);
+  return {
+    id: b.id, code: b.code, moduleId: m.id, moduleCode: m.code, topic: m.topic, version: b.version, score: b.score, issuedAt: b.issuedAt, expiresAt: b.expiresAt, status, daysLeft: asDaysLeft(b.expiresAt, now),
+    latest, renewable: latest && (status === 'expiring' || status === 'expired') && m.status !== 'retired', gatesJobAssignment: m.gatesJobAssignment && tnRequired(m, ['technician']), renewedFromId: b.renewedFromId ?? null, earlierStandard: status === 'superseded' || status === 'retired',
+  };
+}
+
+function certStandingOf(userId: string, now: number): CertStanding | null {
+  const me = byId(users, userId);
+  if (!me || (me.role !== 'surveyor' && me.role !== 'technician' && me.role !== 'supplier')) return null;
+  const count = (id: string) => certLatestOf([id]).filter((b) => asCounts(certStatusOf(b, now))).length;
+  const recent = (id: string) => certLatestOf([id]).filter((b) => asCounts(certStatusOf(b, now)) && now - Date.parse(b.issuedAt) <= CERT_RECENT_DAYS * 86_400_000).length;
+  const cohort = users.filter((u) => u.role === me.role && (u.status === 'active' || u.id === userId));
+  const scored = cohort.map((u) => ({ u, n: count(u.id) })).sort((a, b) => b.n - a.n || a.u.name.localeCompare(b.u.name));
+  let rank = 0;
+  const ranked = scored.map((x, i) => { if (i === 0 || x.n < scored[i - 1].n) rank = i + 1; return { ...x, rank }; });
+  const mine = ranked.find((x) => x.u.id === userId);
+  if (!mine) return null;
+  const rowOf = (x: (typeof ranked)[number]): CertStandingRow => ({ rank: x.rank, name: x.u.id === userId || !certPrefs.some((p) => p.userId === x.u.id && p.hidden) ? certShort(x.u.name) : null, certifications: x.n, recent: recent(x.u.id), self: x.u.id === userId, pinned: false });
+  const top = ranked.slice(0, CERT_TOP);
+  const rows = top.some((x) => x.u.id === userId) ? top.map(rowOf) : [...top.map(rowOf), { ...rowOf(mine), pinned: true }];
+  return { cohort: me.role as CertStanding['cohort'], total: cohort.length, rank: mine.rank, mine: mine.n, rows, enough: cohort.length >= CERT_COHORT_MIN };
+}
+
+function certNextSteps(person: { roles: TrainingRole[]; userIds: string[] }, now: number): CertNextStep[] {
+  const status = tnStatusFn(person.userIds, now);
+  const out: (CertNextStep & { rankKey: number; order: number })[] = [];
+  for (const m of trainingModules) {
+    if (m.status !== 'published' || !tnRequired(m, person.roles) || !asOf(m.id)) continue;
+    const gating = m.gatesJobAssignment && tnRequired(m, ['technician']);
+    const latest = certLatestOf(person.userIds).find((b) => b.moduleId === m.id);
+    const st = latest ? certStatusOf(latest, now) : null;
+    const base = { moduleId: m.id, moduleCode: m.code, expiresAt: latest?.expiresAt ?? null, order: m.order };
+    if (latest && st === 'valid') continue;
+    if (latest && (st === 'expired' || st === 'expiring')) { out.push({ ...base, kind: 'renew', because: st === 'expired' ? (gating ? 'blocks_jobs' : 'expired') : 'expiring', route: `/assessment/${m.id}`, rankKey: st === 'expired' ? (gating ? 0 : 1) : 2 }); continue; }
+    if (tnLockedBy(m, trainingModules, status).length > 0) continue;
+    if (status(m.id) === 'completed') out.push({ ...base, kind: 'test', because: gating ? 'blocks_jobs' : 'required', route: `/assessment/${m.id}`, rankKey: gating ? 0 : 3 });
+    else if (trainingLessons.some((l) => l.moduleId === m.id)) out.push({ ...base, kind: 'lessons', because: gating ? 'blocks_jobs' : 'required', route: `/training/${m.id}`, rankKey: gating ? 0 : 4 });
+  }
+  return out.sort((a, b) => a.rankKey - b.rankKey || a.order - b.order).slice(0, 4).map(({ rankKey, order, ...rest }) => rest);
+}
+
+/** A certification that lapsed while its holder is on a job: the job finishes, new ones wait, and Admin is told so it is a decision, not a surprise (155). */
+function syncCertifications(now: number): void {
+  const open = (userId: string) => jobs.filter((j) => j.status !== 'completed' && (j.technicianId === userId || (j.crew ?? []).some((c) => c.userId === userId)));
+  for (const b of certBadges) {
+    const m = byId(trainingModules, b.moduleId);
+    const user = byId(users, b.userId);
+    if (!m || !user || !b.expiresAt) continue;
+    const rel = `certlapse:${b.id}`;
+    const existing = alerts.find((x) => x.relatedId === rel && x.titleKey === CERT_ALERT && x.status !== 'resolved');
+    const renewed = certBadges.some((x) => x.userId === b.userId && x.moduleId === b.moduleId && x.issuedAt > b.issuedAt);
+    const lapsed = Date.parse(b.expiresAt) <= now && !renewed && m.gatesJobAssignment && tnRequired(m, ['technician']) && user.status === 'active';
+    const onJobs = lapsed ? open(b.userId) : [];
+    if (lapsed && onJobs.length > 0 && !existing) {
+      raiseAlert({ titleKey: CERT_ALERT, context: `${user.name}'s ${m.code} certification lapsed while on ${onJobs.map((j) => j.code).join(', ')}`, severity: 'medium', category: 'staffing', relatedId: rel, sourceRoute: `/assessment?partner=${b.userId}` });
+      logAutomatedAction({ sourceKey: 'certification.lapsed', triggeringCondition: `${user.name}'s ${m.code} certification ended while they hold open work`, actionTaken: 'Told Admin: the current work can finish, new work needing it is held', affectedRecordId: b.id, affectedRecordType: 'other' });
+    } else if (existing && (!lapsed || onJobs.length === 0)) {
+      patchInPlace(alerts, existing.id, { status: 'resolved', resolvedAt: new Date(now).toISOString(), resolvedBy: 'system', resolutionNote: 'Renewed, or no work in hand.' });
+    }
+  }
 }
 
 /** Whether a person may be put on a job: for a technician, every gating safety module must be done. Anyone else is not held by it. */
@@ -16684,6 +16823,32 @@ export const memoryRepository: Repository = {
       return tnViewOf(m, person, now);
     }),
 
+  /* --------------------------------- Certification badges and progress (155) */
+  getCertifications: (userId) =>
+    simulateRead((): CertificationsView => {
+      const person = tnPersonOf(userId);
+      if (!person) throw new RepositoryError('forbidden');
+      const now = Date.now();
+      const all = certBadges.filter((b) => person.userIds.includes(b.userId)).sort((a, b) => b.issuedAt.localeCompare(a.issuedAt));
+      const latestIds = new Set(certLatestOf(person.userIds).map((b) => b.id));
+      const badges = all.map((b) => certBadgeViewOf(b, latestIds.has(b.id), now));
+      const latest = badges.filter((b) => b.latest);
+      const required = trainingModules.filter((m) => m.status === 'published' && tnRequired(m, person.roles) && asOf(m.id));
+      return {
+        person: { name: person.name, roles: person.roles }, badges,
+        summary: { current: latest.filter((b) => b.status === 'valid' || b.status === 'expiring').length, expiring: latest.filter((b) => b.status === 'expiring').length, expired: latest.filter((b) => b.status === 'expired').length, earlier: latest.filter((b) => b.earlierStandard).length, required: required.length, requiredHeld: required.filter((m) => latest.some((b) => b.moduleId === m.id && (b.status === 'valid' || b.status === 'expiring'))).length },
+        nextSteps: certNextSteps(person, now), standing: certStandingOf(userId, now), hidden: certPrefs.some((p) => p.userId === userId && p.hidden), at: new Date(now).toISOString(),
+      };
+    }),
+
+  setCertificationVisibility: (hidden, userId) =>
+    simulateWrite(() => {
+      if (!tnPersonOf(userId)) throw new RepositoryError('forbidden');
+      const pref = certPrefs.find((p) => p.userId === userId);
+      if (pref) pref.hidden = hidden; else certPrefs.push({ userId, hidden });
+      return { hidden };
+    }),
+
   /* --------------------------------- Quiz and certification (154) */
   getAssessment: (moduleId, userId) =>
     simulateRead((): AssessmentView => {
@@ -16697,7 +16862,8 @@ export const memoryRepository: Repository = {
       const now = Date.now();
       const { person, m, a } = asAccess(moduleId, userId, now);
       const st = asStateOf(m, a, person.userIds, now);
-      if (st.state === 'certified') throw new RepositoryError('already_certified');
+      if (st.state === 'certified' && !st.renewable) throw new RepositoryError('already_certified');
+      if (st.state === 'certified' && st.cooldownUntil) throw new RepositoryError('cooldown');
       if (st.state === 'locked') throw new RepositoryError('not_ready');
       if (st.state === 'cooldown') throw new RepositoryError('cooldown');
       const version = tnCurrentVersion(m, now).version;
@@ -16762,8 +16928,15 @@ export const memoryRepository: Repository = {
       att.passPercent = a.passPercent;
       att.passed = asPassed(scored.score, a.passPercent);
       // Passing is the one event that issues the certification; nothing else does.
-      if (att.passed && !asBadgeOf(person.userIds, m, now)) certBadges.push({ id: `cb-${att.id}`, userId, moduleId: m.id, assessmentId: a.id, version: att.version, score: scored.score, attemptId: att.id, issuedAt: at });
+      const held = asBadgeOf(person.userIds, m, now);
+      // The certification this one renews: the one still held, or the one that ran out.
+      const prior = held ?? certBadges.filter((b) => b.moduleId === m.id && person.userIds.includes(b.userId)).sort((x, y) => y.issuedAt.localeCompare(x.issuedAt))[0];
+      if (att.passed && (!held || asRenewable(held, now))) {
+        certCounter += 1;
+        certBadges.push({ id: `cb-${att.id}`, code: `AIEC-CT-${certCounter}`, userId, moduleId: m.id, assessmentId: a.id, version: att.version, score: scored.score, attemptId: att.id, issuedAt: at, expiresAt: asExpiry(at, a.validMonths), ...(prior ? { renewedFromId: prior.id } : {}) });
+      }
       syncAssessmentAlerts(now);
+      syncCertifications(now);
       return asResultOf(att, a, m, person, now);
     }),
 
@@ -16772,6 +16945,7 @@ export const memoryRepository: Repository = {
       ofAdmin(adminId);
       const now = Date.now();
       syncAssessmentAlerts(now);
+      syncCertifications(now);
       return { rows: assessments.map((a) => asOverviewRow(a, now)), at: new Date(now).toISOString() };
     }),
 
@@ -16780,8 +16954,9 @@ export const memoryRepository: Repository = {
       ofAdmin(adminId);
       const a = byId(assessments, assessmentId);
       if (!a) throw new RepositoryError('no_assessment');
-      const problem = asConfigProblem(input.passPercent, input.cooldownHours);
+      const problem = asConfigProblem(input.passPercent, input.cooldownHours, input.validMonths);
       if (problem) throw new RepositoryError(problem);
+      a.validMonths = input.validMonths;
       a.passPercent = input.passPercent;
       a.cooldownHours = [input.cooldownHours[0], input.cooldownHours[1], input.cooldownHours[2]];
       return asOverviewRow(a, Date.now());

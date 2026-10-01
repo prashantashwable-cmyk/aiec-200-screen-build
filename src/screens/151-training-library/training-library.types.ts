@@ -12,6 +12,7 @@ export const cacheKey = (userId: string) => `aiec.trainingLib.${userId}`;
 /** 152 plays a module here. */
 /** 153 holds the procedures technicians are held to. */
 export const sopPath = '/sops';
+export const certificationsPath = '/certifications';
 export const assessmentPath = (moduleId: string) => `/assessment/${moduleId}`;
 export const modulePath = (moduleId: string) => `/training/${moduleId}`;
 export { TOPICS };
@@ -38,6 +39,7 @@ export const LIB_KEYS = {
     nothing: 'trainingLib.hero.nothing',
     updateNeeded: 'trainingLib.hero.updateNeeded',
     roles: 'trainingLib.hero.roles',
+    certs: 'trainingLib.hero.certs',
   },
   gate: {
     heading: 'trainingLib.gate.heading',

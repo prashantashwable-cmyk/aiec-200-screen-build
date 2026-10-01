@@ -10,7 +10,7 @@ export const STATES: AssessmentStateName[] = ['locked', 'to_take', 'in_progress'
 export const TICK_MS = 30_000;
 
 const rec = <T extends string>(ns: string, keys: readonly T[]) => Object.fromEntries(keys.map((k) => [k, `${ns}.${k}`])) as Record<T, string>;
-const PROBLEMS: (AssessmentError | 'offline' | 'generic')[] = ['forbidden', 'not_found', 'locked', 'not_for_you', 'retired', 'invalid_state', 'not_ready', 'cooldown', 'already_certified', 'no_assessment', 'outdated', 'incomplete', 'attempt_not_found', 'already_submitted', 'not_admin', 'none_chosen', 'single_only', 'out_of_range', 'unknown_question', 'pass_range', 'cooldown_range', 'offline', 'generic'];
+const PROBLEMS: (AssessmentError | 'offline' | 'generic')[] = ['valid_range', 'forbidden', 'not_found', 'locked', 'not_for_you', 'retired', 'invalid_state', 'not_ready', 'cooldown', 'already_certified', 'no_assessment', 'outdated', 'incomplete', 'attempt_not_found', 'already_submitted', 'not_admin', 'none_chosen', 'single_only', 'out_of_range', 'unknown_question', 'pass_range', 'cooldown_range', 'offline', 'generic'];
 
 export const ASSESS_KEYS = {
   title: 'assessment.title',
@@ -33,8 +33,9 @@ export const ASSESS_KEYS = {
     cooldownEnds: 'assessment.rules.cooldownEnds',
     cooldownLeft: 'assessment.rules.cooldownLeft',
   },
+  renewal: { dueSoon: 'assessment.renewal.dueSoon', expired: 'assessment.renewal.expired', validFor: 'assessment.renewal.validFor', renew: 'assessment.renewal.renew' },
   action: { start: 'assessment.action.start', resume: 'assessment.action.resume', lessons: 'assessment.action.lessons', library: 'assessment.action.library', studyAgain: 'assessment.action.studyAgain' },
-  badge: { heading: 'assessment.badge.heading', body: 'assessment.badge.body', earned: 'assessment.badge.earned', score: 'assessment.badge.score' },
+  badge: { heading: 'assessment.badge.heading', body: 'assessment.badge.body', earned: 'assessment.badge.earned', score: 'assessment.badge.score', expires: 'assessment.badge.expires', noExpiry: 'assessment.badge.noExpiry', code: 'assessment.badge.code', mine: 'assessment.badge.mine' },
   history: { heading: 'assessment.history.heading', row: 'assessment.history.row', passed: 'assessment.history.passed', notPassed: 'assessment.history.notPassed', none: 'assessment.history.none' },
   wizard: {
     steps: 'assessment.wizard.steps',
@@ -96,11 +97,19 @@ export const ASSESS_KEYS = {
     struggling: 'assessment.admin.struggling',
     strugglingNone: 'assessment.admin.strugglingNone',
     strugglingRow: 'assessment.admin.strugglingRow',
+    lapsed: 'assessment.admin.lapsed',
+    lapsedNone: 'assessment.admin.lapsedNone',
+    lapsedRow: 'assessment.admin.lapsedRow',
+    lapsedNote: 'assessment.admin.lapsedNote',
     edit: 'assessment.admin.edit',
     editTitle: 'assessment.admin.editTitle',
     editBody: 'assessment.admin.editBody',
     passPercent: 'assessment.admin.passPercent',
     passHint: 'assessment.admin.passHint',
+    validMonths: 'assessment.admin.validMonths',
+    validHint: 'assessment.admin.validHint',
+    validRow: 'assessment.admin.validRow',
+    noExpiryRow: 'assessment.admin.noExpiryRow',
     cooldown1: 'assessment.admin.cooldown1',
     cooldown2: 'assessment.admin.cooldown2',
     cooldown3: 'assessment.admin.cooldown3',

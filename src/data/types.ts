@@ -3094,6 +3094,8 @@ export interface Assessment {
   passPercent: number;
   /** Hours to wait after the 1st, 2nd and 3rd-or-later failed attempt on the same version (placeholders). */
   cooldownHours: [number, number, number];
+  /** How long a certification earned here lasts, in months; null does not expire (an annual safety refresher is 12). Placeholder, Admin configures it. */
+  validMonths: number | null;
   questions: AssessmentQuestion[];
 }
 
@@ -3126,6 +3128,8 @@ export interface AssessmentAttempt {
 /** Issued by passing, and by nothing else: the one event 155 shows as a badge and the job gate (151) reads. */
 export interface CertificationBadge {
   id: string;
+  /** The credential number written on the downloadable credential (`AIEC-CT-####`). */
+  code: string;
   userId: string;
   moduleId: string;
   assessmentId: string;
@@ -3134,6 +3138,16 @@ export interface CertificationBadge {
   score: number;
   attemptId: string | null;
   issuedAt: string;
+  /** Frozen when issued, from the rule that applied then: a later change to how long certifications last never moves a badge already earned. */
+  expiresAt: string | null;
+  /** The certification this one renewed. */
+  renewedFromId?: string;
+}
+
+/** A partner's own choice about being named in the peer standing on 155 (they still see their own place). */
+export interface CertificationPref {
+  userId: string;
+  hidden: boolean;
 }
 
 /* ------------------------------------ SOP document repository (153) */
@@ -4520,6 +4534,7 @@ export type CommitmentKind =
   | 'exit_settlement'
   | 'exit_dispute_decide'
   | 'tier_review_due'
+  | 'certification_renewal'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'

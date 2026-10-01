@@ -2412,7 +2412,7 @@ export interface TrainingModuleView {
   /** Whether the module's lessons have been written yet: a module without them cannot be started. */
   hasContent: boolean;
   /** The test that follows the lessons, if there is one (154). */
-  assessment: { state: 'locked' | 'to_take' | 'in_progress' | 'cooldown' | 'certified'; passPercent: number; cooldownUntil: string | null } | null;
+  assessment: { state: 'locked' | 'to_take' | 'in_progress' | 'cooldown' | 'certified'; passPercent: number; cooldownUntil: string | null; /** A time-limited certification close to or past its end: renew by passing again. */ renewal: 'none' | 'due_soon' | 'expired'; expiresAt: string | null } | null;
 }
 
 export interface TrainingLibraryView {
@@ -2543,7 +2543,14 @@ export interface AssessmentView {
   failedThisVersion: number;
   nextAttemptNumber: number;
   cooldownUntil: string | null;
-  badge: { id: string; issuedAt: string; score: number; version: number } | null;
+  badge: { id: string; issuedAt: string; score: number; version: number; expiresAt: string | null; code: string } | null;
+  /** The certification is within its renewal window: passing again renews it. */
+  canRenew: boolean;
+  validMonths: number | null;
+  /** A time-limited certification close to its end, or one that ran out: the test now renews it. */
+  renewal: 'none' | 'due_soon' | 'expired';
+  /** When the most recent certification for this module ended, if one has. */
+  lastExpiredAt: string | null;
   history: AssessmentHistoryRow[];
   last: AssessmentResultView | null;
   draft: { attemptId: string; answers: { questionId: string; selected: number[] }[]; startedAt: string } | null;
@@ -2571,12 +2578,15 @@ export interface AssessmentOverviewRow {
   version: number;
   passPercent: number;
   cooldownHours: [number, number, number];
+  validMonths: number | null;
   questionCount: number;
   attempts: number;
   passes: number;
   certified: number;
   /** Partners with several failed attempts on this version and no pass: a coaching conversation, not a block. */
   struggling: { userId: string; name: string; fails: number; lastAt: string }[];
+  /** Partners whose certification here has ended and not been renewed: current work finishes, new work that needs it is held. */
+  lapsed: { userId: string; name: string; endedAt: string; openJobs: number }[];
 }
 
 export interface AssessmentOverviewView {
@@ -2584,7 +2594,79 @@ export interface AssessmentOverviewView {
   at: string;
 }
 
-export type AssessmentError = TrainingError | 'not_ready' | 'cooldown' | 'already_certified' | 'no_assessment' | 'outdated' | 'incomplete' | 'attempt_not_found' | 'already_submitted' | 'not_admin' | 'none_chosen' | 'single_only' | 'out_of_range' | 'unknown_question' | 'pass_range' | 'cooldown_range';
+export type AssessmentError = TrainingError | 'not_ready' | 'cooldown' | 'already_certified' | 'no_assessment' | 'outdated' | 'incomplete' | 'attempt_not_found' | 'already_submitted' | 'not_admin' | 'none_chosen' | 'single_only' | 'out_of_range' | 'unknown_question' | 'pass_range' | 'cooldown_range' | 'valid_range';
+
+/* ------------------------------------ Certification badges and progress (155) */
+
+export type CertBadgeStatus = 'valid' | 'expiring' | 'expired' | 'superseded' | 'retired';
+
+export interface CertBadgeView {
+  id: string;
+  code: string;
+  moduleId: string;
+  moduleCode: string;
+  topic: TrainingTopic;
+  /** The module version it was earned on. */
+  version: number;
+  score: number;
+  issuedAt: string;
+  expiresAt: string | null;
+  status: CertBadgeStatus;
+  daysLeft: number | null;
+  /** The newest certification the person holds for that module (older ones are history). */
+  latest: boolean;
+  /** Passing the test again renews it (it is close to ending or has ended and nothing newer counts). */
+  renewable: boolean;
+  gatesJobAssignment: boolean;
+  renewedFromId: string | null;
+  /** True when the module now asks for a later version, or has been retired: shown as earned under the rules of its day. */
+  earlierStandard: boolean;
+}
+
+export interface CertNextStep {
+  kind: 'renew' | 'test' | 'lessons';
+  moduleId: string;
+  moduleCode: string;
+  /** Why it matters most: it holds back new jobs, a certification is ending, or it is simply the next one. */
+  because: 'blocks_jobs' | 'expired' | 'expiring' | 'required';
+  expiresAt: string | null;
+  route: string;
+}
+
+export interface CertStandingRow {
+  rank: number;
+  /** Null for someone who chose not to be named: shown as "a partner". */
+  name: string | null;
+  certifications: number;
+  /** Certifications earned in the last 90 days. */
+  recent: number;
+  self: boolean;
+  /** The person's own row shown below the top few because they are further down: the list skips the places between. */
+  pinned: boolean;
+}
+
+export interface CertStanding {
+  cohort: 'surveyor' | 'technician' | 'supplier';
+  total: number;
+  rank: number;
+  mine: number;
+  /** The top few, plus the person's own row wherever they stand. */
+  rows: CertStandingRow[];
+  /** A standing needs a few people to mean anything; with fewer it is not shown. */
+  enough: boolean;
+}
+
+export interface CertificationsView {
+  person: { name: string; roles: TrainingRole[] };
+  badges: CertBadgeView[];
+  summary: { current: number; expiring: number; expired: number; earlier: number; required: number; requiredHeld: number };
+  nextSteps: CertNextStep[];
+  standing: CertStanding | null;
+  hidden: boolean;
+  at: string;
+}
+
+export type CertificationError = TrainingError | 'not_found';
 
 /* ------------------------------------ SOP document repository (153) */
 
@@ -6229,7 +6311,10 @@ export interface Repository {
   saveAssessmentDraft(attemptId: string, answers: { questionId: string; selected: number[] }[], userId: string): Promise<{ saved: number }>;
   submitAssessment(attemptId: string, answers: { questionId: string; selected: number[] }[], userId: string): Promise<AssessmentResultView>;
   getAssessmentOverview(adminId: string): Promise<AssessmentOverviewView>;
-  saveAssessmentConfig(assessmentId: string, input: { passPercent: number; cooldownHours: [number, number, number] }, adminId: string): Promise<AssessmentOverviewRow>;
+  saveAssessmentConfig(assessmentId: string, input: { passPercent: number; cooldownHours: [number, number, number]; validMonths: number | null }, adminId: string): Promise<AssessmentOverviewRow>;
+  // Certification badges and progress (155)
+  getCertifications(userId: string): Promise<CertificationsView>;
+  setCertificationVisibility(hidden: boolean, userId: string): Promise<{ hidden: boolean }>;
   // SOP document repository (153)
   getSopLibrary(userId: string): Promise<SopLibraryView>;
   toggleSopBookmark(docId: string, on: boolean, userId: string): Promise<{ docId: string; bookmarked: boolean }>;
