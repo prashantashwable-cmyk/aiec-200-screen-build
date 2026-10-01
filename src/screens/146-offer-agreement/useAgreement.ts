@@ -7,7 +7,7 @@ import { useSession } from '@/session/SessionProvider';
 import { useToast } from '@/design-system';
 import type { AgreementTemplatesView, OfferApplicantView, OfferBoardView, OfferDetailView } from '@/data/repository';
 import type { AgreementTerms } from '@/data/types';
-import { AGREEMENT_KEYS as K, POLL_MS, TABS, boardPath, detailPath, keyKey } from './agreement.types';
+import { AGREEMENT_KEYS as K, POLL_MS, STAGE_FILTERS, TABS, boardPath, detailPath, keyKey } from './agreement.types';
 import type { AgreementTab, StageFilter } from './agreement.types';
 
 export interface ActionResult {
@@ -61,7 +61,7 @@ export function useAgreement() {
   const [mine, setMine] = useState<OfferApplicantView | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error' | 'invalid' | 'not_found'>('loading');
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<StageFilter>('all');
+  const [filter, setFilter] = useState<StageFilter>(() => { const f = params.get('stage') as StageFilter | null; return f && (STAGE_FILTERS as readonly string[]).includes(f) ? f : 'all'; });
   const [busy, setBusy] = useState(false);
   const alive = useRef(true);
   useEffect(() => {
@@ -133,7 +133,7 @@ export function useAgreement() {
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return (board?.rows ?? []).filter((r) => (filter === 'all' || (filter === 'waiting' ? r.stage === 'interview_open' || r.stage === 'verifying' : r.stage === filter)) && (!q || r.name.toLowerCase().includes(q) || r.code.toLowerCase().includes(q)));
+    return (board?.rows ?? []).filter((r) => (filter === 'all' || (filter === 'waiting' ? r.stage === 'interview_open' || r.stage === 'verifying' || r.stage === 'waitlisted' : r.stage === filter)) && (!q || r.name.toLowerCase().includes(q) || r.code.toLowerCase().includes(q)));
   }, [board, query, filter]);
 
   const act = useCallback(

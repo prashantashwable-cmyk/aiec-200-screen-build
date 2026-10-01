@@ -6,7 +6,7 @@ import { useSession } from '@/session/SessionProvider';
 import { useToast } from '@/design-system';
 import type { VerificationBoardView, VerificationDetailView } from '@/data/repository';
 import type { VerificationHow } from '@/data/types';
-import { PAGE, POLL_MS, VERIFICATION_KEYS as K, boardPath, detailPath } from './verification.types';
+import { PAGE, POLL_MS, STATUS_FILTERS, VERIFICATION_KEYS as K, boardPath, detailPath } from './verification.types';
 import type { RoleFilter, StatusFilter } from './verification.types';
 
 export interface ActionResult {
@@ -36,7 +36,7 @@ export function useVerification() {
   const [detailStatus, setDetailStatus] = useState<'idle' | 'loading' | 'error' | 'gone'>('idle');
   const [query, setQuery] = useState('');
   const [role, setRole] = useState<RoleFilter>('all');
-  const [filter, setFilter] = useState<StatusFilter>('all');
+  const [filter, setFilter] = useState<StatusFilter>(() => { const f = new URLSearchParams(window.location.search).get('status') as StatusFilter | null; return f && (STATUS_FILTERS as readonly string[]).includes(f) ? f : 'all'; });
   const [limit, setLimit] = useState(PAGE);
   const [busy, setBusy] = useState(false);
   const alive = useRef(true);

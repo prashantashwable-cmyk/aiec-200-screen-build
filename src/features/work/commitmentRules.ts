@@ -62,6 +62,7 @@ import { MANUAL_UPDATE_EVERY } from '@/features/logistics/shipmentTracking';
 import { SCREEN_DUE } from '@/features/recruitment/screening';
 import { ARRANGE_DUE as INTERVIEW_ARRANGE_DUE, INVITE_WAIT } from '@/features/recruitment/interview';
 import { PREPARE_DUE as OFFER_PREPARE_DUE, SIGN_WAIT as OFFER_SIGN_WAIT, STEPS_DUE as OFFER_STEPS_DUE } from '@/features/recruitment/agreement';
+import { WAITLIST_REVIEW as WAITLIST_REVIEW_AFTER } from '@/features/recruitment/dashboard';
 import { VERIFY_DUE, gateOf as verificationGate, requiredItemsOf as requiredVerification } from '@/features/recruitment/verification';
 
 /**
@@ -1878,6 +1879,7 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
       return src.applications
         .filter((a) => a.status === 'approved' && a.screening?.decision && (a.offer || a.interview || a.verification || now - new Date(a.screening.decision.at).getTime() < INTERVIEW_ARRANGE_DUE * 10))
         .filter((a) => !(a.interview && ['invited', 'scheduled', 'missed'].includes(a.interview.status)))
+        .filter((a) => !a.waitlist || a.offer)
         .filter((a) => verificationGate(requiredVerification(a.role, a.form), a.verification, now).state !== 'blocked' || (a.offer && a.offer.status !== 'withdrawn'))
         .map((a) => {
           const sent = !!a.offer && (a.offer.status === 'sent' || a.offer.status === 'signed');
@@ -1955,6 +1957,31 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
             oversightRoute: `/offers/${a.id}`,
           };
         });
+    },
+  },
+  {
+    // Someone qualified is kept waiting because there is no room to activate them: a decision, never an open-ended queue (147).
+    kind: 'waitlist_review',
+    nudgeBefore: days(3),
+    escalateAfter: days(3),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'staffing',
+    collect(src) {
+      const admin = adminId(src);
+      return src.applications
+        .filter((a) => a.waitlist && a.offer?.status !== 'signed')
+        .map((a) => ({
+          ...base('waitlist_review', 'application', a.id),
+          ownerUserId: admin,
+          titleKey: 'work.title.waitlist_review',
+          titleParams: { name: a.form.personal.fullName },
+          dueAt: plus((a.waitlist as NonNullable<typeof a.waitlist>).at, WAITLIST_REVIEW_AFTER),
+          state: 'open' as const,
+          paused: false,
+          actionRoute: '/recruitment',
+          oversightRoute: '/recruitment',
+        }));
     },
   },
   {

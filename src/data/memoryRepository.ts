@@ -234,7 +234,9 @@ import type {
   InterviewBoardView,
   InterviewDetailView,
   InterviewRowView,
+  DashboardPerson,
   InterviewSaveResult,
+  RecruitmentDashboardView,
   OfferApplicantView,
   OfferBoardView,
   OfferDetailView,
@@ -665,6 +667,8 @@ import { issueProblem as coIssueProblem, readinessOf as coReadiness, signoffDueA
 import { QC_FEE as FP_QC_FEE, crewShares as fpCrewShares, installPoolOf as fpInstallPool, judgementProblem as fpJudgementProblem, qcShares as fpQcShares, salesCloseOf as fpSalesClose } from '@/features/commission/finalPayout';
 import type { Contributor as FpContributor } from '@/features/commission/finalPayout';
 import { SECTIONS as APP_SECTIONS, EMPTY_FORM as APP_EMPTY, maskId as apMask, outstandingOf as apOutstanding, progressOf as apProgress, sectionStates as apSections, submitProblem as apSubmitProblem } from '@/features/recruitment/application';
+import { FUNNEL as RD_FUNNEL, NOW_STAGES as RD_NOW, SMALL_SAMPLE as RD_SMALL, WAITLIST_MIN as RD_WAITLIST_MIN, funnelOf as rdFunnelOf, medianOf as rdMedian, roomOf as rdRoom, signalOf as rdSignalOf, trendOf as rdTrend } from '@/features/recruitment/dashboard';
+import type { NowStage as RdNowStage, Period as RdPeriod, RecruitStage as RdRecruitStage } from '@/features/recruitment/dashboard';
 import { ACTIVATION_STEPS as ofSteps, REASON_MIN as OF_REASON_MIN, REQUEST_MIN as OF_REQUEST_MIN, SIGN_WAIT as OF_SIGN_WAIT, TERM_DEFS as ofTermDefs, addendumProblem as ofAddendumProblem, bindingTermsOf as ofBinding, capabilityOf as ofCapability, clausesOf as ofClauses, defaultTermsOf as ofDefaultTerms, signProblem as ofSignProblem } from '@/features/recruitment/agreement';
 import { conditionalProblem as vfConditionalProblem, gateOf as vfGate, itemStateOf as vfItemState, manualProblem as vfManualProblem, requiredItemsOf as vfRequired, serviceCheck as vfServiceCheck } from '@/features/recruitment/verification';
 import type { RequiredItem } from '@/features/recruitment/verification';
@@ -7574,7 +7578,7 @@ function stepFinisherName(job: Job, st: Job['steps'][number]): string | null {
 
 /* ============================== Recruitment: the applicant's full details (142) */
 
-const partnerApplications: PartnerApplication[] = seedPartnerApplications.map((a) => ({ ...a, form: JSON.parse(JSON.stringify(a.form)) as ApplicationForm, events: a.events.map((e) => ({ ...e })), messages: a.messages.map((m) => ({ ...m, params: { ...m.params } })), ...(a.screening ? { screening: JSON.parse(JSON.stringify(a.screening)) as ApplicationScreening } : {}), ...(a.interview ? { interview: JSON.parse(JSON.stringify(a.interview)) as PartnerInterview } : {}), ...(a.verification ? { verification: JSON.parse(JSON.stringify(a.verification)) as PartnerVerification } : {}), ...(a.offer ? { offer: JSON.parse(JSON.stringify(a.offer)) as PartnerOffer } : {}) }));
+const partnerApplications: PartnerApplication[] = seedPartnerApplications.map((a) => ({ ...a, form: JSON.parse(JSON.stringify(a.form)) as ApplicationForm, events: a.events.map((e) => ({ ...e })), messages: a.messages.map((m) => ({ ...m, params: { ...m.params } })), ...(a.screening ? { screening: JSON.parse(JSON.stringify(a.screening)) as ApplicationScreening } : {}), ...(a.interview ? { interview: JSON.parse(JSON.stringify(a.interview)) as PartnerInterview } : {}), ...(a.verification ? { verification: JSON.parse(JSON.stringify(a.verification)) as PartnerVerification } : {}), ...(a.offer ? { offer: JSON.parse(JSON.stringify(a.offer)) as PartnerOffer } : {}), ...(a.waitlist ? { waitlist: { ...a.waitlist } } : {}) }));
 /** A form can be changed by its applicant until screening has decided it; an asked-for correction reopens it. */
 const apLocked = (status: PartnerApplication['status']): boolean => status === 'approved' || status === 'rejected' || status === 'withdrawn';
 let applicationCounter = 100;
@@ -8066,6 +8070,7 @@ const ofGateOf = (app: PartnerApplication, now: number) => vfGate(vfRequired(app
 function ofStage(app: PartnerApplication, now: number): OfferStage {
   const o = app.offer;
   if (o && o.status !== 'withdrawn') return o.status;
+  if (app.waitlist) return 'waitlisted';
   if (ofInterviewOpen(app)) return 'interview_open';
   if (ofGateOf(app, now).state === 'blocked') return 'verifying';
   return o ? 'withdrawn' : 'to_prepare';
@@ -8115,7 +8120,7 @@ function ofDetailOf(app: PartnerApplication, now: number): OfferDetailView {
     zones: zones.filter((z) => z.status === 'active').map((z) => ({ id: z.id, name: z.name })),
     termDefs: ofDefs(app.role),
     canPrepare: stage === 'to_prepare' || stage === 'draft' || stage === 'withdrawn',
-    blockedBy: stage === 'interview_open' ? 'interview_open' : stage === 'verifying' ? 'verifying' : stage === 'signed' ? 'signed' : stage === 'sent' ? 'sent' : null,
+    blockedBy: stage === 'interview_open' ? 'interview_open' : stage === 'waitlisted' ? 'waitlisted' : stage === 'verifying' ? 'verifying' : stage === 'signed' ? 'signed' : stage === 'sent' ? 'sent' : null,
     needsOverride: sig.level === 'block',
     phoneTaken: ofPhoneTaken(app),
   };
@@ -8210,6 +8215,169 @@ function syncOffers(now: number): void {
     if (open && app.offer?.status === 'sent' && !alert) raiseAlert({ titleKey: OFFER_REQUEST_ALERT, context: `${app.form.personal.fullName} asked about a term in their agreement`, severity: 'medium', category: 'staffing', relatedId: rel, sourceRoute: `/offers/${app.id}` });
     if ((!open || app.offer?.status !== 'sent') && alert) patchInPlace(alerts, alert.id, { status: 'resolved', resolvedAt: at, resolvedBy: 'system', resolutionNote: 'The question was answered.' });
   }
+}
+
+/* ============================== Recruitment: the pipeline overview (147) */
+
+interface RdEntry {
+  key: string;
+  name: string;
+  role: RecruitmentInterest['role'];
+  at: string;
+  channel: RecruitmentInterest['source']['channel'];
+  app?: PartnerApplication;
+}
+
+/** Everyone who has shown interest, with the application that came of it (some applications have no interest on record, and still count). */
+function rdEntries(): RdEntry[] {
+  const out: RdEntry[] = [];
+  const claimed = new Set<string>();
+  for (const i of recruitmentInterests) {
+    if (i.status === 'withdrawn') continue;
+    const app = partnerApplications.find((a) => a.interestId === i.id);
+    if (app) claimed.add(app.id);
+    out.push({ key: i.id, name: i.name, role: i.role, at: i.interestedAt, channel: i.source.channel, app });
+  }
+  for (const a of partnerApplications) {
+    if (claimed.has(a.id)) continue;
+    out.push({ key: a.id, name: a.form.personal.fullName, role: a.role, at: a.startedAt, channel: byId(recruitmentInterests, a.interestId)?.source.channel ?? 'website', app: a });
+  }
+  return out;
+}
+
+function rdNowStage(e: RdEntry, now: number): RdNowStage | null {
+  const a = e.app;
+  if (!a) return 'interested';
+  if (a.status === 'draft') return 'form';
+  if (a.status === 'submitted' || a.status === 'info_requested') return 'screening';
+  if (a.status !== 'approved') return null;
+  if (a.offer?.status === 'signed') return 'activated';
+  if (a.waitlist) return 'waitlisted';
+  if (ofInterviewOpen(a)) return 'interviewing';
+  if (ofGateOf(a, now).state === 'blocked' && !(a.offer && a.offer.status !== 'withdrawn')) return 'verifying';
+  return 'offer';
+}
+
+const rdReached = (e: RdEntry, now: number) => {
+  const a = e.app;
+  const applied = !!a && (!!a.submittedAt || a.status !== 'draft');
+  const forward = a?.status === 'approved';
+  const offered = !!a?.offer && (a.offer.status === 'sent' || a.offer.status === 'signed');
+  return { interested: true, applied, forward, verified: forward && (offered || ofGateOf(a as PartnerApplication, now).state !== 'blocked'), offered, activated: a?.offer?.status === 'signed' };
+};
+
+const rdDays = (from?: string, to?: string): number | null => (from && to ? Math.max(0, (new Date(to).getTime() - new Date(from).getTime()) / 86_400_000) : null);
+const rdRoute = (stage: RdNowStage | RdRecruitStage, id: string): string => (stage === 'interested' ? '' : stage === 'form' || stage === 'applied' || stage === 'forward' ? `/applications/${id}` : stage === 'screening' ? `/screening?app=${id}` : stage === 'interviewing' ? `/interviews/${id}` : stage === 'verifying' || stage === 'verified' ? `/verification/${id}` : `/offers/${id}`);
+
+function rdBuild(period: RdPeriod, now: number): RecruitmentDashboardView {
+  const all = rdEntries();
+  const span = period * 86_400_000;
+  const within = (iso: string | undefined, from: number, to: number) => !!iso && new Date(iso).getTime() > from && new Date(iso).getTime() <= to;
+  const cohort = (from: number, to: number) => (period === 0 ? all : all.filter((e) => within(e.at, from, to)));
+  const cur = cohort(now - span, now);
+  const prev = period === 0 ? [] : cohort(now - 2 * span, now - span);
+  const names = (zoneIds: string[]) => zoneIds.map((z) => byId(zones, z)?.name ?? z);
+
+  const reachedCount = (list: RdEntry[]): Record<RdRecruitStage, number> => {
+    const r = { interested: 0, applied: 0, forward: 0, verified: 0, offered: 0, activated: 0 };
+    for (const e of list) {
+      const f = rdReached(e, now);
+      for (const k of RD_FUNNEL) if (f[k]) r[k] += 1;
+    }
+    return r;
+  };
+  const counts = reachedCount(cur);
+  const rows = rdFunnelOf(counts);
+  const timeline = (k: RdRecruitStage, e: RdEntry): number | null => {
+    const a = e.app;
+    if (!a) return null;
+    if (k === 'applied') return rdDays(e.at, a.submittedAt);
+    if (k === 'forward') return rdDays(a.submittedAt, a.screening?.decision?.at);
+    if (k === 'verified') return rdDays(a.screening?.decision?.at, Object.values(a.verification?.records ?? {}).map((r) => r.at).sort().pop());
+    if (k === 'offered') return rdDays(Object.values(a.verification?.records ?? {}).map((r) => r.at).sort().pop() ?? a.screening?.decision?.at, a.offer?.sentAt);
+    if (k === 'activated') return rdDays(a.offer?.sentAt, a.offer?.signature?.at);
+    return null;
+  };
+  const funnel = rows.map((r) => ({ ...r, avgDays: (() => { const xs = cur.filter((e) => rdReached(e, now)[r.stage]).map((e) => timeline(r.stage, e)).filter((x): x is number => x !== null); const m = xs.length >= 3 ? rdMedian(xs) : null; return m === null ? null : Math.round(m * 10) / 10; })() }));
+  const flagged = funnel.find((r) => r.flagged);
+  const flaggedDetail = flagged ? { stage: flagged.stage, from: counts[RD_FUNNEL[RD_FUNNEL.indexOf(flagged.stage) - 1]], kept: flagged.reached } : null;
+
+  const nowCounts = Object.fromEntries(RD_NOW.map((k) => [k, 0])) as Record<RdNowStage, number>;
+  const personNow = Object.fromEntries(RD_NOW.map((k) => [k, [] as DashboardPerson[]])) as Record<RdNowStage, DashboardPerson[]>;
+  const personReach = Object.fromEntries(RD_FUNNEL.map((k) => [k, [] as DashboardPerson[]])) as Record<RdRecruitStage, DashboardPerson[]>;
+  for (const e of cur) {
+    const st = rdNowStage(e, now);
+    const id = e.app?.id ?? e.key;
+    if (st) {
+      nowCounts[st] += 1;
+      personNow[st].push({ id, name: e.name, role: e.role, since: e.app?.updatedAt ?? e.at, route: rdRoute(st, id) });
+    }
+    const f = rdReached(e, now);
+    for (const k of RD_FUNNEL) if (f[k]) personReach[k].push({ id, name: e.name, role: e.role, since: e.at, route: rdRoute(k, id) });
+  }
+  for (const list of [...Object.values(personNow), ...Object.values(personReach)]) list.sort((a, b) => b.since.localeCompare(a.since));
+  for (const k of RD_NOW) personNow[k] = personNow[k].slice(0, 50);
+  for (const k of RD_FUNNEL) personReach[k] = personReach[k].slice(0, 50);
+
+  const signedIn = (from: number, to: number) => all.filter((e) => within(e.app?.offer?.signature?.at, from, to) || (period === 0 && e.app?.offer?.signature));
+  const fullAt = (e: RdEntry) => { const o = e.app?.offer; return o?.activation && Object.values(o.activation.steps).every((x) => x.done) ? Object.values(o.activation.steps).map((x) => x.at ?? '').sort().pop() || o.activation.at : undefined; };
+  const act = signedIn(now - span, now);
+  const toAct = act.map((e) => rdDays(e.at, e.app?.offer?.signature?.at)).filter((x): x is number => x !== null);
+  const toFull = act.map((e) => rdDays(e.at, fullAt(e))).filter((x): x is number => x !== null);
+  const appliedIn = (from: number, to: number) => all.filter((e) => (period === 0 ? !!e.app?.submittedAt : within(e.app?.submittedAt, from, to)));
+  const decided = cur.filter((e) => e.app?.screening?.decision);
+  const approvedN = decided.filter((e) => e.app?.screening?.decision?.status === 'approved').length;
+  const oneDecimal = (x: number | null) => (x === null ? null : Math.round(x * 10) / 10);
+  const lastSigned = (period === 0 ? [] : signedIn(now - 2 * span, now - span));
+
+  // Territory: the same coverage numbers the territories screen reads (leads and people per zone), against who is on their way.
+  const active = zones.filter((z) => z.status === 'active');
+  const rawNeed = (z: GeoZone) => z.leadCount / Math.max(0.5, z.assignedUserIds.length);
+  const top = Math.max(0, ...active.map(rawNeed));
+  const inPipeline = (e: RdEntry) => !!e.app && ['submitted', 'info_requested', 'approved'].includes(e.app.status) && e.app.offer?.status !== 'signed';
+  const territories = active.map((z) => {
+    const need = top === 0 ? 50 : Math.round((100 * rawNeed(z)) / top);
+    const room = rdRoom(z.leadCount, z.assignedUserIds.length);
+    const pipeline = all.filter((e) => inPipeline(e) && e.role !== 'supplier' && e.app?.form.territory.zoneIds.includes(z.id)).length;
+    return { zoneId: z.id, name: z.name, points: z.points.map((p) => ({ ...p })), leads: z.leadCount, people: z.assignedUserIds.length, need, room, pipeline, signal: rdSignalOf(need, pipeline, room) };
+  });
+
+  const channels = [...new Set(cur.map((e) => e.channel))].map((channel) => {
+    const list = cur.filter((e) => e.channel === channel);
+    const f = list.map((e) => rdReached(e, now));
+    return { channel, interested: list.length, applied: f.filter((x) => x.applied).length, activated: f.filter((x) => x.activated).length };
+  }).sort((a, b) => b.interested - a.interested);
+
+  const roomFor = (zoneIds: string[]) => zoneIds.filter((z) => territories.some((t) => t.zoneId === z && t.room > 0)).length;
+  const suggestWaitlist = all
+    .filter((e) => e.role === 'surveyor' && e.app && rdNowStage(e, now) === 'offer' && e.app.form.territory.zoneIds.length > 0 && roomFor(e.app.form.territory.zoneIds) === 0)
+    .map((e) => ({ id: (e.app as PartnerApplication).id, name: e.name, zones: names((e.app as PartnerApplication).form.territory.zoneIds) }));
+  const waitlist = partnerApplications
+    .filter((a) => a.waitlist && a.offer?.status !== 'signed')
+    .map((a) => ({ id: a.id, code: a.code, name: a.form.personal.fullName, role: a.role, at: (a.waitlist as NonNullable<typeof a.waitlist>).at, reason: (a.waitlist as NonNullable<typeof a.waitlist>).reason, byName: (a.waitlist as NonNullable<typeof a.waitlist>).byName, zones: names(a.form.territory.zoneIds) }));
+
+  return {
+    period,
+    funnel,
+    flaggedDetail,
+    now: nowCounts,
+    exits: { rejected: cur.filter((e) => e.app?.status === 'rejected').length, withdrawn: cur.filter((e) => e.app?.status === 'withdrawn').length },
+    kpis: {
+      timeToActivate: { median: oneDecimal(rdMedian(toAct)), n: toAct.length },
+      timeToFull: { median: oneDecimal(rdMedian(toFull)), n: toFull.length },
+      waitingOnAdmin: partnerApplications.filter((a) => a.status === 'submitted').length + partnerApplications.filter((a) => a.status === 'approved' && ofStage(a, now) === 'to_prepare').length + partnerApplications.filter((a) => a.offer?.requests.some((r) => !r.response) && a.offer.status === 'sent').length,
+      overdueScreening: partnerApplications.filter((a) => a.status === 'submitted' && !!a.submittedAt && now - new Date(a.submittedAt).getTime() > SCREEN_DUE).length,
+      approvalRate: decided.length >= RD_SMALL ? Math.round((approvedN / decided.length) * 100) : null,
+      interested: { value: cur.length, trend: period === 0 ? null : rdTrend(cur.length, prev.length) },
+      applied: { value: appliedIn(now - span, now).length, trend: period === 0 ? null : rdTrend(appliedIn(now - span, now).length, appliedIn(now - 2 * span, now - span).length) },
+      activated: { value: act.length, trend: period === 0 ? null : rdTrend(act.length, lastSigned.length) },
+    },
+    territories,
+    channels,
+    suggestWaitlist,
+    waitlist,
+    people: { reach: personReach, now: personNow },
+  };
 }
 
 /* ============================== Handover completion certificate (140) */
@@ -15266,7 +15434,7 @@ export const memoryRepository: Repository = {
     simulateRead((): OfferBoardView => {
       ofAdmin(userId);
       const now = Date.now();
-      const order: Record<OfferStage, number> = { to_prepare: 0, draft: 1, sent: 2, withdrawn: 3, interview_open: 4, verifying: 5, signed: 6 };
+      const order: Record<OfferStage, number> = { to_prepare: 0, draft: 1, sent: 2, withdrawn: 3, interview_open: 4, verifying: 5, waitlisted: 6, signed: 7 };
       const rows = partnerApplications.filter((a) => a.status === 'approved' && (!!a.offer || !!a.interview || !!a.verification || now - new Date(a.screening?.decision?.at ?? 0).getTime() < IV_ARRANGE_DUE * 10)).map((a) => ofRowOf(a, now)).sort((a, b) => Number(b.openRequest) - Number(a.openRequest) || order[a.stage] - order[b.stage] || (a.approvedAt ?? '').localeCompare(b.approvedAt ?? ''));
       return { rows, counts: { toPrepare: rows.filter((r) => r.stage === 'to_prepare').length, sent: rows.filter((r) => r.stage === 'sent').length, signed: rows.filter((r) => r.stage === 'signed').length, requests: rows.filter((r) => r.openRequest).length, stepsOpen: rows.filter((r) => r.stage === 'signed' && r.capability === 'basic').length } };
     }),
@@ -15284,6 +15452,7 @@ export const memoryRepository: Repository = {
       const now = Date.now();
       if (app.offer?.status === 'signed') throw new RepositoryError('already_signed');
       if (app.offer?.status === 'sent') throw new RepositoryError('already_sent');
+      if (app.waitlist) throw new RepositoryError('waitlisted');
       if (ofInterviewOpen(app)) throw new RepositoryError('interview_open');
       const gate = ofGateOf(app, now);
       // The offer cannot even be drafted while a required check is open, failed or lapsed (145's gate).
@@ -15469,6 +15638,34 @@ export const memoryRepository: Repository = {
       screeningMessage(app, 'offer_signed', 'agreement.message.signed', 'AIEC');
       app.updatedAt = at;
       return ofApplicantViewOf(app);
+    }),
+
+  /* --------------------------------- Recruitment: the pipeline overview (147) */
+  getRecruitmentDashboard: (period, userId) =>
+    simulateRead((): RecruitmentDashboardView => {
+      ofAdmin(userId);
+      return rdBuild(period, Date.now());
+    }),
+
+  waitlistApplicant: (applicationId, reason, userId) =>
+    simulateWrite((): RecruitmentDashboardView => {
+      const admin = ofAdmin(userId);
+      const app = ofApp(applicationId);
+      if (app.offer?.status === 'signed') throw new RepositoryError('already_signed');
+      if (app.offer?.status === 'sent') throw new RepositoryError('already_sent');
+      if (reason.replace(/[^\p{L}\p{N}]/gu, '').length < RD_WAITLIST_MIN) throw new RepositoryError('reason_required');
+      app.waitlist = { at: new Date().toISOString(), byName: admin.name, reason: reason.trim() };
+      screeningMessage(app, 'waitlisted', 'recruitment.message.waitlisted', admin.name);
+      return rdBuild(90, Date.now());
+    }),
+
+  releaseWaitlisted: (applicationId, userId) =>
+    simulateWrite((): RecruitmentDashboardView => {
+      ofAdmin(userId);
+      const app = ofApp(applicationId);
+      if (!app.waitlist) throw new RepositoryError('not_open');
+      delete app.waitlist;
+      return rdBuild(90, Date.now());
     }),
 
   /* --------------------------------- Recruitment: the public front door (141) */

@@ -2706,7 +2706,7 @@ export interface PartnerApplication {
   form: ApplicationForm;
   events: { id: string; at: string; kind: 'started' | 'saved' | 'submitted' | 'resubmitted' | 'reference_outcome' | 'info_requested' | 'info_answered' | 'approved' | 'rejected' | 'adjusted' | 'outcome'; byName: string; note?: string }[];
   /** What AIEC said to the applicant: shown on their own link, in their own language, rendered from a key at the time it is read. */
-  messages: { id: string; at: string; kind: 'info_request' | 'decline' | 'approved' | 'interview_invite' | 'interview_confirmed' | 'interview_move' | 'interview_reminder' | 'interview_missed' | 'interview_nudge' | 'interview_cancelled' | 'offer_sent' | 'offer_nudge' | 'offer_term_response' | 'offer_signed'; templateKey: string; params: Record<string, string>; note?: string; byName: string }[];
+  messages: { id: string; at: string; kind: 'info_request' | 'decline' | 'approved' | 'interview_invite' | 'interview_confirmed' | 'interview_move' | 'interview_reminder' | 'interview_missed' | 'interview_nudge' | 'interview_cancelled' | 'waitlisted' | 'offer_sent' | 'offer_nudge' | 'offer_term_response' | 'offer_signed'; templateKey: string; params: Record<string, string>; note?: string; byName: string }[];
   screening?: ApplicationScreening;
   /** The one conversation AIEC has before an offer (144); optional, an approved applicant may go straight to the offer. */
   interview?: PartnerInterview;
@@ -2714,6 +2714,8 @@ export interface PartnerApplication {
   verification?: PartnerVerification;
   /** The agreement AIEC offers and the partner signs (146): signing activates the account. */
   offer?: PartnerOffer;
+  /** Qualified, but there is no room to activate them right now (147): kept, told kindly, and reviewed rather than rejected or activated beyond what can be kept busy. */
+  waitlist?: { at: string; byName: string; reason: string };
   isDemo: boolean;
 }
 
@@ -4116,6 +4118,7 @@ export type CommitmentKind =
   | 'offer_prepare'
   | 'offer_signature_wait'
   | 'partner_onboarding_finish'
+  | 'waitlist_review'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'

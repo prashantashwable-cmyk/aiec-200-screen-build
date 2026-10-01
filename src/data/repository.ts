@@ -3,6 +3,7 @@ import type { ElecSignOffProblem, ElecState } from '@/features/qc/electrical';
 import type { DisputeDecision, SnagProblem, SnagSeverity } from '@/features/qc/snags';
 import type { AmcTierId, ReminderDef, WarrantyProblem } from '@/features/qc/warranty';
 import type { CompletionProblem, IssueProblem, MilestoneId } from '@/features/qc/completion';
+import type { FunnelRow, RecruitStage, NowStage, Period as DashboardPeriod, TerritorySignal } from '@/features/recruitment/dashboard';
 import type { Gate, ItemKind, ItemState as VerifyItemState } from '@/features/recruitment/verification';
 import type { CompleteInput, DecisionSignal, Phase as InterviewPhase } from '@/features/recruitment/interview';
 import type { Demand, GuideAnswers, InterestProblem, InterestRole, RecruitRole, RecruitSource } from '@/features/recruitment/interest';
@@ -2074,7 +2075,7 @@ export type VerificationError =
 
 /* ------------------------------------ Recruitment: offer and onboarding agreement (146) */
 
-export type OfferStage = 'interview_open' | 'verifying' | 'to_prepare' | 'draft' | 'sent' | 'signed' | 'withdrawn';
+export type OfferStage = 'interview_open' | 'verifying' | 'waitlisted' | 'to_prepare' | 'draft' | 'sent' | 'signed' | 'withdrawn';
 
 export interface OfferRowView {
   id: string;
@@ -2119,7 +2120,7 @@ export interface OfferDetailView {
   zones: { id: string; name: string }[];
   termDefs: OfferTermDef[];
   canPrepare: boolean;
-  blockedBy: 'interview_open' | 'verifying' | 'signed' | 'sent' | null;
+  blockedBy: 'interview_open' | 'verifying' | 'waitlisted' | 'signed' | 'sent' | null;
   needsOverride: boolean;
   phoneTaken: boolean;
 }
@@ -2151,6 +2152,7 @@ export type OfferError =
   | ApplicationError
   | 'not_approved'
   | 'interview_open'
+  | 'waitlisted'
   | 'verification_open'
   | 'concern_override_required'
   | 'territory_required'
@@ -2173,6 +2175,47 @@ export type OfferError =
   | 'name_required'
   | 'invalid_terms'
   | 'effective_past';
+
+/* ------------------------------------ Recruitment: the pipeline overview (147) */
+
+export interface DashboardPerson {
+  id: string;
+  name: string;
+  role: RecruitmentInterest['role'];
+  /** When they reached or entered the stage. */
+  since: string;
+  /** Where to act on them. */
+  route: string;
+  note?: string;
+}
+
+export interface RecruitmentDashboardView {
+  period: DashboardPeriod;
+  funnel: (FunnelRow & { avgDays: number | null })[];
+  /** Why the flagged step (if any) is flagged: how many of those before it carried on. */
+  flaggedDetail: { stage: RecruitStage; from: number; kept: number } | null;
+  now: Record<NowStage, number>;
+  exits: { rejected: number; withdrawn: number };
+  kpis: {
+    timeToActivate: { median: number | null; n: number };
+    timeToFull: { median: number | null; n: number };
+    waitingOnAdmin: number;
+    overdueScreening: number;
+    approvalRate: number | null;
+    interested: { value: number; trend: number | null };
+    applied: { value: number; trend: number | null };
+    activated: { value: number; trend: number | null };
+  };
+  territories: { zoneId: string; name: string; points: GeoZone['points']; leads: number; people: number; need: number; room: number; pipeline: number; signal: TerritorySignal }[];
+  channels: { channel: RecruitmentInterest['source']['channel']; interested: number; applied: number; activated: number }[];
+  /** Surveyors ready for an offer whose chosen areas are all full: worth a decision, not a silent queue. */
+  suggestWaitlist: { id: string; name: string; zones: string[] }[];
+  waitlist: { id: string; code: string; name: string; role: PartnerApplication['role']; at: string; reason: string; byName: string; zones: string[] }[];
+  /** The people behind each count, so every number leads somewhere. */
+  people: { reach: Record<RecruitStage, DashboardPerson[]>; now: Record<NowStage, DashboardPerson[]> };
+}
+
+export type DashboardError = ApplicationError | 'not_approved' | 'reason_required' | 'already_sent' | 'already_signed' | 'not_open';
 
 /* ------------------------------------ Recruitment: the public front door (141) */
 
@@ -5628,6 +5671,10 @@ export interface Repository {
   getAgreementTemplates(userId: string): Promise<AgreementTemplatesView>;
   publishAgreementTemplate(role: PartnerApplication['role'], input: { terms: AgreementTerms; effectiveFrom: string; changeNote: string }, userId: string): Promise<AgreementTemplatesView>;
   getOfferForApplicant(applicationId: string, key: string): Promise<OfferApplicantView>;
+  // Recruitment: the pipeline overview (147)
+  getRecruitmentDashboard(period: DashboardPeriod, userId: string): Promise<RecruitmentDashboardView>;
+  waitlistApplicant(applicationId: string, reason: string, userId: string): Promise<RecruitmentDashboardView>;
+  releaseWaitlisted(applicationId: string, userId: string): Promise<RecruitmentDashboardView>;
   requestTermChange(applicationId: string, key: string, text: string): Promise<OfferApplicantView>;
   signPartnerAgreement(applicationId: string, key: string, input: { method: 'drawn' | 'typed'; data: string; signerName: string; language: 'en' | 'hi' | 'mr'; consentGiven: boolean; otpVerified: boolean; viaFallback: boolean }): Promise<OfferApplicantView>;
   chooseInterviewSlot(applicationId: string, key: string, input: { start: string; mode: InterviewMode }): Promise<InterviewApplicantView>;

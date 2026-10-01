@@ -102,6 +102,7 @@ import type {
   User,
 } from './types';
 import { addDaysKey, dateKey } from '../features/logistics/deliverySlots';
+import { defaultTermsOf as seedDefaultTerms } from '../features/recruitment/agreement';
 import { DEFAULT_WEIGHTS as SCREEN_WEIGHTS, FACTORS as SCREEN_FACTORS } from '../features/recruitment/screening';
 
 /**
@@ -4303,11 +4304,30 @@ function screenedHistory(): PartnerApplication[] {
     })(),
     mk(17, 'Rajesh Kamat', 'technician', 4, [100, 50, 67, 70, 50], undefined, undefined, { interview: { status: 'missed', ...base(100, ['phone']), misses: 1, events: [ev(13, 'invited', hoursAgo(100)), ev(14, 'slot_chosen', hoursAgo(80), 'Rajesh Kamat'), ev(15, 'missed', hoursAgo(26))] } }),
     mk(19, 'Pooja Nair', 'surveyor', 3, [100, 78, 83, 85, 100], undefined, undefined, { interview: { status: 'skipped', ...base(60), skipped: { at: hoursAgo(58), byName: 'Prashant Vasant Wable', reason: 'Referred and already known to our surveyors.' }, events: [ev(17, 'skipped', hoursAgo(58), 'Prashant Vasant Wable', 'Referred and already known to our surveyors.')] }, verification: { autoSent: ['identity'], events: [], records: { identity: rec('passed', 50, { method: 'third_party', byName: 'AIEC', reference: 'IDV-1919-5521', note: 'verified' }), licence: rec('passed', 48, { how: 'saw_original', note: 'Saw the original licence when she came to the office.' }), reference: rec('passed', 40, { how: 'called_issuer', note: 'Her previous manager confirmed three years in field sales with good results.' }) } } }),
+    mk(20, 'Kiran Joshi', 'surveyor', 4, [100, 70, 67, 80, 100], undefined, undefined, { interview: { status: 'skipped', ...base(90), skipped: { at: hoursAgo(88), byName: 'Prashant Vasant Wable', reason: 'Referred and already known to our surveyors.' }, events: [ev(18, 'skipped', hoursAgo(88), 'Prashant Vasant Wable', 'Referred and already known to our surveyors.')] }, verification: { autoSent: ['identity'], events: [], records: { identity: rec('passed', 80, { method: 'third_party', byName: 'AIEC', reference: 'IDV-1920-1100', note: 'verified' }), licence: rec('passed', 78, { how: 'saw_original', note: 'Saw the original licence at the office.' }), reference: rec('passed', 76, { how: 'called_issuer', note: 'His previous manager confirmed two years of steady field sales.' }) } } }),
+    mk(21, 'Smita Bhide', 'surveyor', 12, [100, 66, 67, 75, 100], undefined, undefined, { interview: { status: 'skipped', ...base(250), skipped: { at: hoursAgo(246), byName: 'Prashant Vasant Wable', reason: 'Referred and already known to our surveyors.' }, events: [ev(19, 'skipped', hoursAgo(246), 'Prashant Vasant Wable', 'Referred and already known to our surveyors.')] }, verification: { autoSent: ['identity'], events: [], records: { identity: rec('passed', 230, { method: 'third_party', byName: 'AIEC', reference: 'IDV-1921-1200', note: 'verified' }), licence: rec('passed', 228, { how: 'saw_original', note: 'Saw the original licence.' }), reference: rec('passed', 226, { how: 'called_issuer', note: 'Her former employer confirmed her record.' }) } }, waitlist: { at: daysAgo(10), byName: 'Prashant Vasant Wable', reason: 'Qualified, but her chosen area already has all the surveyors its leads can keep busy.' } }),
     mk(18, 'Nikhil Sawant', 'surveyor', 2, [100, 75, 83, 80, 100], undefined, undefined, { interview: { status: 'skipped', ...base(20), skipped: { at: hoursAgo(20), byName: 'Prashant Vasant Wable', reason: 'Referred by a current surveyor who has worked with him for years.' }, events: [ev(16, 'skipped', hoursAgo(20), 'Prashant Vasant Wable', 'Referred by a current surveyor who has worked with him for years.')] } }),
   ].map((a) => {
     // Nikhil gave no identity number, which the ID service cannot decide on: his is left for Admin to check by hand. Rajesh's PAN does not match his name, so the service fails it.
     if (a.id === 'ap-h18') return { ...a, form: { ...a.form, identity: { ...a.form.identity, panNumber: '', panDoc: null } } };
     if (a.id === 'ap-h17') return { ...a, form: { ...a.form, identity: { ...a.form.identity, panNumber: 'ABCPM1234Z' } } };
+    if (a.id === 'ap-h20' || a.id === 'ap-h21') return { ...a, form: { ...a.form, territory: { ...a.form.territory, zoneIds: ['z-pimpri'] } } };
+    // The first people screened (h1–h7) became partners before accounts were created through this app: their checks and signed agreements are kept
+    // as history, without an account record here.
+    const n = Number(a.id.replace('ap-h', ''));
+    if (n >= 1 && n <= 7) {
+      const decided = new Date((a.screening as NonNullable<typeof a.screening>).decision!.at).getTime();
+      const at = (days: number) => new Date(decided + days * 86_400_000).toISOString();
+      const keys = a.role === 'technician' ? ['identity', 'skill:mechanical', 'insurance', 'reference'] : ['identity', 'licence', 'reference'];
+      const records = Object.fromEntries(keys.map((k, i) => [k, { status: 'passed' as const, method: 'manual' as const, at: at(1 + i * 0.2), byName: 'Prashant Vasant Wable', note: 'Checked at the time of joining.', history: [] }]));
+      const name = a.form.personal.fullName;
+      const steps = { bank: { done: true, at: at(8), byName: 'Prashant Vasant Wable' }, photo: n === 6 ? { done: false } : { done: true, at: at(8), byName: 'Prashant Vasant Wable' } };
+      return {
+        ...a,
+        verification: { records, autoSent: ['identity'], events: [] },
+        offer: { status: 'signed' as const, documentNo: `AIEC-PA-09${n}`, role: a.role, templateId: `pat-${a.role}-1`, templateVersion: 1, wording: 'v1' as const, terms: { ...seedDefaultTerms(a.role), territoryZoneIds: ['z-hinjawadi'] }, requests: [], gateAtPrepare: 'clear' as const, preparedAt: at(2), preparedByName: 'Prashant Vasant Wable', sentAt: at(3), signature: { at: at(6), method: 'typed' as const, data: name, signerName: name, language: 'en' as const, otpVerified: true, viaFallback: false, consentGiven: true }, activation: { at: at(6), userId: `u-hist-${n}`, steps }, events: [] },
+      };
+    }
     return a;
   });
 }

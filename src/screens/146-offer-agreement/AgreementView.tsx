@@ -13,7 +13,7 @@ import { AGREEMENT_KEYS as K, DEMO_OTP, MAX_ADDENDUM_ITEMS, OTP_LENGTH, REASON_M
 type T = ReturnType<typeof useTranslation>['t'];
 const letters = (s: string) => s.replace(/[^\p{L}\p{N}]/gu, '').length;
 const problemKey = (code?: string | null) => (code && code in K.problem ? K.problem[code as keyof typeof K.problem] : K.problem.generic);
-const STAGE_TONE: Record<OfferRowView['stage'], BadgeTone> = { interview_open: 'neutral', verifying: 'neutral', to_prepare: 'accent', draft: 'accent', sent: 'warning', signed: 'success', withdrawn: 'neutral' };
+const STAGE_TONE: Record<OfferRowView['stage'], BadgeTone> = { interview_open: 'neutral', verifying: 'neutral', waitlisted: 'warning', to_prepare: 'accent', draft: 'accent', sent: 'warning', signed: 'success', withdrawn: 'neutral' };
 const roleKey = (r: string) => `application.admin.role.${r}`;
 const isoDay = (offset: number) => { const d = new Date(Date.now() + offset * 86_400_000); const p = (n: number) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
 

@@ -15,7 +15,7 @@ const translations: ScreenTranslations = {
       error: { title: 'Agreements could not be loaded', body: 'Check your connection and try again.' },
       invalid: { title: 'This link is not valid', body: 'Open the link you were sent, or go back to your application.', action: 'Go to the start' },
       tabs: { label: 'Offers and terms', offers: 'Offers', terms: 'Standard terms' },
-      stage: { interview_open: 'Interview open', verifying: 'Being verified', to_prepare: 'To prepare', draft: 'Draft', sent: 'Sent', signed: 'Signed', withdrawn: 'Withdrawn' },
+      stage: { interview_open: 'Interview open', verifying: 'Being verified', waitlisted: 'Waitlisted', to_prepare: 'To prepare', draft: 'Draft', sent: 'Sent', signed: 'Signed', withdrawn: 'Withdrawn' },
       stageFilter: { label: 'Stage', all: 'All', to_prepare: 'To prepare', sent: 'Waiting for signature', signed: 'Signed', waiting: 'Not ready yet' },
       term: {
         conversionPct: 'Share of a converted deal',
@@ -45,6 +45,7 @@ const translations: ScreenTranslations = {
         stageBody: {
           interview_open: 'Waiting for the interview to finish',
           verifying: 'Waiting for verification to clear',
+          waitlisted: 'Qualified, waitlisted until there is room',
           to_prepare: 'Everything is in place',
           draft: 'Drafted, not sent',
           sent: 'Sent, waiting for the signature',
@@ -203,6 +204,7 @@ const translations: ScreenTranslations = {
       problem: {
         not_approved: 'This applicant has not been moved forward.',
         interview_open: 'The interview is still open. Finish or cancel it first.',
+        waitlisted: 'They are on the waitlist. Release them first.',
         verification_open: 'Verification is not clear yet, so no agreement can go ahead.',
         concern_override_required: 'The interview did not recommend them. Say why you are proceeding.',
         territory_required: 'Choose at least one starting area.',
@@ -273,7 +275,7 @@ const translations: ScreenTranslations = {
       error: { title: 'समझौते लोड नहीं हो सके', body: 'अपना कनेक्शन जाँचकर फिर कोशिश करें।' },
       invalid: { title: 'यह लिंक मान्य नहीं है', body: 'आपको भेजा गया लिंक खोलें, या अपने आवेदन पर वापस जाएँ।', action: 'शुरुआत पर जाएँ' },
       tabs: { label: 'ऑफ़र और शर्तें', offers: 'ऑफ़र', terms: 'मानक शर्तें' },
-      stage: { interview_open: 'इंटरव्यू बाकी', verifying: 'सत्यापन जारी', to_prepare: 'तैयार करना बाकी', draft: 'मसौदा', sent: 'भेजा गया', signed: 'हस्ताक्षरित', withdrawn: 'वापस लिया' },
+      stage: { interview_open: 'इंटरव्यू बाकी', verifying: 'सत्यापन जारी', waitlisted: 'प्रतीक्षा सूची में', to_prepare: 'तैयार करना बाकी', draft: 'मसौदा', sent: 'भेजा गया', signed: 'हस्ताक्षरित', withdrawn: 'वापस लिया' },
       stageFilter: { label: 'चरण', all: 'सभी', to_prepare: 'तैयार करना बाकी', sent: 'हस्ताक्षर की प्रतीक्षा', signed: 'हस्ताक्षरित', waiting: 'अभी तैयार नहीं' },
       term: {
         conversionPct: 'सफल हुए सौदे का हिस्सा',
@@ -303,6 +305,7 @@ const translations: ScreenTranslations = {
         stageBody: {
           interview_open: 'इंटरव्यू पूरा होने की प्रतीक्षा',
           verifying: 'सत्यापन पूरा होने की प्रतीक्षा',
+          waitlisted: 'योग्य, जगह बनने तक प्रतीक्षा सूची में',
           to_prepare: 'सब कुछ तैयार है',
           draft: 'मसौदा बना, भेजा नहीं',
           sent: 'भेजा गया, हस्ताक्षर की प्रतीक्षा',
@@ -461,6 +464,7 @@ const translations: ScreenTranslations = {
       problem: {
         not_approved: 'इस आवेदक को आगे नहीं बढ़ाया गया है।',
         interview_open: 'इंटरव्यू अभी खुला है। पहले उसे पूरा या रद्द करें।',
+        waitlisted: 'वे प्रतीक्षा सूची में हैं। पहले उन्हें हटाएँ।',
         verification_open: 'सत्यापन अभी साफ़ नहीं है, इसलिए कोई समझौता आगे नहीं बढ़ सकता।',
         concern_override_required: 'इंटरव्यू ने सिफ़ारिश नहीं की। बताएँ कि आप क्यों आगे बढ़ रहे हैं।',
         territory_required: 'कम से कम एक शुरुआती क्षेत्र चुनें।',
@@ -531,7 +535,7 @@ const translations: ScreenTranslations = {
       error: { title: 'करार लोड होऊ शकले नाहीत', body: 'कनेक्शन तपासून पुन्हा प्रयत्न करा.' },
       invalid: { title: 'ही लिंक वैध नाही', body: 'तुम्हाला पाठवलेली लिंक उघडा, किंवा तुमच्या अर्जाकडे परत जा.', action: 'सुरुवातीला जा' },
       tabs: { label: 'ऑफर आणि अटी', offers: 'ऑफर', terms: 'मानक अटी' },
-      stage: { interview_open: 'मुलाखत बाकी', verifying: 'पडताळणी सुरू', to_prepare: 'तयार करायचे', draft: 'मसुदा', sent: 'पाठवला', signed: 'सही झाली', withdrawn: 'मागे घेतला' },
+      stage: { interview_open: 'मुलाखत बाकी', verifying: 'पडताळणी सुरू', waitlisted: 'प्रतीक्षा यादीत', to_prepare: 'तयार करायचे', draft: 'मसुदा', sent: 'पाठवला', signed: 'सही झाली', withdrawn: 'मागे घेतला' },
       stageFilter: { label: 'टप्पा', all: 'सर्व', to_prepare: 'तयार करायचे', sent: 'सहीची प्रतीक्षा', signed: 'सही झाली', waiting: 'अजून तयार नाही' },
       term: {
         conversionPct: 'यशस्वी झालेल्या सौद्याचा वाटा',
@@ -561,6 +565,7 @@ const translations: ScreenTranslations = {
         stageBody: {
           interview_open: 'मुलाखत संपण्याची प्रतीक्षा',
           verifying: 'पडताळणी पूर्ण होण्याची प्रतीक्षा',
+          waitlisted: 'पात्र, जागा होईपर्यंत प्रतीक्षा यादीत',
           to_prepare: 'सर्व काही तयार आहे',
           draft: 'मसुदा तयार, पाठवलेला नाही',
           sent: 'पाठवला, सहीची प्रतीक्षा',
@@ -719,6 +724,7 @@ const translations: ScreenTranslations = {
       problem: {
         not_approved: 'या अर्जदाराला पुढे नेलेले नाही.',
         interview_open: 'मुलाखत अजून खुली आहे. आधी ती पूर्ण किंवा रद्द करा.',
+        waitlisted: 'ते प्रतीक्षा यादीत आहेत. आधी त्यांना काढा.',
         verification_open: 'पडताळणी अजून स्पष्ट नाही, म्हणून कोणताही करार पुढे जाऊ शकत नाही.',
         concern_override_required: 'मुलाखतीने शिफारस केली नाही. तुम्ही का पुढे जात आहात ते सांगा.',
         territory_required: 'किमान एक सुरुवातीचा परिसर निवडा.',

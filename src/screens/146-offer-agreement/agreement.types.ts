@@ -10,7 +10,7 @@ export const TABS = ['offers', 'terms'] as const;
 export type AgreementTab = (typeof TABS)[number];
 export const STAGE_FILTERS = ['all', 'to_prepare', 'sent', 'signed', 'waiting'] as const;
 export type StageFilter = (typeof STAGE_FILTERS)[number];
-export const STAGES = ['interview_open', 'verifying', 'to_prepare', 'draft', 'sent', 'signed', 'withdrawn'] as const;
+export const STAGES = ['interview_open', 'verifying', 'waitlisted', 'to_prepare', 'draft', 'sent', 'signed', 'withdrawn'] as const;
 export const ROLES = ['surveyor', 'technician', 'supplier'] as const;
 export const boardPath = '/offers';
 export const detailPath = (id: string) => `/offers/${id}`;
@@ -22,7 +22,7 @@ export { MAX_ADDENDUM_ITEMS, REASON_MIN, REQUEST_MIN, TERM_DEFS };
 const rec = <T extends string | number>(ns: string, keys: readonly T[]) => Object.fromEntries(keys.map((k) => [k, `${ns}.${k}`])) as Record<T, string>;
 const TERM_KEYS = ['conversionPct', 'closePct', 'installPoolPct', 'leadBonusPct', 'qcFee', 'deliverySlaDays', 'paymentTermsDays', 'minQualityScore', 'qualityStandards', 'warrantyMonths', 'territoryZoneIds'] as const;
 const PROBLEMS = [
-  'not_approved', 'interview_open', 'verification_open', 'concern_override_required', 'territory_required', 'phone_taken', 'already_signed', 'already_sent', 'not_open',
+  'not_approved', 'interview_open', 'waitlisted', 'verification_open', 'concern_override_required', 'territory_required', 'phone_taken', 'already_signed', 'already_sent', 'not_open',
   'addendum_empty', 'addendum_too_many', 'addendum_term', 'addendum_range', 'addendum_same', 'addendum_reason', 'request_open', 'request_short', 'reason_required',
   'consent_required', 'identity_required', 'signature_required', 'name_required', 'invalid_terms', 'effective_past', 'invalid_link', 'forbidden', 'not_admin', 'not_found', 'offline', 'generic',
 ] as const;
