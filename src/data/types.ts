@@ -3073,6 +3073,55 @@ export interface TrainingLessonProgress {
   completedAt?: string;
 }
 
+/* ------------------------------------ SOP document repository (153) */
+
+/** A category Admin added as the business grew (a new lift technology, say). The built-in ones (installation, delivery, safety, quality) are not stored. */
+export interface SopCategory {
+  id: string;
+  name: string;
+  nameHi?: string;
+  nameMr?: string;
+  createdByName: string;
+  createdAt: string;
+}
+
+export interface SopReferenceItem {
+  en: string;
+  hi?: string;
+  mr?: string;
+}
+
+export interface SopReferenceVersion {
+  version: number;
+  effectiveFrom: string;
+  changeNote: string;
+  publishedByName: string;
+  publishedAt: string;
+  items: SopReferenceItem[];
+}
+
+/**
+ * A reference document Admin wrote for a category that has no enforced checklist behind it yet. Everything else in the repository is read from the
+ * governed templates (installation, delivery, safety, quality) and is never copied; these are the one thing the repository itself stores, and each
+ * says on screen that no checklist enforces it.
+ */
+export interface SopReferenceDocument {
+  id: string;
+  categoryId: string;
+  title: string;
+  titleHi?: string;
+  titleMr?: string;
+  versions: SopReferenceVersion[];
+  createdByName: string;
+  createdAt: string;
+}
+
+export interface SopBookmark {
+  userId: string;
+  docId: string;
+  at: string;
+}
+
 /* ------------------------------------ Partner deactivation and exit (150) */
 
 export type ExitKind = 'voluntary' | 'involuntary';

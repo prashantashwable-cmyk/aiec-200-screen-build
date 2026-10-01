@@ -5,7 +5,7 @@ import { ArrowClockwise, CaretRight, ChatsCircle, CheckCircle, CloudCheck, Cloud
 import { Badge, Button, Card, Chip, EmptyState, ErrorState, Field, Input, LoadingState, ProgressBar, Screen, ScreenHeader, SegBar, Select, Sheet, formatDate } from '@/design-system';
 import type { TrainingModuleView } from '@/data/repository';
 import type { TrainingTopic } from '@/data/types';
-import { LIB_KEYS as K, SCOPES, STATUS_FILTERS, TOPICS, contentKey } from './training-library.types';
+import { LIB_KEYS as K, SCOPES, STATUS_FILTERS, TOPICS, contentKey, sopPath } from './training-library.types';
 import { useTrainingLibrary } from './useTrainingLibrary';
 import type { TrainingLibraryState } from './useTrainingLibrary';
 
@@ -59,6 +59,14 @@ export function TrainingLibraryScreen() {
       <div className="stack gap-3">
         <Hero s={s} t={t} />
         <Gate s={s} t={t} />
+        {v.person.roles.includes('technician') && (
+          <Card>
+            <div className="row between gap-3 wrap" data-sop-link style={{ alignItems: 'center' }}>
+              <span className="stack grow"><strong className="t-sm">{t(K.sop.heading)}</strong><span className="t-xs t-muted">{t(K.sop.body)}</span></span>
+              <Button size="sm" variant="secondary" onClick={() => s.goto(sopPath)}>{t(K.sop.open)}</Button>
+            </div>
+          </Card>
+        )}
         <Controls s={s} t={t} />
         {v.modules.length === 0 ? (
           <EmptyState icon={<GraduationCap size={28} />} title={t(K.empty.title)} body={t(K.empty.body)} />

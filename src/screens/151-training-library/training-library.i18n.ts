@@ -87,6 +87,7 @@ const translations: ScreenTranslations = {
         needsSignal: 'You need signal to save a module.',
         hint: 'Save it once and it opens in a lift shaft or a basement with no signal.',
       },
+      sop: { heading: 'SOP documents', body: 'Read the installation, delivery, safety and quality procedures you are held to, and keep the ones you use on your phone.', open: 'Open the documents' },
       close: 'Close',
       problem: {
         forbidden: 'You cannot open that module.',
@@ -201,6 +202,7 @@ const translations: ScreenTranslations = {
         needsSignal: 'मॉड्यूल सेव करने के लिए सिग्नल चाहिए।',
         hint: 'एक बार सेव कर लें, फिर लिफ़्ट शाफ़्ट या बेसमेंट में बिना सिग्नल भी खुलेगा।',
       },
+      sop: { heading: 'SOP दस्तावेज़', body: 'इंस्टॉलेशन, डिलीवरी, सुरक्षा और गुणवत्ता की वे प्रक्रियाएँ पढ़ें जिन पर आपको परखा जाता है, और जो आप इस्तेमाल करते हैं उन्हें फ़ोन में रखें।', open: 'दस्तावेज़ खोलें' },
       close: 'बंद करें',
       problem: {
         forbidden: 'आप वह मॉड्यूल नहीं खोल सकते।',
@@ -315,6 +317,7 @@ const translations: ScreenTranslations = {
         needsSignal: 'मॉड्यूल सेव्ह करण्यासाठी सिग्नल हवा.',
         hint: 'एकदा सेव्ह केले की लिफ्ट शाफ्ट किंवा तळघरात सिग्नल नसतानाही उघडते.',
       },
+      sop: { heading: 'SOP दस्तऐवज', body: 'इन्स्टॉलेशन, डिलिव्हरी, सुरक्षा आणि गुणवत्तेच्या ज्या प्रक्रियांवर तुम्हाला तपासले जाते त्या वाचा, आणि तुम्ही वापरता त्या फोनमध्ये ठेवा.', open: 'दस्तऐवज उघडा' },
       close: 'बंद करा',
       problem: {
         forbidden: 'तुम्ही तो मॉड्यूल उघडू शकत नाही.',

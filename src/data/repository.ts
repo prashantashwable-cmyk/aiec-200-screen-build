@@ -2482,6 +2482,105 @@ export interface LessonCompleteResult {
 
 export type LessonError = TrainingError | 'none_chosen' | 'single_only' | 'out_of_range' | 'not_finished' | 'checks_open' | 'no_lessons' | 'unknown_check';
 
+/* ------------------------------------ SOP document repository (153) */
+
+/** Text the repository cannot translate itself: a translation key (with parameters), or the words written in up to three languages. */
+export interface SopText {
+  key?: string;
+  /** Parameters that are themselves translation keys (a category name). */
+  paramKeys?: Record<string, string>;
+  params?: Record<string, string | number>;
+  en?: string;
+  hi?: string;
+  mr?: string;
+}
+
+export type SopSource = 'installation' | 'delivery' | 'safety' | 'quality' | 'reference';
+
+export interface SopItemView {
+  id: string;
+  label: SopText;
+  /** The method or hint under the step, when the standard has one. */
+  detail: SopText | null;
+  standard: SopText | null;
+  mandatory: boolean;
+  needsPhoto: boolean;
+  needsVideo: boolean;
+  safetyCritical: boolean;
+  /** What has to be captured as proof. */
+  evidence: SopText[];
+  /** Only asked for when the lift has this feature. */
+  appliesWhen: SopText | null;
+}
+
+export interface SopSectionView {
+  id: string;
+  title: SopText | null;
+  items: SopItemView[];
+}
+
+export interface SopDocVersionView {
+  version: number;
+  effectiveFrom: string;
+  /** Written by whoever published it (a delivery or reference version), or a translation key for a built-in standard. */
+  changeNote: SopText | null;
+  publishedByName: string | null;
+  publishedAt: string | null;
+  state: 'current' | 'upcoming' | 'past';
+  sections: SopSectionView[];
+  itemCount: number;
+  /** What moved against the version before it, by step. */
+  changes: { added: number; removed: number; changed: number } | null;
+  changedIds: { added: string[]; removed: string[]; changed: string[] };
+}
+
+export interface SopDocumentView {
+  id: string;
+  source: SopSource;
+  categoryId: string;
+  title: SopText;
+  summary: SopText | null;
+  currentVersion: number;
+  effectiveDate: string;
+  upcoming: { version: number; effectiveFrom: string } | null;
+  versions: SopDocVersionView[];
+  bookmarked: boolean;
+  /** Whether a checklist enforces it. A reference document written for a new category does not (yet). */
+  referenceOnly: boolean;
+  /** Where the enforced standard is maintained, for people who may change it. */
+  governedBy: { route: string | null; nameKey: string };
+  /** Built-in standards that live in the app's own rules have one fixed version and no dated history. */
+  builtIn: boolean;
+  editable: boolean;
+  downloadAvailable: boolean;
+}
+
+export interface SopCategoryView {
+  id: string;
+  name: SopText;
+  builtIn: boolean;
+  count: number;
+}
+
+export interface SopLibraryView {
+  docs: SopDocumentView[];
+  categories: SopCategoryView[];
+  canEdit: boolean;
+  at: string;
+}
+
+export interface SopReferenceInput {
+  /** Absent: a new document. Present: a new version of that document. */
+  docId?: string;
+  categoryId: string;
+  title: { en: string; hi?: string; mr?: string };
+  steps: { en: string[]; hi: string[]; mr: string[] };
+  effectiveFrom: string;
+  changeNote: string;
+}
+
+export type SopError = 'not_admin' | 'forbidden' | 'not_found' | 'name_required' | 'name_taken' | 'category_unknown' | 'title_required' | 'steps_required' | 'translation_mismatch' | 'date_invalid' | 'date_in_past' | 'note_required' | 'not_editable';
+
 /* ------------------------------------ Partner deactivation and exit (150) */
 
 export interface ExitWorkItem {
@@ -6020,6 +6119,11 @@ export interface Repository {
   saveLessonPlayback(lessonId: string, input: { positionS: number; furthestS: number }, userId: string): Promise<LessonView>;
   answerLessonCheck(lessonId: string, checkId: string, selected: number[], userId: string): Promise<LessonAnswerResult>;
   completeLesson(lessonId: string, userId: string): Promise<LessonCompleteResult>;
+  // SOP document repository (153)
+  getSopLibrary(userId: string): Promise<SopLibraryView>;
+  toggleSopBookmark(docId: string, on: boolean, userId: string): Promise<{ docId: string; bookmarked: boolean }>;
+  addSopCategory(input: { name: string; nameHi?: string; nameMr?: string }, adminId: string): Promise<SopCategoryView>;
+  saveSopReference(input: SopReferenceInput, adminId: string): Promise<SopDocumentView>;
 
   // Partner deactivation and exit (150)
   getExitBoard(userId: string): Promise<ExitBoardView>;

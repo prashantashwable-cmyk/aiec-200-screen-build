@@ -246,6 +246,15 @@ import type {
   TrainingLibraryView,
   TrainingModuleView,
   LessonAnswerResult,
+  SopCategoryView,
+  SopDocVersionView,
+  SopDocumentView,
+  SopItemView,
+  SopLibraryView,
+  SopSectionView,
+  SopText,
+  SopReferenceInput,
+  SopSource,
   LessonCompleteResult,
   LessonView,
   ModuleLessonsView,
@@ -629,6 +638,10 @@ import type {
   TemplateStat,
   TriggerRule,
   User,
+  SopBookmark,
+  SopCategory,
+  SopReferenceDocument,
+  DeliverySopStep,
 } from './types';
 import { formatDate, formatDateTime, formatINR, formatINRCompact, formatTime, haversineKm } from '@/design-system/format';
 import { MAX_SAFE_BOT_DISCOUNT_PCT } from '@/features/communication/botRules';
@@ -715,6 +728,7 @@ import { FUNNEL as RD_FUNNEL, NOW_STAGES as RD_NOW, SMALL_SAMPLE as RD_SMALL, WA
 import type { NowStage as RdNowStage, Period as RdPeriod, RecruitStage as RdRecruitStage } from '@/features/recruitment/dashboard';
 import { TOPICS as TN_TOPICS, currentVersionOf as tnCurrentVersion, curriculumOf as tnCurriculum, jobGateOf as tnJobGate, lockedBy as tnLockedBy, percentOfModule as tnPercent, relevantFor as tnRelevant, requiredFor as tnRequired, startProblem as tnStartProblem, statusOf as tnStatus, updatedSince as tnUpdated } from '@/features/training/curriculum';
 import type { ModuleStatus } from '@/features/training/curriculum';
+import { BUILT_IN_CATEGORIES as SOP_BUILT_IN, BUILT_IN_SINCE as SOP_SINCE, categoryProblem as sopCategoryProblem, currentOf as sopCurrent, diffItems as sopDiff, referenceProblem as sopReferenceProblem, stateOf as sopStateOf, upcomingOf as sopUpcoming } from '@/features/sop/library';
 import { seedTrainingLessonProgress, seedTrainingLessons, seedTrainingModules, seedTrainingProgress } from './trainingSeed';
 import { allowedFurthestS as lsAllowed, answerProblem as lsAnswerProblem, checkAtS as lsCheckAt, clampPlayback as lsClamp, clearedIds as lsCleared, completeProblem as lsCompleteProblem, durationOf as lsDuration, isCorrect as lsIsCorrect, lessonDone as lsDone, lessonStates as lsStates, lessonUpdated as lsUpdated, sceneStartS as lsSceneStart } from '@/features/training/lesson';
 import { GRADUATION_MIN_ORDERS, GRADUATION_MIN_SCORE } from '@/features/suppliers/paymentTerms';
@@ -8865,6 +8879,122 @@ function trainingClear(userId: string, now = Date.now()): boolean {
   return tnJobGate(trainingModules, person.roles, tnStatusFn(person.userIds, now)).cleared;
 }
 
+/* ============================== SOP document repository (153) */
+
+const sopCategories: SopCategory[] = [];
+const sopReferences: SopReferenceDocument[] = [];
+const sopBookmarks: SopBookmark[] = [];
+
+const spText = (key: string, extra: Partial<SopText> = {}): SopText => ({ key, ...extra });
+const spStr = (v: unknown) => JSON.stringify(v);
+
+const SP_PHASES = ['preparation', 'rails', 'machine', 'car', 'wiring', 'safety', 'final'] as const;
+const spApplies = (a: InstallSopStepDef['appliesWhen']): SopText | null => (!a ? null : a.field === 'powerBackup' ? spText('sopRepo.applies.powerBackup') : spText('sopRepo.applies.automaticDoor'));
+
+function spInstallItem(st: InstallSopStepDef): SopItemView {
+  return {
+    id: st.id, label: spText(st.labelKey), detail: null, standard: null, mandatory: !st.canBeNotApplicable, needsPhoto: st.slots.some((x) => x.kind === 'photo'), needsVideo: st.slots.some((x) => x.kind === 'video'),
+    safetyCritical: st.safetyCritical, evidence: st.slots.map((x) => spText(x.labelKey)), appliesWhen: spApplies(st.appliesWhen),
+  };
+}
+
+function spDeliveryItem(st: DeliverySopStep): SopItemView {
+  const pick = (a?: string, hi?: string, mr?: string): SopText | null => (a ? { en: a, ...(hi ? { hi } : {}), ...(mr ? { mr } : {}) } : null);
+  return { id: st.id, label: pick(st.label, st.labelHi, st.labelMr) as SopText, detail: pick(st.hint, st.hintHi, st.hintMr), standard: null, mandatory: st.mandatory, needsPhoto: st.needsPhoto, needsVideo: false, safetyCritical: false, evidence: [], appliesWhen: null };
+}
+
+function spSafetyItem(def: (typeof SAFETY_ITEMS)[number], slotLabel: (slotId: string) => SopText | null): SopItemView {
+  return {
+    id: def.id, label: spText(`safetyChecklist.item.${def.id}.label`), detail: spText(`safetyChecklist.item.${def.id}.method`), standard: spText(`safetyChecklist.item.${def.id}.standard`), mandatory: true,
+    needsPhoto: def.slots.length > 0, needsVideo: false, safetyCritical: true, evidence: def.slots.map(slotLabel).filter((x): x is SopText => !!x), appliesWhen: spApplies(def.appliesWhen),
+  };
+}
+
+const spFingerprint = (it: SopItemView) => spStr([it.label, it.detail, it.standard, it.mandatory, it.needsPhoto, it.needsVideo, it.safetyCritical, it.evidence, it.appliesWhen]);
+
+interface SpRawVersion {
+  version: number;
+  effectiveFrom: string;
+  changeNote: SopText | null;
+  publishedByName: string | null;
+  publishedAt: string | null;
+  sections: SopSectionView[];
+}
+
+/** Turns one document's raw versions into the reader's: which is in force, which is announced, and what moved against the one before. */
+function spVersionsOf(raw: SpRawVersion[], now: number): SopDocVersionView[] {
+  const ordered = [...raw].sort((a, b) => a.version - b.version);
+  const plain = ordered.map((v) => ({ version: v.version, effectiveFrom: v.effectiveFrom }));
+  return ordered.map((v, i) => {
+    const items = v.sections.flatMap((s) => s.items);
+    const prev = i > 0 ? ordered[i - 1].sections.flatMap((s) => s.items) : null;
+    const d = prev ? sopDiff(prev.map((x) => ({ id: x.id, fingerprint: spFingerprint(x) })), items.map((x) => ({ id: x.id, fingerprint: spFingerprint(x) }))) : { added: [], removed: [], changed: [] };
+    return {
+      version: v.version, effectiveFrom: v.effectiveFrom, changeNote: v.changeNote, publishedByName: v.publishedByName, publishedAt: v.publishedAt, state: sopStateOf({ version: v.version, effectiveFrom: v.effectiveFrom }, plain, now),
+      sections: v.sections, itemCount: items.length, changes: prev ? { added: d.added.length, removed: d.removed.length, changed: d.changed.length } : null, changedIds: d,
+    };
+  });
+}
+
+function spDocument(id: string, source: SopSource, categoryId: string, title: SopText, summary: SopText | null, raw: SpRawVersion[], extra: Partial<SopDocumentView>, userId: string, now: number): SopDocumentView {
+  const versions = spVersionsOf(raw, now);
+  const plain = raw.map((v) => ({ version: v.version, effectiveFrom: v.effectiveFrom }));
+  const cur = sopCurrent(plain, now) ?? plain[0];
+  const up = sopUpcoming(plain, now);
+  return {
+    id, source, categoryId, title, summary, currentVersion: cur.version, effectiveDate: cur.effectiveFrom, upcoming: up ? { version: up.version, effectiveFrom: up.effectiveFrom } : null, versions,
+    bookmarked: sopBookmarks.some((b) => b.userId === userId && b.docId === id), referenceOnly: false, governedBy: { route: null, nameKey: 'sopRepo.governed.reference' }, builtIn: false, editable: false, downloadAvailable: true, ...extra,
+  };
+}
+
+function spCategoryName(c: SopCategory): SopText {
+  return { en: c.name, ...(c.nameHi ? { hi: c.nameHi } : {}), ...(c.nameMr ? { mr: c.nameMr } : {}) };
+}
+
+/** Every document, derived from the governed templates on each read (nothing is copied, so a version here can never differ from the one being enforced). */
+function spLibraryOf(userId: string, isAdmin: boolean, now: number): SopLibraryView {
+  const docs: SopDocumentView[] = [];
+  // Installation procedure (123): every published version, step ids stable across them.
+  docs.push(spDocument('sop-installation', 'installation', 'installation', spText('sopRepo.doc.installation'), spText('sopRepo.summary.installation'), installSopVersions.map((v) => ({
+    version: v.version, effectiveFrom: v.effectiveFrom, changeNote: { en: v.changeNote }, publishedByName: v.publishedByName, publishedAt: v.publishedAt,
+    sections: SP_PHASES.map((ph) => ({ id: ph, title: spText(`installTimeline.milestone.${ph}`), items: v.steps.filter((st) => st.phase === ph).map(spInstallItem) })).filter((sec) => sec.items.length > 0),
+  })), { governedBy: { route: null, nameKey: 'sopRepo.governed.installation' } }, userId, now));
+  // Delivery procedure (107): the master template and one per part category.
+  for (const tpl of deliverySops) {
+    const isAll = tpl.category === 'all';
+    docs.push(spDocument(`sop-delivery-${tpl.id}`, 'delivery', 'delivery', isAll ? spText('sopRepo.doc.deliveryAll') : spText('sopRepo.doc.deliveryCategory', { paramKeys: { category: `partCategory.${tpl.category}` } }), spText(isAll ? 'sopRepo.summary.deliveryAll' : 'sopRepo.summary.deliveryCategory'), tpl.versions.map((v) => ({
+      version: v.version, effectiveFrom: v.effectiveFrom, changeNote: { en: v.changeNote }, publishedByName: v.createdByName, publishedAt: v.createdAt, sections: [{ id: 'steps', title: null, items: v.steps.map(spDeliveryItem) }],
+    })), { governedBy: { route: '/delivery-sop', nameKey: 'sopRepo.governed.delivery' } }, userId, now));
+  }
+  // Built-in standards: the safety checks (126) and the two quality checks (132, 133). They live in the app's own rules, so they have one fixed version.
+  const builtIn = (sections: SopSectionView[]): SpRawVersion[] => [{ version: 1, effectiveFrom: SOP_SINCE, changeNote: spText('sopRepo.builtInNote'), publishedByName: null, publishedAt: null, sections }];
+  const installNow = installVersionInForce(installSopVersions, now) ?? installSopVersions[installSopVersions.length - 1];
+  const slotLabel = (slotId: string): SopText | null => { for (const st of installNow.steps) { const sl = st.slots.find((x) => x.id === slotId); if (sl) return spText(sl.labelKey); } return null; };
+  docs.push(spDocument('sop-safety', 'safety', 'safety', spText('sopRepo.doc.safety'), spText('sopRepo.summary.safety'), builtIn([{ id: 'checks', title: null, items: SAFETY_ITEMS.map((d) => spSafetyItem(d, slotLabel)) }]), { builtIn: true, governedBy: { route: null, nameKey: 'sopRepo.governed.safety' } }, userId, now));
+  const qcItem = (ns: string, id: string): SopItemView => ({ id, label: spText(`${ns}.item.${id}`), detail: spText(`${ns}.itemHint.${id}`), standard: null, mandatory: true, needsPhoto: false, needsVideo: false, safetyCritical: ns === 'qcElec', evidence: [], appliesWhen: null });
+  docs.push(spDocument('sop-quality-mechanical', 'quality', 'quality', spText('sopRepo.doc.qualityMechanical'), spText('sopRepo.summary.qualityMechanical'), builtIn([{ id: 'checks', title: null, items: MECH_ITEMS.map((id) => qcItem('qcMech', id)) }]), { builtIn: true, governedBy: { route: null, nameKey: 'sopRepo.governed.quality' } }, userId, now));
+  docs.push(spDocument('sop-quality-electrical', 'quality', 'quality', spText('sopRepo.doc.qualityElectrical'), spText('sopRepo.summary.qualityElectrical'), builtIn([{ id: 'checks', title: null, items: ELEC_ITEMS.map((id) => qcItem('qcElec', id)) }]), { builtIn: true, governedBy: { route: null, nameKey: 'sopRepo.governed.quality' } }, userId, now));
+  // Reference documents Admin wrote for categories with no enforced checklist behind them yet.
+  for (const r of sopReferences) {
+    const title: SopText = { en: r.title, ...(r.titleHi ? { hi: r.titleHi } : {}), ...(r.titleMr ? { mr: r.titleMr } : {}) };
+    docs.push(spDocument(r.id, 'reference', r.categoryId, title, null, r.versions.map((v) => ({
+      version: v.version, effectiveFrom: v.effectiveFrom, changeNote: { en: v.changeNote }, publishedByName: v.publishedByName, publishedAt: v.publishedAt,
+      sections: [{ id: 'steps', title: null, items: v.items.map((it, i) => ({ id: `i${i + 1}`, label: { en: it.en, ...(it.hi ? { hi: it.hi } : {}), ...(it.mr ? { mr: it.mr } : {}) }, detail: null, standard: null, mandatory: false, needsPhoto: false, needsVideo: false, safetyCritical: false, evidence: [], appliesWhen: null })) }],
+    })), { referenceOnly: true, editable: isAdmin, governedBy: { route: null, nameKey: 'sopRepo.governed.reference' } }, userId, now));
+  }
+  const categories = [
+    ...SOP_BUILT_IN.map((id) => ({ id: id as string, name: spText(`sopRepo.category.${id}`) as SopText, builtIn: true })),
+    ...sopCategories.map((c) => ({ id: c.id, name: spCategoryName(c), builtIn: false })),
+  ].map((c) => ({ ...c, count: docs.filter((d) => d.categoryId === c.id).length }));
+  return { docs, categories, canEdit: isAdmin, at: new Date(now).toISOString() };
+}
+
+function spReader(userId: string): User {
+  const u = byId(users, userId);
+  if (!u || (u.role !== 'admin' && u.role !== 'technician')) throw new RepositoryError('forbidden');
+  return u;
+}
+
 /* ============================== Partner deactivation and exit (150) */
 
 const partnerExits: PartnerExit[] = [];
@@ -16470,6 +16600,65 @@ export const memoryRepository: Repository = {
       const idx = view.lessons.findIndex((x) => x.id === lessonId);
       const next = view.lessons.slice(idx + 1).find((x) => x.state === 'current');
       return { lesson: view.lessons[idx], module: view, moduleDone: view.moduleDone, nextLessonId: next?.id ?? null };
+    }),
+
+  /* --------------------------------- SOP document repository (153) */
+  getSopLibrary: (userId) =>
+    simulateRead((): SopLibraryView => {
+      const u = spReader(userId);
+      return spLibraryOf(userId, u.role === 'admin', Date.now());
+    }),
+
+  toggleSopBookmark: (docId, on, userId) =>
+    simulateWrite(() => {
+      const u = spReader(userId);
+      const now = Date.now();
+      if (!spLibraryOf(userId, u.role === 'admin', now).docs.some((d) => d.id === docId)) throw new RepositoryError('not_found');
+      const at = sopBookmarks.findIndex((b) => b.userId === userId && b.docId === docId);
+      if (on && at < 0) sopBookmarks.push({ userId, docId, at: new Date(now).toISOString() });
+      if (!on && at >= 0) sopBookmarks.splice(at, 1);
+      return { docId, bookmarked: on };
+    }),
+
+  addSopCategory: (input, adminId) =>
+    simulateWrite((): SopCategoryView => {
+      const admin = ofAdmin(adminId);
+      const existing = [...SOP_BUILT_IN.map((id) => id), ...sopCategories.flatMap((c) => [c.name, c.nameHi ?? '', c.nameMr ?? ''])].filter(Boolean);
+      const problem = sopCategoryProblem(input.name, [...existing, 'Installation', 'Delivery', 'Safety', 'Quality']);
+      if (problem) throw new RepositoryError(problem);
+      const cat: SopCategory = { id: `sc-${sopCategories.length + 1}`, name: input.name.trim(), ...(input.nameHi?.trim() ? { nameHi: input.nameHi.trim() } : {}), ...(input.nameMr?.trim() ? { nameMr: input.nameMr.trim() } : {}), createdByName: admin.name, createdAt: new Date().toISOString() };
+      sopCategories.push(cat);
+      return { id: cat.id, name: spCategoryName(cat), builtIn: false, count: 0 };
+    }),
+
+  saveSopReference: (input: SopReferenceInput, adminId) =>
+    simulateWrite((): SopDocumentView => {
+      const admin = ofAdmin(adminId);
+      const now = Date.now();
+      const doc = input.docId ? byId(sopReferences, input.docId) : undefined;
+      if (input.docId && !doc) throw new RepositoryError(spLibraryOf(adminId, true, now).docs.some((d) => d.id === input.docId) ? 'not_editable' : 'not_found');
+      const prev = doc ? [...doc.versions].sort((a, b) => b.version - a.version)[0] : null;
+      const problem = sopReferenceProblem(input, { categoryIds: sopCategories.map((c) => c.id), previousEffective: prev?.effectiveFrom ?? null, now });
+      if (problem) throw new RepositoryError(problem);
+      const at = new Date(now).toISOString();
+      const en = input.steps.en.map((x) => x.trim()).filter(Boolean);
+      const clean = (a: string[]) => a.map((x) => x.trim()).filter(Boolean);
+      const hi = clean(input.steps.hi);
+      const mr = clean(input.steps.mr);
+      const items = en.map((text, i) => ({ en: text, ...(hi[i] ? { hi: hi[i] } : {}), ...(mr[i] ? { mr: mr[i] } : {}) }));
+      const version = { version: (prev?.version ?? 0) + 1, effectiveFrom: new Date(`${input.effectiveFrom}T00:00:00.000Z`).toISOString(), changeNote: prev ? input.changeNote.trim() : 'First published.', publishedByName: admin.name, publishedAt: at, items };
+      let target = doc;
+      if (!target) {
+        target = { id: `sref-${sopReferences.length + 1}`, categoryId: input.categoryId, title: input.title.en.trim(), ...(input.title.hi?.trim() ? { titleHi: input.title.hi.trim() } : {}), ...(input.title.mr?.trim() ? { titleMr: input.title.mr.trim() } : {}), versions: [], createdByName: admin.name, createdAt: at };
+        sopReferences.push(target);
+      } else {
+        // A new version keeps the document where it is and may carry a corrected title.
+        target.title = input.title.en.trim();
+        if (input.title.hi?.trim()) target.titleHi = input.title.hi.trim(); else delete target.titleHi;
+        if (input.title.mr?.trim()) target.titleMr = input.title.mr.trim(); else delete target.titleMr;
+      }
+      target.versions.push(version);
+      return spLibraryOf(adminId, true, now).docs.find((d) => d.id === (target as SopReferenceDocument).id) as SopDocumentView;
     }),
 
   /* --------------------------------- Partner deactivation and exit (150) */

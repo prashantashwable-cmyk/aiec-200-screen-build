@@ -10,6 +10,8 @@ export const DEFAULT_SCOPE: TrainingScope = 'mine';
 export const offlineKey = (userId: string) => `aiec.trainingOffline.${userId}`;
 export const cacheKey = (userId: string) => `aiec.trainingLib.${userId}`;
 /** 152 plays a module here. */
+/** 153 holds the procedures technicians are held to. */
+export const sopPath = '/sops';
 export const modulePath = (moduleId: string) => `/training/${moduleId}`;
 export { TOPICS };
 
@@ -94,6 +96,7 @@ export const LIB_KEYS = {
     needsSignal: 'trainingLib.offlineCopy.needsSignal',
     hint: 'trainingLib.offlineCopy.hint',
   },
+  sop: { heading: 'trainingLib.sop.heading', body: 'trainingLib.sop.body', open: 'trainingLib.sop.open' },
   close: 'trainingLib.close',
   problem: rec('trainingLib.problem', PROBLEMS),
 } as const;
