@@ -2881,6 +2881,70 @@ export interface PartnerOffer {
   events: { id: string; at: string; kind: 'prepared' | 'addendum' | 'sent' | 'nudged' | 'request' | 'response' | 'withdrawn' | 'signed' | 'activated' | 'step'; byName: string; note?: string }[];
 }
 
+/* ------------------------------------ Partner tier and category (148) */
+
+export interface PartnerTierEntry {
+  id: string;
+  userId: string;
+  role: 'surveyor' | 'technician';
+  tier: string;
+  fromTier: string | null;
+  /** `yyyy-mm-dd`: the tier in force is the latest entry whose day has arrived. */
+  effectiveFrom: string;
+  kind: 'initial' | 'promotion' | 'demotion' | 'exception' | 'review' | 'dispute';
+  reason: string;
+  byName: string;
+  at: string;
+  /** Which criteria version this was judged against, and how each criterion read at the time. */
+  criteriaVersion: number;
+  met: { metric: string; required: number; actual: number; kind: 'min' | 'max'; ok: boolean }[];
+  /** A promotion put through although a recent incident put its timing in question: the judgement is kept. */
+  incidentAcknowledged?: boolean;
+  isDemo: boolean;
+}
+
+export interface TierCriteriaVersion {
+  id: string;
+  role: 'surveyor' | 'technician';
+  version: number;
+  effectiveFrom: string;
+  tiers: { id: string; criteria: { metric: 'monthsActive' | 'wonDeals' | 'completedInstalls' | 'verifiedSkills' | 'qcPassRate' | 'openSafetyIssues' | 'ratedOrders' | 'score'; min?: number; max?: number }[]; effects: { commissionPlusPct?: number; canLead?: boolean } }[];
+  changeNote: string;
+  createdByName: string;
+  createdAt: string;
+  isDemo: boolean;
+}
+
+export interface TierDeferral {
+  userId: string;
+  until: string;
+  reason: string;
+  byName: string;
+  at: string;
+}
+
+export interface TierDispute {
+  id: string;
+  userId: string;
+  grounds: string;
+  raisedAt: string;
+  raisedByName: string;
+  /** What the criteria said when it was raised, so the answer rests on visible facts. */
+  criteriaVersion: number;
+  tierAtRaise: string;
+  status: 'open' | 'decided';
+  decision?: { outcome: 'tier_stands' | 'tier_changed' | 'criteria_unclear'; note: string; byName: string; at: string };
+  isDemo: boolean;
+}
+
+/** An existing partner who no longer meets their tier under a raised bar: kept where they are, and reviewed by a date. */
+export interface TierReview {
+  userId: string;
+  versionId: string;
+  dueBy: string;
+  resolved?: { at: string; byName: string; reason: string };
+}
+
 /* ------------------------------------ Handover completion certificate (140) */
 
 export interface FinalPayoutLine {
@@ -4119,6 +4183,8 @@ export type CommitmentKind =
   | 'offer_signature_wait'
   | 'partner_onboarding_finish'
   | 'waitlist_review'
+  | 'tier_dispute_decide'
+  | 'tier_review_due'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'

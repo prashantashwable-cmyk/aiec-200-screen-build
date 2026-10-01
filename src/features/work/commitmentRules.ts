@@ -1,6 +1,6 @@
 import { ASSIGN_DUE, DISPUTE_DECIDE_DUE, REVERIFY_DUE } from '@/features/qc/snags';
 import { ARRANGE_DUE, FOLLOWUP_DUE, SIGNOFF_DUE_PRESENT, SIGNOFF_DUE_REMOTE } from '@/features/qc/walkthrough';
-import type { PartnerApplication, WarrantyRegistration, HandoverWalkthrough, ReworkRequest,
+import type { PartnerApplication, TierDispute, TierReview, WarrantyRegistration, HandoverWalkthrough, ReworkRequest,
   Alert,
   AlertSeverity,
   CatalogPriceChange,
@@ -63,6 +63,7 @@ import { SCREEN_DUE } from '@/features/recruitment/screening';
 import { ARRANGE_DUE as INTERVIEW_ARRANGE_DUE, INVITE_WAIT } from '@/features/recruitment/interview';
 import { PREPARE_DUE as OFFER_PREPARE_DUE, SIGN_WAIT as OFFER_SIGN_WAIT, STEPS_DUE as OFFER_STEPS_DUE } from '@/features/recruitment/agreement';
 import { WAITLIST_REVIEW as WAITLIST_REVIEW_AFTER } from '@/features/recruitment/dashboard';
+import { DISPUTE_DECIDE_DUE as TIER_DISPUTE_DUE } from '@/features/partners/tiers';
 import { VERIFY_DUE, gateOf as verificationGate, requiredItemsOf as requiredVerification } from '@/features/recruitment/verification';
 
 /**
@@ -134,6 +135,9 @@ export interface CommitmentSources {
   completions: { jobId: string; readyAt: string; issued: boolean; issuedAt?: string }[];
   /** Partner applications (142). */
   applications: PartnerApplication[];
+  /** Questions raised about a partner's tier, and partners put up for review after the criteria were raised (148). */
+  tierDisputes: TierDispute[];
+  tierReviews: TierReview[];
   /** Mechanical quality-check attempts and the differences from the install record the inspector raised (132). */
   qcMechChecks: QcMechCheck[];
   qcFindings: QcFinding[];
@@ -1982,6 +1986,54 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
           actionRoute: '/recruitment',
           oversightRoute: '/recruitment',
         }));
+    },
+  },
+  {
+    // A partner's question about the tier they hold: Admin answers it from the criteria as they stood, within days (148).
+    kind: 'tier_dispute_decide',
+    nudgeBefore: days(1),
+    escalateAfter: days(2),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'staffing',
+    collect(src) {
+      const admin = adminId(src);
+      return src.tierDisputes.map((d) => ({
+        ...base('tier_dispute_decide', 'application', d.id),
+        ownerUserId: admin,
+        titleKey: 'work.title.tier_dispute_decide',
+        titleParams: { name: src.users.find((u) => u.id === d.userId)?.name ?? src.suppliers.find((x) => x.id === d.userId)?.name ?? d.userId },
+        dueAt: plus(d.raisedAt, TIER_DISPUTE_DUE),
+        state: d.status === 'decided' ? ('done' as const) : ('open' as const),
+        paused: false,
+        completedAt: d.decision?.at,
+        actionRoute: `/partner-tiers/${d.userId}`,
+        oversightRoute: `/partner-tiers/${d.userId}`,
+      }));
+    },
+  },
+  {
+    // After the bar was raised, a partner who no longer meets their tier stays where they are and is reviewed by a date, never reassessed silently (148).
+    kind: 'tier_review_due',
+    nudgeBefore: days(7),
+    escalateAfter: days(7),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'staffing',
+    collect(src) {
+      const admin = adminId(src);
+      return src.tierReviews.map((r) => ({
+        ...base('tier_review_due', 'application', `${r.userId}:${r.versionId}`),
+        ownerUserId: admin,
+        titleKey: 'work.title.tier_review_due',
+        titleParams: { name: src.users.find((u) => u.id === r.userId)?.name ?? r.userId },
+        dueAt: new Date(`${r.dueBy}T09:00:00`).toISOString(),
+        state: r.resolved ? ('done' as const) : ('open' as const),
+        paused: false,
+        completedAt: r.resolved?.at,
+        actionRoute: `/partner-tiers/${r.userId}`,
+        oversightRoute: `/partner-tiers/${r.userId}`,
+      }));
     },
   },
   {

@@ -235,6 +235,12 @@ import type {
   InterviewDetailView,
   InterviewRowView,
   DashboardPerson,
+  PartnerTierBoardView,
+  PartnerTierDetailView,
+  PartnerTierRowView,
+  TierCriteriaView,
+  TierHistoryItem,
+  TierLadderRowView,
   InterviewSaveResult,
   RecruitmentDashboardView,
   OfferApplicantView,
@@ -475,6 +481,11 @@ import type {
   PartnerInterview,
   PartnerOffer,
   PartnerVerification,
+  PartnerTierEntry,
+  TierCriteriaVersion,
+  TierDeferral,
+  TierDispute,
+  TierReview,
   ScreeningFactorRow,
   VerificationRecord,
   ApplicationForm,
@@ -669,6 +680,10 @@ import type { Contributor as FpContributor } from '@/features/commission/finalPa
 import { SECTIONS as APP_SECTIONS, EMPTY_FORM as APP_EMPTY, maskId as apMask, outstandingOf as apOutstanding, progressOf as apProgress, sectionStates as apSections, submitProblem as apSubmitProblem } from '@/features/recruitment/application';
 import { FUNNEL as RD_FUNNEL, NOW_STAGES as RD_NOW, SMALL_SAMPLE as RD_SMALL, WAITLIST_MIN as RD_WAITLIST_MIN, funnelOf as rdFunnelOf, medianOf as rdMedian, roomOf as rdRoom, signalOf as rdSignalOf, trendOf as rdTrend } from '@/features/recruitment/dashboard';
 import type { NowStage as RdNowStage, Period as RdPeriod, RecruitStage as RdRecruitStage } from '@/features/recruitment/dashboard';
+import { GRADUATION_MIN_ORDERS, GRADUATION_MIN_SCORE } from '@/features/suppliers/paymentTerms';
+import { DEFAULT_CRITERIA as TIER_DEFAULT_CRITERIA, DEFER_MAX_DAYS as TIER_DEFER_MAX_DAYS, DISPUTE_DECIDE_DUE as TIER_DISPUTE_DUE, EFFECTIVE_MAX_DAYS as TIER_EFFECTIVE_MAX_DAYS, INCIDENT_WINDOW as TIER_INCIDENT_WINDOW, REASON_MIN as TIER_REASON_MIN, REVIEW_WITHIN as TIER_REVIEW_WITHIN, TIER_IDS as TIER_IDS_OF, criteriaProblem as tierCriteriaProblem, directionOf as tierDirection, eligibleIndex as tierEligible, evaluate as tierEvaluate, indexOf as tierIndexOf, supplierCriteria as tierSupplierCriteria } from '@/features/partners/tiers';
+import type { Metrics, TierEffects, TierRole } from '@/features/partners/tiers';
+import { CONVERSION_PCT as TIER_BASE_PCT } from '@/features/recruitment/agreement';
 import { ACTIVATION_STEPS as ofSteps, REASON_MIN as OF_REASON_MIN, REQUEST_MIN as OF_REQUEST_MIN, SIGN_WAIT as OF_SIGN_WAIT, TERM_DEFS as ofTermDefs, addendumProblem as ofAddendumProblem, bindingTermsOf as ofBinding, capabilityOf as ofCapability, clausesOf as ofClauses, defaultTermsOf as ofDefaultTerms, signProblem as ofSignProblem } from '@/features/recruitment/agreement';
 import { conditionalProblem as vfConditionalProblem, gateOf as vfGate, itemStateOf as vfItemState, manualProblem as vfManualProblem, requiredItemsOf as vfRequired, serviceCheck as vfServiceCheck } from '@/features/recruitment/verification';
 import type { RequiredItem } from '@/features/recruitment/verification';
@@ -1101,7 +1116,7 @@ function createOrReuseLeadConvertedCommission(deal: Deal, lead: Lead): string {
     leadId: lead.id,
     dealId: deal.id,
     reasonKey: 'commission.reason.leadConverted',
-    amount: Math.round((deal.agreedPrice || deal.quotedPrice) * 0.015),
+    amount: Math.round((deal.agreedPrice || deal.quotedPrice) * (surveyorConversionPct(lead.originalSurveyorId) / 100)),
     status: 'projected',
     earnedAt: deal.closedAt ?? new Date().toISOString(),
     isDemo: true,
@@ -2364,6 +2379,8 @@ function commitmentSources(now: number): CommitmentSources {
     warranties: warrantyRegistrations,
     completions: completionSignals(),
     applications: partnerApplications,
+    tierDisputes: (tcEnsure(Date.now()), tierDisputes),
+    tierReviews,
     handoverReviews: handoverSignals().reviews,
     qcMechChecks,
     qcFindings,
@@ -8180,10 +8197,12 @@ function ofActivate(app: PartnerApplication, offer: PartnerOffer, at: string): v
       supplierAgreementVersions.push({ id: `sag-new-${agreementCounter}`, supplierId: supplier.id, version: 1, kind: 'initial', terms: { deliverySlaDays: terms.deliverySlaDays ?? 14, paymentTermsDays: terms.paymentTermsDays ?? 30, minQualityScore: terms.minQualityScore ?? 3.5, qualityStandards: terms.qualityStandards ?? '', warrantyMonths: terms.warrantyMonths ?? 12 }, effectiveFrom: at.slice(0, 10), expiresOn: new Date(new Date(at).getTime() + 365 * 86_400_000).toISOString().slice(0, 10), documentName: `${offer.documentNo}.html`, warrantyPassThrough: true, recordedBy: 'Partner agreement', recordedAt: at, acknowledgedBy: f.personal.fullName, acknowledgedAt: at, isDemo: true });
     }
   } else {
+    tcEnsure(Date.parse(at));
     userCounter += 1;
     userId = `u-${app.role === 'surveyor' ? 'srv' : 'tech'}-new-${userCounter}`;
     const skills = app.role === 'technician' ? Object.entries(app.verification?.records ?? {}).filter(([k, r]) => k.startsWith('skill:') && r.status !== 'failed').map(([k]) => k.slice(6)) : undefined;
     users.push({ id: userId, role: app.role, name: f.personal.fullName, phone: f.personal.phone, status: 'active', preferredLanguage: lang, themePreference: 'light', isDemo: true, city: f.personal.city, joinedAt: at, ...(skills ? { skills } : {}) });
+    tcInitial(userId, app.role, at);
     // They can now receive leads in the areas the agreement names.
     for (const zid of terms.territoryZoneIds ?? []) {
       const z = byId(zones, zid);
@@ -8380,6 +8399,219 @@ function rdBuild(period: RdPeriod, now: number): RecruitmentDashboardView {
   };
 }
 
+/* ============================== Partner tier and category assignment (148) */
+
+const tierCriteria: TierCriteriaVersion[] = (['surveyor', 'technician'] as const).map((role) => ({ id: `tcv-${role}-1`, role, version: 1, effectiveFrom: '2026-01-01', tiers: JSON.parse(JSON.stringify(TIER_DEFAULT_CRITERIA[role])) as TierCriteriaVersion['tiers'], changeNote: 'First criteria.', createdByName: 'Prashant Vasant Wable', createdAt: '2026-01-01T00:00:00.000Z', isDemo: true }));
+const partnerTiers: PartnerTierEntry[] = [];
+const tierDeferrals: TierDeferral[] = [];
+const tierDisputes: TierDispute[] = [];
+const tierReviews: TierReview[] = [];
+let tierCounter = 0;
+let tierSeeded = false;
+
+const tcToday = (now: number) => { const d = new Date(now); const p = (n: number) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
+const tcInForce = (role: 'surveyor' | 'technician', now: number): TierCriteriaVersion => tierCriteria.filter((c) => c.role === role && c.effectiveFrom <= tcToday(now)).sort((a, b) => b.version - a.version)[0];
+const tcPartnerRole = (id: string): TierRole | null => {
+  const u = byId(users, id);
+  if (u && (u.role === 'surveyor' || u.role === 'technician')) return u.role;
+  return byId(suppliers, id) ? 'supplier' : null;
+};
+
+function tcMetrics(id: string, now: number): Metrics {
+  const m: Metrics = { monthsActive: 0, wonDeals: 0, completedInstalls: 0, verifiedSkills: 0, qcPassRate: 0, openSafetyIssues: 0, ratedOrders: 0, score: 0 };
+  const sup = byId(suppliers, id);
+  if (sup) {
+    const { score, rated } = supplierScoreNow(id);
+    m.ratedOrders = rated;
+    m.score = Math.round((score ?? 0) * 100);
+    return m;
+  }
+  const u = byId(users, id);
+  if (!u) return m;
+  m.monthsActive = u.joinedAt ? Math.max(0, Math.floor((now - new Date(u.joinedAt).getTime()) / (30 * 86_400_000))) : 0;
+  if (u.role === 'surveyor') m.wonDeals = deals.filter((d) => d.status === 'won' && resolveLead(d.leadId)?.originalSurveyorId === id).length;
+  if (u.role === 'technician') {
+    m.completedInstalls = jobs.filter((j) => j.status === 'completed' && (j.technicianId === id || (j.crew ?? []).some((c) => c.userId === id))).length;
+    m.verifiedSkills = normalizeSkills(u.skills).length;
+    m.qcPassRate = Math.round(technicianScoreOf(u).qcPassRate * 100);
+    m.openSafetyIssues = reworkRequests.filter((r) => r.severity === 'safety_critical' && !['verified', 'waived', 'withdrawn'].includes(r.status) && (r.ownerId === id || byId(jobs, r.jobId)?.technicianId === id)).length;
+  }
+  return m;
+}
+
+/** A serious defect traced to their work lately: a promotion's timing is then Admin's documented call, not a mechanical rule. */
+function tcIncidents(id: string, now: number): { code: string; severity: string; at: string }[] {
+  return reworkRequests
+    .filter((r) => r.severity === 'safety_critical' && now - new Date(r.raisedAt).getTime() < TIER_INCIDENT_WINDOW && (byId(jobs, r.jobId)?.technicianId === id || (byId(jobs, r.jobId)?.crew ?? []).some((c) => c.userId === id)))
+    .map((r) => ({ code: r.code, severity: r.severity, at: r.raisedAt }));
+}
+
+function tcEnsure(now: number): void {
+  if (tierSeeded) return;
+  tierSeeded = true;
+  const at = new Date(now).toISOString();
+  for (const u of users) {
+    if ((u.role !== 'surveyor' && u.role !== 'technician') || u.status !== 'active') continue;
+    if (partnerTiers.some((e) => e.userId === u.id)) continue;
+    const role = u.role;
+    const v = tcInForce(role, now);
+    const m = tcMetrics(u.id, now);
+    // People already working unrestricted keep working: no existing technician is made a trainee by an assessment they never saw.
+    const idx = Math.max(tierEligible(v.tiers, m), role === 'technician' ? 1 : 0);
+    tierCounter += 1;
+    partnerTiers.push({ id: `pte-${tierCounter}`, userId: u.id, role, tier: TIER_IDS_OF[role][idx], fromTier: null, effectiveFrom: (u.joinedAt ?? at).slice(0, 10), kind: 'initial', reason: 'Starting tier, read from the criteria as they stood when tiers were introduced.', byName: 'AIEC', at: u.joinedAt ?? at, criteriaVersion: v.version, met: tierEvaluate(v.tiers[idx].criteria, m), isDemo: true });
+  }
+  // A little history so the screen has something to read: one earlier promotion and one open question about a tier.
+  const t2 = byId(users, 'u-tech-2');
+  if (t2) {
+    const first = partnerTiers.find((e) => e.userId === 'u-tech-2');
+    if (first) {
+      first.tier = 'trainee';
+      first.fromTier = null;
+      tierCounter += 1;
+      const when = new Date(now - 100 * 86_400_000).toISOString();
+      const v = tcInForce('technician', now);
+      partnerTiers.push({ id: `pte-${tierCounter}`, userId: 'u-tech-2', role: 'technician', tier: 'certified', fromTier: 'trainee', effectiveFrom: when.slice(0, 10), kind: 'promotion', reason: 'Completed his first installations without rework and his skills were checked.', byName: 'Prashant Vasant Wable', at: when, criteriaVersion: v.version, met: tierEvaluate(v.tiers[1].criteria, tcMetrics('u-tech-2', now)), isDemo: true });
+    }
+  }
+  if (byId(users, 'u-tech-3')) {
+    tierCounter += 1;
+    tierDisputes.push({ id: `td-${tierCounter}`, userId: 'u-tech-3', grounds: 'I have finished more installations than the record shows, so I think I already meet the next tier.', raisedAt: new Date(now - 36 * 3_600_000).toISOString(), raisedByName: 'Prashant Vasant Wable', criteriaVersion: 1, tierAtRaise: partnerTiers.find((e) => e.userId === 'u-tech-3')?.tier ?? 'certified', status: 'open', isDemo: true });
+  }
+}
+
+function tcCurrentEntry(id: string, now: number): { current: PartnerTierEntry | null; pending: PartnerTierEntry | null } {
+  const today = tcToday(now);
+  const list = partnerTiers.filter((e) => e.userId === id).sort((a, b) => (a.effectiveFrom + a.at).localeCompare(b.effectiveFrom + b.at));
+  const live = list.filter((e) => e.effectiveFrom <= today);
+  const later = list.filter((e) => e.effectiveFrom > today);
+  return { current: live[live.length - 1] ?? null, pending: later[later.length - 1] ?? null };
+}
+
+/** The tier in force for a partner right now: what commission and lead authority read. A surveyor with no record is on the first tier; a technician on the second (they already work unrestricted). */
+function tierNow(id: string, now = Date.now()): string {
+  const sup = byId(suppliers, id);
+  if (sup) return tierOf(sup);
+  tcEnsure(now);
+  const role = tcPartnerRole(id);
+  return tcCurrentEntry(id, now).current?.tier ?? (role === 'technician' ? 'certified' : 'new');
+}
+const tcEffectsOf = (role: 'surveyor' | 'technician', tier: string, now: number): TierEffects => tcInForce(role, now).tiers.find((t) => t.id === tier)?.effects ?? {};
+
+/** A surveyor's conversion share: what their signed agreement says (146), plus what their tier adds. */
+function surveyorConversionPct(userId: string): number {
+  const offer = partnerApplications.find((a) => a.offer?.activation?.userId === userId)?.offer;
+  const base = offer?.status === 'signed' ? ofBinding(offer).conversionPct ?? TIER_BASE_PCT : TIER_BASE_PCT;
+  const plus = byId(users, userId)?.role === 'surveyor' ? tcEffectsOf('surveyor', tierNow(userId), Date.now()).commissionPlusPct ?? 0 : 0;
+  return Math.round((base + plus) * 100) / 100;
+}
+const tcCanLead = (userId: string): boolean => (byId(users, userId)?.role === 'technician' ? tcEffectsOf('technician', tierNow(userId), Date.now()).canLead !== false : true);
+
+/** A newly activated field partner starts on the tier their record already earns: a technician with no installations is a trainee until the criteria say otherwise. */
+function tcInitial(userId: string, role: 'surveyor' | 'technician', at: string): void {
+  const now = Date.parse(at);
+  const v = tcInForce(role, now);
+  const m = tcMetrics(userId, now);
+  const idx = tierEligible(v.tiers, m);
+  tierCounter += 1;
+  partnerTiers.push({ id: `pte-${tierCounter}`, userId, role, tier: TIER_IDS_OF[role][idx], fromTier: null, effectiveFrom: at.slice(0, 10), kind: 'initial', reason: 'Starting tier when the agreement was signed.', byName: 'AIEC', at, criteriaVersion: v.version, met: tierEvaluate(v.tiers[idx].criteria, m), isDemo: true });
+}
+
+function tcRowOf(id: string, now: number): PartnerTierRowView {
+  tcEnsure(now);
+  const role = tcPartnerRole(id) as TierRole;
+  const name = byId(users, id)?.name ?? byId(suppliers, id)?.name ?? id;
+  const defer = tierDeferrals.find((d) => d.userId === id && d.until >= tcToday(now));
+  const review = tierReviews.some((r) => r.userId === id && !r.resolved);
+  const disputeOpen = tierDisputes.some((d) => d.userId === id && d.status === 'open');
+  if (role === 'supplier') {
+    const sup = byId(suppliers, id) as Supplier;
+    const { score, rated } = supplierScoreNow(id);
+    const tier = tierOf(sup);
+    const grad = graduationFor(tier, score ?? 0, rated);
+    const last = supplierTermsHistory.filter((c) => c.supplierId === id && c.kind === 'tier').sort((a, b) => b.at.localeCompare(a.at))[0];
+    return { id, name, role, tier, since: last?.at ?? sup.invitedAt ?? '', eligibleTier: grad ?? tier, promotionDue: !!grad && !defer, incident: false, deferred: !!defer, reviewDue: false, disputeOpen, pending: null };
+  }
+  const v = tcInForce(role, now);
+  const m = tcMetrics(id, now);
+  const { current, pending } = tcCurrentEntry(id, now);
+  const cur = current?.tier ?? (role === 'technician' ? 'certified' : 'new');
+  const idx = tierEligible(v.tiers, m);
+  const incident = tcIncidents(id, now).length > 0;
+  return { id, name, role, tier: cur, since: current?.effectiveFrom ?? '', eligibleTier: TIER_IDS_OF[role][idx], promotionDue: idx > tierIndexOf(role, cur) && !defer && !pending, incident, deferred: !!defer, reviewDue: review, disputeOpen, pending: pending ? { tier: pending.tier, effectiveFrom: pending.effectiveFrom } : null };
+}
+
+function tcDetailOf(id: string, now: number): PartnerTierDetailView {
+  const row = tcRowOf(id, now);
+  const role = row.role;
+  const m = tcMetrics(id, now);
+  const sup = byId(suppliers, id);
+  const u = byId(users, id);
+  let ladder: TierLadderRowView[];
+  let criteria: PartnerTierDetailView['criteria'];
+  if (role === 'supplier') {
+    const crit = tierSupplierCriteria();
+    ladder = TIER_IDS_OF.supplier.map((tid, i): TierLadderRowView => { const r = i === 0 ? [] : tierEvaluate(crit, m); return { id: tid, criteria: r, met: r.every((x) => x.ok), effects: {}, current: tid === row.tier, eligible: tid === row.eligibleTier }; });
+    criteria = { version: 1, effectiveFrom: '2026-01-01', owner: 'supplier_terms' };
+  } else {
+    const v = tcInForce(role, now);
+    ladder = v.tiers.map((t): TierLadderRowView => { const r = tierEvaluate(t.criteria, m); return { id: t.id, criteria: r, met: r.every((x) => x.ok), effects: { ...t.effects }, current: t.id === row.tier, eligible: t.id === row.eligibleTier }; });
+    criteria = { version: v.version, effectiveFrom: v.effectiveFrom, owner: 'tiers' };
+  }
+  const history: TierHistoryItem[] = role === 'supplier'
+    ? supplierTermsHistory.filter((c) => c.supplierId === id && c.kind === 'tier').map((c) => ({ id: c.id, at: c.at, from: c.fromTier ?? null, to: c.toTier as string, kind: 'supplier_terms' as const, reason: c.reason, byName: c.by, effectiveFrom: c.at.slice(0, 10), criteriaVersion: null, met: [], incidentAcknowledged: false }))
+    : partnerTiers.filter((e) => e.userId === id).map((e) => ({ id: e.id, at: e.at, from: e.fromTier, to: e.tier, kind: e.kind, reason: e.reason, byName: e.byName, effectiveFrom: e.effectiveFrom, criteriaVersion: e.criteriaVersion, met: e.met.map((x) => ({ ...x })), incidentAcknowledged: !!e.incidentAcknowledged }));
+  history.sort((a, b) => b.at.localeCompare(a.at));
+  const defer = tierDeferrals.find((d) => d.userId === id && d.until >= tcToday(now));
+  return {
+    row,
+    partner: { name: row.name, phone: u?.phone ?? sup?.contactPhone ?? '', city: u?.city ?? sup?.city ?? '', joinedAt: u?.joinedAt ?? sup?.invitedAt ?? null },
+    metrics: m,
+    ladder,
+    criteria,
+    paymentDefaults: sup ? effectiveSettings(sup, paymentTermsConfig).settings : null,
+    history,
+    deferral: defer ? { ...defer } : null,
+    incidents: role === 'supplier' ? [] : tcIncidents(id, now),
+    review: tierReviews.find((r) => r.userId === id && !r.resolved) ?? null,
+    disputes: tierDisputes.filter((d) => d.userId === id).map((d) => ({ ...d, decision: d.decision ? { ...d.decision } : undefined })).sort((a, b) => b.raisedAt.localeCompare(a.raisedAt)),
+  };
+}
+
+/** One path for every tier change, field partners and suppliers alike: the criteria are read the same way and the reason is always kept. */
+function tcAssign(id: string, input: { tier: string; reason: string; effectiveFrom: string; exception?: boolean; incidentAcknowledged?: boolean; kind?: PartnerTierEntry['kind'] }, byName: string, now: number): void {
+  const role = tcPartnerRole(id);
+  if (!role) throw new RepositoryError('not_found');
+  if (input.reason.replace(/[^\p{L}\p{N}]/gu, '').length < TIER_REASON_MIN) throw new RepositoryError('reason_required');
+  if (!TIER_IDS_OF[role].includes(input.tier)) throw new RepositoryError('tier_required');
+  const today = tcToday(now);
+  const limit = tcToday(now + TIER_EFFECTIVE_MAX_DAYS * 86_400_000);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.effectiveFrom) || input.effectiveFrom < today || input.effectiveFrom > limit || (role === 'supplier' && input.effectiveFrom !== today)) throw new RepositoryError('effective_invalid');
+  const row = tcRowOf(id, now);
+  if (row.tier === input.tier && !row.pending) throw new RepositoryError('same_tier');
+  const dir = tierDirection(role, row.tier, input.tier);
+  const m = tcMetrics(id, now);
+  const at = new Date(now).toISOString();
+  if (role === 'supplier') {
+    const sup = byId(suppliers, id) as Supplier;
+    const { score, rated } = supplierScoreNow(id);
+    if (dir === 'up' && !input.exception && graduationFor(tierOf(sup), score ?? 0, rated) !== input.tier) throw new RepositoryError('criteria_not_met');
+    recordTermsChange({ supplierId: id, kind: 'tier', fromTier: tierOf(sup), toTier: input.tier as SupplierTrustTier, reason: input.reason.trim(), scoreAtChange: score, ratedOrdersAtChange: rated, by: byName, at });
+    patchInPlace(suppliers, id, { paymentTier: input.tier as SupplierTrustTier });
+    return;
+  }
+  const v = tcInForce(role, now);
+  const idx = tierIndexOf(role, input.tier);
+  const all = v.tiers.slice(1, idx + 1).flatMap((t) => tierEvaluate(t.criteria, m));
+  const metCriteria = dir === 'up' ? all.every((r) => r.ok) : true;
+  if (dir === 'up' && !metCriteria && !input.exception) throw new RepositoryError('criteria_not_met');
+  const incident = tcIncidents(id, now).length > 0;
+  if (dir === 'up' && incident && !input.incidentAcknowledged) throw new RepositoryError('incident_ack_required');
+  tierCounter += 1;
+  partnerTiers.push({ id: `pte-${tierCounter}`, userId: id, role, tier: input.tier, fromTier: row.tier, effectiveFrom: input.effectiveFrom, kind: input.kind ?? (dir === 'down' ? 'demotion' : metCriteria ? 'promotion' : 'exception'), reason: input.reason.trim(), byName, at, criteriaVersion: v.version, met: tierEvaluate(v.tiers[idx].criteria, m), ...(incident && input.incidentAcknowledged ? { incidentAcknowledged: true } : {}), isDemo: true });
+  if (dir === 'up') for (let i = tierDeferrals.length - 1; i >= 0; i -= 1) if (tierDeferrals[i].userId === id) tierDeferrals.splice(i, 1);
+}
+
 /* ============================== Handover completion certificate (140) */
 
 const handoverCompletions: HandoverCompletion[] = [];
@@ -8427,7 +8659,7 @@ function payoutPlanOf(job: Job, now: number): PayoutPlan {
 
   if (deal && lead?.originalSurveyorId) {
     const e = existing(lead.originalSurveyorId, COMPLETION_REASONS.converted);
-    lines.push({ userId: lead.originalSurveyorId, name: nameOf(lead.originalSurveyorId), role: 'surveyor', reasonKey: COMPLETION_REASONS.converted, basis: e ? 'existing' : 'percent', amount: e ? e.amount : Math.round(value * 0.015), existingId: e?.id ?? null });
+    lines.push({ userId: lead.originalSurveyorId, name: nameOf(lead.originalSurveyorId), role: 'surveyor', reasonKey: COMPLETION_REASONS.converted, basis: e ? 'existing' : 'percent', amount: e ? e.amount : Math.round(value * (surveyorConversionPct(lead.originalSurveyorId) / 100)), existingId: e?.id ?? null });
     touch(lead.originalSurveyorId, 'surveyor');
   }
   if (deal && lead && lead.surveyorId && lead.surveyorId !== lead.originalSurveyorId) {
@@ -15668,6 +15900,131 @@ export const memoryRepository: Repository = {
       return rdBuild(90, Date.now());
     }),
 
+  /* --------------------------------- Partner tier and category assignment (148) */
+  getTierBoard: (userId) =>
+    simulateRead((): PartnerTierBoardView => {
+      ofAdmin(userId);
+      const now = Date.now();
+      tcEnsure(now);
+      const ids = [...users.filter((u) => (u.role === 'surveyor' || u.role === 'technician') && u.status === 'active').map((u) => u.id), ...suppliers.filter((x) => x.status === 'active').map((x) => x.id)];
+      const rows = ids.map((id) => tcRowOf(id, now));
+      return { rows, counts: { total: rows.length, promotionDue: rows.filter((r) => r.promotionDue).length, incident: rows.filter((r) => r.incident).length, review: rows.filter((r) => r.reviewDue).length, dispute: rows.filter((r) => r.disputeOpen).length } };
+    }),
+
+  getPartnerTier: (partnerId, userId) =>
+    simulateRead((): PartnerTierDetailView => {
+      ofAdmin(userId);
+      if (!tcPartnerRole(partnerId)) throw new RepositoryError('not_found');
+      return tcDetailOf(partnerId, Date.now());
+    }),
+
+  assignPartnerTier: (partnerId, input, userId) =>
+    simulateWrite((): PartnerTierDetailView => {
+      const admin = ofAdmin(userId);
+      const now = Date.now();
+      tcEnsure(now);
+      const review = tierReviews.find((r) => r.userId === partnerId && !r.resolved);
+      tcAssign(partnerId, { ...input, ...(review ? { kind: 'review' as const } : {}) }, admin.name, now);
+      if (review) review.resolved = { at: new Date(now).toISOString(), byName: admin.name, reason: input.reason.trim() };
+      return tcDetailOf(partnerId, now);
+    }),
+
+  deferTierPromotion: (partnerId, input, userId) =>
+    simulateWrite((): PartnerTierDetailView => {
+      const admin = ofAdmin(userId);
+      const now = Date.now();
+      tcEnsure(now);
+      const role = tcPartnerRole(partnerId);
+      if (!role) throw new RepositoryError('not_found');
+      if (input.reason.replace(/[^\p{L}\p{N}]/gu, '').length < TIER_REASON_MIN) throw new RepositoryError('reason_required');
+      const row = tcRowOf(partnerId, now);
+      if (!row.promotionDue && !row.deferred && !row.incident) throw new RepositoryError('not_open');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(input.until) || input.until <= tcToday(now) || input.until > tcToday(now + TIER_DEFER_MAX_DAYS * 86_400_000)) throw new RepositoryError('defer_invalid');
+      for (let i = tierDeferrals.length - 1; i >= 0; i -= 1) if (tierDeferrals[i].userId === partnerId) tierDeferrals.splice(i, 1);
+      tierDeferrals.push({ userId: partnerId, until: input.until, reason: input.reason.trim(), byName: admin.name, at: new Date(now).toISOString() });
+      return tcDetailOf(partnerId, now);
+    }),
+
+  reviewGrandfathered: (partnerId, reason, userId) =>
+    simulateWrite((): PartnerTierDetailView => {
+      const admin = ofAdmin(userId);
+      const now = Date.now();
+      tcEnsure(now);
+      const review = tierReviews.find((r) => r.userId === partnerId && !r.resolved);
+      if (!review) throw new RepositoryError('not_open');
+      if (reason.replace(/[^\p{L}\p{N}]/gu, '').length < TIER_REASON_MIN) throw new RepositoryError('reason_required');
+      review.resolved = { at: new Date(now).toISOString(), byName: admin.name, reason: reason.trim() };
+      return tcDetailOf(partnerId, now);
+    }),
+
+  raiseTierDispute: (partnerId, grounds, userId) =>
+    simulateWrite((): PartnerTierDetailView => {
+      const admin = ofAdmin(userId);
+      const now = Date.now();
+      tcEnsure(now);
+      const role = tcPartnerRole(partnerId);
+      if (!role) throw new RepositoryError('not_found');
+      if (grounds.replace(/[^\p{L}\p{N}]/gu, '').length < TIER_REASON_MIN) throw new RepositoryError('grounds_required');
+      if (tierDisputes.some((d) => d.userId === partnerId && d.status === 'open')) throw new RepositoryError('dispute_open');
+      const row = tcRowOf(partnerId, now);
+      tierCounter += 1;
+      tierDisputes.push({ id: `td-${tierCounter}`, userId: partnerId, grounds: grounds.trim(), raisedAt: new Date(now).toISOString(), raisedByName: admin.name, criteriaVersion: role === 'supplier' ? 1 : tcInForce(role, now).version, tierAtRaise: row.tier, status: 'open', isDemo: true });
+      return tcDetailOf(partnerId, now);
+    }),
+
+  decideTierDispute: (disputeId, input, userId) =>
+    simulateWrite((): PartnerTierDetailView => {
+      const admin = ofAdmin(userId);
+      const now = Date.now();
+      tcEnsure(now);
+      const d = byId(tierDisputes, disputeId);
+      if (!d) throw new RepositoryError('not_found');
+      if (d.status !== 'open') throw new RepositoryError('not_open');
+      if (input.note.replace(/[^\p{L}\p{N}]/gu, '').length < TIER_REASON_MIN) throw new RepositoryError('reason_required');
+      const at = new Date(now).toISOString();
+      if (input.outcome === 'tier_changed') {
+        if (!input.tier) throw new RepositoryError('tier_required');
+        tcAssign(d.userId, { tier: input.tier, reason: input.note, effectiveFrom: input.effectiveFrom ?? tcToday(now), exception: true, incidentAcknowledged: true, kind: 'dispute' }, admin.name, now);
+      }
+      d.status = 'decided';
+      d.decision = { outcome: input.outcome, note: input.note.trim(), byName: admin.name, at };
+      return tcDetailOf(d.userId, now);
+    }),
+
+  getTierCriteria: (userId) =>
+    simulateRead((): TierCriteriaView => {
+      ofAdmin(userId);
+      const now = Date.now();
+      return {
+        roles: (['surveyor', 'technician'] as const).map((role) => ({ role, current: tcInForce(role, now), versions: tierCriteria.filter((c) => c.role === role).sort((a, b) => b.version - a.version) })),
+        supplier: { minOrders: GRADUATION_MIN_ORDERS, minScore: Math.round(GRADUATION_MIN_SCORE * 100) },
+      };
+    }),
+
+  publishTierCriteria: (role, input, userId) =>
+    simulateWrite((): TierCriteriaView => {
+      const admin = ofAdmin(userId);
+      const now = Date.now();
+      tcEnsure(now);
+      const problem = tierCriteriaProblem(role, input.tiers, tcToday(now), input.effectiveFrom, input.changeNote);
+      if (problem) throw new RepositoryError(problem);
+      const latest = Math.max(...tierCriteria.filter((c) => c.role === role).map((c) => c.version));
+      const id = `tcv-${role}-${latest + 1}`;
+      tierCriteria.push({ id, role, version: latest + 1, effectiveFrom: input.effectiveFrom, tiers: JSON.parse(JSON.stringify(input.tiers)) as TierCriteriaVersion['tiers'], changeNote: input.changeNote.trim(), createdByName: admin.name, createdAt: new Date(now).toISOString(), isDemo: true });
+      // Raising the bar never reassesses anyone silently: whoever no longer meets the tier they hold is put up for a review by a date, and stays where they are meanwhile.
+      const dueBy = tcToday(new Date(`${input.effectiveFrom}T00:00:00`).getTime() + TIER_REVIEW_WITHIN);
+      for (const u of users.filter((x) => x.role === role && x.status === 'active')) {
+        const cur = tcCurrentEntry(u.id, now).current?.tier ?? (role === 'technician' ? 'certified' : 'new');
+        const idx = tierIndexOf(role, cur);
+        const unmet = input.tiers.slice(1, idx + 1).flatMap((t) => tierEvaluate(t.criteria, tcMetrics(u.id, now))).some((r) => !r.ok);
+        if (unmet && !tierReviews.some((r) => r.userId === u.id && !r.resolved)) tierReviews.push({ userId: u.id, versionId: id, dueBy });
+      }
+      return {
+        roles: (['surveyor', 'technician'] as const).map((r) => ({ role: r, current: tcInForce(r, now), versions: tierCriteria.filter((c) => c.role === r).sort((a, b) => b.version - a.version) })),
+        supplier: { minOrders: GRADUATION_MIN_ORDERS, minScore: Math.round(GRADUATION_MIN_SCORE * 100) },
+      };
+    }),
+
   /* --------------------------------- Recruitment: the public front door (141) */
   getRecruitmentLanding: () =>
     simulateRead((): RecruitmentLandingView => ({
@@ -16998,6 +17355,7 @@ export const memoryRepository: Repository = {
       if (!isAdmin && job.technicianId !== byId_) throw new RepositoryError('not_lead');
       const to = crewOf(job).find((c) => c.userId === input.toUserId);
       if (!to || to.userId === job.technicianId) throw new RepositoryError('unknown_member');
+      if (!tcCanLead(to.userId)) throw new RepositoryError('tier_cannot_lead');
       if (input.reason.trim().length < 8) throw new RepositoryError('reason_required');
       const okDay = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(new Date(`${s}T00:00:00`).getTime());
       if (!okDay(input.from) || !okDay(input.until) || input.until < input.from) throw new RepositoryError('dates_invalid');
@@ -17074,6 +17432,7 @@ export const memoryRepository: Repository = {
       if (reason.trim().length < 8) throw new RepositoryError('reason_required');
       const crew = crewOf(job);
       if (newLeadId === job.technicianId || !crew.some((c) => c.userId === newLeadId)) throw new RepositoryError('unknown_member');
+      if (!tcCanLead(newLeadId)) throw new RepositoryError('tier_cannot_lead');
       const next = crew.map((c) => (c.userId === newLeadId ? { ...c, role: 'lead' as const, stepIds: [] } : c.userId === job.technicianId ? { ...c, role: 'assistant' as const, stepIds: [] } : c));
       logTeam(job, teamEvent('lead_changed', user.name, byId(users, newLeadId)?.name, reason.trim()), { crew: next, technicianId: newLeadId });
       return jobTeamViewOf(byId(jobs, job.id) as Job, adminId, Date.now());

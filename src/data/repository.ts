@@ -3,6 +3,7 @@ import type { ElecSignOffProblem, ElecState } from '@/features/qc/electrical';
 import type { DisputeDecision, SnagProblem, SnagSeverity } from '@/features/qc/snags';
 import type { AmcTierId, ReminderDef, WarrantyProblem } from '@/features/qc/warranty';
 import type { CompletionProblem, IssueProblem, MilestoneId } from '@/features/qc/completion';
+import type { CriterionResult, Metric, TierEffects, TierRole } from '@/features/partners/tiers';
 import type { FunnelRow, RecruitStage, NowStage, Period as DashboardPeriod, TerritorySignal } from '@/features/recruitment/dashboard';
 import type { Gate, ItemKind, ItemState as VerifyItemState } from '@/features/recruitment/verification';
 import type { CompleteInput, DecisionSignal, Phase as InterviewPhase } from '@/features/recruitment/interview';
@@ -38,7 +39,12 @@ import type {
   AgreementTerms,
   PartnerAgreementTemplate,
   PartnerOffer,
+  PartnerTierEntry,
   PartnerVerification,
+  TierCriteriaVersion,
+  TierDeferral,
+  TierDispute,
+  TierReview,
   VerificationHow,
   VerificationRecord,
   ScreeningFactorRow,
@@ -2216,6 +2222,90 @@ export interface RecruitmentDashboardView {
 }
 
 export type DashboardError = ApplicationError | 'not_approved' | 'reason_required' | 'already_sent' | 'already_signed' | 'not_open';
+
+/* ------------------------------------ Partner tier and category assignment (148) */
+
+export interface PartnerTierRowView {
+  id: string;
+  name: string;
+  role: TierRole;
+  tier: string;
+  /** Since when the current tier has stood. */
+  since: string;
+  eligibleTier: string;
+  promotionDue: boolean;
+  /** A serious recent incident traced to their work puts a promotion's timing in question. */
+  incident: boolean;
+  deferred: boolean;
+  reviewDue: boolean;
+  disputeOpen: boolean;
+  pending: { tier: string; effectiveFrom: string } | null;
+}
+
+export interface PartnerTierBoardView {
+  rows: PartnerTierRowView[];
+  counts: { total: number; promotionDue: number; incident: number; review: number; dispute: number };
+}
+
+export interface TierLadderRowView {
+  id: string;
+  criteria: CriterionResult[];
+  met: boolean;
+  effects: TierEffects;
+  current: boolean;
+  eligible: boolean;
+}
+
+export interface TierHistoryItem {
+  id: string;
+  at: string;
+  from: string | null;
+  to: string;
+  kind: PartnerTierEntry['kind'] | 'supplier_terms';
+  reason: string;
+  byName: string;
+  effectiveFrom: string;
+  criteriaVersion: number | null;
+  met: PartnerTierEntry['met'];
+  incidentAcknowledged: boolean;
+}
+
+export interface PartnerTierDetailView {
+  row: PartnerTierRowView;
+  partner: { name: string; phone: string; city: string; joinedAt: string | null };
+  metrics: Record<Metric, number>;
+  ladder: TierLadderRowView[];
+  criteria: { version: number; effectiveFrom: string; owner: 'tiers' | 'supplier_terms' };
+  paymentDefaults: SupplierPaymentTermSettings | null;
+  history: TierHistoryItem[];
+  deferral: TierDeferral | null;
+  incidents: { code: string; severity: string; at: string }[];
+  review: TierReview | null;
+  disputes: TierDispute[];
+}
+
+export interface TierCriteriaView {
+  roles: { role: 'surveyor' | 'technician'; current: TierCriteriaVersion; versions: TierCriteriaVersion[] }[];
+  supplier: { minOrders: number; minScore: number };
+}
+
+export type TierError =
+  | ApplicationError
+  | 'reason_required'
+  | 'same_tier'
+  | 'criteria_not_met'
+  | 'incident_ack_required'
+  | 'effective_invalid'
+  | 'defer_invalid'
+  | 'grounds_required'
+  | 'dispute_open'
+  | 'not_open'
+  | 'tier_required'
+  | 'tiers_shape'
+  | 'not_rising'
+  | 'unknown_metric'
+  | 'effective_past'
+  | 'tier_cannot_lead';
 
 /* ------------------------------------ Recruitment: the public front door (141) */
 
@@ -5675,6 +5765,16 @@ export interface Repository {
   getRecruitmentDashboard(period: DashboardPeriod, userId: string): Promise<RecruitmentDashboardView>;
   waitlistApplicant(applicationId: string, reason: string, userId: string): Promise<RecruitmentDashboardView>;
   releaseWaitlisted(applicationId: string, userId: string): Promise<RecruitmentDashboardView>;
+  // Partner tier and category assignment (148)
+  getTierBoard(userId: string): Promise<PartnerTierBoardView>;
+  getPartnerTier(partnerId: string, userId: string): Promise<PartnerTierDetailView>;
+  assignPartnerTier(partnerId: string, input: { tier: string; reason: string; effectiveFrom: string; exception?: boolean; incidentAcknowledged?: boolean }, userId: string): Promise<PartnerTierDetailView>;
+  deferTierPromotion(partnerId: string, input: { until: string; reason: string }, userId: string): Promise<PartnerTierDetailView>;
+  reviewGrandfathered(partnerId: string, reason: string, userId: string): Promise<PartnerTierDetailView>;
+  raiseTierDispute(partnerId: string, grounds: string, userId: string): Promise<PartnerTierDetailView>;
+  decideTierDispute(disputeId: string, input: { outcome: 'tier_stands' | 'tier_changed' | 'criteria_unclear'; note: string; tier?: string; effectiveFrom?: string }, userId: string): Promise<PartnerTierDetailView>;
+  getTierCriteria(userId: string): Promise<TierCriteriaView>;
+  publishTierCriteria(role: 'surveyor' | 'technician', input: { tiers: TierCriteriaVersion['tiers']; effectiveFrom: string; changeNote: string }, userId: string): Promise<TierCriteriaView>;
   requestTermChange(applicationId: string, key: string, text: string): Promise<OfferApplicantView>;
   signPartnerAgreement(applicationId: string, key: string, input: { method: 'drawn' | 'typed'; data: string; signerName: string; language: 'en' | 'hi' | 'mr'; consentGiven: boolean; otpVerified: boolean; viaFallback: boolean }): Promise<OfferApplicantView>;
   chooseInterviewSlot(applicationId: string, key: string, input: { start: string; mode: InterviewMode }): Promise<InterviewApplicantView>;
