@@ -253,6 +253,16 @@ import type {
   SkillColumnView,
   SkillMatrixView,
   ComplianceItemView,
+  FeedbackInputView,
+  FeedbackItemView,
+  FeedbackModuleSummary,
+  FeedbackSummaryView,
+  TrainingFeedbackFormView,
+  TrainingFeedbackListView,
+  TrainingFeedbackMine,
+  TrainingFeedbackModuleView,
+  TrainingFeedbackOverview,
+  TrainingFeedbackRow,
   MySopUpdatesView,
   SopQuizResult,
   SopRolloutBoardView,
@@ -698,6 +708,7 @@ import type {
   ComplianceReminder,
   SopRollout,
   SopRolloutReceipt,
+  TrainingFeedback,
 } from './types';
 import { formatDate, formatDateTime, formatINR, formatINRCompact, formatTime, haversineKm } from '@/design-system/format';
 import { MAX_SAFE_BOT_DISCOUNT_PCT } from '@/features/communication/botRules';
@@ -785,6 +796,7 @@ import type { NowStage as RdNowStage, Period as RdPeriod, RecruitStage as RdRecr
 import { TOPICS as TN_TOPICS, currentVersionOf as tnCurrentVersion, curriculumOf as tnCurriculum, jobGateOf as tnJobGate, lockedBy as tnLockedBy, percentOfModule as tnPercent, relevantFor as tnRelevant, requiredFor as tnRequired, startProblem as tnStartProblem, statusOf as tnStatus, updatedSince as tnUpdated } from '@/features/training/curriculum';
 import type { ModuleStatus } from '@/features/training/curriculum';
 import { BUILT_IN_CATEGORIES as SOP_BUILT_IN, BUILT_IN_SINCE as SOP_SINCE, categoryProblem as sopCategoryProblem, currentOf as sopCurrent, diffItems as sopDiff, referenceProblem as sopReferenceProblem, stateOf as sopStateOf, upcomingOf as sopUpcoming } from '@/features/sop/library';
+import { authorKeyOf as fbAuthorKey, dueAtOf as fbDueAt, feedbackProblem as fbProblem, handleProblem as fbHandleProblem, isOpen as fbIsOpen, moderationProblem as fbModerationProblem, summaryOf as fbSummary } from '@/features/training/feedback';
 import { defaultRolesOf, REMIND_GAP_HOURS as SR_REMIND_H, awayProblem as srAwayProblem, dueAtOf as srDueAt, gatesWork as srGates, gradeQuiz as srGrade, partnerStatusOf as srPartnerStatus, rolloutProblem as srRolloutProblem } from '@/features/sop/rollout';
 import { NEW_PARTNER_DAYS as cpNewDays, REASONS as cpReasons, TREND_MONTHS as cpTrendMonths, partnerStatusOf as cpPartnerStatus, rateOf as cpRate, recentlyReminded as cpRecent, reminderDue as cpReminderDue, responseOf as cpResponse, reviewDueAt as cpReviewDue, wavesOf as cpWaves, noteProblem as cpNoteProblem } from '@/features/training/compliance';
 import { DRIVE_SKILL as SK_DRIVE_SKILL, DRIVE_TYPES as SK_DRIVES, SKILL_TAGS as SK_TAGS, SMALL_DEMAND as SK_SMALL_DEMAND, SMALL_WORKFORCE as SK_SMALL, TREND_MONTHS as SK_TREND_MONTHS, assignProblem as skAssignProblem, columnGap as skColumnGap, coverageOf as skCoverage, demandRatio as skRatio, demandSignal as skSignal, trendOf as skTrend } from '@/features/training/skills';
@@ -2499,6 +2511,7 @@ function commitmentSources(now: number): CommitmentSources {
     trainingAssignments: trainingAssignmentSignals(Date.now()),
     complianceReview: complianceReviewSignal(Date.now()),
     sopRollouts: sopRolloutSignals(Date.now()),
+    trainingFeedback: trainingFeedbackSignals(Date.now()),
     exits: exitSignals(),
     handoverReviews: handoverSignals().reviews,
     qcMechChecks,
@@ -2761,6 +2774,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   syncRefreshers(now);
   syncCompliance(now);
   syncSopRollouts(now);
+  syncTrainingFeedback(now);
   syncPartnerInterviews(now);
   syncVerification(now);
   syncOffers(now);
@@ -9928,6 +9942,104 @@ function srInputFor(input: SopRolloutInput, now: number, kind: 'announce' | 'cor
   };
 }
 const ROLES_ORDER: TrainingRole[] = ['technician', 'surveyor', 'supplier'];
+
+/* ============================== Training feedback (160) */
+
+const trainingFeedback: TrainingFeedback[] = [];
+let feedbackCounter = 0;
+let feedbackSeeded = false;
+const FB_ALERT = 'trainingFeedback.alert.error';
+
+const fbKeyOf = (userId: string, moduleId: string) => fbAuthorKey(pdPhoneKey(byId(users, userId)?.phone) || userId, moduleId);
+const fbModuleOf = (moduleId: string): TrainingModule => { const m = byId(trainingModules, moduleId); if (!m) throw new RepositoryError('not_found'); return m; };
+const fbLessonIds = (moduleId: string) => trainingLessons.filter((l) => l.moduleId === moduleId).sort((a, b) => a.order - b.order);
+const fbQuestionIds = (moduleId: string) => (asOf(moduleId)?.questions ?? []).map((q) => q.id);
+
+/** People who finished a training (one per phone): the number a response rate is read against. */
+function fbCompleted(moduleId: string): number {
+  return new Set(trainingProgress.filter((p) => p.moduleId === moduleId && p.status === 'completed').map((p) => pdPhoneKey(byId(users, p.userId)?.phone) || p.userId)).size;
+}
+
+function fbSummaryOf(moduleId: string): FeedbackSummaryView {
+  return fbSummary(trainingFeedback.filter((f) => f.moduleId === moduleId).map((f) => ({ clarity: f.clarity, relevance: f.relevance, version: f.version })), fbCompleted(moduleId));
+}
+
+function fbItemView(f: TrainingFeedback): FeedbackItemView {
+  const m = fbModuleOf(f.moduleId);
+  const u = f.userId ? byId(users, f.userId) : undefined;
+  return {
+    id: f.id, moduleId: f.moduleId, code: m.code, version: f.version, safetyCritical: rfSafetyCritical(m), authorName: f.anonymous ? null : u?.name ?? null, clarity: f.clarity, relevance: f.relevance, comment: f.hidden ? null : f.comment,
+    serious: f.serious, target: f.target ? { ...f.target } : null, createdAt: f.createdAt, updatedAt: f.updatedAt, status: f.status, dueAt: fbDueAt(f.serious, rfSafetyCritical(m), f.createdAt), handledByName: f.handledByName ?? null, handledAt: f.handledAt ?? null,
+    handledNote: f.handledNote ?? null, addressedInVersion: f.addressedInVersion ?? null, hidden: f.hidden ? { ...f.hidden } : null,
+  };
+}
+
+function fbMineView(f: TrainingFeedback): TrainingFeedbackMine {
+  return { id: f.id, version: f.version, clarity: f.clarity, relevance: f.relevance, comment: f.comment, anonymous: f.anonymous, serious: f.serious, target: f.target ? { ...f.target } : null, updatedAt: f.updatedAt, status: f.status, handledNote: f.handledNote ?? null, addressedInVersion: f.addressedInVersion ?? null };
+}
+
+function fbModuleSummary(m: TrainingModule, now: number): FeedbackModuleSummary {
+  const mine = trainingFeedback.filter((f) => f.moduleId === m.id);
+  const openList = mine.filter((f) => fbIsOpen(f.status) && !f.hidden);
+  return { moduleId: m.id, code: m.code, safetyCritical: rfSafetyCritical(m), version: tnCurrentVersion(m, now).version, summary: fbSummaryOf(m.id), open: openList.length, urgentOpen: openList.filter((f) => f.serious).length, lastAt: mine.map((f) => f.updatedAt).sort().pop() ?? null };
+}
+
+/** A built-in history so the screen is not empty: replies on the three trainings that have lessons, one serious flag still open, one point put right in a later version, one comment hidden. */
+function ensureFeedbackSeeds(now: number): void {
+  if (feedbackSeeded) return;
+  feedbackSeeded = true;
+  const ago = (d: number) => new Date(now - d * 86_400_000).toISOString();
+  const add = (userId: string, code: string, v: number, clarity: number, relevance: number, comment: string, anonymous: boolean, days: number, extra: Partial<TrainingFeedback> = {}) => {
+    const m = trainingModules.find((x) => x.code === code);
+    const u = byId(users, userId);
+    if (!m || !u) return;
+    feedbackCounter += 1;
+    trainingFeedback.push({ id: `tf-${feedbackCounter}`, moduleId: m.id, version: v, authorKey: fbKeyOf(userId, m.id), ...(anonymous ? {} : { userId }), anonymous, clarity, relevance, comment, serious: false, createdAt: ago(days), updatedAt: ago(days), edits: 0, status: 'new', ...extra });
+  };
+  add('u-tech-1', 'ONB-01', 1, 5, 4, 'Clear and short. I would add a line on who to call first.', false, 20);
+  add('u-tech-2', 'ONB-01', 1, 4, 4, '', true, 18);
+  add('u-tech-5', 'ONB-01', 1, 5, 5, '', true, 16);
+  add('u-srv-1', 'ONB-01', 1, 3, 3, 'The second lesson moves quickly. I had to replay it.', true, 12);
+  add('u-srv-3', 'ONB-01', 1, 1, 1, 'Useless rubbish, whoever made this is an idiot.', true, 9, { hidden: { at: ago(8), byName: 'Prashant Vasant Wable', reason: 'Abusive and says nothing about the training. The ratings stay.' }, status: 'dismissed', handledByName: 'Prashant Vasant Wable', handledAt: ago(8), handledNote: 'Hidden as abusive.' });
+  add('u-sup-1', 'ONB-01', 1, 4, 2, 'Not much here that applies to a supplier.', false, 6);
+  add('u-tech-1', 'SAF-02', 1, 4, 5, '', true, 24);
+  add('u-tech-2', 'SAF-02', 1, 5, 5, 'Lesson 3 showed the lock-out steps in the wrong order for me.', true, 22, { status: 'addressed', handledByName: 'Prashant Vasant Wable', handledAt: ago(15), handledNote: 'Lesson 3 now shows the lock-out steps in the order they are done.', addressedInVersion: 2 });
+  add('u-tech-5', 'SAF-02', 2, 3, 5, 'Lesson 2 says the second anchor point can be skipped when the hoistway is short. I do not think that is right.', true, 1, { serious: true, target: { lessonId: 'tl-saf-02-2' } });
+  add('u-tech-1', 'SAF-03', 1, 3, 4, 'The wiring part needs a diagram, not only words.', true, 14);
+  add('u-tech-2', 'SAF-03', 1, 4, 4, '', true, 10);
+}
+
+/** What the commitment engine reads: each serious flag Admin has not dealt with, and the standing look at routine feedback. */
+function trainingFeedbackSignals(now: number): { urgent: { f: TrainingFeedback; code: string; safety: boolean }[]; routine: { open: number; oldestAt: string | null } } {
+  ensureFeedbackSeeds(now);
+  const urgent: { f: TrainingFeedback; code: string; safety: boolean }[] = [];
+  const routine: TrainingFeedback[] = [];
+  for (const f of trainingFeedback) {
+    const m = byId(trainingModules, f.moduleId);
+    if (!m || f.hidden || !fbIsOpen(f.status)) continue;
+    if (f.serious) urgent.push({ f, code: m.code, safety: rfSafetyCritical(m) }); else if (f.comment.trim()) routine.push(f);
+  }
+  return { urgent, routine: { open: routine.length, oldestAt: routine.map((f) => f.createdAt).sort()[0] ?? null } };
+}
+
+/** A serious flag is Admin's to look at straight away: one alert per flag, resolved when it is handled or hidden. */
+function syncTrainingFeedback(now: number): void {
+  ensureFeedbackSeeds(now);
+  for (const f of trainingFeedback) {
+    const m = byId(trainingModules, f.moduleId);
+    if (!m) continue;
+    const rel = `tfb:${f.id}`;
+    const existing = alerts.find((x) => x.relatedId === rel && x.titleKey === FB_ALERT && x.status !== 'resolved');
+    const needed = f.serious && fbIsOpen(f.status) && !f.hidden;
+    const safety = rfSafetyCritical(m);
+    if (needed && !existing) {
+      raiseAlert({ titleKey: FB_ALERT, context: `${m.code}: a partner says something in this training looks wrong or unsafe`, severity: safety ? 'critical' : 'high', category: safety ? 'safety' : 'quality', relatedId: rel, sourceRoute: `/training-feedback/${m.id}?item=${f.id}` });
+      logAutomatedAction({ sourceKey: 'training_feedback.serious', triggeringCondition: `A partner flagged ${m.code} as possibly wrong or unsafe`, actionTaken: 'Put it in front of Admin as an alert with its own short review time', affectedRecordId: f.id, affectedRecordType: 'other' });
+    } else if (existing && !needed) {
+      patchInPlace(alerts, existing.id, { status: 'resolved', resolvedAt: new Date(now).toISOString(), resolvedBy: 'system', resolutionNote: 'Looked at, or hidden.' });
+    }
+  }
+}
 
 /* ============================== Partner deactivation and exit (150) */
 
@@ -17734,6 +17846,127 @@ export const memoryRepository: Repository = {
       syncCommitments(now);
       syncSopRollouts(now);
       return srUpdateDetail(r, p, now);
+    }),
+
+  /* --------------------------------- Training feedback (160) */
+  getTrainingFeedbackList: (userId) =>
+    simulateRead((): TrainingFeedbackListView => {
+      const now = Date.now();
+      ensureFeedbackSeeds(now);
+      const person = tnPersonOf(userId);
+      if (!person) throw new RepositoryError('forbidden');
+      const rows: TrainingFeedbackRow[] = [];
+      for (const m of trainingModules) {
+        if (m.status !== 'published') continue;
+        const progress = tnProgressOf(person.userIds, m.id);
+        if (!progress || !trainingLessons.some((l) => l.moduleId === m.id)) continue;
+        const version = tnCurrentVersion(m, now).version;
+        const mine = trainingFeedback.filter((f) => f.moduleId === m.id && f.authorKey === fbKeyOf(userId, m.id)).sort((a, b) => b.version - a.version)[0];
+        const st = tnStatus(m, progress, now);
+        rows.push({ moduleId: m.id, code: m.code, version, safetyCritical: rfSafetyCritical(m), progress: st === 'completed' ? 'completed' : st === 'update_needed' ? 'update_needed' : 'in_progress', given: mine ? { version: mine.version, at: mine.updatedAt } : null, newer: !!mine && mine.version < version });
+      }
+      rows.sort((a, b) => Number(!!a.given) - Number(!!b.given) || a.code.localeCompare(b.code));
+      return { rows, at: new Date(now).toISOString() };
+    }),
+
+  getTrainingFeedbackForm: (moduleId, userId, target) =>
+    simulateRead((): TrainingFeedbackFormView => {
+      const now = Date.now();
+      ensureFeedbackSeeds(now);
+      const person = tnPersonOf(userId);
+      if (!person) throw new RepositoryError('forbidden');
+      const m = fbModuleOf(moduleId);
+      if (!tnProgressOf(person.userIds, m.id) || !trainingLessons.some((l) => l.moduleId === m.id)) throw new RepositoryError('not_eligible');
+      const version = tnCurrentVersion(m, now).version;
+      const lessons = fbLessonIds(m.id).map((l) => ({ id: l.id, order: l.order }));
+      const questions = fbQuestionIds(m.id).map((id) => ({ id }));
+      const mine = trainingFeedback.find((f) => f.moduleId === m.id && f.authorKey === fbKeyOf(userId, m.id) && f.version === version);
+      const ok = target && ((target.lessonId && lessons.some((l) => l.id === target.lessonId)) || (target.questionId && questions.some((q) => q.id === target.questionId)));
+      return { moduleId: m.id, code: m.code, version, safetyCritical: rfSafetyCritical(m), lessons, questions, mine: mine ? fbMineView(mine) : null, target: ok ? { ...(target?.lessonId ? { lessonId: target.lessonId } : {}), ...(target?.questionId ? { questionId: target.questionId } : {}) } : null };
+    }),
+
+  saveTrainingFeedback: (moduleId, input, userId) =>
+    simulateWrite((): TrainingFeedbackMine => {
+      const now = Date.now();
+      ensureFeedbackSeeds(now);
+      const person = tnPersonOf(userId);
+      if (!person) throw new RepositoryError('forbidden');
+      const m = fbModuleOf(moduleId);
+      if (!tnProgressOf(person.userIds, m.id) || !trainingLessons.some((l) => l.moduleId === m.id)) throw new RepositoryError('not_eligible');
+      const problem = fbProblem(input, { lessonIds: fbLessonIds(m.id).map((l) => l.id), questionIds: fbQuestionIds(m.id) });
+      if (problem) throw new RepositoryError(problem);
+      const version = tnCurrentVersion(m, now).version;
+      const key = fbKeyOf(userId, m.id);
+      const at = new Date(now).toISOString();
+      const target = input.target && (input.target.lessonId || input.target.questionId) ? { ...(input.target.lessonId ? { lessonId: input.target.lessonId } : {}), ...(input.target.questionId ? { questionId: input.target.questionId } : {}) } : undefined;
+      let f = trainingFeedback.find((x) => x.moduleId === m.id && x.authorKey === key && x.version === version);
+      if (f) {
+        const changed = f.comment !== input.comment.trim() || f.serious !== input.serious;
+        const reopened = changed && (f.status === 'addressed' || f.status === 'dismissed');
+        patchInPlace(trainingFeedback, f.id, { clarity: input.clarity, relevance: input.relevance, comment: input.comment.trim(), anonymous: input.anonymous, serious: input.serious, target, updatedAt: at, edits: f.edits + 1, ...(input.anonymous ? { userId: undefined } : { userId }), ...(reopened ? { status: 'new' as const, handledByName: undefined, handledAt: undefined, handledNote: undefined, addressedInVersion: undefined } : {}) });
+        f = byId(trainingFeedback, f.id) as TrainingFeedback;
+      } else {
+        feedbackCounter += 1;
+        f = { id: `tf-${feedbackCounter}`, moduleId: m.id, version, authorKey: key, ...(input.anonymous ? {} : { userId }), anonymous: input.anonymous, clarity: input.clarity, relevance: input.relevance, comment: input.comment.trim(), serious: input.serious, ...(target ? { target } : {}), createdAt: at, updatedAt: at, edits: 0, status: 'new' };
+        trainingFeedback.push(f);
+      }
+      syncCommitments(now);
+      syncTrainingFeedback(now);
+      return fbMineView(f);
+    }),
+
+  getTrainingFeedbackOverview: (adminId) =>
+    simulateRead((): TrainingFeedbackOverview => {
+      ofAdmin(adminId);
+      const now = Date.now();
+      ensureFeedbackSeeds(now);
+      syncTrainingFeedback(now);
+      const modules = trainingModules.filter((m) => m.status === 'published' && (trainingFeedback.some((f) => f.moduleId === m.id) || trainingLessons.some((l) => l.moduleId === m.id))).map((m) => fbModuleSummary(m, now))
+        .sort((a, b) => b.urgentOpen - a.urgentOpen || Number(b.summary.low) - Number(a.summary.low) || b.summary.n - a.summary.n || a.code.localeCompare(b.code));
+      const urgent = trainingFeedback.filter((f) => f.serious && fbIsOpen(f.status) && !f.hidden).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(fbItemView);
+      return { modules, urgent, kpis: { responses: trainingFeedback.length, urgentOpen: urgent.length, unreviewed: trainingFeedback.filter((f) => f.status === 'new' && !f.hidden && !f.serious && f.comment.trim()).length, hidden: trainingFeedback.filter((f) => f.hidden).length }, at: new Date(now).toISOString() };
+    }),
+
+  getTrainingFeedbackModule: (moduleId, adminId) =>
+    simulateRead((): TrainingFeedbackModuleView => {
+      ofAdmin(adminId);
+      const now = Date.now();
+      ensureFeedbackSeeds(now);
+      const m = fbModuleOf(moduleId);
+      const items = trainingFeedback.filter((f) => f.moduleId === m.id).sort((a, b) => Number(b.serious && fbIsOpen(b.status) && !b.hidden) - Number(a.serious && fbIsOpen(a.status) && !a.hidden) || b.createdAt.localeCompare(a.createdAt)).map(fbItemView);
+      return { module: fbModuleSummary(m, now), items, versions: m.versions.map((v) => v.version).sort((a, b) => a - b) };
+    }),
+
+  handleTrainingFeedback: (feedbackId, input, adminId) =>
+    simulateWrite((): FeedbackItemView => {
+      const admin = ofAdmin(adminId);
+      const now = Date.now();
+      ensureFeedbackSeeds(now);
+      const f = byId(trainingFeedback, feedbackId);
+      if (!f) throw new RepositoryError('not_found');
+      const m = fbModuleOf(f.moduleId);
+      const versionOk = input.addressedInVersion === undefined || (m.versions.some((v) => v.version === input.addressedInVersion) && input.status === 'addressed');
+      const problem = fbHandleProblem(input.status, input.note, versionOk);
+      if (problem) throw new RepositoryError(problem);
+      patchInPlace(trainingFeedback, f.id, { status: input.status, handledByName: admin.name, handledAt: new Date(now).toISOString(), handledNote: input.note.trim() || undefined, addressedInVersion: input.status === 'addressed' ? input.addressedInVersion : undefined });
+      syncCommitments(now);
+      syncTrainingFeedback(now);
+      return fbItemView(byId(trainingFeedback, f.id) as TrainingFeedback);
+    }),
+
+  moderateTrainingFeedback: (feedbackId, input, adminId) =>
+    simulateWrite((): FeedbackItemView => {
+      const admin = ofAdmin(adminId);
+      const now = Date.now();
+      ensureFeedbackSeeds(now);
+      const f = byId(trainingFeedback, feedbackId);
+      if (!f) throw new RepositoryError('not_found');
+      const problem = fbModerationProblem(input.hide, input.reason);
+      if (problem) throw new RepositoryError(problem);
+      patchInPlace(trainingFeedback, f.id, { hidden: input.hide ? { at: new Date(now).toISOString(), byName: admin.name, reason: input.reason.trim() } : undefined });
+      syncCommitments(now);
+      syncTrainingFeedback(now);
+      return fbItemView(byId(trainingFeedback, f.id) as TrainingFeedback);
     }),
 
   /* --------------------------------- Refresher reminders (156) */

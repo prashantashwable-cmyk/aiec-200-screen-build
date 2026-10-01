@@ -275,6 +275,7 @@ function DetailSheet({ s, t }: { s: TrainingLibraryState; t: T }) {
               </>
             )}
           </div>
+          {m.hasContent && m.status !== 'not_started' && <Button size="sm" variant="ghost" style={{ width: 'fit-content' }} data-give-feedback onClick={() => s.goto(`/training-feedback/${m.id}`)}>{t('trainingFeedback.link.give')}</Button>}
           {problem && <p className="t-xs t-error" role="alert" data-problem={problem}>{t(problemKey(problem))}</p>}
           <Footer>
             <Button variant="ghost" onClick={() => { setProblem(null); s.closeModule(); }}>{t(K.close)}</Button>

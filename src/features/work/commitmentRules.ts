@@ -1,7 +1,8 @@
 import { ASSIGN_DUE, DISPUTE_DECIDE_DUE, REVERIFY_DUE } from '@/features/qc/snags';
 import { ARRANGE_DUE, FOLLOWUP_DUE, SIGNOFF_DUE_PRESENT, SIGNOFF_DUE_REMOTE } from '@/features/qc/walkthrough';
 import { dueAtOf as sopDueAt } from '@/features/sop/rollout';
-import type { SopRollout, TrainingAssignment, PartnerApplication, PartnerExit, TierDispute, TierReview, WarrantyRegistration, HandoverWalkthrough, ReworkRequest,
+import { dueAtOf as feedbackDueAt, REVIEW_DUE_DAYS as FEEDBACK_REVIEW_DAYS } from '@/features/training/feedback';
+import type { SopRollout, TrainingFeedback, TrainingAssignment, PartnerApplication, PartnerExit, TierDispute, TierReview, WarrantyRegistration, HandoverWalkthrough, ReworkRequest,
   Alert,
   AlertSeverity,
   CatalogPriceChange,
@@ -146,6 +147,8 @@ export interface CommitmentSources {
   /** Admin's standing promise to look at workforce training compliance, due a month after the last look (158). */
   complianceReview: { dueAt: string; cycle: string; done: boolean };
   /** SOP rollouts: each affected partner's own acknowledgement, and Admin's look at what is still open (159). */
+  /** Serious training feedback Admin has not dealt with, and the standing look at the routine kind (160). */
+  trainingFeedback: { urgent: { f: TrainingFeedback; code: string; safety: boolean }[]; routine: { open: number; oldestAt: string | null } };
   sopRollouts: { acks: { r: SopRollout; userId: string; done: boolean; away: boolean }[]; closes: { r: SopRollout; pending: number }[] };
   certRenewals: { badgeId: string; userId: string; moduleId: string; moduleCode: string; expiresAt: string; renewed: boolean; ownerActive: boolean }[];
   /** Exits under way and how much of the partner's work is still in their hands (150). */
@@ -2070,6 +2073,54 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
           actionRoute: `/training/${x.a.moduleId}`,
           oversightRoute: '/skill-matrix',
         }));
+    },
+  },
+  {
+    // A partner says something in a training looks wrong or unsafe: Admin looks at it straight away (sooner for safety training); done when it is handled or hidden (160).
+    kind: 'training_feedback_urgent',
+    nudgeBefore: hours(2),
+    escalateAfter: hours(24),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'quality',
+    collect(src) {
+      return src.trainingFeedback.urgent.map((x) => ({
+        ...base('training_feedback_urgent', 'application', x.f.id),
+        ownerUserId: adminId(src),
+        titleKey: 'work.title.training_feedback_urgent',
+        titleParams: { module: x.code },
+        dueAt: feedbackDueAt(true, x.safety, x.f.createdAt),
+        state: 'open' as const,
+        paused: false,
+        actionRoute: `/training-feedback/${x.f.moduleId}?item=${x.f.id}`,
+        oversightRoute: `/training-feedback/${x.f.moduleId}?item=${x.f.id}`,
+      }));
+    },
+  },
+  {
+    // Routine feedback is read at least every couple of weeks, so it results in a visible improvement and is not collected and forgotten (160).
+    kind: 'training_feedback_review',
+    nudgeBefore: days(2),
+    escalateAfter: days(7),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'staffing',
+    collect(src) {
+      const r = src.trainingFeedback.routine;
+      if (r.open === 0 || !r.oldestAt) return [];
+      return [
+        {
+          ...base('training_feedback_review', 'application', 'standing'),
+          ownerUserId: adminId(src),
+          titleKey: 'work.title.training_feedback_review',
+          titleParams: { count: String(r.open) },
+          dueAt: new Date(Date.parse(r.oldestAt) + FEEDBACK_REVIEW_DAYS * 86_400_000).toISOString(),
+          state: 'open' as const,
+          paused: false,
+          actionRoute: '/training-feedback',
+          oversightRoute: '/training-feedback',
+        },
+      ];
     },
   },
   {

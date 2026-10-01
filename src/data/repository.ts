@@ -2958,6 +2958,116 @@ export interface SopQuizResult { passed: boolean; results: { correct: boolean; c
 export type SopRolloutError = 'forbidden' | 'not_admin' | 'not_found' | 'not_audience' | 'quiz_required' | 'not_seen' | 'too_soon' | 'invalid_state' | 'answers_required' | 'no_pending' | 'date_invalid' | 'date_past' | 'date_far' | 'note_long'
   | 'doc_unknown' | 'version_unknown' | 'roles_required' | 'summary_required' | 'summary_long' | 'notice_short' | 'already_announced' | 'question_invalid' | 'too_many_questions' | 'reason_required' | 'superseded';
 
+/* ------------------------------------ Training feedback (160) */
+
+export type FeedbackStatusName = 'new' | 'reviewing' | 'addressed' | 'dismissed';
+export type FeedbackTarget = { lessonId?: string; questionId?: string };
+
+export interface TrainingFeedbackMine {
+  id: string;
+  version: number;
+  clarity: number;
+  relevance: number;
+  comment: string;
+  anonymous: boolean;
+  serious: boolean;
+  target: FeedbackTarget | null;
+  updatedAt: string;
+  status: FeedbackStatusName;
+  handledNote: string | null;
+  addressedInVersion: number | null;
+}
+
+export interface TrainingFeedbackRow {
+  moduleId: string;
+  code: string;
+  version: number;
+  safetyCritical: boolean;
+  progress: 'in_progress' | 'completed' | 'update_needed';
+  given: { version: number; at: string } | null;
+  /** They replied on an earlier version than the one in force. */
+  newer: boolean;
+}
+
+export interface TrainingFeedbackListView { rows: TrainingFeedbackRow[]; at: string }
+
+export interface TrainingFeedbackFormView {
+  moduleId: string;
+  code: string;
+  version: number;
+  safetyCritical: boolean;
+  lessons: { id: string; order: number }[];
+  questions: { id: string }[];
+  mine: TrainingFeedbackMine | null;
+  /** A target a link from a lesson or a quiz question asked to point at, if it is real. */
+  target: FeedbackTarget | null;
+}
+
+export interface FeedbackInputView { clarity: number; relevance: number; comment: string; anonymous: boolean; serious: boolean; target?: FeedbackTarget | null }
+
+export interface FeedbackSummaryView {
+  n: number;
+  clarity: number | null;
+  relevance: number | null;
+  completed: number;
+  rate: number | null;
+  enough: boolean;
+  low: boolean;
+  perVersion: { version: number; n: number; clarity: number | null; relevance: number | null; enough: boolean }[];
+}
+
+export interface FeedbackItemView {
+  id: string;
+  moduleId: string;
+  code: string;
+  version: number;
+  safetyCritical: boolean;
+  /** Null when the author chose to stay anonymous. */
+  authorName: string | null;
+  clarity: number;
+  relevance: number;
+  /** Null when Admin hid it. */
+  comment: string | null;
+  serious: boolean;
+  target: FeedbackTarget | null;
+  createdAt: string;
+  updatedAt: string;
+  status: FeedbackStatusName;
+  dueAt: string;
+  handledByName: string | null;
+  handledAt: string | null;
+  handledNote: string | null;
+  addressedInVersion: number | null;
+  hidden: { at: string; byName: string; reason: string } | null;
+}
+
+export interface FeedbackModuleSummary {
+  moduleId: string;
+  code: string;
+  safetyCritical: boolean;
+  version: number;
+  summary: FeedbackSummaryView;
+  open: number;
+  urgentOpen: number;
+  lastAt: string | null;
+}
+
+export interface TrainingFeedbackOverview {
+  modules: FeedbackModuleSummary[];
+  urgent: FeedbackItemView[];
+  kpis: { responses: number; urgentOpen: number; unreviewed: number; hidden: number };
+  at: string;
+}
+
+export interface TrainingFeedbackModuleView {
+  module: FeedbackModuleSummary;
+  items: FeedbackItemView[];
+  /** The module's versions, for saying in which one a point was put right. */
+  versions: number[];
+}
+
+export type TrainingFeedbackError = 'forbidden' | 'not_admin' | 'not_found' | 'not_eligible' | 'rating_required' | 'comment_long' | 'comment_required' | 'target_unknown' | 'reason_required' | 'note_required' | 'invalid_state' | 'version_unknown';
+
 /* ------------------------------------ Refresher reminders (156) */
 
 export type RefresherTierName = 'upcoming' | 'due' | 'grace' | 'extended' | 'blocked';
@@ -6677,6 +6787,14 @@ export interface Repository {
   markSopUpdateSeen(rolloutId: string, userId: string): Promise<SopUpdateDetailView>;
   submitSopUpdateQuiz(rolloutId: string, answers: number[], userId: string): Promise<SopQuizResult>;
   acknowledgeSopUpdate(rolloutId: string, userId: string): Promise<SopUpdateDetailView>;
+  getTrainingFeedbackList(userId: string): Promise<TrainingFeedbackListView>;
+  getTrainingFeedbackForm(moduleId: string, userId: string, target?: FeedbackTarget | null): Promise<TrainingFeedbackFormView>;
+  saveTrainingFeedback(moduleId: string, input: FeedbackInputView, userId: string): Promise<TrainingFeedbackMine>;
+  getTrainingFeedbackOverview(adminId: string): Promise<TrainingFeedbackOverview>;
+  getTrainingFeedbackModule(moduleId: string, adminId: string): Promise<TrainingFeedbackModuleView>;
+  handleTrainingFeedback(feedbackId: string, input: { status: FeedbackStatusName; note: string; addressedInVersion?: number }, adminId: string): Promise<FeedbackItemView>;
+  /** Hides (or restores) a comment that is abusive or not constructive; its ratings keep counting. */
+  moderateTrainingFeedback(feedbackId: string, input: { hide: boolean; reason: string }, adminId: string): Promise<FeedbackItemView>;
   // Refresher reminders (156)
   getRefresherQueue(userId: string): Promise<RefresherQueueView>;
   sendRefresherReminder(badgeId: string, adminId: string): Promise<{ sentAt: string }>;

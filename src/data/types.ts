@@ -3168,6 +3168,35 @@ export interface SopRolloutReceipt {
   lastRemindedAt?: string;
 }
 
+/* ------------------------------------ Training feedback (160) */
+
+/** One partner's reply about one training (on the version they took). Anonymous replies keep a pseudonym (`authorKey`) so the author can update theirs, and no name. */
+export interface TrainingFeedback {
+  id: string;
+  moduleId: string;
+  version: number;
+  authorKey: string;
+  /** Present only when the author chose to be named. */
+  userId?: string;
+  anonymous: boolean;
+  clarity: number;
+  relevance: number;
+  comment: string;
+  /** The partner says something in it looks wrong or unsafe, as opposed to merely unclear. */
+  serious: boolean;
+  target?: { lessonId?: string; questionId?: string };
+  createdAt: string;
+  updatedAt: string;
+  edits: number;
+  status: 'new' | 'reviewing' | 'addressed' | 'dismissed';
+  handledByName?: string;
+  handledAt?: string;
+  handledNote?: string;
+  addressedInVersion?: number;
+  /** A comment that is abusive or not constructive is hidden (its ratings still count). */
+  hidden?: { at: string; byName: string; reason: string };
+}
+
 /* ------------------------------------ Refresher cadence (156) */
 
 /** One version of how often a certification must be refreshed. Append-only: a change is a new version with its own effective date and reason. */
@@ -4664,7 +4693,7 @@ export type CommitmentKind =
   | 'exit_dispute_decide'
   | 'tier_review_due'
   | 'certification_renewal'
-  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close'
+  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'

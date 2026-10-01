@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 import { Medal, CaretLeft, CheckCircle, CloudSlash, Gauge, GraduationCap, Lock, PencilSimple, Timer, Warning, XCircle } from '@phosphor-icons/react';
 import { ActionBar, AscensionLine, Badge, Button, Card, EmptyState, ErrorState, Field, Input, LoadingState, Screen, ScreenHeader, Sheet, formatDateTime } from '@/design-system';
 import type { AscensionStep } from '@/design-system';
@@ -255,6 +256,7 @@ function SubmitButton({ s, t, allAnswered }: { s: AssessmentState; t: T; allAnsw
 
 function ResultCard({ r, t, lang, s, compact }: { r: AssessmentResultView; t: T; lang: string; s: AssessmentState; compact?: boolean }) {
   const code = r.moduleCode;
+  const moduleId = r.moduleId;
   const wrong = r.review.filter((x) => !x.correct);
   return (
     <Card>
@@ -272,13 +274,13 @@ function ResultCard({ r, t, lang, s, compact }: { r: AssessmentResultView; t: T;
         {!compact && (
           <div className="stack gap-2" data-feedback>
             <strong className="t-md">{t(K.result.feedback)}</strong>
-            {wrong.length === 0 ? <p className="t-sm">{t(K.result.allRight)}</p> : wrong.map((w) => <Feedback key={w.questionId} row={w} code={code} t={t} />)}
+            {wrong.length === 0 ? <p className="t-sm">{t(K.result.allRight)}</p> : wrong.map((w) => <Feedback key={w.questionId} row={w} code={code} moduleId={moduleId} t={t} />)}
           </div>
         )}
         {compact && wrong.length > 0 && (
           <details data-feedback-compact>
             <summary className="t-sm" style={{ cursor: 'pointer' }}>{t(K.result.feedback)}</summary>
-            <div className="stack gap-2 mt-2">{wrong.map((w) => <Feedback key={w.questionId} row={w} code={code} t={t} />)}</div>
+            <div className="stack gap-2 mt-2">{wrong.map((w) => <Feedback key={w.questionId} row={w} code={code} moduleId={moduleId} t={t} />)}</div>
           </details>
         )}
         {s.result && <Button variant="secondary" style={{ width: 'fit-content' }} data-result-done onClick={s.clearResult}>{t(K.result.done)}</Button>}
@@ -287,7 +289,7 @@ function ResultCard({ r, t, lang, s, compact }: { r: AssessmentResultView; t: T;
   );
 }
 
-function Feedback({ row, code, t }: { row: AssessmentResultView['review'][number]; code: string; t: T }) {
+function Feedback({ row, code, moduleId, t }: { row: AssessmentResultView['review'][number]; code: string; moduleId: string; t: T }) {
   const base = qBase(code, row.questionId);
   const opts = (xs: number[]) => (xs.length ? xs.map((x) => t(`${base}.o.${x}`)).join(' · ') : '—');
   return (
@@ -296,6 +298,7 @@ function Feedback({ row, code, t }: { row: AssessmentResultView['review'][number
       <span className="t-xs">{t(K.result.yourAnswer)} {opts(row.selected)}</span>
       <span className="t-xs"><strong>{t(K.result.rightAnswer)}</strong> {opts(row.correctAnswer)}</span>
       <span className="t-xs t-muted" data-why>{t(`${base}.why`)}</span>
+      <Link to={`/training-feedback/${moduleId}?question=${row.questionId}`} className="t-xs" data-wrong-question={row.questionId}>{t('trainingFeedback.link.wrongQuestion')}</Link>
     </div>
   );
 }
@@ -308,7 +311,7 @@ function AdminOverview({ s, t }: { s: AssessmentState; t: T }) {
   const rows = s.overview?.rows ?? [];
   return (
     <Screen width="wide">
-      <ScreenHeader title={t(K.admin.heading)} subtitle={t(K.admin.intro)} action={<span className="row gap-2 wrap"><Button size="sm" variant="secondary" data-refreshers onClick={() => s.navigateTo('/refreshers')}>{t(K.admin.refreshers)}</Button><Button size="sm" variant="secondary" data-skill-matrix onClick={() => s.navigateTo('/skill-matrix')}>{t(K.admin.skillMatrix)}</Button><Button size="sm" variant="secondary" data-compliance onClick={() => s.navigateTo('/training-compliance')}>{t(K.admin.compliance)}</Button></span>} />
+      <ScreenHeader title={t(K.admin.heading)} subtitle={t(K.admin.intro)} action={<span className="row gap-2 wrap"><Button size="sm" variant="secondary" data-refreshers onClick={() => s.navigateTo('/refreshers')}>{t(K.admin.refreshers)}</Button><Button size="sm" variant="secondary" data-skill-matrix onClick={() => s.navigateTo('/skill-matrix')}>{t(K.admin.skillMatrix)}</Button><Button size="sm" variant="secondary" data-compliance onClick={() => s.navigateTo('/training-compliance')}>{t(K.admin.compliance)}</Button><Button size="sm" variant="secondary" data-feedback-link onClick={() => s.navigateTo('/training-feedback')}>{t('trainingFeedback.link.admin')}</Button></span>} />
       <p className="t-xs t-muted" data-placeholder-note>{t(K.admin.placeholder)}</p>
       {rows.length === 0 ? <EmptyState icon={<GraduationCap size={28} />} title={t(K.admin.empty)} body="" /> : (
         <div className="grid-auto mt-3" style={{ '--min': '360px', alignItems: 'start' } as React.CSSProperties} data-admin>
