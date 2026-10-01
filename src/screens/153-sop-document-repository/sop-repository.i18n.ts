@@ -5,6 +5,7 @@ const translations: ScreenTranslations = {
   en: {
     sopRepo: {
       title: 'SOP documents',
+      rollouts: 'SOP updates',
       subtitle: 'Every procedure the app holds you to, as a document you can read',
       loading: 'Loading the documents',
       error: {
@@ -211,6 +212,7 @@ const translations: ScreenTranslations = {
   hi: {
     sopRepo: {
       title: 'SOP दस्तावेज़',
+      rollouts: 'SOP अपडेट',
       subtitle: 'ऐप जिन प्रक्रियाओं पर आपको परखता है, पढ़ने लायक दस्तावेज़ के रूप में',
       loading: 'दस्तावेज़ लोड हो रहे हैं',
       error: {
@@ -417,6 +419,7 @@ const translations: ScreenTranslations = {
   mr: {
     sopRepo: {
       title: 'SOP दस्तऐवज',
+      rollouts: 'SOP अद्यतने',
       subtitle: 'अ‍ॅप ज्या प्रक्रियांवर तुम्हाला तपासते, त्या वाचता येण्याजोग्या दस्तऐवजाच्या रूपात',
       loading: 'दस्तऐवज लोड होत आहेत',
       error: {

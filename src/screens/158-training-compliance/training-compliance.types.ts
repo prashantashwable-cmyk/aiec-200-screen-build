@@ -72,7 +72,7 @@ export const COMPLIANCE_KEYS = {
     since: 'trainingCompliance.detail.since', fails: 'trainingCompliance.detail.fails', assigned: 'trainingCompliance.detail.assigned', openModule: 'trainingCompliance.detail.openModule',
     openCoaching: 'trainingCompliance.detail.openCoaching', openRefreshers: 'trainingCompliance.detail.openRefreshers', remind: 'trainingCompliance.detail.remind', holds: 'trainingCompliance.detail.holds',
     heldBody: 'trainingCompliance.detail.heldBody', openJobs: 'trainingCompliance.detail.openJobs', fine: 'trainingCompliance.detail.fine', fineBody: 'trainingCompliance.detail.fineBody',
-    matrix: 'trainingCompliance.detail.matrix', due: 'trainingCompliance.detail.due',
+    matrix: 'trainingCompliance.detail.matrix', sopOpen: 'trainingCompliance.detail.sopOpen', openRollouts: 'trainingCompliance.detail.openRollouts', due: 'trainingCompliance.detail.due',
   },
   bulk: {
     button: 'trainingCompliance.bulk.button', none: 'trainingCompliance.bulk.none', title: 'trainingCompliance.bulk.title', body: 'trainingCompliance.bulk.body', willSend: 'trainingCompliance.bulk.willSend',

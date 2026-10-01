@@ -50,7 +50,7 @@ function Library({ s, t }: { s: SopRepositoryState; t: T }) {
   const visible = s.shown.slice(0, s.page * PAGE);
   return (
     <Screen width="wide">
-      <ScreenHeader title={t(K.title)} subtitle={t(K.subtitle)} />
+      <ScreenHeader title={t(K.title)} subtitle={t(K.subtitle)} action={<Button size="sm" variant="secondary" data-rollouts onClick={() => s.goto('/sop-rollouts')}>{t(K.rollouts)}</Button>} />
       {(!s.online || s.fromCache) && <p className="t-sm row gap-2" role="status" data-offline-banner style={{ alignItems: 'center', color: 'var(--color-warning)' }}><CloudSlash size={16} aria-hidden="true" /> {s.onlySaved ? t(K.offline.onlySaved) : s.fromCache ? t(K.offline.cached) : t(K.offline.banner)}</p>}
       {s.staleCopies.length > 0 && (
         <Card>

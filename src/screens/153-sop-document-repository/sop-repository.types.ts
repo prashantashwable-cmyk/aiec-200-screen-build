@@ -20,6 +20,7 @@ const PROBLEMS: (SopError | 'offline' | 'generic')[] = ['not_admin', 'forbidden'
 export const SOP_KEYS = {
   title: 'sopRepo.title',
   subtitle: 'sopRepo.subtitle',
+  rollouts: 'sopRepo.rollouts',
   loading: 'sopRepo.loading',
   error: { title: 'sopRepo.error.title', body: 'sopRepo.error.body' },
   notFound: { title: 'sopRepo.notFound.title', body: 'sopRepo.notFound.body', action: 'sopRepo.notFound.action' },

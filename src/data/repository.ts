@@ -2776,6 +2776,8 @@ export interface CompliancePartnerView {
   lastReminderAt: string | null;
   /** Every open item is part of a renewal wave. */
   waveOnly: boolean;
+  /** SOP updates in force that this technician has not acknowledged: each holds them from new jobs until they are caught up (159). */
+  sopOpen: number;
 }
 
 export interface ComplianceGroupView { key: string; compliant: number; total: number; percent: number | null; small: boolean }
@@ -2819,6 +2821,142 @@ export interface ComplianceReminderResult {
 }
 
 export type TrainingComplianceError = TrainingError | 'not_admin' | 'no_people' | 'note_long';
+
+/* ------------------------------------ SOP rollout notification (159) */
+
+export type SopRolloutPartnerStatus = 'unseen' | 'seen' | 'quiz_passed' | 'complete';
+
+export interface SopRolloutChangeItem {
+  id: string;
+  label: SopText;
+  safetyCritical: boolean;
+  kind: 'added' | 'changed' | 'removed';
+}
+
+export interface SopRolloutCounts { total: number; complete: number; quizPassed: number; seen: number; unseen: number; away: number }
+
+export interface SopRolloutView {
+  id: string;
+  code: string;
+  docId: string;
+  docTitle: SopText;
+  docSource: SopSource;
+  version: number;
+  /** The day that version of the procedure itself takes effect (its own date, not the rollout's). */
+  versionEffectiveFrom: string;
+  kind: 'announce' | 'correction';
+  correctsId: string | null;
+  correctsCode: string | null;
+  correctionReason: string | null;
+  supersededById: string | null;
+  supersededByCode: string | null;
+  supersededAt: string | null;
+  roles: TrainingRole[];
+  summary: string;
+  effectiveDate: string;
+  urgent: boolean;
+  requiresQuiz: boolean;
+  questionCount: number;
+  createdAt: string;
+  createdByName: string;
+  /** `upcoming` before the effective day, `in_force` from it, `replaced` once a correction took over. */
+  state: 'upcoming' | 'in_force' | 'replaced';
+  changes: SopRolloutChangeItem[];
+  safetyChanged: boolean;
+  counts: SopRolloutCounts;
+  dueAt: string;
+  /** Past its due time with people still not caught up (never for a replaced rollout). */
+  overdue: boolean;
+  /** A normal rollout holds a technician from new work once it has taken effect until they are caught up; an urgent one never does. */
+  gatesWork: boolean;
+}
+
+export interface SopRolloutPersonRow {
+  userId: string;
+  name: string;
+  role: TrainingRole;
+  status: SopRolloutPartnerStatus;
+  away: { until: string; note: string; byName: string } | null;
+  seenAt: string | null;
+  acknowledgedAt: string | null;
+  quizPassedAt: string | null;
+  attempts: number;
+  lastRemindedAt: string | null;
+  /** Held from new work by this rollout right now. */
+  held: boolean;
+}
+
+export interface SopRolloutDetailView extends SopRolloutView {
+  people: SopRolloutPersonRow[];
+  /** Admin sees the answer key. */
+  questions: { id: string; text: string; options: string[]; correct: number }[];
+}
+
+export interface SopRolloutDocOption {
+  id: string;
+  title: SopText;
+  source: SopSource;
+  defaultRoles: TrainingRole[];
+  versions: { version: number; effectiveFrom: string; state: 'current' | 'upcoming' | 'past'; changeNote: SopText | null; changes: { added: number; removed: number; changed: number } | null; safetyChanged: boolean; announcedCode: string | null }[];
+}
+
+export interface SopRolloutBoardView {
+  rollouts: SopRolloutView[];
+  docs: SopRolloutDocOption[];
+  kpis: { active: number; waiting: number; overdue: number; away: number; held: number };
+  at: string;
+}
+
+export interface SopRolloutInput {
+  docId: string;
+  version: number;
+  roles: TrainingRole[];
+  summary: string;
+  effectiveDate: string;
+  urgent: boolean;
+  questions: { text: string; options: string[]; correct: number }[];
+  /** A correction only: why the rollout it replaces needs correcting. */
+  reason?: string;
+}
+
+export interface SopUpdateRow {
+  id: string;
+  code: string;
+  docTitle: SopText;
+  version: number;
+  kind: 'announce' | 'correction';
+  urgent: boolean;
+  effectiveDate: string;
+  dueAt: string;
+  status: SopRolloutPartnerStatus;
+  away: { until: string } | null;
+  requiresQuiz: boolean;
+  state: 'upcoming' | 'in_force' | 'replaced';
+  held: boolean;
+  createdAt: string;
+}
+
+export interface MySopUpdatesView { items: SopUpdateRow[]; at: string }
+
+export interface SopUpdateDetailView {
+  rollout: SopRolloutView;
+  status: SopRolloutPartnerStatus;
+  seenAt: string | null;
+  acknowledgedAt: string | null;
+  quizPassedAt: string | null;
+  attempts: number;
+  away: { until: string; note: string } | null;
+  held: boolean;
+  questions: { id: string; text: string; options: string[] }[];
+  /** Whether the person can open the document itself (technicians and Admin can; others read the summary and the changes here). */
+  docRoute: string | null;
+  replacedBy: { id: string; code: string } | null;
+}
+
+export interface SopQuizResult { passed: boolean; results: { correct: boolean; correctIndex: number }[] }
+
+export type SopRolloutError = 'forbidden' | 'not_admin' | 'not_found' | 'not_audience' | 'quiz_required' | 'not_seen' | 'too_soon' | 'invalid_state' | 'answers_required' | 'no_pending' | 'date_invalid' | 'date_past' | 'date_far' | 'note_long'
+  | 'doc_unknown' | 'version_unknown' | 'roles_required' | 'summary_required' | 'summary_long' | 'notice_short' | 'already_announced' | 'question_invalid' | 'too_many_questions' | 'reason_required' | 'superseded';
 
 /* ------------------------------------ Refresher reminders (156) */
 
@@ -6527,6 +6665,18 @@ export interface Repository {
   sendComplianceReminders(input: { userIds: string[] }, adminId: string): Promise<ComplianceReminderResult>;
   /** Admin says they have looked at the figures: the dated governance record. */
   recordComplianceReview(input: { note: string }, adminId: string): Promise<ComplianceReviewView>;
+  getSopRolloutBoard(adminId: string): Promise<SopRolloutBoardView>;
+  getSopRollout(rolloutId: string, adminId: string): Promise<SopRolloutDetailView>;
+  publishSopRollout(input: SopRolloutInput, adminId: string): Promise<SopRolloutView>;
+  /** Replaces a rollout that was sent with an error by a new, versioned one; the earlier one stays on record as sent. */
+  correctSopRollout(rolloutId: string, input: SopRolloutInput, adminId: string): Promise<SopRolloutView>;
+  remindSopRollout(rolloutId: string, adminId: string): Promise<{ reminded: number; skipped: number }>;
+  setSopRolloutAway(rolloutId: string, userId: string, input: { until: string; note: string } | null, adminId: string): Promise<SopRolloutDetailView>;
+  getMySopUpdates(userId: string): Promise<MySopUpdatesView>;
+  getSopUpdate(rolloutId: string, userId: string): Promise<SopUpdateDetailView>;
+  markSopUpdateSeen(rolloutId: string, userId: string): Promise<SopUpdateDetailView>;
+  submitSopUpdateQuiz(rolloutId: string, answers: number[], userId: string): Promise<SopQuizResult>;
+  acknowledgeSopUpdate(rolloutId: string, userId: string): Promise<SopUpdateDetailView>;
   // Refresher reminders (156)
   getRefresherQueue(userId: string): Promise<RefresherQueueView>;
   sendRefresherReminder(badgeId: string, adminId: string): Promise<{ sentAt: string }>;

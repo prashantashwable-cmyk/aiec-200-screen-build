@@ -1,6 +1,7 @@
 import { ASSIGN_DUE, DISPUTE_DECIDE_DUE, REVERIFY_DUE } from '@/features/qc/snags';
 import { ARRANGE_DUE, FOLLOWUP_DUE, SIGNOFF_DUE_PRESENT, SIGNOFF_DUE_REMOTE } from '@/features/qc/walkthrough';
-import type { TrainingAssignment, PartnerApplication, PartnerExit, TierDispute, TierReview, WarrantyRegistration, HandoverWalkthrough, ReworkRequest,
+import { dueAtOf as sopDueAt } from '@/features/sop/rollout';
+import type { SopRollout, TrainingAssignment, PartnerApplication, PartnerExit, TierDispute, TierReview, WarrantyRegistration, HandoverWalkthrough, ReworkRequest,
   Alert,
   AlertSeverity,
   CatalogPriceChange,
@@ -144,6 +145,8 @@ export interface CommitmentSources {
   trainingAssignments: { a: TrainingAssignment; moduleCode: string; done: boolean; ownerActive: boolean }[];
   /** Admin's standing promise to look at workforce training compliance, due a month after the last look (158). */
   complianceReview: { dueAt: string; cycle: string; done: boolean };
+  /** SOP rollouts: each affected partner's own acknowledgement, and Admin's look at what is still open (159). */
+  sopRollouts: { acks: { r: SopRollout; userId: string; done: boolean; away: boolean }[]; closes: { r: SopRollout; pending: number }[] };
   certRenewals: { badgeId: string; userId: string; moduleId: string; moduleCode: string; expiresAt: string; renewed: boolean; ownerActive: boolean }[];
   /** Exits under way and how much of the partner's work is still in their hands (150). */
   exits: { exit: PartnerExit; workOpen: number; finishing: number }[];
@@ -2067,6 +2070,51 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
           actionRoute: `/training/${x.a.moduleId}`,
           oversightRoute: '/skill-matrix',
         }));
+    },
+  },
+  {
+    // A partner is told a procedure they work to is changing and must read it (and answer a short quiz on what changed, where Admin asked for one); done when they acknowledge (159).
+    kind: 'sop_rollout_ack',
+    nudgeBefore: days(2),
+    escalateAfter: days(1),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'staffing',
+    collect(src) {
+      return src.sopRollouts.acks.map((x) => ({
+        ...base('sop_rollout_ack', 'application', `${x.r.id}:${x.userId}`),
+        ownerUserId: x.userId,
+        titleKey: 'work.title.sop_rollout_ack',
+        titleParams: { code: x.r.code },
+        dueAt: sopDueAt(x.r),
+        state: x.done ? ('done' as const) : ('open' as const),
+        // A partner who is away is not chased; they are caught up when they are back.
+        paused: x.away,
+        actionRoute: `/sop-rollouts/${x.r.id}`,
+        oversightRoute: `/sop-rollouts/${x.r.id}`,
+      }));
+    },
+  },
+  {
+    // Admin looks at who has still not acknowledged a procedure change when its day comes (159).
+    kind: 'sop_rollout_close',
+    nudgeBefore: days(1),
+    escalateAfter: days(3),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'staffing',
+    collect(src) {
+      return src.sopRollouts.closes.map((x) => ({
+        ...base('sop_rollout_close', 'application', x.r.id),
+        ownerUserId: adminId(src),
+        titleKey: 'work.title.sop_rollout_close',
+        titleParams: { code: x.r.code, count: String(x.pending) },
+        dueAt: sopDueAt(x.r),
+        state: x.pending === 0 ? ('done' as const) : ('open' as const),
+        paused: false,
+        actionRoute: `/sop-rollouts/${x.r.id}`,
+        oversightRoute: `/sop-rollouts/${x.r.id}`,
+      }));
     },
   },
   {

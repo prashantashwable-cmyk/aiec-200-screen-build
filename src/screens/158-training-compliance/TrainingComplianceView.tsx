@@ -334,6 +334,7 @@ function PartnerSheet({ s, p, t }: { s: TrainingComplianceState; p: CompliancePa
             {p.urgency === 'safety' && <Badge tone="error">{t(K.urgency.safety)}</Badge>}
             <span className="t-xs t-muted">{t(K.role[p.role])}{p.territory ? ` · ${p.territory}` : ''}</span>
           </div>
+          {p.sopOpen > 0 && <p className="t-sm" data-sop-open>{t(K.detail.sopOpen, { count: p.sopOpen })} <Button size="sm" variant="ghost" onClick={() => s.goto('/sop-rollouts')}>{t(K.detail.openRollouts)}</Button></p>}
           {p.blocked && <p className="t-sm" data-held><ShieldWarning size={16} aria-hidden="true" style={{ verticalAlign: 'text-bottom', color: 'var(--color-warning)' }} /> {t(K.detail.heldBody)}</p>}
           {p.openJobs > 0 && p.status === 'non_compliant' && <p className="t-xs t-muted">{t(K.detail.openJobs, { count: p.openJobs })}</p>}
           {p.status === 'compliant' && <p className="t-sm">{t(K.detail.fine)}</p>}

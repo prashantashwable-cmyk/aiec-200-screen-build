@@ -3122,6 +3122,52 @@ export interface ComplianceReminder {
   moduleCodes: string[];
 }
 
+/* ------------------------------------ SOP rollout (159) */
+
+export interface SopRolloutQuestion {
+  id: string;
+  text: string;
+  options: string[];
+  correct: number;
+}
+
+/** The announcement that a version of a governed procedure is coming into force. A correction is a new rollout that replaces an earlier one; the earlier one is kept as sent. */
+export interface SopRollout {
+  id: string;
+  /** `AIEC-SR-####`, a correction adds `-R<n>`. */
+  code: string;
+  docId: string;
+  version: number;
+  kind: 'announce' | 'correction';
+  correctsId?: string;
+  correctionReason?: string;
+  supersededById?: string;
+  supersededAt?: string;
+  roles: TrainingRole[];
+  summary: string;
+  /** yyyy-mm-dd. The day it takes effect (for an urgent change, the day it was sent). */
+  effectiveDate: string;
+  urgent: boolean;
+  questions: SopRolloutQuestion[];
+  createdAt: string;
+  createdByName: string;
+}
+
+/** What one partner has done about one rollout; absent until they or Admin do something. `userId` is the account that did it (people with two roles share by phone). */
+export interface SopRolloutReceipt {
+  rolloutId: string;
+  userId: string;
+  seenAt?: string;
+  acknowledgedAt?: string;
+  quizPassedAt?: string;
+  attempts: { at: string; passed: boolean }[];
+  /** Admin recorded that the partner is away: the acknowledgement stays pending, with the day they are back. */
+  awayUntil?: string;
+  awayNote?: string;
+  awayByName?: string;
+  lastRemindedAt?: string;
+}
+
 /* ------------------------------------ Refresher cadence (156) */
 
 /** One version of how often a certification must be refreshed. Append-only: a change is a new version with its own effective date and reason. */
@@ -4618,7 +4664,7 @@ export type CommitmentKind =
   | 'exit_dispute_decide'
   | 'tier_review_due'
   | 'certification_renewal'
-  | 'training_assignment' | 'compliance_review'
+  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'

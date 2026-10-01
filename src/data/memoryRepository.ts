@@ -253,6 +253,19 @@ import type {
   SkillColumnView,
   SkillMatrixView,
   ComplianceItemView,
+  MySopUpdatesView,
+  SopQuizResult,
+  SopRolloutBoardView,
+  SopRolloutChangeItem,
+  SopRolloutCounts,
+  SopRolloutDetailView,
+  SopRolloutDocOption,
+  SopRolloutInput,
+  SopRolloutPartnerStatus,
+  SopRolloutPersonRow,
+  SopRolloutView,
+  SopUpdateDetailView,
+  SopUpdateRow,
   ComplianceGroupView,
   CompliancePartnerView,
   ComplianceReasonName,
@@ -683,6 +696,8 @@ import type {
   ComplianceSnapshot,
   ComplianceReview,
   ComplianceReminder,
+  SopRollout,
+  SopRolloutReceipt,
 } from './types';
 import { formatDate, formatDateTime, formatINR, formatINRCompact, formatTime, haversineKm } from '@/design-system/format';
 import { MAX_SAFE_BOT_DISCOUNT_PCT } from '@/features/communication/botRules';
@@ -770,6 +785,7 @@ import type { NowStage as RdNowStage, Period as RdPeriod, RecruitStage as RdRecr
 import { TOPICS as TN_TOPICS, currentVersionOf as tnCurrentVersion, curriculumOf as tnCurriculum, jobGateOf as tnJobGate, lockedBy as tnLockedBy, percentOfModule as tnPercent, relevantFor as tnRelevant, requiredFor as tnRequired, startProblem as tnStartProblem, statusOf as tnStatus, updatedSince as tnUpdated } from '@/features/training/curriculum';
 import type { ModuleStatus } from '@/features/training/curriculum';
 import { BUILT_IN_CATEGORIES as SOP_BUILT_IN, BUILT_IN_SINCE as SOP_SINCE, categoryProblem as sopCategoryProblem, currentOf as sopCurrent, diffItems as sopDiff, referenceProblem as sopReferenceProblem, stateOf as sopStateOf, upcomingOf as sopUpcoming } from '@/features/sop/library';
+import { defaultRolesOf, REMIND_GAP_HOURS as SR_REMIND_H, awayProblem as srAwayProblem, dueAtOf as srDueAt, gatesWork as srGates, gradeQuiz as srGrade, partnerStatusOf as srPartnerStatus, rolloutProblem as srRolloutProblem } from '@/features/sop/rollout';
 import { NEW_PARTNER_DAYS as cpNewDays, REASONS as cpReasons, TREND_MONTHS as cpTrendMonths, partnerStatusOf as cpPartnerStatus, rateOf as cpRate, recentlyReminded as cpRecent, reminderDue as cpReminderDue, responseOf as cpResponse, reviewDueAt as cpReviewDue, wavesOf as cpWaves, noteProblem as cpNoteProblem } from '@/features/training/compliance';
 import { DRIVE_SKILL as SK_DRIVE_SKILL, DRIVE_TYPES as SK_DRIVES, SKILL_TAGS as SK_TAGS, SMALL_DEMAND as SK_SMALL_DEMAND, SMALL_WORKFORCE as SK_SMALL, TREND_MONTHS as SK_TREND_MONTHS, assignProblem as skAssignProblem, columnGap as skColumnGap, coverageOf as skCoverage, demandRatio as skRatio, demandSignal as skSignal, trendOf as skTrend } from '@/features/training/skills';
 import { GRACE_WARN_DAYS as RF_WARN_DAYS, REMIND_EVERY_H as RF_REMIND_H, addMonths as rfAddMonths, cadenceAt as rfCadenceAt, cadenceProblem as rfCadenceProblem, comparePriority as rfCompare, daysBetween as rfDays, eligibleUntilOf as rfEligible, extensionProblem as rfExtensionProblem, priorityOf as rfPriority, tierOf as rfTier } from '@/features/training/refresher';
@@ -2482,6 +2498,7 @@ function commitmentSources(now: number): CommitmentSources {
     certRenewals: certRenewalSignals(Date.now()),
     trainingAssignments: trainingAssignmentSignals(Date.now()),
     complianceReview: complianceReviewSignal(Date.now()),
+    sopRollouts: sopRolloutSignals(Date.now()),
     exits: exitSignals(),
     handoverReviews: handoverSignals().reviews,
     qcMechChecks,
@@ -2743,6 +2760,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   syncCertifications(now);
   syncRefreshers(now);
   syncCompliance(now);
+  syncSopRollouts(now);
   syncPartnerInterviews(now);
   syncVerification(now);
   syncOffers(now);
@@ -9398,6 +9416,7 @@ function syncCertifications(now: number): void {
 function trainingClear(userId: string, now = Date.now()): boolean {
   const person = tnPersonOf(userId);
   if (!person) return true;
+  if (sopRolloutsHolding(userId, now).length > 0) return false;
   return tnJobGate(trainingModules, person.roles, tnStatusFn(person.userIds, now), (id) => asCertified(person.userIds, id, now)).cleared;
 }
 
@@ -9515,7 +9534,7 @@ function cpBuild(now: number): ComplianceTrackerView {
       userId: p.user.id, name: p.person.name, role, roles: p.person.roles, territory: p.user.city ?? '', status,
       urgency: status === 'non_compliant' ? (open.some((i) => i.safetyCritical) ? 'safety' : 'routine') : null,
       blocked: p.person.roles.includes('technician') && !trainingClear(p.user.id, now), openJobs: p.person.userIds.reduce((n, id) => n + rfOpenJobs(id), 0), items,
-      lastReminderAt: complianceReminders.filter((r) => r.userId === p.user.id).map((r) => r.at).sort().pop() ?? null, waveOnly: open.length > 0 && open.every((i) => i.inWave),
+      lastReminderAt: complianceReminders.filter((r) => r.userId === p.user.id).map((r) => r.at).sort().pop() ?? null, waveOnly: open.length > 0 && open.every((i) => i.inWave), sopOpen: sopRolloutsHolding(p.user.id, now).length,
     });
   }
   partners.sort((a, b) => (a.status === 'non_compliant' ? 0 : a.status === 'due_soon' ? 1 : 2) - (b.status === 'non_compliant' ? 0 : b.status === 'due_soon' ? 1 : 2) || Number(b.urgency === 'safety') - Number(a.urgency === 'safety') || Number(b.blocked) - Number(a.blocked) || a.name.localeCompare(b.name));
@@ -9705,6 +9724,210 @@ function spReader(userId: string): User {
   if (!u || (u.role !== 'admin' && u.role !== 'technician')) throw new RepositoryError('forbidden');
   return u;
 }
+
+/* ============================== SOP rollout notification (159) */
+
+const sopRollouts: SopRollout[] = [];
+const sopReceipts: SopRolloutReceipt[] = [];
+let sopRolloutCounter = 0;
+let sopRolloutSeeded = false;
+const SR_ALERT = 'sopRollout.alert.overdue';
+const srToday = (now: number) => new Date(now).toISOString().slice(0, 10);
+const srCodeOf = (n: number) => `AIEC-SR-${String(1000 + n)}`;
+
+const srDocs = (now: number) => spLibraryOf('', true, now).docs;
+const srDocOf = (docId: string, now: number) => srDocs(now).find((d) => d.id === docId);
+
+/** Everyone the rollout is for: active partners (one per person) holding one of its roles. */
+function srAudience(r: SopRollout): CpPerson[] {
+  return cpPeople().filter((p) => p.person.roles.some((x) => r.roles.includes(x)));
+}
+
+const srReceiptOf = (rolloutId: string, userIds: string[]): SopRolloutReceipt | undefined => sopReceipts.find((x) => x.rolloutId === rolloutId && userIds.includes(x.userId));
+function srReceiptFor(rolloutId: string, person: { userIds: string[] }, actingId: string): SopRolloutReceipt {
+  const existing = srReceiptOf(rolloutId, person.userIds);
+  if (existing) return existing;
+  const fresh: SopRolloutReceipt = { rolloutId, userId: actingId, attempts: [] };
+  sopReceipts.push(fresh);
+  return fresh;
+}
+const srStatusOf = (r: SopRollout, userIds: string[]): SopRolloutPartnerStatus => srPartnerStatus(srReceiptOf(r.id, userIds) ?? {}, r.questions.length > 0);
+const srAwayOf = (rc: SopRolloutReceipt | undefined, now: number) => (rc?.awayUntil && rc.awayUntil >= srToday(now) ? { until: rc.awayUntil, note: rc.awayNote ?? '', byName: rc.awayByName ?? '' } : null);
+
+/** What moved in a version, step by step, with the words of each step: added and changed from that version, removed from the one before. */
+function srChangesOf(doc: SopDocumentView | undefined, version: number): SopRolloutChangeItem[] {
+  const v = doc?.versions.find((x) => x.version === version);
+  if (!doc || !v) return [];
+  const prev = [...doc.versions].filter((x) => x.version < version).sort((a, b) => b.version - a.version)[0];
+  const items = (ver: typeof v | undefined) => (ver ? ver.sections.flatMap((s) => s.items) : []);
+  const now = items(v);
+  if (!prev) return now.map((i) => ({ id: i.id, label: i.label, safetyCritical: i.safetyCritical, kind: 'added' as const }));
+  const before = items(prev);
+  return [
+    ...now.filter((i) => v.changedIds.added.includes(i.id)).map((i) => ({ id: i.id, label: i.label, safetyCritical: i.safetyCritical, kind: 'added' as const })),
+    ...now.filter((i) => v.changedIds.changed.includes(i.id)).map((i) => ({ id: i.id, label: i.label, safetyCritical: i.safetyCritical, kind: 'changed' as const })),
+    ...before.filter((i) => v.changedIds.removed.includes(i.id)).map((i) => ({ id: i.id, label: i.label, safetyCritical: i.safetyCritical, kind: 'removed' as const })),
+  ];
+}
+
+function srViewOf(r: SopRollout, now: number): SopRolloutView {
+  const doc = srDocOf(r.docId, now);
+  const ver = doc?.versions.find((x) => x.version === r.version);
+  const audience = srAudience(r);
+  const rows = audience.map((p) => ({ p, status: srStatusOf(r, p.person.userIds), away: srAwayOf(srReceiptOf(r.id, p.person.userIds), now) }));
+  const counts: SopRolloutCounts = { total: rows.length, complete: 0, quizPassed: 0, seen: 0, unseen: 0, away: 0 };
+  for (const x of rows) {
+    if (x.status === 'complete') counts.complete += 1; else if (x.status === 'quiz_passed') counts.quizPassed += 1; else if (x.status === 'seen') counts.seen += 1; else counts.unseen += 1;
+    if (x.away && x.status !== 'complete') counts.away += 1;
+  }
+  const changes = srChangesOf(doc, r.version);
+  const dueAt = srDueAt(r);
+  const replaced = !!r.supersededById;
+  const superior = r.supersededById ? sopRollouts.find((x) => x.id === r.supersededById) : undefined;
+  const base = r.correctsId ? sopRollouts.find((x) => x.id === r.correctsId) : undefined;
+  return {
+    id: r.id, code: r.code, docId: r.docId, docTitle: doc?.title ?? { en: r.docId }, docSource: (doc?.source ?? 'reference') as SopSource, version: r.version, versionEffectiveFrom: ver?.effectiveFrom ?? r.effectiveDate,
+    kind: r.kind, correctsId: r.correctsId ?? null, correctsCode: base?.code ?? null, correctionReason: r.correctionReason ?? null, supersededById: r.supersededById ?? null, supersededByCode: superior?.code ?? null, supersededAt: r.supersededAt ?? null,
+    roles: [...r.roles], summary: r.summary, effectiveDate: r.effectiveDate, urgent: r.urgent, requiresQuiz: r.questions.length > 0, questionCount: r.questions.length, createdAt: r.createdAt, createdByName: r.createdByName,
+    state: replaced ? 'replaced' : r.effectiveDate > srToday(now) ? 'upcoming' : 'in_force', changes, safetyChanged: changes.some((c) => c.safetyCritical && c.kind !== 'removed'),
+    counts, dueAt, overdue: !replaced && counts.complete < counts.total && Date.parse(dueAt) <= now, gatesWork: r.roles.includes('technician') && srGates(r, now),
+  };
+}
+
+function srPersonRows(r: SopRollout, now: number): SopRolloutPersonRow[] {
+  const gates = r.roles.includes('technician') && srGates(r, now);
+  return srAudience(r).map((p) => {
+    const rc = srReceiptOf(r.id, p.person.userIds);
+    const status = srStatusOf(r, p.person.userIds);
+    const role = p.person.roles.find((x) => r.roles.includes(x)) as TrainingRole;
+    return { userId: p.user.id, name: p.person.name, role, status, away: srAwayOf(rc, now), seenAt: rc?.seenAt ?? null, acknowledgedAt: rc?.acknowledgedAt ?? null, quizPassedAt: rc?.quizPassedAt ?? null, attempts: rc?.attempts.length ?? 0, lastRemindedAt: rc?.lastRemindedAt ?? null, held: gates && p.person.roles.includes('technician') && status !== 'complete' };
+  }).sort((a, b) => Number(a.status === 'complete') - Number(b.status === 'complete') || a.name.localeCompare(b.name));
+}
+
+/** The rollouts holding this technician from new work right now: in force, not urgent, not replaced, and they are not caught up. */
+function sopRolloutsHolding(userId: string, now: number): SopRollout[] {
+  ensureSopRolloutSeeds(now);
+  const person = tnPersonOf(userId);
+  if (!person || !person.roles.includes('technician')) return [];
+  return sopRollouts.filter((r) => r.roles.includes('technician') && srGates(r, now) && srStatusOf(r, person.userIds) !== 'complete');
+}
+
+/** A built-in history so the screen is not empty: a delivery change long since in force (everyone caught up) and the door-operator change that takes effect soon. Built once, from the library as it reads. */
+function ensureSopRolloutSeeds(now: number): void {
+  if (sopRolloutSeeded) return;
+  sopRolloutSeeded = true;
+  const techs = cpPeople().filter((p) => p.person.roles.includes('technician'));
+  const ago = (d: number) => new Date(now - d * 86_400_000).toISOString();
+  const all = srDocOf('sop-delivery-sop-all', now);
+  const allV2 = all?.versions.find((v) => v.version === 2);
+  if (all && allV2) {
+    sopRolloutCounter += 1;
+    const r: SopRollout = { id: `sr-${sopRolloutCounter}`, code: srCodeOf(sopRolloutCounter), docId: all.id, version: 2, kind: 'announce', roles: ['technician'], summary: 'One more check on every delivery: confirm the part against the purchase order before signing. Nothing else in the checklist changed.', effectiveDate: allV2.effectiveFrom.slice(0, 10), urgent: false, questions: [], createdAt: ago(25), createdByName: 'Prashant Vasant Wable' };
+    sopRollouts.push(r);
+    for (const p of techs) sopReceipts.push({ rolloutId: r.id, userId: p.user.id, seenAt: ago(22), acknowledgedAt: ago(21), attempts: [] });
+  }
+  const door = srDocOf('sop-delivery-sop-door_operator', now);
+  const doorV2 = door?.versions.find((v) => v.version === 2 && v.state === 'upcoming');
+  if (door && doorV2) {
+    sopRolloutCounter += 1;
+    const r: SopRollout = {
+      id: `sr-${sopRolloutCounter}`, code: srCodeOf(sopRolloutCounter), docId: door.id, version: 2, kind: 'announce', roles: ['technician'],
+      summary: 'Door operators now need a photo of the motor plate on arrival, so the warranty record starts from what was really delivered. Please read the new step and answer two short questions.', effectiveDate: doorV2.effectiveFrom.slice(0, 10), urgent: false,
+      questions: [
+        { id: 'q1', text: 'What must now be photographed when a door operator arrives?', options: ['The motor plate', 'The packing slip only', 'Nothing new'], correct: 0 },
+        { id: 'q2', text: 'Why is the photo taken on arrival, before the part is fitted?', options: ['To start the warranty record from what was delivered', 'To save time on site', 'Because the supplier asks for it'], correct: 0 },
+      ], createdAt: ago(5), createdByName: 'Prashant Vasant Wable',
+    };
+    sopRollouts.push(r);
+    techs.forEach((p, i) => {
+      if (i === 0) sopReceipts.push({ rolloutId: r.id, userId: p.user.id, seenAt: ago(4), quizPassedAt: ago(4), acknowledgedAt: ago(4), attempts: [{ at: ago(4), passed: true }] });
+      else if (i === 1) sopReceipts.push({ rolloutId: r.id, userId: p.user.id, seenAt: ago(2), attempts: [{ at: ago(2), passed: false }] });
+      else if (p.person.name.startsWith('Ajay')) sopReceipts.push({ rolloutId: r.id, userId: p.user.id, attempts: [], awayUntil: new Date(now + 10 * 86_400_000).toISOString().slice(0, 10), awayNote: 'On approved leave', awayByName: 'Prashant Vasant Wable' });
+    });
+  }
+}
+
+/** What the commitment engine reads: each partner's own acknowledgement, and Admin's look at what is still open when the day comes. */
+function sopRolloutSignals(now: number): { acks: { r: SopRollout; userId: string; done: boolean; away: boolean }[]; closes: { r: SopRollout; pending: number }[] } {
+  ensureSopRolloutSeeds(now);
+  const acks: { r: SopRollout; userId: string; done: boolean; away: boolean }[] = [];
+  const closes: { r: SopRollout; pending: number }[] = [];
+  for (const r of sopRollouts) {
+    if (r.supersededById) continue;
+    let pending = 0;
+    for (const p of srAudience(r)) {
+      const done = srStatusOf(r, p.person.userIds) === 'complete';
+      if (!done) pending += 1;
+      acks.push({ r, userId: p.user.id, done, away: !!srAwayOf(srReceiptOf(r.id, p.person.userIds), now) });
+    }
+    closes.push({ r, pending });
+  }
+  return { acks, closes };
+}
+
+/** A rollout past its due time with people still not caught up is Admin's to see, once; it clears itself when they are. */
+function syncSopRollouts(now: number): void {
+  ensureSopRolloutSeeds(now);
+  for (const r of sopRollouts) {
+    const rel = `sopro:${r.id}`;
+    const existing = alerts.find((x) => x.relatedId === rel && x.titleKey === SR_ALERT && x.status !== 'resolved');
+    const v = srViewOf(r, now);
+    if (v.overdue && !existing) {
+      raiseAlert({ titleKey: SR_ALERT, context: `${r.code}: ${v.counts.total - v.counts.complete} of ${v.counts.total} partners have not acknowledged the SOP update that was due ${r.urgent ? 'within a day' : r.effectiveDate}`, severity: r.urgent ? 'high' : 'medium', category: r.urgent ? 'safety' : 'staffing', relatedId: rel, sourceRoute: `/sop-rollouts/${r.id}` });
+      logAutomatedAction({ sourceKey: 'sop_rollout.overdue', triggeringCondition: `${r.code} reached its acknowledgement time with ${v.counts.total - v.counts.complete} partners still to acknowledge`, actionTaken: 'Told Admin so the stragglers are chased or decided on', affectedRecordId: r.id, affectedRecordType: 'other' });
+    } else if (existing && !v.overdue) {
+      patchInPlace(alerts, existing.id, { status: 'resolved', resolvedAt: new Date(now).toISOString(), resolvedBy: 'system', resolutionNote: 'Everyone is caught up, or the rollout was replaced.' });
+    }
+  }
+}
+
+/** Announces a rollout (or its correction) to everyone it is for: each gets their own dated obligation and a notification. */
+function srAnnounce(r: SopRollout, now: number): void {
+  syncCommitments(now);
+  const at = new Date(now).toISOString();
+  for (const p of srAudience(r)) {
+    const c = commitments.find((x) => x.key === `sop_rollout_ack:${r.id}:${p.user.id}` && x.status === 'open');
+    if (c) notifyWork(p.user.id, c, r.urgent ? 'overdue' : 'nudge', at);
+  }
+}
+
+const srRolloutOrThrow = (id: string): SopRollout => { const r = byId(sopRollouts, id); if (!r) throw new RepositoryError('not_found'); return r; };
+function srPartner(userId: string, r: SopRollout): CpPerson {
+  const person = tnPersonOf(userId);
+  const found = person ? srAudience(r).find((p) => p.person.userIds.includes(userId)) : undefined;
+  if (!found) throw new RepositoryError('not_audience');
+  return found;
+}
+
+function srUpdateDetail(r: SopRollout, p: CpPerson, now: number): SopUpdateDetailView {
+  const rc = srReceiptOf(r.id, p.person.userIds);
+  const status = srStatusOf(r, p.person.userIds);
+  const away = srAwayOf(rc, now);
+  const replacement = r.supersededById ? byId(sopRollouts, r.supersededById) : undefined;
+  return {
+    rollout: srViewOf(r, now), status, seenAt: rc?.seenAt ?? null, acknowledgedAt: rc?.acknowledgedAt ?? null, quizPassedAt: rc?.quizPassedAt ?? null, attempts: rc?.attempts.length ?? 0,
+    away: away ? { until: away.until, note: away.note } : null, held: p.person.roles.includes('technician') && r.roles.includes('technician') && srGates(r, now) && status !== 'complete',
+    questions: r.questions.map((q) => ({ id: q.id, text: q.text, options: [...q.options] })), docRoute: p.person.roles.includes('technician') ? `/sops/${r.docId}?v=${r.version}` : null,
+    replacedBy: replacement ? { id: replacement.id, code: replacement.code } : null,
+  };
+}
+
+function srInputFor(input: SopRolloutInput, now: number, kind: 'announce' | 'correction', base?: SopRollout): SopRollout {
+  const doc = srDocOf(input.docId, now);
+  const versionKnown = !!doc?.versions.some((v) => v.version === input.version);
+  const taken = sopRollouts.some((x) => x.docId === input.docId && x.version === input.version && !x.supersededById);
+  const problem = srRolloutProblem(input, { now, docKnown: !!doc, versionKnown, taken, correction: kind === 'correction' });
+  if (problem) throw new RepositoryError(problem);
+  sopRolloutCounter += 1;
+  const urgent = input.urgent;
+  const code = base ? `${base.code.replace(/-R\d+$/, '')}-R${sopRollouts.filter((x) => x.code.startsWith(`${base.code.replace(/-R\d+$/, '')}-R`)).length + 1}` : srCodeOf(sopRolloutCounter);
+  return {
+    id: `sr-${sopRolloutCounter}`, code, docId: input.docId, version: input.version, kind, roles: ROLES_ORDER.filter((x) => input.roles.includes(x)), summary: input.summary.trim(), effectiveDate: urgent ? srToday(now) : input.effectiveDate, urgent,
+    questions: input.questions.map((q, i) => ({ id: `q${i + 1}`, text: q.text.trim(), options: q.options.map((o) => o.trim()).filter(Boolean), correct: q.correct })), createdAt: new Date(now).toISOString(), createdByName: '',
+    ...(base ? { correctsId: base.id, correctionReason: (input.reason ?? '').trim() } : {}),
+  };
+}
+const ROLES_ORDER: TrainingRole[] = ['technician', 'surveyor', 'supplier'];
 
 /* ============================== Partner deactivation and exit (150) */
 
@@ -17335,6 +17558,182 @@ export const memoryRepository: Repository = {
       complianceReviews.push(entry);
       syncCommitments(now);
       return { ...entry };
+    }),
+
+  /* --------------------------------- SOP rollout notification (159) */
+  getSopRolloutBoard: (adminId) =>
+    simulateRead((): SopRolloutBoardView => {
+      ofAdmin(adminId);
+      const now = Date.now();
+      syncSopRollouts(now);
+      const views = [...sopRollouts].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((r) => srViewOf(r, now));
+      const live = views.filter((v) => v.state !== 'replaced');
+      const docs: SopRolloutDocOption[] = srDocs(now).map((d) => ({
+        id: d.id, title: d.title, source: d.source, defaultRoles: defaultRolesOf(d.source),
+        versions: d.versions.map((v) => ({ version: v.version, effectiveFrom: v.effectiveFrom, state: v.state, changeNote: v.changeNote, changes: v.changes, safetyChanged: srChangesOf(d, v.version).some((c) => c.safetyCritical && c.kind !== 'removed'), announcedCode: sopRollouts.find((r) => r.docId === d.id && r.version === v.version && !r.supersededById)?.code ?? null })),
+      }));
+      return {
+        rollouts: views, docs,
+        kpis: { active: live.length, waiting: live.reduce((n, v) => n + (v.counts.total - v.counts.complete), 0), overdue: live.filter((v) => v.overdue).length, away: live.reduce((n, v) => n + v.counts.away, 0), held: live.reduce((n, v) => n + (v.gatesWork ? srPersonRows(sopRollouts.find((r) => r.id === v.id) as SopRollout, now).filter((x) => x.held).length : 0), 0) },
+        at: new Date(now).toISOString(),
+      };
+    }),
+
+  getSopRollout: (rolloutId, adminId) =>
+    simulateRead((): SopRolloutDetailView => {
+      ofAdmin(adminId);
+      const now = Date.now();
+      ensureSopRolloutSeeds(now);
+      const r = srRolloutOrThrow(rolloutId);
+      return { ...srViewOf(r, now), people: srPersonRows(r, now), questions: r.questions.map((q) => ({ ...q, options: [...q.options] })) };
+    }),
+
+  publishSopRollout: (input, adminId) =>
+    simulateWrite((): SopRolloutView => {
+      const admin = ofAdmin(adminId);
+      const now = Date.now();
+      ensureSopRolloutSeeds(now);
+      const r = srInputFor(input, now, 'announce');
+      r.createdByName = admin.name;
+      sopRollouts.push(r);
+      srAnnounce(r, now);
+      return srViewOf(r, now);
+    }),
+
+  correctSopRollout: (rolloutId, input, adminId) =>
+    simulateWrite((): SopRolloutView => {
+      const admin = ofAdmin(adminId);
+      const now = Date.now();
+      ensureSopRolloutSeeds(now);
+      const original = srRolloutOrThrow(rolloutId);
+      if (original.supersededById) throw new RepositoryError('superseded');
+      const r = srInputFor(input, now, 'correction', original);
+      r.createdByName = admin.name;
+      sopRollouts.push(r);
+      patchInPlace(sopRollouts, original.id, { supersededById: r.id, supersededAt: new Date(now).toISOString() });
+      srAnnounce(r, now);
+      syncSopRollouts(now);
+      return srViewOf(r, now);
+    }),
+
+  remindSopRollout: (rolloutId, adminId) =>
+    simulateWrite(() => {
+      ofAdmin(adminId);
+      const now = Date.now();
+      ensureSopRolloutSeeds(now);
+      const r = srRolloutOrThrow(rolloutId);
+      if (r.supersededById) throw new RepositoryError('superseded');
+      const at = new Date(now).toISOString();
+      syncCommitments(now);
+      let reminded = 0;
+      let skipped = 0;
+      let pending = 0;
+      for (const p of srAudience(r)) {
+        if (srStatusOf(r, p.person.userIds) === 'complete') continue;
+        pending += 1;
+        const rc = srReceiptFor(r.id, p.person, p.user.id);
+        const recent = rc.lastRemindedAt && now - Date.parse(rc.lastRemindedAt) < SR_REMIND_H * 3_600_000;
+        if (srAwayOf(rc, now) || recent) { skipped += 1; continue; }
+        const c = commitments.find((x) => x.key === `sop_rollout_ack:${r.id}:${p.user.id}` && x.status === 'open');
+        if (c) notifyWork(p.user.id, c, Date.parse(srDueAt(r)) <= now ? 'overdue' : 'nudge', at);
+        rc.lastRemindedAt = at;
+        reminded += 1;
+      }
+      if (pending === 0) throw new RepositoryError('no_pending');
+      return { reminded, skipped };
+    }),
+
+  setSopRolloutAway: (rolloutId, userId, input, adminId) =>
+    simulateWrite((): SopRolloutDetailView => {
+      ofAdmin(adminId);
+      const now = Date.now();
+      ensureSopRolloutSeeds(now);
+      const r = srRolloutOrThrow(rolloutId);
+      if (r.supersededById) throw new RepositoryError('superseded');
+      const p = srAudience(r).find((x) => x.person.userIds.includes(userId));
+      if (!p) throw new RepositoryError('not_audience');
+      const rc = srReceiptFor(r.id, p.person, p.user.id);
+      if (input === null) { delete rc.awayUntil; delete rc.awayNote; delete rc.awayByName; } else {
+        const problem = srAwayProblem(input.until, input.note, now);
+        if (problem) throw new RepositoryError(problem);
+        rc.awayUntil = input.until;
+        rc.awayNote = input.note.trim();
+        rc.awayByName = (ofAdmin(adminId)).name;
+      }
+      syncCommitments(now);
+      return { ...srViewOf(r, now), people: srPersonRows(r, now), questions: r.questions.map((q) => ({ ...q, options: [...q.options] })) };
+    }),
+
+  getMySopUpdates: (userId) =>
+    simulateRead((): MySopUpdatesView => {
+      const now = Date.now();
+      ensureSopRolloutSeeds(now);
+      const person = tnPersonOf(userId);
+      if (!person) throw new RepositoryError('forbidden');
+      const items: SopUpdateRow[] = [];
+      for (const r of [...sopRollouts].sort((a, b) => b.createdAt.localeCompare(a.createdAt))) {
+        if (!srAudience(r).some((p) => p.person.userIds.includes(userId))) continue;
+        const status = srStatusOf(r, person.userIds);
+        if (r.supersededById && status !== 'complete') continue;
+        const v = srViewOf(r, now);
+        const away = srAwayOf(srReceiptOf(r.id, person.userIds), now);
+        items.push({ id: r.id, code: r.code, docTitle: v.docTitle, version: r.version, kind: r.kind, urgent: r.urgent, effectiveDate: r.effectiveDate, dueAt: v.dueAt, status, away: away ? { until: away.until } : null, requiresQuiz: v.requiresQuiz, state: v.state, held: person.roles.includes('technician') && r.roles.includes('technician') && srGates(r, now) && status !== 'complete', createdAt: r.createdAt });
+      }
+      return { items, at: new Date(now).toISOString() };
+    }),
+
+  getSopUpdate: (rolloutId, userId) =>
+    simulateRead((): SopUpdateDetailView => {
+      const now = Date.now();
+      ensureSopRolloutSeeds(now);
+      const r = srRolloutOrThrow(rolloutId);
+      return srUpdateDetail(r, srPartner(userId, r), now);
+    }),
+
+  markSopUpdateSeen: (rolloutId, userId) =>
+    simulateWrite((): SopUpdateDetailView => {
+      const now = Date.now();
+      ensureSopRolloutSeeds(now);
+      const r = srRolloutOrThrow(rolloutId);
+      const p = srPartner(userId, r);
+      if (!r.supersededById) {
+        const rc = srReceiptFor(r.id, p.person, userId);
+        if (!rc.seenAt) { rc.seenAt = new Date(now).toISOString(); syncCommitments(now); }
+      }
+      return srUpdateDetail(r, p, now);
+    }),
+
+  submitSopUpdateQuiz: (rolloutId, answers, userId) =>
+    simulateWrite((): SopQuizResult => {
+      const now = Date.now();
+      ensureSopRolloutSeeds(now);
+      const r = srRolloutOrThrow(rolloutId);
+      const p = srPartner(userId, r);
+      if (r.supersededById) throw new RepositoryError('superseded');
+      if (r.questions.length === 0) throw new RepositoryError('invalid_state');
+      const rc = srReceiptFor(r.id, p.person, userId);
+      if (!rc.seenAt) throw new RepositoryError('not_seen');
+      if (answers.length !== r.questions.length || answers.some((a) => !Number.isInteger(a))) throw new RepositoryError('answers_required');
+      const graded = srGrade(r.questions, answers);
+      rc.attempts.push({ at: new Date(now).toISOString(), passed: graded.passed });
+      if (graded.passed && !rc.quizPassedAt) rc.quizPassedAt = new Date(now).toISOString();
+      return graded;
+    }),
+
+  acknowledgeSopUpdate: (rolloutId, userId) =>
+    simulateWrite((): SopUpdateDetailView => {
+      const now = Date.now();
+      ensureSopRolloutSeeds(now);
+      const r = srRolloutOrThrow(rolloutId);
+      const p = srPartner(userId, r);
+      if (r.supersededById) throw new RepositoryError('superseded');
+      const rc = srReceiptFor(r.id, p.person, userId);
+      if (!rc.seenAt) throw new RepositoryError('not_seen');
+      if (r.questions.length > 0 && !rc.quizPassedAt) throw new RepositoryError('quiz_required');
+      if (!rc.acknowledgedAt) rc.acknowledgedAt = new Date(now).toISOString();
+      syncCommitments(now);
+      syncSopRollouts(now);
+      return srUpdateDetail(r, p, now);
     }),
 
   /* --------------------------------- Refresher reminders (156) */
