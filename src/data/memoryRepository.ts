@@ -247,6 +247,12 @@ import type {
   TrainingModuleView,
   LessonAnswerResult,
   AssessmentAttemptView,
+  AssignTrainingResult,
+  DriveDemandView,
+  SkillCellView,
+  SkillColumnView,
+  SkillMatrixView,
+  SkillRowView,
   RefresherCadenceView,
   RefresherQueueView,
   RefresherRowView,
@@ -665,6 +671,7 @@ import type {
   CertificationPref,
   RefresherCadence,
   RefresherExtension,
+  TrainingAssignment,
 } from './types';
 import { formatDate, formatDateTime, formatINR, formatINRCompact, formatTime, haversineKm } from '@/design-system/format';
 import { MAX_SAFE_BOT_DISCOUNT_PCT } from '@/features/communication/botRules';
@@ -752,6 +759,7 @@ import type { NowStage as RdNowStage, Period as RdPeriod, RecruitStage as RdRecr
 import { TOPICS as TN_TOPICS, currentVersionOf as tnCurrentVersion, curriculumOf as tnCurriculum, jobGateOf as tnJobGate, lockedBy as tnLockedBy, percentOfModule as tnPercent, relevantFor as tnRelevant, requiredFor as tnRequired, startProblem as tnStartProblem, statusOf as tnStatus, updatedSince as tnUpdated } from '@/features/training/curriculum';
 import type { ModuleStatus } from '@/features/training/curriculum';
 import { BUILT_IN_CATEGORIES as SOP_BUILT_IN, BUILT_IN_SINCE as SOP_SINCE, categoryProblem as sopCategoryProblem, currentOf as sopCurrent, diffItems as sopDiff, referenceProblem as sopReferenceProblem, stateOf as sopStateOf, upcomingOf as sopUpcoming } from '@/features/sop/library';
+import { DRIVE_SKILL as SK_DRIVE_SKILL, DRIVE_TYPES as SK_DRIVES, SKILL_TAGS as SK_TAGS, SMALL_DEMAND as SK_SMALL_DEMAND, SMALL_WORKFORCE as SK_SMALL, TREND_MONTHS as SK_TREND_MONTHS, assignProblem as skAssignProblem, columnGap as skColumnGap, coverageOf as skCoverage, demandRatio as skRatio, demandSignal as skSignal, trendOf as skTrend } from '@/features/training/skills';
 import { GRACE_WARN_DAYS as RF_WARN_DAYS, REMIND_EVERY_H as RF_REMIND_H, addMonths as rfAddMonths, cadenceAt as rfCadenceAt, cadenceProblem as rfCadenceProblem, comparePriority as rfCompare, daysBetween as rfDays, eligibleUntilOf as rfEligible, extensionProblem as rfExtensionProblem, priorityOf as rfPriority, tierOf as rfTier } from '@/features/training/refresher';
 import { RENEWAL_WINDOW_DAYS as AS_RENEW_DAYS, badgeStatusOf as asBadgeStatus, countsForWork as asCounts, daysLeftOf as asDaysLeft, failsSinceLastPass as asFailsSince, badgeValid as asBadgeValid, answerProblem as asAnswerProblem, configProblem as asConfigProblem, cooldownUntilOf as asCooldownUntil, failedCountOf as asFailedCount, isStruggling as asStruggling, orderFor as asOrder, passedAt as asPassed, questionsFor as asQuestions, scoreOf as asScore } from '@/features/training/assessment';
 import { seedAssessmentAttempts, seedAssessments, seedCertBadges, seedRefresherCadences, seedTrainingLessonProgress, seedTrainingLessons, seedTrainingModules, seedTrainingProgress } from './trainingSeed';
@@ -2460,6 +2468,7 @@ function commitmentSources(now: number): CommitmentSources {
     tierDisputes: (tcEnsure(Date.now()), tierDisputes),
     tierReviews,
     certRenewals: certRenewalSignals(Date.now()),
+    trainingAssignments: trainingAssignmentSignals(Date.now()),
     exits: exitSignals(),
     handoverReviews: handoverSignals().reviews,
     qcMechChecks,
@@ -8779,6 +8788,8 @@ const assessmentAttempts: AssessmentAttempt[] = seedAssessmentAttempts.map((a) =
 const certBadges: CertificationBadge[] = seedCertBadges.map((b) => ({ ...b }));
 let assessmentAttemptCounter = 100;
 let certCounter = 1100;
+const trainingAssignments: TrainingAssignment[] = [];
+let trainingAssignmentCounter = 0;
 const certPrefs: CertificationPref[] = [];
 const refresherCadences: RefresherCadence[] = seedRefresherCadences.map((c) => ({ ...c, versions: c.versions.map((v) => ({ ...v })) }));
 const refresherExtensions: RefresherExtension[] = [];
@@ -8820,6 +8831,7 @@ function tnViewOf(m: TrainingModule, person: { roles: TrainingRole[]; userIds: s
     lockedBy: locked.map((x) => ({ id: x.id, code: x.code })), gatesJobAssignment: m.gatesJobAssignment && tnRequired(m, ['technician']),
     hasContent: trainingLessons.some((l) => l.moduleId === m.id),
     assessment: asSummaryOf(m, person.userIds, now),
+    assignment: skAssignmentOf(person.userIds, m.id, now),
   };
 }
 
@@ -9241,6 +9253,110 @@ function syncRefreshers(now: number): void {
     if (warn && rfRemind(row, 'grace', now, 48)) logAutomatedAction({ sourceKey: 'refresher.reminder', triggeringCondition: `${row.name}'s ${row.moduleCode} refresher: ${row.daysEligibleLeft} days of eligibility left`, actionTaken: 'Reminded them to refresh before new work is held', affectedRecordId: row.id, affectedRecordType: 'other' });
     if (row.tier === 'blocked' && rfRemind(row, 'blocked', now, 24 * 365)) logAutomatedAction({ sourceKey: 'refresher.blocked', triggeringCondition: `${row.name}'s ${row.moduleCode} certification ended and its grace period is over`, actionTaken: 'Told them new work needing it is held until they refresh', affectedRecordId: row.id, affectedRecordType: 'other' });
   }
+}
+
+/* ---- skill matrix and assigned training (157) */
+
+/** The open assignment of a module to a person, unless they have since finished (and passed) it, which closes it by itself. */
+function skAssignmentOf(userIds: string[], moduleId: string, now: number): TrainingModuleView['assignment'] {
+  const a = trainingAssignments.find((x) => x.status === 'open' && x.moduleId === moduleId && userIds.includes(x.userId));
+  const m = byId(trainingModules, moduleId);
+  if (!a || !m) return null;
+  if (tnStatus(m, tnProgressOf(userIds, moduleId), now) === 'completed' && asCertified(userIds, moduleId, now)) return null;
+  return { id: a.id, dueDate: a.dueDate, byName: a.assignedByName, note: a.note };
+}
+
+function skTechnicians() {
+  return users.filter((u) => u.role === 'technician' && u.status === 'active');
+}
+
+/** The deals asking for each drive type: the newest quotation of every open or recently won lead, so training is weighed against real need. */
+function skDemand(now: number): Map<string, { deals: number; value: number }> {
+  const out = new Map<string, { deals: number; value: number }>();
+  for (const lead of leads) {
+    if (lead.stage !== 'quoted' && lead.stage !== 'negotiation' && lead.stage !== 'won') continue;
+    if (lead.stage === 'won') {
+      const deal = deals.find((d) => d.leadId === lead.id);
+      const job = jobs.find((j) => j.dealId === deal?.id);
+      const recent = !!deal?.closedAt && now - Date.parse(deal.closedAt) <= 180 * 86_400_000;
+      if (!recent && !(job && job.status !== 'completed')) continue;
+    }
+    const q = quotations.filter((x) => x.leadId === lead.id).sort((a, b) => b.version - a.version)[0];
+    if (!q) continue;
+    const cur = out.get(q.driveType) ?? { deals: 0, value: 0 };
+    out.set(q.driveType, { deals: cur.deals + 1, value: cur.value + lead.estimatedValue });
+  }
+  return out;
+}
+
+function skMatrixOf(now: number): SkillMatrixView {
+  const techs = skTechnicians();
+  const certMods = trainingModules.filter((m) => m.status === 'published' && tnRequired(m, ['technician']) && asOf(m.id));
+  const columnIds = [...SK_TAGS.map((id) => ({ id: id as string, kind: 'tag' as const, m: undefined as TrainingModule | undefined })), ...certMods.map((m) => ({ id: m.code, kind: 'cert' as const, m }))];
+  const rows: SkillRowView[] = techs.map((u) => {
+    const tags = normalizeSkills(u.skills);
+    const cells: Record<string, SkillCellView> = {};
+    for (const c of columnIds) {
+      if (c.kind === 'tag') { cells[c.id] = { state: tags.includes(c.id) ? 'held' : 'missing', assigned: false, dueDate: null }; continue; }
+      const m = c.m as TrainingModule;
+      const badge = certLatestOf([u.id]).find((b) => b.moduleId === m.id);
+      let state: SkillCellView['state'];
+      if (badge) {
+        const st = certStatusOf(badge, now);
+        state = st === 'valid' ? 'current' : st === 'expiring' ? 'expiring' : st === 'grace' ? 'grace' : st === 'expired' ? 'lapsed' : 'earlier';
+      } else {
+        const p = tnProgressOf([u.id], m.id);
+        state = p ? 'in_progress' : 'none';
+      }
+      const a = skAssignmentOf([u.id], m.id, now);
+      cells[c.id] = { state, assigned: !!a, dueDate: a?.dueDate ?? null };
+    }
+    return { userId: u.id, name: u.name, openJobs: rfOpenJobs(u.id), cells };
+  });
+  const small = techs.length < SK_SMALL;
+  const holds = (st: string) => st === 'held' || st === 'current' || st === 'expiring' || st === 'grace';
+  const columns: SkillColumnView[] = columnIds.map((c) => {
+    const held = rows.filter((r) => holds(r.cells[c.id].state)).length;
+    return { id: c.id, kind: c.kind, moduleId: c.m?.id ?? null, moduleCode: c.m?.code ?? null, safetyCritical: c.kind === 'tag' ? c.id === 'safety_rescue' : rfSafetyCritical(c.m as TrainingModule), held, total: techs.length, coverage: small ? null : skCoverage(held, techs.length), solo: held === 1, gap: skColumnGap(held, techs.length), trainable: c.kind === 'cert' };
+  });
+  const demand = skDemand(now);
+  const demandRows: DriveDemandView[] = SK_DRIVES.map((d) => {
+    const dm = demand.get(d) ?? { deals: 0, value: 0 };
+    const skill = SK_DRIVE_SKILL[d];
+    const supply = skill ? rows.filter((r) => r.cells[skill]?.state === 'held').length : 0;
+    return { driveType: d, deals: dm.deals, value: dm.value, skill, supply, ratio: skill ? skRatio(dm.deals, supply) : null, signal: skSignal(dm.deals, supply, !!skill), small: dm.deals > 0 && dm.deals < SK_SMALL_DEMAND };
+  });
+  // Coverage over time can only be rebuilt for what training records with dates: the certifications. The current roster is looked back over.
+  const certCols = certMods;
+  const points: { month: string; coverage: number | null }[] = [];
+  for (let i = SK_TREND_MONTHS - 1; i >= 0; i--) {
+    const base = new Date(now);
+    const monthStart = Date.UTC(base.getUTCFullYear(), base.getUTCMonth() - i, 1);
+    const monthEnd = Date.UTC(base.getUTCFullYear(), base.getUTCMonth() - i + 1, 1) - 1;
+    const at = Math.min(now, monthEnd);
+    const cells = techs.length * certCols.length;
+    let ok = 0;
+    for (const u of techs) for (const m of certCols) {
+      if (certBadges.some((b) => b.userId === u.id && b.moduleId === m.id && Date.parse(b.issuedAt) <= at && (!b.expiresAt || at < (rfEligible(b, rfExtensionsOf(b.id)) as number)))) ok += 1;
+    }
+    points.push({ month: new Date(monthStart).toISOString().slice(0, 7), coverage: cells ? Math.round((ok / cells) * 100) : null });
+  }
+  const trend = skTrend(points.map((p) => p.coverage));
+  const certIds = certMods.map((m) => m.code);
+  return {
+    columns, rows, demand: demandRows, trend: { points, direction: trend.direction, delta: trend.delta },
+    kpis: { gaps: columns.filter((c) => c.gap).length, fullyQualified: rows.filter((r) => certIds.every((id) => holds(r.cells[id].state))).length, technicians: techs.length, demandGaps: demandRows.filter((d) => d.signal === 'no_supply' || d.signal === 'stretched').length, assigned: trainingAssignments.filter((a) => a.status === 'open' && !!skAssignmentOf([a.userId], a.moduleId, now)).length },
+    small, at: new Date(now).toISOString(),
+  };
+}
+
+/** Open assignments, for the commitment engine: the partner owns each by its date, and it closes when they have finished (and passed). */
+function trainingAssignmentSignals(now: number): { a: TrainingAssignment; moduleCode: string; done: boolean; ownerActive: boolean }[] {
+  return trainingAssignments.filter((a) => a.status === 'open').map((a) => {
+    const m = byId(trainingModules, a.moduleId);
+    const u = byId(users, a.userId);
+    return { a, moduleCode: m?.code ?? a.moduleId, done: !!m && !skAssignmentOf([a.userId], a.moduleId, now), ownerActive: u?.status === 'active' };
+  });
 }
 
 /** A certification that lapsed while its holder is on a job: the job finishes, new ones wait, and Admin is told so it is a decision, not a surprise (155). */
@@ -16916,6 +17032,40 @@ export const memoryRepository: Repository = {
       if (!own) trainingProgress.push({ userId, moduleId, status: 'in_progress', startedAt: at, version, lessonsDone: 0 });
       tnSyncModuleProgress(m, userId, person, now);
       return tnViewOf(m, person, now);
+    }),
+
+  /* --------------------------------- Skill matrix and gap analysis (157) */
+  getSkillMatrix: (adminId) =>
+    simulateRead((): SkillMatrixView => {
+      ofAdmin(adminId);
+      return skMatrixOf(Date.now());
+    }),
+
+  assignTraining: (input, adminId) =>
+    simulateWrite((): AssignTrainingResult => {
+      const admin = ofAdmin(adminId);
+      const now = Date.now();
+      const m = byId(trainingModules, input.moduleId);
+      if (!m) throw new RepositoryError('not_found');
+      if (!trainingLessons.some((l) => l.moduleId === m.id)) throw new RepositoryError('no_content');
+      const people = [...new Set(input.userIds)];
+      if (people.length === 0) throw new RepositoryError('no_people');
+      const problem = skAssignProblem(input.dueDate, input.note, now);
+      if (problem) throw new RepositoryError(problem);
+      const result: AssignTrainingResult = { assigned: [], skipped: [] };
+      for (const userId of people) {
+        const u = byId(users, userId);
+        const person = tnPersonOf(userId);
+        if (!u || !person || u.status !== 'active') { result.skipped.push({ userId, reason: 'not_active' }); continue; }
+        if (!tnRelevant(m, person.roles)) { result.skipped.push({ userId, reason: 'not_for_you' }); continue; }
+        if (tnStatus(m, tnProgressOf(person.userIds, m.id), now) === 'completed' && asCertified(person.userIds, m.id, now)) { result.skipped.push({ userId, reason: 'already_done' }); continue; }
+        if (trainingAssignments.some((a) => a.status === 'open' && a.moduleId === m.id && person.userIds.includes(a.userId))) { result.skipped.push({ userId, reason: 'already_assigned' }); continue; }
+        trainingAssignmentCounter += 1;
+        trainingAssignments.push({ id: `ta-${trainingAssignmentCounter}`, userId, moduleId: m.id, assignedById: admin.id, assignedByName: admin.name, assignedAt: new Date(now).toISOString(), dueDate: input.dueDate, note: input.note.trim(), status: 'open' });
+        result.assigned.push({ userId, dueDate: input.dueDate });
+      }
+      syncCommitments(now);
+      return result;
     }),
 
   /* --------------------------------- Refresher reminders (156) */

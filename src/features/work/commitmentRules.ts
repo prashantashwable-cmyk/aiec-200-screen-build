@@ -1,6 +1,6 @@
 import { ASSIGN_DUE, DISPUTE_DECIDE_DUE, REVERIFY_DUE } from '@/features/qc/snags';
 import { ARRANGE_DUE, FOLLOWUP_DUE, SIGNOFF_DUE_PRESENT, SIGNOFF_DUE_REMOTE } from '@/features/qc/walkthrough';
-import type { PartnerApplication, PartnerExit, TierDispute, TierReview, WarrantyRegistration, HandoverWalkthrough, ReworkRequest,
+import type { TrainingAssignment, PartnerApplication, PartnerExit, TierDispute, TierReview, WarrantyRegistration, HandoverWalkthrough, ReworkRequest,
   Alert,
   AlertSeverity,
   CatalogPriceChange,
@@ -140,6 +140,8 @@ export interface CommitmentSources {
   tierDisputes: TierDispute[];
   tierReviews: TierReview[];
   /** Time-limited certifications: when each ends and whether a newer one has taken its place (155). */
+  /** Training Admin assigned to a partner, by a date (157). */
+  trainingAssignments: { a: TrainingAssignment; moduleCode: string; done: boolean; ownerActive: boolean }[];
   certRenewals: { badgeId: string; userId: string; moduleId: string; moduleCode: string; expiresAt: string; renewed: boolean; ownerActive: boolean }[];
   /** Exits under way and how much of the partner's work is still in their hands (150). */
   exits: { exit: PartnerExit; workOpen: number; finishing: number }[];
@@ -2039,6 +2041,30 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
         actionRoute: `/partner-tiers/${r.userId}`,
         oversightRoute: `/partner-tiers/${r.userId}`,
       }));
+    },
+  },
+  {
+    // Training Admin asked a partner to finish by a date: the partner owns it, reminded before the date and Admin hears if it passes (157).
+    kind: 'training_assignment',
+    nudgeBefore: days(2),
+    escalateAfter: days(3),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'staffing',
+    collect(src) {
+      return src.trainingAssignments
+        .filter((x) => x.ownerActive)
+        .map((x) => ({
+          ...base('training_assignment', 'application', x.a.id),
+          ownerUserId: x.a.userId,
+          titleKey: 'work.title.training_assignment',
+          titleParams: { module: x.moduleCode },
+          dueAt: new Date(`${x.a.dueDate}T17:00:00`).toISOString(),
+          state: x.done ? ('done' as const) : ('open' as const),
+          paused: false,
+          actionRoute: `/training/${x.a.moduleId}`,
+          oversightRoute: '/skill-matrix',
+        }));
     },
   },
   {

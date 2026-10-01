@@ -2412,6 +2412,8 @@ export interface TrainingModuleView {
   /** Whether the module's lessons have been written yet: a module without them cannot be started. */
   hasContent: boolean;
   /** The test that follows the lessons, if there is one (154). */
+  /** Training Admin asked this person to do, and by when (157). */
+  assignment: { id: string; dueDate: string; byName: string; note: string } | null;
   assessment: { state: 'locked' | 'to_take' | 'in_progress' | 'cooldown' | 'certified'; passPercent: number; cooldownUntil: string | null; /** A time-limited certification close to or past its end: renew by passing again. */ renewal: 'none' | 'due_soon' | 'expired'; expiresAt: string | null } | null;
 }
 
@@ -2669,6 +2671,71 @@ export interface CertificationsView {
 }
 
 export type CertificationError = TrainingError | 'not_found';
+
+/* ------------------------------------ Skill matrix and gap analysis (157) */
+
+export type SkillCellState = 'held' | 'missing' | 'current' | 'expiring' | 'grace' | 'lapsed' | 'earlier' | 'in_progress' | 'none';
+
+export interface SkillColumnView {
+  /** A skill tag (`mechanical`…) or a certification's module code. */
+  id: string;
+  kind: 'tag' | 'cert';
+  moduleId: string | null;
+  moduleCode: string | null;
+  safetyCritical: boolean;
+  held: number;
+  total: number;
+  /** Null when the workforce is too small for a percentage to mean anything. */
+  coverage: number | null;
+  /** One person holds it: a single point of dependency. */
+  solo: boolean;
+  gap: boolean;
+  /** A module in the library can close this gap by training (a tag with no module needs recruiting or training outside the app). */
+  trainable: boolean;
+}
+
+export interface SkillCellView {
+  state: SkillCellState;
+  assigned: boolean;
+  dueDate: string | null;
+}
+
+export interface SkillRowView {
+  userId: string;
+  name: string;
+  openJobs: number;
+  cells: Record<string, SkillCellView>;
+}
+
+export interface DriveDemandView {
+  driveType: string;
+  deals: number;
+  value: number;
+  skill: string | null;
+  supply: number;
+  /** Deals per qualified technician; null when nobody is qualified or the technology is not tracked. */
+  ratio: number | null;
+  signal: 'untracked' | 'no_supply' | 'stretched' | 'tight' | 'covered' | 'no_demand';
+  small: boolean;
+}
+
+export interface SkillMatrixView {
+  columns: SkillColumnView[];
+  rows: SkillRowView[];
+  demand: DriveDemandView[];
+  trend: { points: { month: string; coverage: number | null }[]; direction: 'up' | 'down' | 'flat'; delta: number | null };
+  kpis: { gaps: number; fullyQualified: number; technicians: number; demandGaps: number; assigned: number };
+  /** Too few technicians for percentages to be read as more than counts. */
+  small: boolean;
+  at: string;
+}
+
+export interface AssignTrainingResult {
+  assigned: { userId: string; dueDate: string }[];
+  skipped: { userId: string; reason: 'not_for_you' | 'already_done' | 'already_assigned' | 'not_active' }[];
+}
+
+export type SkillError = TrainingError | 'not_admin' | 'not_found' | 'no_content' | 'no_people' | 'date_invalid' | 'date_in_past' | 'date_far' | 'note_long';
 
 /* ------------------------------------ Refresher reminders (156) */
 
@@ -6369,6 +6436,9 @@ export interface Repository {
   submitAssessment(attemptId: string, answers: { questionId: string; selected: number[] }[], userId: string): Promise<AssessmentResultView>;
   getAssessmentOverview(adminId: string): Promise<AssessmentOverviewView>;
   saveAssessmentConfig(assessmentId: string, input: { passPercent: number; cooldownHours: [number, number, number] }, adminId: string): Promise<AssessmentOverviewRow>;
+  // Skill matrix and gap analysis (157)
+  getSkillMatrix(adminId: string): Promise<SkillMatrixView>;
+  assignTraining(input: { userIds: string[]; moduleId: string; dueDate: string; note: string }, adminId: string): Promise<AssignTrainingResult>;
   // Refresher reminders (156)
   getRefresherQueue(userId: string): Promise<RefresherQueueView>;
   sendRefresherReminder(badgeId: string, adminId: string): Promise<{ sentAt: string }>;

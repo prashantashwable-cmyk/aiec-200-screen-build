@@ -65,6 +65,7 @@ export const LIB_KEYS = {
     certified: 'trainingLib.row.certified',
     testToTake: 'trainingLib.row.testToTake',
     testWait: 'trainingLib.row.testWait',
+    assigned: 'trainingLib.row.assigned',
   },
   empty: { title: 'trainingLib.empty.title', body: 'trainingLib.empty.body' },
   noMatch: { title: 'trainingLib.noMatch.title', body: 'trainingLib.noMatch.body', action: 'trainingLib.noMatch.action' },
@@ -94,6 +95,7 @@ export const LIB_KEYS = {
     testHeading: 'trainingLib.detail.testHeading',
     testBody: rec('trainingLib.detail.testBody', ['locked', 'to_take', 'in_progress', 'cooldown', 'certified'] as const),
     testOpen: 'trainingLib.detail.testOpen',
+    assignedBody: 'trainingLib.detail.assignedBody',
     testNeeded: 'trainingLib.detail.testNeeded',
   },
   offlineCopy: {

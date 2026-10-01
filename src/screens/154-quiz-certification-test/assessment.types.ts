@@ -108,6 +108,7 @@ export const ASSESS_KEYS = {
     passHint: 'assessment.admin.passHint',
     cadenceNote: 'assessment.admin.cadenceNote',
     refreshers: 'assessment.admin.refreshers',
+    skillMatrix: 'assessment.admin.skillMatrix',
     validRow: 'assessment.admin.validRow',
     noExpiryRow: 'assessment.admin.noExpiryRow',
     cooldown1: 'assessment.admin.cooldown1',

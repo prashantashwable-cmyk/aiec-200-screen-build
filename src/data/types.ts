@@ -3073,6 +3073,22 @@ export interface TrainingLessonProgress {
   completedAt?: string;
 }
 
+/* ------------------------------------ Skill matrix and assigned training (157) */
+
+/** Training Admin asked a partner to do, by a date: the way a gap on the skill matrix becomes work someone owns and is reminded of. */
+export interface TrainingAssignment {
+  id: string;
+  userId: string;
+  moduleId: string;
+  assignedById: string;
+  assignedByName: string;
+  assignedAt: string;
+  /** yyyy-mm-dd. */
+  dueDate: string;
+  note: string;
+  status: 'open' | 'cancelled';
+}
+
 /* ------------------------------------ Refresher cadence (156) */
 
 /** One version of how often a certification must be refreshed. Append-only: a change is a new version with its own effective date and reason. */
@@ -4569,6 +4585,7 @@ export type CommitmentKind =
   | 'exit_dispute_decide'
   | 'tier_review_due'
   | 'certification_renewal'
+  | 'training_assignment'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'

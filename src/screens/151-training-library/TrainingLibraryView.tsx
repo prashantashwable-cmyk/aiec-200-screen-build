@@ -168,6 +168,7 @@ function StatusIcon({ m }: { m: TrainingModuleView }) {
 }
 
 function ModuleRow({ m, t, s, index }: { m: TrainingModuleView; t: T; s: TrainingLibraryState; index: number }) {
+  const { i18n } = useTranslation();
   return (
     <Card riseIndex={Math.min(index, 8)} onClick={() => s.openModule(m.id)}>
       <div className="stack gap-2" data-module={m.code} data-status={m.status} data-locked={m.lockedBy.length > 0 ? '1' : '0'}>
@@ -190,6 +191,7 @@ function ModuleRow({ m, t, s, index }: { m: TrainingModuleView; t: T; s: Trainin
           {m.assessment?.state === 'certified' && <Badge tone="success">{t(K.row.certified)}</Badge>}
           {(m.assessment?.state === 'to_take' || m.assessment?.state === 'in_progress') && <Badge tone="accent">{t(K.row.testToTake)}</Badge>}
           {m.assessment?.state === 'cooldown' && <Badge tone="neutral">{t(K.row.testWait)}</Badge>}
+          {m.assignment && m.status !== 'completed' && <Badge tone="warning" data-assigned>{t(K.row.assigned, { date: formatDate(m.assignment.dueDate, i18n.language) })}</Badge>}
           {s.isSaved(m) && <Badge tone="success">{t(K.row.saved)}</Badge>}
           <span className="t-xs t-muted">{t(K.row.minutes, { count: m.minutes })} · {t(K.row.lessons, { count: m.lessons })}</span>
         </div>
@@ -246,6 +248,7 @@ function DetailSheet({ s, t }: { s: TrainingLibraryState; t: T }) {
           )}
           {!m.forMe && <p className="t-xs t-muted" data-not-for-you>{t(K.detail.notForYou)}</p>}
           {!m.hasContent && <p className="t-xs t-muted" data-soon>{t(K.detail.soonBody)}</p>}
+          {m.assignment && m.status !== 'completed' && <p className="t-sm" data-assigned-note>{t(K.detail.assignedBody, { by: m.assignment.byName, date: formatDate(m.assignment.dueDate, i18n.language) })}{m.assignment.note ? ` “${m.assignment.note}”` : ''}</p>}
           {m.assessment && (
             <Card>
               <div className="stack gap-2" data-test={m.assessment.state}>
