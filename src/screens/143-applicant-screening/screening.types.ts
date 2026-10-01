@@ -68,6 +68,7 @@ export const SCREENING_KEYS = {
     live: 'screening.detail.live',
     noDetail: 'screening.detail.noDetail',
     open: 'screening.detail.open',
+    interview: 'screening.detail.interview',
     outstanding: 'screening.detail.outstanding',
     outstandingNone: 'screening.detail.outstandingNone',
     next: 'screening.detail.next',

@@ -69,7 +69,7 @@ function Applicant({ s, v, t }: { s: ApplicationState; v: PartnerApplicationView
     <div className="ds-screen ds-screen--narrow pb-action-bar">
       <Header t={t} s={s} />
       <ScreenHeader title={t(K.title)} subtitle={`${v.code} · ${t(K.admin.role[v.role])}`} action={<span data-status={v.status}><Badge tone={statusTone(v.status)} dot>{t(K.status[v.status])}</Badge></span>} />
-      <Notes t={t} v={v} lang={lang} go={go} />
+      <Notes t={t} v={v} lang={lang} go={go} onInterview={() => s.goto(`/interview/${v.id}`)} />
 
       <Card className="mb-3">
         <div className="stack gap-2" data-progress>
@@ -314,8 +314,12 @@ function Identity({ s, v, t, f, state }: SectionProps & { v: PartnerApplicationV
 }
 
 /** What AIEC has said to this person, and, while it is open, what was asked for. Worded in the reader's language when it is read. */
-function Notes({ t, v, lang, go }: { t: T; v: PartnerApplicationView; lang: string; go: (id: SectionId) => void }) {
+/** A message's wording is a key; a time or a way of talking in it is filled in here, in the reader's language. */
+const messageParams = (t: T, m: PartnerApplicationView['messages'][number], lang: string): Record<string, string> => ({ ...m.params, ...(m.params.at ? { when: formatDateTime(m.params.at, lang) } : {}), ...(m.params.mode ? { mode: t(`interview.mode.${m.params.mode}`) } : {}) });
+
+function Notes({ t, v, lang, go, onInterview }: { t: T; v: PartnerApplicationView; lang: string; go: (id: SectionId) => void; onInterview: () => void }) {
   const messages = [...v.messages].reverse();
+  const iv = v.interview;
   return (
     <>
       {v.infoRequest && (
@@ -330,13 +334,22 @@ function Notes({ t, v, lang, go }: { t: T; v: PartnerApplicationView; lang: stri
           </div>
         </Card>
       )}
+      {iv && (iv.canSelfServe || iv.slot) && (
+        <Card className="mb-3">
+          <div className="stack gap-2" data-interview-card={iv.phase}>
+            <strong className="t-md">{iv.slot ? t('interview.applicant.confirmedHeading') : t('interview.applicant.chooseHeading')}</strong>
+            {iv.slot && <p className="t-sm">{formatDateTime(iv.slot.start, lang)} · {t(`interview.mode.${iv.slot.mode}`)}</p>}
+            <Button style={{ width: 'fit-content' }} data-open-interview onClick={onInterview}>{iv.slot ? t('interview.applicant.heading') : t('interview.applicant.pickDay')}</Button>
+          </div>
+        </Card>
+      )}
       {messages.length > 0 && (
         <Card className="mb-3">
           <div className="stack gap-3" data-messages>
             <strong className="t-md">{t(K.messages.heading)}</strong>
             {messages.map((m) => (
               <div key={m.id} className="stack gap-1" data-message={m.kind}>
-                <p className="t-sm">{t(m.templateKey, m.params)}</p>
+                <p className="t-sm">{t(m.templateKey, messageParams(t, m, lang))}</p>
                 {m.note && <p className="t-sm t-muted">“{m.note}”</p>}
                 <span className="t-xs t-muted">{formatDateTime(m.at, lang)}</span>
               </div>

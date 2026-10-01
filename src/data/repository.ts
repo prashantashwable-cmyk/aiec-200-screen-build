@@ -3,6 +3,7 @@ import type { ElecSignOffProblem, ElecState } from '@/features/qc/electrical';
 import type { DisputeDecision, SnagProblem, SnagSeverity } from '@/features/qc/snags';
 import type { AmcTierId, ReminderDef, WarrantyProblem } from '@/features/qc/warranty';
 import type { CompletionProblem, IssueProblem, MilestoneId } from '@/features/qc/completion';
+import type { CompleteInput, DecisionSignal, Phase as InterviewPhase } from '@/features/recruitment/interview';
 import type { Demand, GuideAnswers, InterestProblem, InterestRole, RecruitRole, RecruitSource } from '@/features/recruitment/interest';
 import type { Outstanding, SectionId } from '@/features/recruitment/application';
 import type { JudgementDecision, JudgementProblem, ShareBasis } from '@/features/commission/finalPayout';
@@ -28,6 +29,10 @@ import type {
   RecruitmentInterest,
   ApplicationForm,
   ApplicationScreening,
+  InterviewAvailability,
+  InterviewConcernCategory,
+  InterviewMode,
+  PartnerInterview,
   ScreeningFactorRow,
   PartnerApplication,
   HandoverCompletion,
@@ -1785,6 +1790,8 @@ export interface PartnerApplicationView {
   /** What AIEC has said to this applicant (a template key, filled in the reader's language) and, while it is open, what was asked for. */
   messages: PartnerApplication['messages'];
   infoRequest: { sections: string[]; note: string; at: string } | null;
+  /** Once moved forward: where the interview stands, and whether they can pick a time themselves. */
+  interview: { phase: InterviewPhase; slot: { start: string; end: string; mode: InterviewMode } | null; canSelfServe: boolean } | null;
 }
 
 export interface ApplicationBoardView {
@@ -1884,6 +1891,107 @@ export type ScreeningDecision =
   | { decision: 'request_info'; sections: string[]; note: string };
 
 export type ScreeningError = ApplicationError | 'reason_required' | 'adjust_range' | 'sum_not_100' | 'out_of_range' | 'not_open' | 'not_approved' | 'nothing_selected';
+
+/* ------------------------------------ Recruitment: interview scheduling (144) */
+
+export interface InterviewSlotView {
+  start: string;
+  end: string;
+  date: string;
+}
+
+export interface InterviewRowView {
+  id: string;
+  code: string;
+  name: string;
+  role: PartnerApplication['role'];
+  phase: InterviewPhase;
+  /** 143's final ranking number, so Admin sees who they are about to speak to. */
+  score: number | null;
+  approvedAt: string | null;
+  slot: { start: string; end: string; mode: InterviewMode } | null;
+  modes: InterviewMode[];
+  misses: number;
+  reschedules: number;
+  /** A confirmed time that no longer fits Admin's windows and has not been asked to move yet. */
+  conflict: boolean;
+  signal: DecisionSignal['level'];
+  waitingDays: number;
+}
+
+export interface InterviewBoardView {
+  rows: InterviewRowView[];
+  counts: { toArrange: number; invited: number; scheduled: number; needsOutcome: number; completed: number };
+  availability: InterviewAvailability;
+  /** How many free slots are open in the coming horizon: zero is said out loud. */
+  openSlots: number;
+}
+
+export interface InterviewDetailView {
+  row: InterviewRowView;
+  applicant: { name: string; phone: string; city: string; languages: ('en' | 'hi' | 'mr')[]; years: string };
+  interview: PartnerInterview | null;
+  signal: DecisionSignal;
+  /** The nearest free times, for Admin to offer or book. */
+  slots: InterviewSlotView[];
+  canInvite: boolean;
+  canSkip: boolean;
+}
+
+export interface InterviewApplicantView {
+  applicationId: string;
+  code: string;
+  name: string;
+  phase: InterviewPhase;
+  modes: InterviewMode[];
+  /** Shown only for the booked mode and only to the applicant of this record. */
+  slot: { start: string; end: string; mode: InterviewMode } | null;
+  details: { videoLink?: string; place?: string };
+  phone: string;
+  moveRequest: { reason: string; at: string } | null;
+  misses: number;
+  maxMisses: number;
+  canSelfServe: boolean;
+  slots: InterviewSlotView[];
+  calendarFile: string | null;
+}
+
+export interface InterviewSaveResult {
+  availability: InterviewAvailability;
+  /** Confirmed times that no longer fit. Nothing is cancelled: Admin asks each person to move, or keeps the time. */
+  conflicts: { id: string; name: string; start: string }[];
+}
+
+export type InterviewError =
+  | ApplicationError
+  | 'not_approved'
+  | 'already_active'
+  | 'modes_required'
+  | 'link_required'
+  | 'place_required'
+  | 'reason_required'
+  | 'slot_taken'
+  | 'slot_past'
+  | 'slot_too_soon'
+  | 'slot_closed'
+  | 'slot_outside'
+  | 'mode_not_offered'
+  | 'too_late'
+  | 'not_open'
+  | 'not_started'
+  | 'ratings_required'
+  | 'note_required'
+  | 'concern_required'
+  | 'concern_text'
+  | 'outcome_required'
+  | 'outcome_reason_required'
+  | 'not_completed'
+  | 'window_order'
+  | 'slot_length'
+  | 'horizon'
+  | 'lead'
+  | 'nothing_open'
+  | 'closed_date';
 
 /* ------------------------------------ Recruitment: the public front door (141) */
 
@@ -5302,6 +5410,22 @@ export interface Repository {
   getScoringConfig(userId: string): Promise<ScoringConfigView>;
   saveScoringConfig(weights: Record<ScreeningFactorRow['key'], number>, confirm: boolean, userId: string): Promise<ScoringSaveResult>;
   recordApplicantOutcome(applicationId: string, input: { rating: 'strong' | 'steady' | 'weak'; note?: string }, userId: string): Promise<ScreeningDetailView>;
+  // Recruitment: interview scheduling (144)
+  getInterviewBoard(userId: string): Promise<InterviewBoardView>;
+  getInterviewDetail(applicationId: string, userId: string): Promise<InterviewDetailView>;
+  inviteToInterview(applicationId: string, input: { modes: InterviewMode[]; details: { videoLink?: string; place?: string }; note?: string }, userId: string): Promise<InterviewDetailView>;
+  skipInterview(applicationId: string, reason: string, userId: string): Promise<InterviewDetailView>;
+  scheduleInterview(applicationId: string, input: { start: string; mode: InterviewMode; details?: { videoLink?: string; place?: string }; reason?: string }, userId: string): Promise<InterviewDetailView>;
+  requestInterviewMove(applicationId: string, reason: string, userId: string): Promise<InterviewDetailView>;
+  cancelInterview(applicationId: string, reason: string, userId: string): Promise<InterviewDetailView>;
+  /** Admin keeps a confirmed time that no longer fits the windows: it then stops being listed as a conflict. */
+  confirmInterviewSlot(applicationId: string, userId: string): Promise<InterviewDetailView>;
+  markInterviewMissed(applicationId: string, userId: string): Promise<InterviewDetailView>;
+  completeInterview(applicationId: string, input: CompleteInput, userId: string): Promise<InterviewDetailView>;
+  addInterviewAddendum(applicationId: string, input: { text: string; concern?: { category: InterviewConcernCategory; text: string } }, userId: string): Promise<InterviewDetailView>;
+  saveInterviewAvailability(availability: Omit<InterviewAvailability, 'updatedAt' | 'updatedByName'>, userId: string): Promise<InterviewSaveResult>;
+  getInterviewForApplicant(applicationId: string, key: string): Promise<InterviewApplicantView>;
+  chooseInterviewSlot(applicationId: string, key: string, input: { start: string; mode: InterviewMode }): Promise<InterviewApplicantView>;
 
   /* Recruitment: the public front door (141) */
   /** Public: no session. */

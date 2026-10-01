@@ -230,6 +230,11 @@ import type {
   RecruitmentLandingView,
   ApplicationAccess,
   ApplicationBoardView,
+  InterviewApplicantView,
+  InterviewBoardView,
+  InterviewDetailView,
+  InterviewRowView,
+  InterviewSaveResult,
   ScreeningDecision,
   ScreeningDetailView,
   ScreeningFactorView,
@@ -450,6 +455,9 @@ import type {
   RecruitmentInterest,
   PartnerApplication,
   ApplicationScreening,
+  InterviewAvailability,
+  InterviewMode,
+  PartnerInterview,
   ScreeningFactorRow,
   ApplicationForm,
   ApplicationReference,
@@ -641,6 +649,8 @@ import { issueProblem as coIssueProblem, readinessOf as coReadiness, signoffDueA
 import { QC_FEE as FP_QC_FEE, crewShares as fpCrewShares, installPoolOf as fpInstallPool, judgementProblem as fpJudgementProblem, qcShares as fpQcShares, salesCloseOf as fpSalesClose } from '@/features/commission/finalPayout';
 import type { Contributor as FpContributor } from '@/features/commission/finalPayout';
 import { SECTIONS as APP_SECTIONS, EMPTY_FORM as APP_EMPTY, maskId as apMask, outstandingOf as apOutstanding, progressOf as apProgress, sectionStates as apSections, submitProblem as apSubmitProblem } from '@/features/recruitment/application';
+import { ARRANGE_DUE as IV_ARRANGE_DUE, DEFAULT_AVAILABILITY as IV_DEFAULT_AVAILABILITY, GRACE as IV_GRACE, INVITE_WAIT as IV_INVITE_WAIT, MAX_MISSES as IV_MAX_MISSES, REASON_MIN as IV_REASON_MIN, REMINDERS as IV_REMINDERS, adminSlotProblem as ivAdminSlotProblem, availabilityProblem as ivAvailabilityProblem, completeProblem as ivCompleteProblem, decisionSignal as ivSignal, icsOf as ivIcs, phaseOf as ivPhaseOf, selfServiceOpen as ivSelfServe, slotProblem as ivSlotProblem, slotsFor as ivSlots, stillFits as ivFits, NOTE_MIN as IV_NOTE_MIN } from '@/features/recruitment/interview';
+import type { Busy as IvBusy, Phase as IvPhase } from '@/features/recruitment/interview';
 import { DECLINE_REASONS, DEFAULT_WEIGHTS as SCREEN_DEFAULT_WEIGHTS, RATE_AFTER as SCREEN_RATE_AFTER, RESHUFFLE_SHARE, SCREEN_DUE, adjustProblem as screeningAdjustProblem, clampScore as clampScreen, factorValues, feedbackOf as screeningFeedback, reshuffleShare as screeningReshuffle, scoreOf as scoreWith, weightsProblem as screeningWeightsProblem } from '@/features/recruitment/screening';
 import type { Factor, Weights } from '@/features/recruitment/screening';
 import { INTAKE_SURGE_PER_DAY, INTAKE_WINDOW, RECRUIT_CHANNELS, demandOf as rcDemandOf, interestProblem as rcInterestProblem, normalisePhone as rcPhone } from '@/features/recruitment/interest';
@@ -2586,6 +2596,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   sendDueSos(now);
   syncTechnicianClashes(now);
   syncRecruitmentIntake(now);
+  syncPartnerInterviews(now);
   syncSafetyAlerts(true, now);
   syncIssueAlerts(true, now);
   syncMaterialDeviations(true, now);
@@ -7542,7 +7553,7 @@ function stepFinisherName(job: Job, st: Job['steps'][number]): string | null {
 
 /* ============================== Recruitment: the applicant's full details (142) */
 
-const partnerApplications: PartnerApplication[] = seedPartnerApplications.map((a) => ({ ...a, form: JSON.parse(JSON.stringify(a.form)) as ApplicationForm, events: a.events.map((e) => ({ ...e })), messages: a.messages.map((m) => ({ ...m, params: { ...m.params } })), ...(a.screening ? { screening: JSON.parse(JSON.stringify(a.screening)) as ApplicationScreening } : {}) }));
+const partnerApplications: PartnerApplication[] = seedPartnerApplications.map((a) => ({ ...a, form: JSON.parse(JSON.stringify(a.form)) as ApplicationForm, events: a.events.map((e) => ({ ...e })), messages: a.messages.map((m) => ({ ...m, params: { ...m.params } })), ...(a.screening ? { screening: JSON.parse(JSON.stringify(a.screening)) as ApplicationScreening } : {}), ...(a.interview ? { interview: JSON.parse(JSON.stringify(a.interview)) as PartnerInterview } : {}) }));
 /** A form can be changed by its applicant until screening has decided it; an asked-for correction reopens it. */
 const apLocked = (status: PartnerApplication['status']): boolean => status === 'approved' || status === 'rejected' || status === 'withdrawn';
 let applicationCounter = 100;
@@ -7596,6 +7607,7 @@ function applicationViewOf(app: PartnerApplication, viewer: 'applicant' | 'admin
     events: app.events.map((e) => ({ ...e })),
     messages: app.messages.map((m) => ({ ...m, params: { ...m.params } })),
     infoRequest: app.status === 'info_requested' && app.screening?.infoRequest ? { sections: [...app.screening.infoRequest.sections], note: app.screening.infoRequest.note, at: app.screening.infoRequest.at } : null,
+    interview: app.status === 'approved' ? { phase: ivPhaseOf(app.interview, Date.now()), slot: app.interview?.slot && app.interview.status === 'scheduled' ? { start: app.interview.slot.start, end: app.interview.slot.end, mode: app.interview.slot.mode } : null, canSelfServe: ivSelfServe(app.interview, Date.now()) } : null,
   };
 }
 
@@ -7702,9 +7714,9 @@ function screeningDetailOf(app: PartnerApplication, now: Date): ScreeningDetailV
   };
 }
 
-function screeningMessage(app: PartnerApplication, kind: PartnerApplication['messages'][number]['kind'], templateKey: string, byName: string, note?: string): void {
+function screeningMessage(app: PartnerApplication, kind: PartnerApplication['messages'][number]['kind'], templateKey: string, byName: string, note?: string, extra: Record<string, string> = {}): void {
   screeningMessageCounter += 1;
-  app.messages.push({ id: `apm-${screeningMessageCounter}`, at: new Date().toISOString(), kind, templateKey, params: { name: app.form.personal.fullName.split(' ')[0] ?? '' }, ...(note?.trim() ? { note: note.trim() } : {}), byName });
+  app.messages.push({ id: `apm-${screeningMessageCounter}`, at: new Date().toISOString(), kind, templateKey, params: { name: app.form.personal.fullName.split(' ')[0] ?? '', ...extra }, ...(note?.trim() ? { note: note.trim() } : {}), byName });
 }
 
 /** What a decision freezes: the score, its breakdown and any adjustment, so the reason can still be read when the weights have moved on. */
@@ -7749,6 +7761,134 @@ function syncRecruitmentIntake(now: number): void {
     logAutomatedAction({ sourceKey: 'recruitment.surge', triggeringCondition: `${count} people showed interest in a day, past the surge line`, actionTaken: 'Raised an alert and told new applicants to expect a longer first reply', affectedRecordId: 'recruit:surge', affectedRecordType: 'other', subjectLabel: 'Recruitment intake' });
   }
   if (!surge && open) patchInPlace(alerts, open.id, { status: 'resolved', resolvedAt: at, resolvedBy: 'system', resolutionNote: 'Intake is back to a normal day.' });
+}
+
+/* ============================== Recruitment: interview scheduling (144) */
+
+const interviewAvailability: InterviewAvailability = JSON.parse(JSON.stringify(IV_DEFAULT_AVAILABILITY)) as InterviewAvailability;
+let interviewEventCounter = 0;
+
+const ivEvent = (kind: PartnerInterview['events'][number]['kind'], byName: string, note?: string): PartnerInterview['events'][number] => {
+  interviewEventCounter += 1;
+  return { id: `ivev-${interviewEventCounter}`, at: new Date().toISOString(), kind, byName, ...(note ? { note } : {}) };
+};
+
+function ivAdmin(userId: string): User {
+  const u = byId(users, userId);
+  if (!u || u.role !== 'admin') throw new RepositoryError('not_admin');
+  return u;
+}
+function ivApp(applicationId: string): PartnerApplication {
+  const app = byId(partnerApplications, applicationId);
+  if (!app) throw new RepositoryError('not_found');
+  return app;
+}
+/** Everyone else's confirmed times: what a new slot must not overlap. */
+const ivBusy = (exceptAppId?: string): IvBusy[] => partnerApplications.filter((a) => a.id !== exceptAppId && a.interview?.status === 'scheduled' && a.interview.slot).map((a) => ({ start: (a.interview as PartnerInterview).slot!.start, end: (a.interview as PartnerInterview).slot!.end }));
+const ivMessage = (app: PartnerApplication, kind: PartnerApplication['messages'][number]['kind'], key: string, byName: string, extra: Record<string, string> = {}, note?: string) => screeningMessage(app, kind, `interview.message.${key}`, byName, note, extra);
+const ivLocal = (iso: string): string => {
+  const d = new Date(iso);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
+function ivRowOf(app: PartnerApplication, now: number): InterviewRowView {
+  const i = app.interview;
+  const phase = ivPhaseOf(i, now);
+  const decidedAt = app.screening?.decision?.at ?? null;
+  const since = phase === 'to_arrange' ? decidedAt : i?.invitedAt;
+  return {
+    id: app.id,
+    code: app.code,
+    name: app.form.personal.fullName,
+    role: app.role,
+    phase,
+    score: app.screening?.decision?.effective ?? null,
+    approvedAt: decidedAt,
+    slot: i?.slot && (i.status === 'scheduled' || i.status === 'completed') ? { start: i.slot.start, end: i.slot.end, mode: i.slot.mode } : null,
+    modes: i ? [...i.modes] : [],
+    misses: i?.misses ?? 0,
+    reschedules: i?.reschedules ?? 0,
+    conflict: !!i && i.status === 'scheduled' && !!i.slot && !i.moveRequest && i.slot.chosenBy === 'applicant' && !ivFits(interviewAvailability, i.slot.start, i.slot.end) && now < new Date(i.slot.start).getTime(),
+    signal: ivSignal(i).level,
+    waitingDays: since ? Math.max(0, Math.floor((now - new Date(since).getTime()) / 86_400_000)) : 0,
+  };
+}
+
+const IV_RANK: Record<IvPhase, number> = { needs_outcome: 0, move_requested: 1, scheduled: 2, invited: 3, to_arrange: 4, missed: 5, completed: 6, skipped: 7, cancelled: 8 };
+
+function ivDetailOf(app: PartnerApplication, now: number): InterviewDetailView {
+  const row = ivRowOf(app, now);
+  return {
+    row,
+    applicant: { name: app.form.personal.fullName, phone: app.form.personal.phone, city: app.form.personal.city, languages: [...app.form.personal.languages], years: app.form.experience.years },
+    interview: app.interview ? (JSON.parse(JSON.stringify(app.interview)) as PartnerInterview) : null,
+    signal: ivSignal(app.interview),
+    slots: ivSlots(interviewAvailability, ivBusy(app.id), now).slice(0, 12),
+    canInvite: row.phase === 'to_arrange' || row.phase === 'cancelled' || row.phase === 'missed',
+    canSkip: row.phase === 'to_arrange' || row.phase === 'invited' || row.phase === 'cancelled' || row.phase === 'missed',
+  };
+}
+
+function ivApplicantViewOf(app: PartnerApplication, now: number): InterviewApplicantView {
+  const i = app.interview;
+  const open = ivSelfServe(i, now);
+  const slot = i?.slot && i.status === 'scheduled' ? i.slot : null;
+  const phase = ivPhaseOf(i, now);
+  return {
+    applicationId: app.id,
+    code: app.code,
+    name: app.form.personal.fullName,
+    phase,
+    modes: i ? [...i.modes] : [],
+    slot: slot ? { start: slot.start, end: slot.end, mode: slot.mode } : null,
+    details: slot && i ? { ...(slot.mode === 'video' && i.details.videoLink ? { videoLink: i.details.videoLink } : {}), ...(slot.mode === 'in_person' && i.details.place ? { place: i.details.place } : {}) } : {},
+    phone: app.form.personal.phone,
+    moveRequest: i?.moveRequest ? { reason: i.moveRequest.reason, at: i.moveRequest.at } : null,
+    misses: i?.misses ?? 0,
+    maxMisses: IV_MAX_MISSES,
+    canSelfServe: open,
+    slots: open ? ivSlots(interviewAvailability, ivBusy(app.id), now) : [],
+    calendarFile: slot ? ivIcs({ uid: `${app.code}-${slot.start}`, start: slot.start, end: slot.end, summary: 'AIEC interview', description: `Interview with AIEC (${slot.mode}).`, ...(slot.mode === 'in_person' && i?.details.place ? { location: i.details.place } : {}) }) : null,
+  };
+}
+
+const INTERVIEW_MODE_LIST: InterviewMode[] = ['phone', 'video', 'in_person'];
+
+function ivDetailsProblem(modes: InterviewMode[], details: { videoLink?: string; place?: string }): 'modes_required' | 'link_required' | 'place_required' | null {
+  if (modes.length === 0) return 'modes_required';
+  if (modes.includes('video') && !/^https?:\/\/\S+\.\S+/.test((details.videoLink ?? '').trim())) return 'link_required';
+  if (modes.includes('in_person') && (details.place ?? '').replace(/[^\p{L}\p{N}]/gu, '').length < 5) return 'place_required';
+  return null;
+}
+
+/** The automatic part: each confirmed time gets its reminders once, and an invitation nobody answers is nudged once. Everything is a message on the applicant's own link. */
+function syncPartnerInterviews(now: number): void {
+  for (const app of partnerApplications) {
+    const i = app.interview;
+    if (!i || app.status !== 'approved') continue;
+    if (i.status === 'scheduled' && i.slot) {
+      const start = new Date(i.slot.start).getTime();
+      for (const r of IV_REMINDERS) {
+        const key = `applicant:${r.key}:${i.slot.start}`;
+        if (now < start - r.before || now >= start || i.remindersSent.includes(key)) continue;
+        // A time confirmed after the reminder's moment was just told to them: no second message straight after.
+        if (new Date(i.slot.chosenAt).getTime() > start - r.before) {
+          i.remindersSent.push(key);
+          continue;
+        }
+        i.remindersSent.push(key);
+        ivMessage(app, 'interview_reminder', 'reminder', 'AIEC', { at: i.slot.start, mode: i.slot.mode });
+        i.events.push(ivEvent('reminder', 'AIEC', r.key));
+        logAutomatedAction({ sourceKey: 'interview.reminder', triggeringCondition: `${r.key} before the interview with ${app.form.personal.fullName}`, actionTaken: 'Reminded the applicant on their own application link', affectedRecordId: app.id, affectedRecordType: 'other', subjectLabel: app.code });
+      }
+    }
+    if (i.status === 'invited' && now - new Date(i.invitedAt).getTime() >= IV_INVITE_WAIT && !i.events.some((e) => e.kind === 'nudged')) {
+      ivMessage(app, 'interview_nudge', 'nudge', 'AIEC');
+      i.events.push(ivEvent('nudged', 'AIEC'));
+      logAutomatedAction({ sourceKey: 'interview.nudge', triggeringCondition: `${app.form.personal.fullName} has not chosen an interview time after the waiting period`, actionTaken: 'Sent one gentle reminder on their application link', affectedRecordId: app.id, affectedRecordType: 'other', subjectLabel: app.code });
+    }
+  }
 }
 
 /* ============================== Handover completion certificate (140) */
@@ -14445,6 +14585,266 @@ export const memoryRepository: Repository = {
       app.screening.outcome = { rating: input.rating, at: now.toISOString(), byName: admin.name, ...(input.note?.trim() ? { note: input.note.trim() } : {}) };
       app.events.push(applicationEvent('outcome', admin.name, input.rating));
       return screeningDetailOf(app, now);
+    }),
+
+  /* --------------------------------- Recruitment: interview scheduling (144) */
+  getInterviewBoard: (userId) =>
+    simulateRead((): InterviewBoardView => {
+      ivAdmin(userId);
+      const now = Date.now();
+      // Someone moved forward long ago who never had an interview is history, not a pending job (the same cutoff the commitment uses).
+      const rows = partnerApplications.filter((a) => a.status === 'approved' && (!!a.interview || now - new Date(a.screening?.decision?.at ?? 0).getTime() < IV_ARRANGE_DUE * 10)).map((a) => ivRowOf(a, now)).sort((a, b) => IV_RANK[a.phase] - IV_RANK[b.phase] || (a.slot?.start ?? a.approvedAt ?? '').localeCompare(b.slot?.start ?? b.approvedAt ?? ''));
+      const n = (p: IvPhase) => rows.filter((r) => r.phase === p).length;
+      return {
+        rows,
+        counts: { toArrange: n('to_arrange'), invited: n('invited'), scheduled: n('scheduled') + n('move_requested'), needsOutcome: n('needs_outcome'), completed: n('completed') },
+        availability: JSON.parse(JSON.stringify(interviewAvailability)) as InterviewAvailability,
+        openSlots: ivSlots(interviewAvailability, ivBusy(), now).length,
+      };
+    }),
+
+  getInterviewDetail: (applicationId, userId) =>
+    simulateRead((): InterviewDetailView => {
+      ivAdmin(userId);
+      return ivDetailOf(ivApp(applicationId), Date.now());
+    }),
+
+  inviteToInterview: (applicationId, input, userId) =>
+    simulateWrite((): InterviewDetailView => {
+      const admin = ivAdmin(userId);
+      const app = ivApp(applicationId);
+      if (app.status !== 'approved') throw new RepositoryError('not_approved');
+      const now = Date.now();
+      const phase = ivPhaseOf(app.interview, now);
+      if (phase !== 'to_arrange' && phase !== 'cancelled' && phase !== 'missed') throw new RepositoryError('already_active');
+      const modes = INTERVIEW_MODE_LIST.filter((m) => input.modes.includes(m));
+      const problem = ivDetailsProblem(modes, input.details);
+      if (problem) throw new RepositoryError(problem);
+      const at = new Date(now).toISOString();
+      const prior = app.interview;
+      app.interview = {
+        status: 'invited',
+        modes,
+        details: { ...(modes.includes('video') ? { videoLink: (input.details.videoLink ?? '').trim() } : {}), ...(modes.includes('in_person') ? { place: (input.details.place ?? '').trim() } : {}) },
+        invitedAt: at,
+        invitedByName: admin.name,
+        ...(input.note?.trim() ? { inviteNote: input.note.trim() } : {}),
+        misses: 0,
+        reschedules: prior?.reschedules ?? 0,
+        addenda: prior?.addenda ?? [],
+        remindersSent: [],
+        events: [...(prior?.events ?? []), ivEvent('invited', admin.name, modes.join(', '))],
+      };
+      ivMessage(app, 'interview_invite', 'invite', admin.name, {}, input.note);
+      app.updatedAt = at;
+      return ivDetailOf(app, now);
+    }),
+
+  skipInterview: (applicationId, reason, userId) =>
+    simulateWrite((): InterviewDetailView => {
+      const admin = ivAdmin(userId);
+      const app = ivApp(applicationId);
+      if (app.status !== 'approved') throw new RepositoryError('not_approved');
+      const now = Date.now();
+      const phase = ivPhaseOf(app.interview, now);
+      if (phase !== 'to_arrange' && phase !== 'invited' && phase !== 'cancelled' && phase !== 'missed') throw new RepositoryError('already_active');
+      if (reason.replace(/[^\p{L}\p{N}]/gu, '').length < IV_REASON_MIN) throw new RepositoryError('reason_required');
+      const at = new Date(now).toISOString();
+      const prior = app.interview;
+      app.interview = { status: 'skipped', modes: prior?.modes ?? [], details: prior?.details ?? {}, invitedAt: prior?.invitedAt ?? at, invitedByName: prior?.invitedByName ?? admin.name, misses: prior?.misses ?? 0, reschedules: prior?.reschedules ?? 0, skipped: { at, byName: admin.name, reason: reason.trim() }, addenda: prior?.addenda ?? [], remindersSent: [], events: [...(prior?.events ?? []), ivEvent('skipped', admin.name, reason.trim())] };
+      app.updatedAt = at;
+      return ivDetailOf(app, now);
+    }),
+
+  scheduleInterview: (applicationId, input, userId) =>
+    simulateWrite((): InterviewDetailView => {
+      const admin = ivAdmin(userId);
+      const app = ivApp(applicationId);
+      if (app.status !== 'approved') throw new RepositoryError('not_approved');
+      const now = Date.now();
+      const phase = ivPhaseOf(app.interview, now);
+      if (phase === 'completed' || phase === 'skipped' || phase === 'needs_outcome') throw new RepositoryError('already_active');
+      const moving = app.interview?.status === 'scheduled';
+      if (moving && (input.reason ?? '').replace(/[^\p{L}\p{N}]/gu, '').length < IV_REASON_MIN) throw new RepositoryError('reason_required');
+      const details = { ...(app.interview?.details ?? {}), ...(input.details ?? {}) };
+      const problemWith = ivDetailsProblem([input.mode], details);
+      if (problemWith === 'link_required' || problemWith === 'place_required') throw new RepositoryError(problemWith);
+      const av = interviewAvailability;
+      const slotProblem = ivAdminSlotProblem(ivBusy(app.id), now, input.start, av.slotMinutes, av.bufferMinutes);
+      if (slotProblem) throw new RepositoryError(slotProblem === 'past' ? 'slot_past' : 'slot_taken');
+      const start = new Date(input.start);
+      const at = new Date(now).toISOString();
+      const slot = { start: start.toISOString(), end: new Date(start.getTime() + av.slotMinutes * 60_000).toISOString(), mode: input.mode, chosenAt: at, chosenBy: 'admin' as const };
+      const prior = app.interview;
+      const modes = prior?.modes.length ? (prior.modes.includes(input.mode) ? prior.modes : [...prior.modes, input.mode]) : [input.mode];
+      app.interview = {
+        status: 'scheduled',
+        modes,
+        details: { ...(modes.includes('video') && details.videoLink ? { videoLink: details.videoLink.trim() } : {}), ...(modes.includes('in_person') && details.place ? { place: details.place.trim() } : {}) },
+        invitedAt: prior?.invitedAt ?? at,
+        invitedByName: prior?.invitedByName ?? admin.name,
+        ...(prior?.inviteNote ? { inviteNote: prior.inviteNote } : {}),
+        slot,
+        misses: prior?.misses ?? 0,
+        reschedules: (prior?.reschedules ?? 0) + (moving ? 1 : 0),
+        addenda: prior?.addenda ?? [],
+        remindersSent: [],
+        events: [...(prior?.events ?? []), ivEvent(moving ? 'rescheduled' : 'slot_chosen', admin.name, moving ? input.reason?.trim() : undefined)],
+      };
+      if (moving) ivMessage(app, 'interview_confirmed', 'adminMoved', admin.name, { at: slot.start, mode: slot.mode }, input.reason);
+      else ivMessage(app, 'interview_confirmed', 'confirmed', admin.name, { at: slot.start, mode: slot.mode });
+      app.updatedAt = at;
+      return ivDetailOf(app, now);
+    }),
+
+  requestInterviewMove: (applicationId, reason, userId) =>
+    simulateWrite((): InterviewDetailView => {
+      const admin = ivAdmin(userId);
+      const app = ivApp(applicationId);
+      const i = app.interview;
+      if (!i || i.status !== 'scheduled' || !i.slot) throw new RepositoryError('not_open');
+      const now = Date.now();
+      if (reason !== 'availability' && reason.replace(/[^\p{L}\p{N}]/gu, '').length < IV_REASON_MIN) throw new RepositoryError('reason_required');
+      if (!i.moveRequest) {
+        i.moveRequest = { at: new Date(now).toISOString(), reason: reason === 'availability' ? 'availability' : reason.trim(), byName: admin.name };
+        i.events.push(ivEvent('move_requested', admin.name, i.moveRequest.reason));
+        // The confirmed time stands until a new one is chosen: the applicant is told plainly, and nobody is left without an appointment.
+        if (reason === 'availability') ivMessage(app, 'interview_move', 'moveAvailability', admin.name, { at: i.slot.start });
+        else ivMessage(app, 'interview_move', 'move', admin.name, { at: i.slot.start }, reason);
+      }
+      return ivDetailOf(app, now);
+    }),
+
+  confirmInterviewSlot: (applicationId, userId) =>
+    simulateWrite((): InterviewDetailView => {
+      const admin = ivAdmin(userId);
+      const app = ivApp(applicationId);
+      const i = app.interview;
+      if (!i || i.status !== 'scheduled' || !i.slot) throw new RepositoryError('not_open');
+      i.slot.chosenBy = 'admin';
+      i.events.push(ivEvent('slot_chosen', admin.name, 'kept'));
+      return ivDetailOf(app, Date.now());
+    }),
+
+  cancelInterview: (applicationId, reason, userId) =>
+    simulateWrite((): InterviewDetailView => {
+      const admin = ivAdmin(userId);
+      const app = ivApp(applicationId);
+      const i = app.interview;
+      if (!i || (i.status !== 'invited' && i.status !== 'scheduled' && i.status !== 'missed')) throw new RepositoryError('not_open');
+      if (reason.replace(/[^\p{L}\p{N}]/gu, '').length < IV_REASON_MIN) throw new RepositoryError('reason_required');
+      i.status = 'cancelled';
+      delete i.slot;
+      delete i.moveRequest;
+      i.events.push(ivEvent('cancelled', admin.name, reason.trim()));
+      ivMessage(app, 'interview_cancelled', 'cancelled', admin.name, {}, reason);
+      return ivDetailOf(app, Date.now());
+    }),
+
+  markInterviewMissed: (applicationId, userId) =>
+    simulateWrite((): InterviewDetailView => {
+      const admin = ivAdmin(userId);
+      const app = ivApp(applicationId);
+      const i = app.interview;
+      if (!i || i.status !== 'scheduled' || !i.slot) throw new RepositoryError('not_open');
+      const now = Date.now();
+      if (now < new Date(i.slot.start).getTime()) throw new RepositoryError('not_started');
+      const when = i.slot.start;
+      i.status = 'missed';
+      i.misses += 1;
+      delete i.slot;
+      delete i.moveRequest;
+      i.events.push(ivEvent('missed', admin.name));
+      // Not a strike: the person is told it happens and given the way to choose again; only after repeated misses does Admin take over, kindly.
+      ivMessage(app, 'interview_missed', i.misses >= IV_MAX_MISSES ? 'missedLast' : 'missed', admin.name, { at: when });
+      return ivDetailOf(app, now);
+    }),
+
+  completeInterview: (applicationId, input, userId) =>
+    simulateWrite((): InterviewDetailView => {
+      const admin = ivAdmin(userId);
+      const app = ivApp(applicationId);
+      const i = app.interview;
+      if (!i || i.status !== 'scheduled' || !i.slot) throw new RepositoryError('not_open');
+      const now = Date.now();
+      if (now < new Date(i.slot.start).getTime()) throw new RepositoryError('not_started');
+      const problem = ivCompleteProblem(input);
+      if (problem) throw new RepositoryError(problem);
+      const r = input.ratings as NonNullable<PartnerInterview['completed']>['ratings'];
+      const concernText = (input.concern?.text ?? '').trim();
+      i.status = 'completed';
+      i.completed = {
+        at: new Date(now).toISOString(),
+        byName: admin.name,
+        ratings: { communication: r.communication, reliability: r.reliability, experience: r.experience },
+        note: input.note.trim(),
+        ...(input.concern?.category && concernText ? { concern: { category: input.concern.category, text: concernText } } : {}),
+        outcome: input.outcome as NonNullable<PartnerInterview['completed']>['outcome'],
+        ...(input.outcome !== 'recommend' ? { outcomeReason: (input.outcomeReason ?? '').trim() } : {}),
+      };
+      delete i.moveRequest;
+      i.events.push(ivEvent('completed', admin.name, input.outcome));
+      app.updatedAt = i.completed.at;
+      return ivDetailOf(app, now);
+    }),
+
+  addInterviewAddendum: (applicationId, input, userId) =>
+    simulateWrite((): InterviewDetailView => {
+      const admin = ivAdmin(userId);
+      const app = ivApp(applicationId);
+      const i = app.interview;
+      if (!i || i.status !== 'completed') throw new RepositoryError('not_completed');
+      if (input.text.replace(/[^\p{L}\p{N}]/gu, '').length < IV_NOTE_MIN) throw new RepositoryError('note_required');
+      const concernText = (input.concern?.text ?? '').trim();
+      if (input.concern && (!input.concern.category || concernText.replace(/[^\p{L}\p{N}]/gu, '').length < IV_NOTE_MIN)) throw new RepositoryError('concern_text');
+      interviewEventCounter += 1;
+      i.addenda.push({ id: `ivad-${interviewEventCounter}`, at: new Date().toISOString(), byName: admin.name, text: input.text.trim(), ...(input.concern ? { concern: { category: input.concern.category, text: concernText } } : {}) });
+      i.events.push(ivEvent('addendum', admin.name, input.concern ? input.concern.category : undefined));
+      return ivDetailOf(app, Date.now());
+    }),
+
+  saveInterviewAvailability: (availability, userId) =>
+    simulateWrite((): InterviewSaveResult => {
+      const admin = ivAdmin(userId);
+      const next: InterviewAvailability = JSON.parse(JSON.stringify({ ...availability, closedDates: [...new Set(availability.closedDates)].sort() })) as InterviewAvailability;
+      const problem = ivAvailabilityProblem(next);
+      if (problem) throw new RepositoryError(problem);
+      Object.assign(interviewAvailability, next, { updatedAt: new Date().toISOString(), updatedByName: admin.name });
+      const now = Date.now();
+      // Nothing already confirmed is cancelled: the ones that no longer fit are handed back so Admin asks each person, or keeps the time.
+      const conflicts = partnerApplications.filter((a) => ivRowOf(a, now).conflict).map((a) => ({ id: a.id, name: a.form.personal.fullName, start: (a.interview as PartnerInterview).slot!.start }));
+      return { availability: JSON.parse(JSON.stringify(interviewAvailability)) as InterviewAvailability, conflicts };
+    }),
+
+  getInterviewForApplicant: (applicationId, key) =>
+    simulateRead((): InterviewApplicantView => {
+      const { app } = applicationFor(applicationId, { key });
+      if (app.status !== 'approved') throw new RepositoryError('not_approved');
+      return ivApplicantViewOf(app, Date.now());
+    }),
+
+  chooseInterviewSlot: (applicationId, key, input) =>
+    simulateWrite((): InterviewApplicantView => {
+      const { app } = applicationFor(applicationId, { key });
+      if (app.status !== 'approved') throw new RepositoryError('not_approved');
+      const i = app.interview;
+      const now = Date.now();
+      if (!i || !ivSelfServe(i, now)) throw new RepositoryError(i?.status === 'scheduled' ? 'too_late' : 'not_open');
+      if (!i.modes.includes(input.mode)) throw new RepositoryError('mode_not_offered');
+      const problem = ivSlotProblem(interviewAvailability, ivBusy(app.id), now, input.start);
+      if (problem) throw new RepositoryError(problem === 'past' ? 'slot_past' : problem === 'too_soon' ? 'slot_too_soon' : problem === 'closed' ? 'slot_closed' : problem === 'outside' ? 'slot_outside' : 'slot_taken');
+      const start = new Date(input.start);
+      const at = new Date(now).toISOString();
+      const moving = i.status === 'scheduled';
+      i.slot = { start: start.toISOString(), end: new Date(start.getTime() + interviewAvailability.slotMinutes * 60_000).toISOString(), mode: input.mode, chosenAt: at, chosenBy: 'applicant' };
+      i.status = 'scheduled';
+      delete i.moveRequest;
+      if (moving) i.reschedules += 1;
+      i.remindersSent = [];
+      i.events.push(ivEvent(moving ? 'rescheduled' : 'slot_chosen', app.form.personal.fullName));
+      ivMessage(app, 'interview_confirmed', 'confirmed', 'AIEC', { at: i.slot.start, mode: input.mode });
+      app.updatedAt = at;
+      return ivApplicantViewOf(app, now);
     }),
 
   /* --------------------------------- Recruitment: the public front door (141) */

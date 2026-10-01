@@ -60,6 +60,7 @@ import { RECOVERY_CHASE_EVERY, RELEASE_DUE_AFTER } from '@/features/suppliers/ex
 import { FEED_RESTORE_DUE, REVIEW_DUE, severityOf } from '@/features/finance/reconciliation';
 import { MANUAL_UPDATE_EVERY } from '@/features/logistics/shipmentTracking';
 import { SCREEN_DUE } from '@/features/recruitment/screening';
+import { ARRANGE_DUE as INTERVIEW_ARRANGE_DUE, INVITE_WAIT } from '@/features/recruitment/interview';
 
 /**
  * The manager's rulebook: every dated promise the business runs on, as data.
@@ -1709,6 +1710,92 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
           oversightRoute: '/screening',
         },
       ];
+    },
+  },
+  {
+    // An approved applicant has no way forward until Admin decides: interview first, or straight to the offer (144). History is not chased.
+    kind: 'interview_arrange',
+    nudgeBefore: hours(12),
+    escalateAfter: hours(48),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'staffing',
+    collect(src) {
+      const admin = adminId(src);
+      return src.applications
+        .filter((a) => a.status === 'approved' && a.screening?.decision && Date.now() - new Date(a.screening.decision.at).getTime() < INTERVIEW_ARRANGE_DUE * 10)
+        .map((a) => {
+          const arranged = !!a.interview && a.interview.status !== 'cancelled';
+          return {
+            ...base('interview_arrange', 'application', a.id),
+            ownerUserId: admin,
+            titleKey: 'work.title.interview_arrange',
+            titleParams: { name: a.form.personal.fullName },
+            dueAt: plus((a.screening as NonNullable<typeof a.screening>).decision!.at, INTERVIEW_ARRANGE_DUE),
+            state: arranged ? ('done' as const) : ('open' as const),
+            paused: false,
+            completedAt: arranged ? (a.interview?.skipped?.at ?? a.interview?.invitedAt) : undefined,
+            actionRoute: `/interviews/${a.id}`,
+            oversightRoute: `/interviews/${a.id}`,
+          };
+        });
+    },
+  },
+  {
+    // An invitation the applicant has not answered: Admin follows up (the automatic nudge goes out once at the same moment) (144).
+    kind: 'interview_slot_wait',
+    nudgeBefore: hours(6),
+    escalateAfter: hours(48),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'staffing',
+    collect(src) {
+      const admin = adminId(src);
+      return src.applications
+        .filter((a) => a.status === 'approved' && a.interview?.status === 'invited')
+        .map((a) => ({
+          ...base('interview_slot_wait', 'application', a.id),
+          ownerUserId: admin,
+          titleKey: 'work.title.interview_slot_wait',
+          titleParams: { name: a.form.personal.fullName },
+          dueAt: plus((a.interview as NonNullable<typeof a.interview>).invitedAt, INVITE_WAIT),
+          state: 'open' as const,
+          paused: false,
+          actionRoute: `/interviews/${a.id}`,
+          oversightRoute: `/interviews/${a.id}`,
+        }));
+    },
+  },
+  {
+    // A confirmed interview: Admin holds it and records how it went, so the notes reach the offer decision (144). The nudge comes before it starts.
+    kind: 'interview_conduct',
+    nudgeBefore: hours(3),
+    escalateAfter: hours(24),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'staffing',
+    collect(src) {
+      const admin = adminId(src);
+      return src.applications
+        .filter((a) => a.status === 'approved' && a.interview?.slot && (a.interview.status === 'scheduled' || a.interview.status === 'completed'))
+        .map((a) => {
+          const i = a.interview as NonNullable<typeof a.interview>;
+          const slot = i.slot as NonNullable<typeof i.slot>;
+          const d = new Date(slot.start);
+          const p = (n: number) => String(n).padStart(2, '0');
+          return {
+            ...base('interview_conduct', 'application', `${a.id}:${slot.start}`),
+            ownerUserId: admin,
+            titleKey: 'work.title.interview_conduct',
+            titleParams: { name: a.form.personal.fullName, when: `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}` },
+            dueAt: plus(slot.end, minutes(30)),
+            state: i.completed ? ('done' as const) : ('open' as const),
+            paused: false,
+            completedAt: i.completed?.at,
+            actionRoute: `/interviews/${a.id}`,
+            oversightRoute: `/interviews/${a.id}`,
+          };
+        });
     },
   },
   {

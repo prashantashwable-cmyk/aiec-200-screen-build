@@ -309,6 +309,7 @@ function Detail({ s, d, t, lang, setMode }: { s: ScreeningState; d: ScreeningDet
           </div>
         </Card>
       )}
+      {a.status === 'approved' && <Button variant="secondary" style={{ width: 'fit-content' }} data-open-interview onClick={() => s.goto(`/interviews/${a.id}`)}>{t(K.detail.interview)}</Button>}
       {a.status === 'approved' && <OutcomeBox s={s} d={d} t={t} />}
     </div>
   );

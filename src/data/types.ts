@@ -2706,8 +2706,10 @@ export interface PartnerApplication {
   form: ApplicationForm;
   events: { id: string; at: string; kind: 'started' | 'saved' | 'submitted' | 'resubmitted' | 'reference_outcome' | 'info_requested' | 'info_answered' | 'approved' | 'rejected' | 'adjusted' | 'outcome'; byName: string; note?: string }[];
   /** What AIEC said to the applicant: shown on their own link, in their own language, rendered from a key at the time it is read. */
-  messages: { id: string; at: string; kind: 'info_request' | 'decline' | 'approved'; templateKey: string; params: Record<string, string>; note?: string; byName: string }[];
+  messages: { id: string; at: string; kind: 'info_request' | 'decline' | 'approved' | 'interview_invite' | 'interview_confirmed' | 'interview_move' | 'interview_reminder' | 'interview_missed' | 'interview_nudge' | 'interview_cancelled'; templateKey: string; params: Record<string, string>; note?: string; byName: string }[];
   screening?: ApplicationScreening;
+  /** The one conversation AIEC has before an offer (144); optional, an approved applicant may go straight to the offer. */
+  interview?: PartnerInterview;
   isDemo: boolean;
 }
 
@@ -2726,6 +2728,58 @@ export interface ApplicationScreening {
   infoRequest?: { sections: string[]; note: string; at: string; byName: string; answeredAt?: string };
   /** How the person turned out once working with AIEC: the feedback that tunes the weights. */
   outcome?: { rating: 'strong' | 'steady' | 'weak'; at: string; byName: string; note?: string };
+}
+
+/* ------------------------------------ Interview scheduling (144) */
+
+export type InterviewMode = 'phone' | 'video' | 'in_person';
+export type InterviewConcernCategory = 'communication' | 'reliability' | 'safety_attitude' | 'experience' | 'other';
+
+export interface PartnerInterview {
+  /** `invited` waits for the applicant to pick; `scheduled` has a slot; the rest are how it ended. */
+  status: 'invited' | 'scheduled' | 'completed' | 'missed' | 'cancelled' | 'skipped';
+  /** What the applicant may choose between. */
+  modes: InterviewMode[];
+  /** Where it happens: a meeting link for a video call, a place for an in-person one. A phone call needs neither (AIEC rings the applicant). */
+  details: { videoLink?: string; place?: string };
+  invitedAt: string;
+  invitedByName: string;
+  inviteNote?: string;
+  slot?: { start: string; end: string; mode: InterviewMode; chosenAt: string; chosenBy: 'applicant' | 'admin' };
+  /** AIEC needs to move a confirmed time: the old time stands until a new one is chosen, so nobody is left without an appointment. */
+  moveRequest?: { at: string; reason: string; byName: string };
+  misses: number;
+  reschedules: number;
+  completed?: {
+    at: string;
+    byName: string;
+    ratings: { communication: 'clear' | 'ok' | 'concern'; reliability: 'clear' | 'ok' | 'concern'; experience: 'confirmed' | 'partly' | 'not_confirmed' };
+    note: string;
+    concern?: { category: InterviewConcernCategory; text: string };
+    outcome: 'recommend' | 'hold' | 'not_recommended';
+    outcomeReason?: string;
+  };
+  /** A later note, never an edit: a concern that surfaces after the conversation is added here and weighs on the offer decision. */
+  addenda: { id: string; at: string; byName: string; text: string; concern?: { category: InterviewConcernCategory; text: string } }[];
+  skipped?: { at: string; byName: string; reason: string };
+  /** Which automatic reminders have gone out, so each is sent once. */
+  remindersSent: string[];
+  events: { id: string; at: string; kind: 'invited' | 'nudged' | 'slot_chosen' | 'rescheduled' | 'move_requested' | 'reminder' | 'missed' | 'completed' | 'cancelled' | 'skipped' | 'addendum' | 'availability'; byName: string; note?: string }[];
+}
+
+/** Admin's weekly windows for interviews: the applicant picks from what is left of them. */
+export interface InterviewAvailability {
+  /** 0 = Sunday … 6 = Saturday; null is a day off. `HH:MM`. */
+  weekly: Record<number, { from: string; to: string } | null>;
+  slotMinutes: number;
+  bufferMinutes: number;
+  /** `yyyy-mm-dd` days nothing is offered, however the week is set. */
+  closedDates: string[];
+  /** The soonest a slot can be taken from now. */
+  leadHours: number;
+  horizonDays: number;
+  updatedAt: string | null;
+  updatedByName: string | null;
 }
 
 /* ------------------------------------ Handover completion certificate (140) */
@@ -3957,6 +4011,9 @@ export type CommitmentKind =
   | 'handover_certificate_issue'
   | 'application_reference_check'
   | 'application_screening'
+  | 'interview_arrange'
+  | 'interview_slot_wait'
+  | 'interview_conduct'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'

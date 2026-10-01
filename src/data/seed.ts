@@ -4226,7 +4226,7 @@ const apDoc = (name: string) => ({ fileName: name, capturedAt: hoursAgo(130), pr
 /** People screened before this app kept the work: decided on the default weighting, with what became of those taken on. Frozen like any decision. */
 function screenedHistory(): PartnerApplication[] {
   type V = [number, number, number, number, number];
-  const mk = (n: number, name: string, role: PartnerApplication['role'], daysAgoN: number, v: V, outcome?: { rating: 'strong' | 'steady' | 'weak'; note?: string }, reject?: string): PartnerApplication => {
+  const mk = (n: number, name: string, role: PartnerApplication['role'], daysAgoN: number, v: V, outcome?: { rating: 'strong' | 'steady' | 'weak'; note?: string }, reject?: string, extra: Partial<PartnerApplication> = {}): PartnerApplication => {
     const values = Object.fromEntries(SCREEN_FACTORS.map((k, i) => [k, v[i]])) as Record<(typeof SCREEN_FACTORS)[number], number>;
     const rows = SCREEN_FACTORS.map((key) => ({ key, weight: SCREEN_WEIGHTS[key], value: values[key], contribution: (SCREEN_WEIGHTS[key] * values[key]) / 100 }));
     const score = Math.round(rows.reduce((t, r) => t + r.contribution, 0));
@@ -4257,8 +4257,19 @@ function screenedHistory(): PartnerApplication[] {
         ...(outcome ? { outcome: { rating: outcome.rating, at: daysAgo(Math.max(1, daysAgoN - 40)), byName: 'Prashant Vasant Wable', ...(outcome.note ? { note: outcome.note } : {}) } } : {}),
       },
       isDemo: true,
+      ...extra,
     };
   };
+  /** A time on an ordinary working day (never a Sunday), `offset` days from today. */
+  const slot = (offset: number, hh: number, mm = 0) => {
+    const d = new Date();
+    d.setDate(d.getDate() + offset);
+    while (d.getDay() === 0) d.setDate(d.getDate() + (offset >= 0 ? 1 : -1));
+    d.setHours(hh, mm, 0, 0);
+    return { start: d.toISOString(), end: new Date(d.getTime() + 20 * 60_000).toISOString() };
+  };
+  const ev = (n: number, kind: PartnerApplication['interview'] extends infer I ? (I extends { events: (infer E)[] } ? E extends { kind: infer K } ? K : never : never) : never, at: string, byName = 'Prashant Vasant Wable', note?: string) => ({ id: `ivev-seed-${n}`, at, kind, byName, ...(note ? { note } : {}) });
+  const base = (invitedHoursAgo: number, modes: ('phone' | 'video' | 'in_person')[] = ['phone', 'video']) => ({ modes, details: modes.includes('video') ? { videoLink: 'https://meet.example.com/aiec-interview' } : {}, invitedAt: hoursAgo(invitedHoursAgo), invitedByName: 'Prashant Vasant Wable', misses: 0, reschedules: 0, addenda: [], remindersSent: [] as string[] });
   return [
     mk(1, 'Sunil Kamble', 'technician', 150, [100, 85, 80, 90, 100], { rating: 'strong', note: 'Leads installs unaided; no rework in six jobs.' }),
     mk(2, 'Ajay Shinde', 'technician', 140, [100, 80, 60, 70, 100], { rating: 'strong' }),
@@ -4270,6 +4281,27 @@ function screenedHistory(): PartnerApplication[] {
     mk(8, 'Vijay Salunke', 'technician', 90, [70, 20, 40, 30, 0], undefined, 'incomplete_details'),
     mk(9, 'Manoj Thakur', 'surveyor', 80, [100, 50, 20, 70, 50], undefined, 'area_covered'),
     mk(10, 'Girish Apte', 'technician', 70, [100, 30, 80, 60, 50], undefined, 'more_experience'),
+    // Approved and on to the interview step (144): one of each kind of state, relative to now.
+    mk(11, 'Sachin Bhosale', 'technician', 1, [100, 65, 83, 80, 100], undefined, undefined, {}),
+    mk(12, 'Meghna Kulkarni', 'surveyor', 2, [100, 72, 100, 70, 85], undefined, undefined, { interview: { status: 'invited', ...base(30), events: [ev(1, 'invited', hoursAgo(30))] } }),
+    (() => {
+      const sl = slot(1, 11);
+      return mk(13, 'Tushar Pawar', 'technician', 3, [100, 60, 67, 80, 100], undefined, undefined, { interview: { status: 'scheduled', ...base(50, ['phone']), slot: { ...sl, mode: 'phone', chosenAt: hoursAgo(20), chosenBy: 'applicant' }, events: [ev(2, 'invited', hoursAgo(50)), ev(3, 'slot_chosen', hoursAgo(20), 'Tushar Pawar')] } });
+    })(),
+    (() => {
+      const start = new Date(Date.now() - 3 * 3_600_000);
+      return mk(14, 'Omkar Jadhav', 'technician', 3, [100, 55, 100, 90, 50], undefined, undefined, { interview: { status: 'scheduled', ...base(80, ['phone']), slot: { start: start.toISOString(), end: new Date(start.getTime() + 20 * 60_000).toISOString(), mode: 'phone', chosenAt: hoursAgo(40), chosenBy: 'applicant' }, events: [ev(4, 'invited', hoursAgo(80)), ev(5, 'slot_chosen', hoursAgo(40), 'Omkar Jadhav')] } });
+    })(),
+    (() => {
+      const sl = slot(-4, 11);
+      return mk(15, 'Anjali Rao', 'surveyor', 6, [100, 80, 83, 90, 100], undefined, undefined, { interview: { status: 'completed', ...base(140), slot: { ...sl, mode: 'video', chosenAt: hoursAgo(120), chosenBy: 'applicant' }, completed: { at: sl.end, byName: 'Prashant Vasant Wable', ratings: { communication: 'clear', reliability: 'clear', experience: 'confirmed' }, note: 'Clear, organised and knows the housing societies in Kharadi well. Already has two committees waiting for a lift quote.', outcome: 'recommend' }, events: [ev(6, 'invited', hoursAgo(140)), ev(7, 'slot_chosen', hoursAgo(120), 'Anjali Rao'), ev(8, 'completed', sl.end)] } });
+    })(),
+    (() => {
+      const sl = slot(-5, 10, 30);
+      return mk(16, 'Farhan Sheikh', 'technician', 7, [100, 70, 83, 60, 50], undefined, undefined, { interview: { status: 'completed', ...base(170, ['phone']), slot: { ...sl, mode: 'phone', chosenAt: hoursAgo(150), chosenBy: 'applicant' }, completed: { at: sl.end, byName: 'Prashant Vasant Wable', ratings: { communication: 'concern', reliability: 'ok', experience: 'confirmed' }, note: 'Strong on the mechanical side and answered the technical questions well, but was hard to follow on the phone and kept dropping the line.', concern: { category: 'communication', text: 'Hard to understand on a call; may struggle reporting problems clearly from site. Worth a second short call before an offer.' }, outcome: 'hold', outcomeReason: 'Technically good. Wants a second call to check how clearly he can report a problem before we decide.' }, addenda: [{ id: 'ivad-seed-1', at: hoursAgo(60), byName: 'Prashant Vasant Wable', text: 'His reference said he left the previous job at short notice without handing over.', concern: { category: 'reliability', text: 'His former supervisor said he left his last job at short notice without a handover. Ask him about it.' } }], events: [ev(9, 'invited', hoursAgo(170)), ev(10, 'slot_chosen', hoursAgo(150), 'Farhan Sheikh'), ev(11, 'completed', sl.end), ev(12, 'addendum', hoursAgo(60), 'Prashant Vasant Wable', 'reliability')] } });
+    })(),
+    mk(17, 'Rajesh Kamat', 'technician', 4, [100, 50, 67, 70, 50], undefined, undefined, { interview: { status: 'missed', ...base(100, ['phone']), misses: 1, events: [ev(13, 'invited', hoursAgo(100)), ev(14, 'slot_chosen', hoursAgo(80), 'Rajesh Kamat'), ev(15, 'missed', hoursAgo(26))] } }),
+    mk(18, 'Nikhil Sawant', 'surveyor', 2, [100, 75, 83, 80, 100], undefined, undefined, { interview: { status: 'skipped', ...base(20), skipped: { at: hoursAgo(20), byName: 'Prashant Vasant Wable', reason: 'Referred by a current surveyor who has worked with him for years.' }, events: [ev(16, 'skipped', hoursAgo(20), 'Prashant Vasant Wable', 'Referred by a current surveyor who has worked with him for years.')] } }),
   ];
 }
 
