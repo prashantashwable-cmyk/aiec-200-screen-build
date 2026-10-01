@@ -1185,3 +1185,71 @@ certificate summarises them. A rework part joins the deal's order lines once its
 Recheck of 129–132 (after the checkpoint): re-run as Admin, the lead, the inspector and the customer at 390, 820 and 1440px, with
 no errors, raw keys or overflow. One real fix: on a job with no assistants, steps finished before names were recorded showed "steps
 completed: 0" for the lead on 129/130 (and would have counted nothing in 140's payout); they are now credited to the lead.
+
+## Module 15 — Worker & Partner Recruitment (`141`–`150`, checkpoint-verified)
+
+How a person becomes a partner, how the network is kept honest once they are, and how they leave: from a public front door to
+a signed agreement, a tier that changes what they earn or may do, one master directory, and an exit that never strands work or
+money. The idea throughout is that **one record follows the person**: an interest becomes a `PartnerApplication`, screening,
+interview, verification and the offer all attach to that same application, activation creates the real account, and the later
+screens read that account. Nothing is a second copy; what each screen shows is derived on read wherever it can be.
+
+| # | Screen | What it owns |
+|---|---|---|
+| 141 | Partner Recruitment Landing | The one public front door (`/join`), source tracking (QR / referral / campaign), one interest per phone and role, honest surge waits |
+| 142 | Applicant Data Form | The application record: saves as they type, free-text experience is enough, references never block, the applicant's own link is their credential |
+| 143 | Applicant Screening | A person decides, the score only ranks; territory need read from coverage; frozen decisions; kind decline messages in the applicant's language |
+| 144 | Interview Scheduling | Self-service slots from Admin's windows, nothing silently cancelled, reminders by the heartbeat, a decision signal for the offer |
+| 145 | Background Verification | The structural gate in front of the offer: third-party first, a person where it cannot answer, conditional approval with a deadline |
+| 146 | Offer & Agreement | Versioned templates, frozen terms, negotiation, identity-verified signature, **signing activates the account** |
+| 147 | Recruitment Dashboard | The funnel, where people are now, territory need against applicants on the way, qualified-but-waitlisted |
+| 148 | Partner Tier & Category Assignment | Tiers that change real configuration: surveyor commission, technician lead authority, supplier payment terms; versioned criteria |
+| 149 | Partner Directory | One searchable master list over every role; multi-role people as one entry; quick actions; CSV export |
+| 150 | Partner Deactivation & Exit | A guided exit: work handed on, settlement read from the ledgers, access ended last (first for a serious violation), exit conversation |
+
+**Shared vocabulary worth knowing before building on this module**
+
+- **One application, many stages.** `PartnerApplication` carries `screening`, `interview`, `verification`, `offer` and `waitlist`.
+  What the applicant reads is a message *key* rendered in their own language at read time (`messages`), shown on their own link:
+  there is no fake external channel. 146's `ofActivate` is the one place an account is created.
+- **Gates are structural, not advisory.** 145's gate (`clear` / `conditional` / `blocked`) and the interview signal are read by 146,
+  which refuses to prepare or send an offer over them; an override needs a written reason kept on the offer. A conditional approval
+  (insurance, a skill, a licence) has a deadline and lapses back to blocked.
+- **Scores rank, people decide** (143): weights are visible and tunable, a decision freezes the score and its explanation, and
+  the feedback loop only suggests a change once enough rated outcomes exist.
+- **A tier is real configuration** (148, `@/features/partners/tiers`): a surveyor's tier adds commission points to the conversion share
+  their agreement sets (`surveyorConversionPct`, used by 077's commission and 140's payout plan), a technician below `canLead` is refused
+  by the job-team actions (130), a supplier's tier *is* 100's `Supplier.paymentTier`. Criteria are versioned and publishing never
+  reassesses anyone: people who no longer meet their tier are put up for a dated review and stay where they are. A recent safety-critical
+  snag makes a promotion's timing Admin's documented call.
+- **The directory keeps no data** (149): one row per person (the last ten digits of the phone), one line per role, searched, filtered
+  and paged in the repository. Its quick actions go to the owning screens; reassigning territory is the one write it makes.
+- **Exit is a sequence, not a switch** (150, `@/features/partners/exit`): leads, jobs and orders are handed on (the records are really
+  moved), what they are owed is read from the commission ledger or the supplier payment records, a disagreement is decided on the record
+  with reasons, and only then does access end. A removal for a serious violation ends access first and can hold the money pending
+  review. An exiting partner receives no new work from the moment the exit starts (`acceptsNewWork`).
+- **Admin hears through commitments**: `application_screening`, `application_reference_check`, `interview_*`, `verification_*`,
+  `offer_*`, `partner_onboarding_finish`, `waitlist_review`, `tier_dispute_decide`, `tier_review_due`, `exit_work_handover`,
+  `exit_settlement`, `exit_dispute_decide` are rows in `commitmentRules.ts`; reminders and nudges are heartbeat syncs with
+  `logAutomatedAction`.
+
+**Checkpoint (as of this module).** All ten screens were clicked through as Admin (and the applicant's own links as a visitor) at 390,
+820 and 1440: no horizontal overflow, no raw translation keys, no console errors. An end-to-end run took a seeded applicant from offer to
+signature to an active surveyor on the first tier, found them in the directory, started and finished their exit, and confirmed they were
+then deactivated and refused as an assignee. Earlier screens spot-checked after the changes that touched them (130 job team, 100 payment
+terms, 013/014 tracking, 140 certificate, 015 territories, 019/029 alerts): all clean.
+
+**Placeholder business decisions to confirm (flagged in code and on screen where they show)**
+
+- 141: busy/surge intake thresholds; the role descriptions are copy for the owner to confirm. 143: factor weights (20/30/25/10/15) and the
+  reshuffle share. 144: availability defaults, the miss limit, reminder times. 145: conditional limits (30 days, 2 at a time), the fallback
+  note length. 146: term ranges and which are negotiable, `CONVERSION_PCT`, **the clause wording (a starting draft for the owner's advisor)**.
+- 147: leads one surveyor keeps busy, the urgent-need threshold. 148: the default criteria numbers, +0.25 / +0.5 commission points, the
+  60-day review window, the 30-day incident window. 150: last day ≤ 60 days ahead, settlement within 5 days, payment within 7 days of
+  access ending, disputes decided in 3 days.
+
+**Honest limits.** Tier criteria can only be edited, not added or removed (a new measure needs code). There is no payout-dispute screen
+for surveyors and technicians, so an exit settlement dispute follows 117's pattern on the exit record itself; a supplier's dispute
+adjustment is kept on the exit, not pushed through 115. Paying a field partner is recording a bank reference and marking their approved
+entries paid: moving money is payroll, which this build does not have. Alternate sourcing for a leaving supplier's order records the
+decision; the new order is placed from the order screens. Directory rows have no swipe actions (the sheet is the quick-action surface).
