@@ -300,6 +300,7 @@ export function useLessonPlayer() {
     openLesson: (n: number) => navigate(modulePath(moduleId, n)),
     toOverview: () => navigate(modulePath(moduleId)),
     toLibrary: () => navigate(libraryPath),
+    goto: (path: string) => navigate(path),
     moduleId,
   };
 }

@@ -3073,6 +3073,69 @@ export interface TrainingLessonProgress {
   completedAt?: string;
 }
 
+/* ------------------------------------ Quiz and certification (154) */
+
+export interface AssessmentQuestion {
+  /** Stable within an assessment (`q1`…): the words are `assessmentContent.<module code>.<id>.*`. */
+  id: string;
+  kind: 'single' | 'multi';
+  options: number;
+  correct: number[];
+  /** The module version this question first appears in, and (exclusive) the one it stops being asked from: questions move with the content they test. */
+  sinceVersion: number;
+  untilVersion?: number;
+}
+
+/** The formal test that follows a module's lessons. Its questions are versioned alongside the module, so it always tests the content now in force. */
+export interface Assessment {
+  id: string;
+  moduleId: string;
+  /** Share of the questions that must be right (placeholder business decision, Admin configures it). */
+  passPercent: number;
+  /** Hours to wait after the 1st, 2nd and 3rd-or-later failed attempt on the same version (placeholders). */
+  cooldownHours: [number, number, number];
+  questions: AssessmentQuestion[];
+}
+
+export interface AssessmentAnswer {
+  questionId: string;
+  selected: number[];
+}
+
+export interface AssessmentAttempt {
+  id: string;
+  assessmentId: string;
+  moduleId: string;
+  userId: string;
+  /** The module version it tested. */
+  version: number;
+  attemptNumber: number;
+  /** The questions asked, in the order they were asked (a different order every attempt). */
+  questionIds: string[];
+  answers: AssessmentAnswer[];
+  status: 'in_progress' | 'submitted' | 'void';
+  startedAt: string;
+  updatedAt: string;
+  submittedAt?: string;
+  correctCount?: number;
+  score?: number;
+  passPercent?: number;
+  passed?: boolean;
+}
+
+/** Issued by passing, and by nothing else: the one event 155 shows as a badge and the job gate (151) reads. */
+export interface CertificationBadge {
+  id: string;
+  userId: string;
+  moduleId: string;
+  assessmentId: string;
+  /** The module version it was earned on. */
+  version: number;
+  score: number;
+  attemptId: string | null;
+  issuedAt: string;
+}
+
 /* ------------------------------------ SOP document repository (153) */
 
 /** A category Admin added as the business grew (a new lift technology, say). The built-in ones (installation, delivery, safety, quality) are not stored. */

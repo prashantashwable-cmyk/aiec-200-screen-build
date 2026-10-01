@@ -5,7 +5,7 @@ import { ArrowClockwise, CaretRight, ChatsCircle, CheckCircle, CloudCheck, Cloud
 import { Badge, Button, Card, Chip, EmptyState, ErrorState, Field, Input, LoadingState, ProgressBar, Screen, ScreenHeader, SegBar, Select, Sheet, formatDate } from '@/design-system';
 import type { TrainingModuleView } from '@/data/repository';
 import type { TrainingTopic } from '@/data/types';
-import { LIB_KEYS as K, SCOPES, STATUS_FILTERS, TOPICS, contentKey, sopPath } from './training-library.types';
+import { LIB_KEYS as K, SCOPES, STATUS_FILTERS, TOPICS, contentKey, sopPath, assessmentPath } from './training-library.types';
 import { useTrainingLibrary } from './useTrainingLibrary';
 import type { TrainingLibraryState } from './useTrainingLibrary';
 
@@ -136,7 +136,7 @@ function Gate({ s, t }: { s: TrainingLibraryState; t: T }) {
           <div className="row gap-2 wrap">
             {g.missing.map((m) => {
               const row = (s.view as NonNullable<TrainingLibraryState['view']>).modules.find((x) => x.id === m.id);
-              return <Chip key={m.id} onClick={() => s.openModule(m.id)}>{row ? titleOf(t, row) : m.code}</Chip>;
+              return <Chip key={m.id} onClick={() => s.openModule(m.id)}>{row ? titleOf(t, row) : m.code}{m.needs === 'test' ? ` · ${t(K.gate.test)}` : ''}</Chip>;
             })}
           </div>
         )}
@@ -186,6 +186,9 @@ function ModuleRow({ m, t, s, index }: { m: TrainingModuleView; t: T; s: Trainin
           {m.updatedSince && <Badge tone="emerald">{t(K.row.updated)}</Badge>}
           {!m.forMe && <Badge tone="neutral">{t(K.row.otherRole)}</Badge>}
           {!m.hasContent && <Badge tone="neutral">{t(K.row.soon)}</Badge>}
+          {m.assessment?.state === 'certified' && <Badge tone="success">{t(K.row.certified)}</Badge>}
+          {(m.assessment?.state === 'to_take' || m.assessment?.state === 'in_progress') && <Badge tone="accent">{t(K.row.testToTake)}</Badge>}
+          {m.assessment?.state === 'cooldown' && <Badge tone="neutral">{t(K.row.testWait)}</Badge>}
           {s.isSaved(m) && <Badge tone="success">{t(K.row.saved)}</Badge>}
           <span className="t-xs t-muted">{t(K.row.minutes, { count: m.minutes })} · {t(K.row.lessons, { count: m.lessons })}</span>
         </div>
@@ -242,6 +245,15 @@ function DetailSheet({ s, t }: { s: TrainingLibraryState; t: T }) {
           )}
           {!m.forMe && <p className="t-xs t-muted" data-not-for-you>{t(K.detail.notForYou)}</p>}
           {!m.hasContent && <p className="t-xs t-muted" data-soon>{t(K.detail.soonBody)}</p>}
+          {m.assessment && (
+            <Card>
+              <div className="stack gap-2" data-test={m.assessment.state}>
+                <strong className="t-sm">{t(K.detail.testHeading)}</strong>
+                <p className="t-sm">{t(K.detail.testBody[m.assessment.state], { percent: m.assessment.passPercent })}</p>
+                {m.assessment.state !== 'locked' && <Button size="sm" variant={m.assessment.state === 'certified' ? 'secondary' : 'primary'} style={{ width: 'fit-content' }} data-open-test onClick={() => s.goto(assessmentPath(m.id))}>{t(K.detail.testOpen)}</Button>}
+              </div>
+            </Card>
+          )}
           <div className="stack gap-1" data-offline-copy>
             {s.isSaved(m) ? (
               <>

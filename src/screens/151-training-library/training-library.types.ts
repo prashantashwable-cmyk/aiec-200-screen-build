@@ -12,6 +12,7 @@ export const cacheKey = (userId: string) => `aiec.trainingLib.${userId}`;
 /** 152 plays a module here. */
 /** 153 holds the procedures technicians are held to. */
 export const sopPath = '/sops';
+export const assessmentPath = (moduleId: string) => `/assessment/${moduleId}`;
 export const modulePath = (moduleId: string) => `/training/${moduleId}`;
 export { TOPICS };
 
@@ -43,6 +44,7 @@ export const LIB_KEYS = {
     blocked: 'trainingLib.gate.blocked',
     cleared: 'trainingLib.gate.cleared',
     first: 'trainingLib.gate.first',
+    test: 'trainingLib.gate.test',
   },
   group: { progress: 'trainingLib.group.progress', none: 'trainingLib.group.none' },
   row: {
@@ -58,6 +60,9 @@ export const LIB_KEYS = {
     otherRole: 'trainingLib.row.otherRole',
     needsSignal: 'trainingLib.row.needsSignal',
     soon: 'trainingLib.row.soon',
+    certified: 'trainingLib.row.certified',
+    testToTake: 'trainingLib.row.testToTake',
+    testWait: 'trainingLib.row.testWait',
   },
   empty: { title: 'trainingLib.empty.title', body: 'trainingLib.empty.body' },
   noMatch: { title: 'trainingLib.noMatch.title', body: 'trainingLib.noMatch.body', action: 'trainingLib.noMatch.action' },
@@ -84,6 +89,10 @@ export const LIB_KEYS = {
     retakeButton: 'trainingLib.detail.retakeButton',
     notForYou: 'trainingLib.detail.notForYou',
     soonBody: 'trainingLib.detail.soonBody',
+    testHeading: 'trainingLib.detail.testHeading',
+    testBody: rec('trainingLib.detail.testBody', ['locked', 'to_take', 'in_progress', 'cooldown', 'certified'] as const),
+    testOpen: 'trainingLib.detail.testOpen',
+    testNeeded: 'trainingLib.detail.testNeeded',
   },
   offlineCopy: {
     save: 'trainingLib.offlineCopy.save',

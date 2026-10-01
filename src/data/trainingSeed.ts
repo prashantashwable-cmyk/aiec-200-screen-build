@@ -1,4 +1,4 @@
-import type { LessonVisual, TrainingCheck, TrainingLesson, TrainingLessonProgress, TrainingModule, TrainingProgress, TrainingRole } from './types';
+import type { Assessment, AssessmentAttempt, AssessmentQuestion, CertificationBadge, LessonVisual, TrainingCheck, TrainingLesson, TrainingLessonProgress, TrainingModule, TrainingProgress, TrainingRole } from './types';
 
 /**
  * The seeded curriculum (151). Sixteen modules across four topics, role-aware: some are for everyone, some only for the role whose work they
@@ -101,3 +101,40 @@ export const seedTrainingLessonProgress: TrainingLessonProgress[] = [
   lessonDone('u-tech-3', 'tl-saf-02-1', 3),
   { userId: 'u-tech-3', lessonId: 'tl-saf-02-2', moduleId: 'tm-saf-02', version: 1, positionS: 62, furthestS: 62, checks: [], startedAt: ts(2), updatedAt: ts(2) },
 ];
+
+/* ------------------------------------------------------------------ assessments (154) */
+
+const q = (id: string, kind: 'single' | 'multi', options: number, correct: number[], sinceVersion = 1): AssessmentQuestion => ({ id, kind, options, correct, sinceVersion });
+
+/**
+ * The tests for the modules that have lessons. Pass mark and cooldowns are placeholders (Admin configures them). The safety modules' tests are
+ * what makes finishing them count towards being given a job (151's gate); the wording is a starting draft for the owner's safety adviser.
+ */
+export const seedAssessments: Assessment[] = [
+  { id: 'as-onb-01', moduleId: 'tm-onb-01', passPercent: 80, cooldownHours: [1, 4, 24], questions: [q('q1', 'single', 3, [0]), q('q2', 'multi', 3, [0, 1]), q('q3', 'single', 3, [0]), q('q4', 'single', 3, [0])] },
+  { id: 'as-saf-02', moduleId: 'tm-saf-02', passPercent: 80, cooldownHours: [1, 4, 24], questions: [q('q1', 'multi', 3, [0, 1]), q('q2', 'single', 3, [1], 2), q('q3', 'single', 3, [0]), q('q4', 'single', 3, [0]), q('q5', 'single', 3, [0])] },
+  { id: 'as-saf-03', moduleId: 'tm-saf-03', passPercent: 80, cooldownHours: [1, 4, 24], questions: [q('q1', 'single', 3, [1]), q('q2', 'multi', 3, [0, 1]), q('q3', 'single', 3, [0]), q('q4', 'single', 3, [0]), q('q5', 'single', 3, [1])] },
+];
+
+const badge = (userId: string, code: string, daysAgo: number, score = 100, version = 1): CertificationBadge => ({ id: `cb-${userId}-${code}`, userId, moduleId: `tm-${code}`, assessmentId: `as-${code}`, version, score, attemptId: null, issuedAt: ts(daysAgo) });
+
+/** People who finished before the tests existed were certified by the owner's hand at the time: the badge records the version they were certified on. */
+export const seedCertBadges: CertificationBadge[] = [
+  badge('u-tech-1', 'onb-01', 38), badge('u-tech-1', 'saf-02', 27, 100, 1), badge('u-tech-1', 'saf-03', 25),
+  badge('u-tech-2', 'onb-01', 36), badge('u-tech-2', 'saf-02', 25, 100, 2), badge('u-tech-2', 'saf-03', 23),
+  badge('u-tech-5', 'onb-01', 42), badge('u-tech-5', 'saf-02', 30, 100, 2), badge('u-tech-5', 'saf-03', 28),
+  badge('u-tech-3', 'onb-01', 29),
+  badge('u-srv-1', 'onb-01', 32), badge('u-sup-1', 'onb-01', 199),
+];
+
+/** Dinesh-type case: a surveyor who finished the welcome module and has not passed its test in three tries. */
+export const seedAssessmentAttempts: AssessmentAttempt[] = [50, 50, 75].map((score, i) => {
+  const a = seedAssessments[0];
+  const correctCount = Math.round((score / 100) * a.questions.length);
+  const at = ts(6 - i * 1.5);
+  return {
+    id: `at-seed-${i + 1}`, assessmentId: a.id, moduleId: a.moduleId, userId: 'u-srv-2', version: 1, attemptNumber: i + 1, questionIds: a.questions.map((x) => x.id),
+    answers: a.questions.map((x, n) => ({ questionId: x.id, selected: n < correctCount ? x.correct : [(x.correct[0] + 1) % x.options] })),
+    status: 'submitted' as const, startedAt: at, updatedAt: at, submittedAt: at, correctCount, score, passPercent: 80, passed: false,
+  };
+});

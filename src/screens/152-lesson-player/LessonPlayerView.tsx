@@ -123,6 +123,15 @@ function Overview({ s, mv, t }: { s: LessonPlayerState; mv: ModuleLessonsView; t
             )}
           </div>
         </Card>
+        {mv.module.assessment && (mv.moduleDone || mv.module.assessment.state !== 'locked') && (
+          <Card>
+            <div className="stack gap-2" data-test-card={mv.module.assessment.state}>
+              <strong className="t-md">{t('trainingLib.detail.testHeading')}</strong>
+              <p className="t-sm">{t(`trainingLib.detail.testBody.${mv.module.assessment.state}`, { percent: mv.module.assessment.passPercent })}</p>
+              {mv.module.assessment.state !== 'locked' && <Button size="sm" variant={mv.module.assessment.state === 'certified' ? 'secondary' : 'primary'} style={{ width: 'fit-content' }} data-open-test onClick={() => s.goto(`/assessment/${mv.module.id}`)}>{t('trainingLib.detail.testOpen')}</Button>}
+            </div>
+          </Card>
+        )}
         <section className="stack gap-2">
           <h2 className="t-lg">{t(K.overview.lessonsHeading)}</h2>
           <AscensionLine steps={steps} />
@@ -319,7 +328,8 @@ function Finished({ s, mv, lesson, t }: { s: LessonPlayerState; mv: ModuleLesson
             </div>
             <Footer>
               <Button variant="secondary" icon={<DownloadSimple size={16} />} data-download-lesson onClick={() => downloadReference(t, mv, [lesson], s.lang, lessonTitle(t, code, lesson.order, s.lang))}>{t(K.reference.lesson)}</Button>
-              <Button variant={next ? 'secondary' : 'primary'} data-to-module onClick={s.toOverview}>{t(K.backToModule)}</Button>
+              <Button variant={next || (moduleDone && mv.module.assessment && mv.module.assessment.state !== 'certified') ? 'secondary' : 'primary'} data-to-module onClick={s.toOverview}>{t(K.backToModule)}</Button>
+              {moduleDone && mv.module.assessment && result && result.module.module.assessment && result.module.module.assessment.state !== 'certified' && result.module.module.assessment.state !== 'locked' && <Button data-take-test icon={<ArrowRight size={18} />} onClick={() => s.goto(`/assessment/${mv.module.id}`)}>{t('trainingLib.detail.testOpen')}</Button>}
               {next !== null && <Button data-next-lesson icon={<ArrowRight size={18} />} onClick={() => s.openLesson(next)}>{t(K.done.next)}</Button>}
             </Footer>
           </>

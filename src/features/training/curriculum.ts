@@ -62,10 +62,13 @@ export function curriculumOf(modules: TrainingModule[], roles: TrainingRole[], s
   };
 }
 
-/** The structural link to real work: a technician can be put on a job only when every safety module that gates assignment is done. */
-export function jobGateOf(modules: TrainingModule[], roles: TrainingRole[], statusById: (id: string) => ModuleStatus): { applies: boolean; cleared: boolean; missing: TrainingModule[] } {
+/**
+ * The structural link to real work: a technician can be put on a job only when every safety module that gates assignment is finished, and for a module
+ * that has a test, passed (the certification the test issues). `certified` says whether the test, if there is one, is passed.
+ */
+export function jobGateOf(modules: TrainingModule[], roles: TrainingRole[], statusById: (id: string) => ModuleStatus, certified: (id: string) => boolean = () => true): { applies: boolean; cleared: boolean; missing: TrainingModule[] } {
   if (!roles.includes('technician')) return { applies: false, cleared: true, missing: [] };
-  const missing = modules.filter((m) => m.gatesJobAssignment && requiredFor(m, ['technician']) && !isDone(statusById(m.id)));
+  const missing = modules.filter((m) => m.gatesJobAssignment && requiredFor(m, ['technician']) && (!isDone(statusById(m.id)) || !certified(m.id)));
   return { applies: true, cleared: missing.length === 0, missing };
 }
 

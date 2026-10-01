@@ -246,6 +246,13 @@ import type {
   TrainingLibraryView,
   TrainingModuleView,
   LessonAnswerResult,
+  AssessmentAttemptView,
+  AssessmentOverviewRow,
+  AssessmentOverviewView,
+  AssessmentResultView,
+  AssessmentReviewRow,
+  AssessmentStateName,
+  AssessmentView,
   SopCategoryView,
   SopDocVersionView,
   SopDocumentView,
@@ -642,6 +649,10 @@ import type {
   SopCategory,
   SopReferenceDocument,
   DeliverySopStep,
+  Assessment,
+  AssessmentAnswer,
+  AssessmentAttempt,
+  CertificationBadge,
 } from './types';
 import { formatDate, formatDateTime, formatINR, formatINRCompact, formatTime, haversineKm } from '@/design-system/format';
 import { MAX_SAFE_BOT_DISCOUNT_PCT } from '@/features/communication/botRules';
@@ -729,7 +740,8 @@ import type { NowStage as RdNowStage, Period as RdPeriod, RecruitStage as RdRecr
 import { TOPICS as TN_TOPICS, currentVersionOf as tnCurrentVersion, curriculumOf as tnCurriculum, jobGateOf as tnJobGate, lockedBy as tnLockedBy, percentOfModule as tnPercent, relevantFor as tnRelevant, requiredFor as tnRequired, startProblem as tnStartProblem, statusOf as tnStatus, updatedSince as tnUpdated } from '@/features/training/curriculum';
 import type { ModuleStatus } from '@/features/training/curriculum';
 import { BUILT_IN_CATEGORIES as SOP_BUILT_IN, BUILT_IN_SINCE as SOP_SINCE, categoryProblem as sopCategoryProblem, currentOf as sopCurrent, diffItems as sopDiff, referenceProblem as sopReferenceProblem, stateOf as sopStateOf, upcomingOf as sopUpcoming } from '@/features/sop/library';
-import { seedTrainingLessonProgress, seedTrainingLessons, seedTrainingModules, seedTrainingProgress } from './trainingSeed';
+import { badgeValid as asBadgeValid, answerProblem as asAnswerProblem, configProblem as asConfigProblem, cooldownUntilOf as asCooldownUntil, failedCountOf as asFailedCount, isStruggling as asStruggling, orderFor as asOrder, passedAt as asPassed, questionsFor as asQuestions, scoreOf as asScore } from '@/features/training/assessment';
+import { seedAssessmentAttempts, seedAssessments, seedCertBadges, seedTrainingLessonProgress, seedTrainingLessons, seedTrainingModules, seedTrainingProgress } from './trainingSeed';
 import { allowedFurthestS as lsAllowed, answerProblem as lsAnswerProblem, checkAtS as lsCheckAt, clampPlayback as lsClamp, clearedIds as lsCleared, completeProblem as lsCompleteProblem, durationOf as lsDuration, isCorrect as lsIsCorrect, lessonDone as lsDone, lessonStates as lsStates, lessonUpdated as lsUpdated, sceneStartS as lsSceneStart } from '@/features/training/lesson';
 import { GRADUATION_MIN_ORDERS, GRADUATION_MIN_SCORE } from '@/features/suppliers/paymentTerms';
 import { ACTION_NOTE_MIN as EX_ACTION_NOTE_MIN, DISPUTE_MIN as EX_DISPUTE_MIN, INTERVIEW_REASONS as EX_INTERVIEW_REASONS, LAST_DAY_MAX_DAYS as EX_LAST_DAY_MAX, REASON_MIN as EX_REASON_MIN, WITHHOLD_MIN as EX_WITHHOLD_MIN, blockersOf as exBlockersOf, decidedExtra as exDecidedExtra, decisionProblem as exDecisionProblem, startProblem as exStartProblem } from '@/features/partners/exit';
@@ -2691,6 +2703,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   syncTechnicianClashes(now);
   syncRecruitmentIntake(now);
   syncPartnerExits(now);
+  syncAssessmentAlerts(now);
   syncPartnerInterviews(now);
   syncVerification(now);
   syncOffers(now);
@@ -8745,6 +8758,10 @@ function pdProfile(key: string, now: number): PartnerDirectoryProfileView {
 const trainingModules: TrainingModule[] = seedTrainingModules.map((x) => ({ ...x, versions: x.versions.map((v) => ({ ...v })) }));
 const trainingProgress: TrainingProgress[] = seedTrainingProgress.map((x) => ({ ...x }));
 const trainingLessons: TrainingLesson[] = seedTrainingLessons;
+const assessments: Assessment[] = seedAssessments.map((a) => ({ ...a, cooldownHours: [...a.cooldownHours] as [number, number, number], questions: a.questions.map((x) => ({ ...x, correct: [...x.correct] })) }));
+const assessmentAttempts: AssessmentAttempt[] = seedAssessmentAttempts.map((a) => ({ ...a, questionIds: [...a.questionIds], answers: a.answers.map((x) => ({ questionId: x.questionId, selected: [...x.selected] })) }));
+const certBadges: CertificationBadge[] = seedCertBadges.map((b) => ({ ...b }));
+let assessmentAttemptCounter = 100;
 const lessonProgress: TrainingLessonProgress[] = seedTrainingLessonProgress.map((x) => ({ ...x, checks: x.checks.map((c) => ({ ...c, attempts: c.attempts.map((a) => ({ ...a })) })) }));
 
 /** One person across every role they hold (149 groups them the same way, by phone): what they have done in one account counts in another. */
@@ -8779,6 +8796,7 @@ function tnViewOf(m: TrainingModule, person: { roles: TrainingRole[]; userIds: s
     completedAt: p?.status === 'completed' ? p.completedAt ?? null : null, completedVersion: p?.status === 'completed' ? p.version : null,
     lockedBy: locked.map((x) => ({ id: x.id, code: x.code })), gatesJobAssignment: m.gatesJobAssignment && tnRequired(m, ['technician']),
     hasContent: trainingLessons.some((l) => l.moduleId === m.id),
+    assessment: asSummaryOf(m, person.userIds, now),
   };
 }
 
@@ -8819,7 +8837,7 @@ function tnModuleLessonsOf(m: TrainingModule, person: { roles: TrainingRole[]; u
   const st = tnStatus(m, mod, now);
   const v = tnCurrentVersion(m, now);
   return {
-    module: { id: m.id, code: m.code, topic: m.topic, version: v.version, status: st, minutes: m.minutes, required: tnRequired(m, person.roles), gatesJobAssignment: m.gatesJobAssignment && tnRequired(m, ['technician']), changeKey: v.version > 1 ? v.changeKey ?? null : null },
+    module: { id: m.id, code: m.code, topic: m.topic, version: v.version, status: st, minutes: m.minutes, required: tnRequired(m, person.roles), gatesJobAssignment: m.gatesJobAssignment && tnRequired(m, ['technician']), changeKey: v.version > 1 ? v.changeKey ?? null : null, assessment: asSummaryOf(m, person.userIds, now) },
     lessons: lessons.map((l) => tnLessonViewOf(l, m, person.userIds, states, now)),
     lessonsDone: done,
     percent: lessons.length ? Math.round((done / lessons.length) * 100) : 0,
@@ -8872,11 +8890,151 @@ function tnSyncModuleProgress(m: TrainingModule, userId: string, person: { roles
   } else trainingProgress.push({ userId, moduleId: m.id, status: allDone ? 'completed' : 'in_progress', startedAt: at, ...(allDone ? { completedAt: at } : {}), version, lessonsDone: view.lessonsDone });
 }
 
+/* ---- assessments (154) */
+
+const asOf = (moduleId: string) => assessments.find((a) => a.moduleId === moduleId);
+const ASSESSMENT_ALERT = 'assessment.alert.struggling';
+
+/** The person's certification for a module, if it still counts for the module as it reads now. */
+function asBadgeOf(userIds: string[], m: TrainingModule, now: number): CertificationBadge | undefined {
+  const min = tnCurrentVersion(m, now).minVersion;
+  return certBadges.filter((b) => b.moduleId === m.id && userIds.includes(b.userId) && asBadgeValid(b, min)).sort((a, b) => b.version - a.version)[0];
+}
+
+/** True when the module has no test, or the test is passed. */
+function asCertified(userIds: string[], moduleId: string, now: number): boolean {
+  const a = asOf(moduleId);
+  const m = byId(trainingModules, moduleId);
+  if (!a || !m) return true;
+  return !!asBadgeOf(userIds, m, now);
+}
+
+const asAttemptsOf = (userIds: string[], assessmentId: string, version: number) => assessmentAttempts.filter((x) => x.assessmentId === assessmentId && userIds.includes(x.userId) && x.version === version);
+
+function asStateOf(m: TrainingModule, a: Assessment, userIds: string[], now: number): { state: AssessmentStateName; cooldownUntil: string | null; failed: number; attempts: AssessmentAttempt[] } {
+  const version = tnCurrentVersion(m, now).version;
+  const attempts = asAttemptsOf(userIds, a.id, version);
+  const failed = asFailedCount(attempts);
+  const submitted = attempts.filter((x) => x.status === 'submitted').sort((x, y) => (y.submittedAt ?? '').localeCompare(x.submittedAt ?? ''));
+  const cooldownUntil = asCooldownUntil(submitted[0]?.submittedAt ?? null, a.cooldownHours, failed);
+  if (asBadgeOf(userIds, m, now)) return { state: 'certified', cooldownUntil: null, failed, attempts };
+  if (tnStatus(m, tnProgressOf(userIds, m.id), now) !== 'completed') return { state: 'locked', cooldownUntil: null, failed, attempts };
+  if (attempts.some((x) => x.status === 'in_progress')) return { state: 'in_progress', cooldownUntil: null, failed, attempts };
+  if (cooldownUntil && Date.parse(cooldownUntil) > now) return { state: 'cooldown', cooldownUntil, failed, attempts };
+  return { state: 'to_take', cooldownUntil: null, failed, attempts };
+}
+
+function asSummaryOf(m: TrainingModule, userIds: string[], now: number): TrainingModuleView['assessment'] {
+  const a = asOf(m.id);
+  if (!a) return null;
+  const st = asStateOf(m, a, userIds, now);
+  return { state: st.state, passPercent: a.passPercent, cooldownUntil: st.cooldownUntil };
+}
+
+function asResultOf(att: AssessmentAttempt, a: Assessment, m: TrainingModule, person: { roles: TrainingRole[]; userIds: string[] }, now: number): AssessmentResultView {
+  const questions = att.questionIds.map((id) => a.questions.find((q) => q.id === id)).filter((q): q is NonNullable<typeof q> => !!q);
+  const scored = asScore(questions, att.answers);
+  const badge = certBadges.find((b) => b.attemptId === att.id);
+  const review: AssessmentReviewRow[] = scored.perQuestion.map((r) => {
+    const q = questions.find((x) => x.id === r.questionId) as (typeof questions)[number];
+    return { questionId: q.id, kind: q.kind, options: q.options, selected: r.selected, correct: r.correct, correctAnswer: [...q.correct] };
+  });
+  const failed = asFailedCount(asAttemptsOf(person.userIds, a.id, att.version));
+  const next = att.passed ? null : asCooldownUntil(att.submittedAt ?? null, a.cooldownHours, failed);
+  const technician = person.roles.includes('technician');
+  return {
+    attemptId: att.id, moduleId: m.id, moduleCode: m.code, version: att.version, attemptNumber: att.attemptNumber, score: att.score ?? scored.score, correctCount: att.correctCount ?? scored.correctCount, total: scored.total, passPercent: att.passPercent ?? a.passPercent,
+    passed: !!att.passed, submittedAt: att.submittedAt ?? att.updatedAt, review, badge: badge ? { id: badge.id, issuedAt: badge.issuedAt } : null, nextAttemptAt: next, coaching: asStruggling(failed, !!asBadgeOf(person.userIds, m, now)),
+    gatesJobAssignment: m.gatesJobAssignment && tnRequired(m, ['technician']), jobGateCleared: technician ? trainingClear(att.userId, now) : null,
+  };
+}
+
+function asView(m: TrainingModule, a: Assessment, person: { roles: TrainingRole[]; userIds: string[] }, now: number): AssessmentView {
+  const st = asStateOf(m, a, person.userIds, now);
+  const version = tnCurrentVersion(m, now).version;
+  const submitted = st.attempts.filter((x) => x.status === 'submitted').sort((x, y) => (y.submittedAt ?? '').localeCompare(x.submittedAt ?? ''));
+  const open = st.attempts.find((x) => x.status === 'in_progress');
+  const badge = asBadgeOf(person.userIds, m, now);
+  const all = assessmentAttempts.filter((x) => x.assessmentId === a.id && person.userIds.includes(x.userId));
+  return {
+    assessmentId: a.id, moduleId: m.id, moduleCode: m.code, topic: m.topic, version, passPercent: a.passPercent, cooldownHours: [...a.cooldownHours] as [number, number, number], questionCount: asQuestions(a, version).length, state: st.state,
+    attemptsThisVersion: st.attempts.filter((x) => x.status === 'submitted').length, failedThisVersion: st.failed, nextAttemptNumber: all.length + 1, cooldownUntil: st.cooldownUntil,
+    badge: badge ? { id: badge.id, issuedAt: badge.issuedAt, score: badge.score, version: badge.version } : null,
+    history: all.filter((x) => x.status === 'submitted').sort((x, y) => (x.submittedAt ?? '').localeCompare(y.submittedAt ?? '')).map((x) => ({ attemptNumber: x.attemptNumber, score: x.score ?? 0, passed: !!x.passed, submittedAt: x.submittedAt ?? x.updatedAt, version: x.version })),
+    last: submitted[0] ? asResultOf(submitted[0], a, m, person, now) : null,
+    draft: open ? { attemptId: open.id, answers: open.answers.map((x) => ({ questionId: x.questionId, selected: [...x.selected] })), startedAt: open.startedAt } : null,
+    gatesJobAssignment: m.gatesJobAssignment && tnRequired(m, ['technician']), coaching: asStruggling(st.failed, st.state === 'certified'),
+  };
+}
+
+function asAccess(moduleId: string, userId: string, now: number) {
+  const person = tnPersonOf(userId);
+  if (!person) throw new RepositoryError('forbidden');
+  const m = byId(trainingModules, moduleId);
+  const a = asOf(moduleId);
+  if (!m) throw new RepositoryError('not_found');
+  if (!a) throw new RepositoryError('no_assessment');
+  const problem = tnStartProblem(m, person.roles, tnLockedBy(m, trainingModules, tnStatusFn(person.userIds, now)));
+  if (problem) throw new RepositoryError(problem);
+  return { person, m, a };
+}
+
+function asAttemptViewOf(att: AssessmentAttempt, a: Assessment, m: TrainingModule): AssessmentAttemptView {
+  return {
+    attemptId: att.id, assessmentId: a.id, moduleId: m.id, moduleCode: m.code, version: att.version, attemptNumber: att.attemptNumber, passPercent: a.passPercent,
+    questions: att.questionIds.map((id) => a.questions.find((q) => q.id === id)).filter((q): q is NonNullable<typeof q> => !!q).map((q) => ({ id: q.id, kind: q.kind, options: q.options })),
+    answers: att.answers.map((x) => ({ questionId: x.questionId, selected: [...x.selected] })), startedAt: att.startedAt,
+  };
+}
+
+/** One medium staffing alert per person who has failed a test several times without passing, so a conversation (coaching) happens; it clears itself when they pass. */
+function syncAssessmentAlerts(now: number): void {
+  for (const a of assessments) {
+    const m = byId(trainingModules, a.moduleId);
+    if (!m) continue;
+    const version = tnCurrentVersion(m, now).version;
+    const byUser = new Map<string, AssessmentAttempt[]>();
+    for (const at of assessmentAttempts) if (at.assessmentId === a.id && at.version === version) byUser.set(at.userId, [...(byUser.get(at.userId) ?? []), at]);
+    for (const [userId, list] of byUser) {
+      const person = tnPersonOf(userId);
+      if (!person) continue;
+      const rel = `assess:${a.id}:${userId}`;
+      const struggling = asStruggling(asFailedCount(list), !!asBadgeOf(person.userIds, m, now));
+      const open = alerts.find((x) => x.relatedId === rel && x.titleKey === ASSESSMENT_ALERT && x.status !== 'resolved');
+      if (struggling && !open) {
+        raiseAlert({ titleKey: ASSESSMENT_ALERT, context: `${person.name} has not passed ${m.code} after ${asFailedCount(list)} attempts`, severity: 'medium', category: 'staffing', relatedId: rel, sourceRoute: `/assessment?partner=${userId}` });
+        logAutomatedAction({ sourceKey: 'assessment.coaching_flag', triggeringCondition: `${person.name} failed ${m.code}'s test ${asFailedCount(list)} times without passing`, actionTaken: 'Told Admin this may be a coaching opportunity', affectedRecordId: a.id, affectedRecordType: 'other' });
+      } else if (!struggling && open) {
+        patchInPlace(alerts, open.id, { status: 'resolved', resolvedAt: new Date(now).toISOString(), resolvedBy: 'system', resolutionNote: 'They passed, or the content changed.' });
+      }
+    }
+  }
+}
+
+function asOverviewRow(a: Assessment, now: number): AssessmentOverviewRow {
+  const m = byId(trainingModules, a.moduleId) as TrainingModule;
+  const version = tnCurrentVersion(m, now).version;
+  const attempts = assessmentAttempts.filter((x) => x.assessmentId === a.id && x.version === version && x.status === 'submitted');
+  const people = new Map<string, AssessmentAttempt[]>();
+  for (const x of attempts) people.set(x.userId, [...(people.get(x.userId) ?? []), x]);
+  const struggling: AssessmentOverviewRow['struggling'] = [];
+  for (const [userId, list] of people) {
+    const person = tnPersonOf(userId);
+    if (!person) continue;
+    const fails = asFailedCount(list);
+    if (asStruggling(fails, !!asBadgeOf(person.userIds, m, now))) struggling.push({ userId, name: person.name, fails, lastAt: list.map((x) => x.submittedAt ?? '').sort().pop() ?? '' });
+  }
+  return {
+    assessmentId: a.id, moduleId: m.id, moduleCode: m.code, version, passPercent: a.passPercent, cooldownHours: [...a.cooldownHours] as [number, number, number], questionCount: asQuestions(a, version).length,
+    attempts: attempts.length, passes: attempts.filter((x) => x.passed).length, certified: new Set(certBadges.filter((b) => b.assessmentId === a.id && asBadgeValid(b, tnCurrentVersion(m, now).minVersion)).map((b) => b.userId)).size, struggling,
+  };
+}
+
 /** Whether a person may be put on a job: for a technician, every gating safety module must be done. Anyone else is not held by it. */
 function trainingClear(userId: string, now = Date.now()): boolean {
   const person = tnPersonOf(userId);
   if (!person) return true;
-  return tnJobGate(trainingModules, person.roles, tnStatusFn(person.userIds, now)).cleared;
+  return tnJobGate(trainingModules, person.roles, tnStatusFn(person.userIds, now), (id) => asCertified(person.userIds, id, now)).cleared;
 }
 
 /* ============================== SOP document repository (153) */
@@ -16482,14 +16640,14 @@ export const memoryRepository: Repository = {
       const status = tnStatusFn(person.userIds, now);
       const pool = trainingModules.filter((m) => m.status === 'published');
       const shown = pool.filter((m) => (scope === 'required' ? tnRequired(m, person.roles) : scope === 'mine' ? tnRelevant(m, person.roles) : true));
-      const gate = tnJobGate(pool, person.roles, status);
+      const gate = tnJobGate(pool, person.roles, status, (id) => asCertified(person.userIds, id, now));
       const topicCount = (topic: TrainingTopic) => { const req = pool.filter((m) => m.topic === topic && tnRequired(m, person.roles)); return { required: req.length, completed: req.filter((m) => status(m.id) === 'completed').length }; };
       return {
         person: { name: person.name, roles: person.roles },
         modules: shown.map((m) => tnViewOf(m, person, now)).sort((a, b) => TN_TOPICS.indexOf(a.topic) - TN_TOPICS.indexOf(b.topic) || a.order - b.order),
         curriculum: tnCurriculum(pool, person.roles, status),
         byTopic: { onboarding: topicCount('onboarding'), safety: topicCount('safety'), customer: topicCount('customer'), product: topicCount('product') },
-        jobGate: { applies: gate.applies, cleared: gate.cleared, missing: gate.missing.map((m) => ({ id: m.id, code: m.code })) },
+        jobGate: { applies: gate.applies, cleared: gate.cleared, missing: gate.missing.map((m) => ({ id: m.id, code: m.code, needs: (status(m.id) === 'completed' ? 'test' : 'lessons') as 'lessons' | 'test' })) },
         at: new Date(now).toISOString(),
       };
     }),
@@ -16524,6 +16682,109 @@ export const memoryRepository: Repository = {
       if (!own) trainingProgress.push({ userId, moduleId, status: 'in_progress', startedAt: at, version, lessonsDone: 0 });
       tnSyncModuleProgress(m, userId, person, now);
       return tnViewOf(m, person, now);
+    }),
+
+  /* --------------------------------- Quiz and certification (154) */
+  getAssessment: (moduleId, userId) =>
+    simulateRead((): AssessmentView => {
+      const now = Date.now();
+      const { person, m, a } = asAccess(moduleId, userId, now);
+      return asView(m, a, person, now);
+    }),
+
+  startAssessmentAttempt: (moduleId, userId) =>
+    simulateWrite((): AssessmentAttemptView => {
+      const now = Date.now();
+      const { person, m, a } = asAccess(moduleId, userId, now);
+      const st = asStateOf(m, a, person.userIds, now);
+      if (st.state === 'certified') throw new RepositoryError('already_certified');
+      if (st.state === 'locked') throw new RepositoryError('not_ready');
+      if (st.state === 'cooldown') throw new RepositoryError('cooldown');
+      const version = tnCurrentVersion(m, now).version;
+      const at = new Date(now).toISOString();
+      // An attempt begun on content that has since been revised is set aside: nobody is tested on a standard that no longer reads that way.
+      for (const x of assessmentAttempts) if (x.assessmentId === a.id && x.userId === userId && x.status === 'in_progress' && x.version !== version) { x.status = 'void'; x.updatedAt = at; }
+      const open = assessmentAttempts.find((x) => x.assessmentId === a.id && x.userId === userId && x.status === 'in_progress' && x.version === version);
+      if (open) return asAttemptViewOf(open, a, m);
+      assessmentAttemptCounter += 1;
+      const id = `at-${assessmentAttemptCounter}`;
+      const total = assessmentAttempts.filter((x) => x.assessmentId === a.id && person.userIds.includes(x.userId) && x.status !== 'void').length;
+      const att: AssessmentAttempt = { id, assessmentId: a.id, moduleId: m.id, userId, version, attemptNumber: total + 1, questionIds: asOrder(id, asQuestions(a, version).map((q) => q.id)), answers: [], status: 'in_progress', startedAt: at, updatedAt: at };
+      assessmentAttempts.push(att);
+      return asAttemptViewOf(att, a, m);
+    }),
+
+  saveAssessmentDraft: (attemptId, answers, userId) =>
+    simulateWrite(() => {
+      const att = byId(assessmentAttempts, attemptId);
+      if (!att || att.userId !== userId) throw new RepositoryError('attempt_not_found');
+      if (att.status !== 'in_progress') throw new RepositoryError('already_submitted');
+      const a = byId(assessments, att.assessmentId) as Assessment;
+      const kept: AssessmentAnswer[] = [];
+      for (const ans of answers) {
+        if (!att.questionIds.includes(ans.questionId)) throw new RepositoryError('unknown_question');
+        if (ans.selected.length === 0) continue;
+        const problem = asAnswerProblem(a.questions.find((q) => q.id === ans.questionId), ans.selected);
+        if (problem) throw new RepositoryError(problem);
+        kept.push({ questionId: ans.questionId, selected: [...new Set(ans.selected)].sort() });
+      }
+      att.answers = kept;
+      att.updatedAt = new Date().toISOString();
+      return { saved: kept.length };
+    }),
+
+  submitAssessment: (attemptId, answers, userId) =>
+    simulateWrite((): AssessmentResultView => {
+      const now = Date.now();
+      const att = byId(assessmentAttempts, attemptId);
+      if (!att || att.userId !== userId) throw new RepositoryError('attempt_not_found');
+      if (att.status !== 'in_progress') throw new RepositoryError('already_submitted');
+      const { person, m, a } = asAccess(att.moduleId, userId, now);
+      const at = new Date(now).toISOString();
+      if (att.version !== tnCurrentVersion(m, now).version) { att.status = 'void'; att.updatedAt = at; throw new RepositoryError('outdated'); }
+      const given: AssessmentAnswer[] = [];
+      for (const ans of answers) {
+        if (!att.questionIds.includes(ans.questionId)) throw new RepositoryError('unknown_question');
+        const problem = asAnswerProblem(a.questions.find((q) => q.id === ans.questionId), ans.selected);
+        if (problem) throw new RepositoryError(problem);
+        given.push({ questionId: ans.questionId, selected: [...new Set(ans.selected)].sort() });
+      }
+      // Never handed in blind: every question has an answer.
+      if (att.questionIds.some((id) => !given.some((g) => g.questionId === id))) throw new RepositoryError('incomplete');
+      const questions = att.questionIds.map((id) => a.questions.find((q) => q.id === id)).filter((q): q is NonNullable<typeof q> => !!q);
+      const scored = asScore(questions, given);
+      att.answers = given;
+      att.status = 'submitted';
+      att.submittedAt = at;
+      att.updatedAt = at;
+      att.correctCount = scored.correctCount;
+      att.score = scored.score;
+      att.passPercent = a.passPercent;
+      att.passed = asPassed(scored.score, a.passPercent);
+      // Passing is the one event that issues the certification; nothing else does.
+      if (att.passed && !asBadgeOf(person.userIds, m, now)) certBadges.push({ id: `cb-${att.id}`, userId, moduleId: m.id, assessmentId: a.id, version: att.version, score: scored.score, attemptId: att.id, issuedAt: at });
+      syncAssessmentAlerts(now);
+      return asResultOf(att, a, m, person, now);
+    }),
+
+  getAssessmentOverview: (adminId) =>
+    simulateRead((): AssessmentOverviewView => {
+      ofAdmin(adminId);
+      const now = Date.now();
+      syncAssessmentAlerts(now);
+      return { rows: assessments.map((a) => asOverviewRow(a, now)), at: new Date(now).toISOString() };
+    }),
+
+  saveAssessmentConfig: (assessmentId, input, adminId) =>
+    simulateWrite((): AssessmentOverviewRow => {
+      ofAdmin(adminId);
+      const a = byId(assessments, assessmentId);
+      if (!a) throw new RepositoryError('no_assessment');
+      const problem = asConfigProblem(input.passPercent, input.cooldownHours);
+      if (problem) throw new RepositoryError(problem);
+      a.passPercent = input.passPercent;
+      a.cooldownHours = [input.cooldownHours[0], input.cooldownHours[1], input.cooldownHours[2]];
+      return asOverviewRow(a, Date.now());
     }),
 
   /* --------------------------------- Lesson player (152) */

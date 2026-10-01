@@ -2411,6 +2411,8 @@ export interface TrainingModuleView {
   gatesJobAssignment: boolean;
   /** Whether the module's lessons have been written yet: a module without them cannot be started. */
   hasContent: boolean;
+  /** The test that follows the lessons, if there is one (154). */
+  assessment: { state: 'locked' | 'to_take' | 'in_progress' | 'cooldown' | 'certified'; passPercent: number; cooldownUntil: string | null } | null;
 }
 
 export interface TrainingLibraryView {
@@ -2419,7 +2421,7 @@ export interface TrainingLibraryView {
   curriculum: { required: number; completed: number; inProgress: number; updateNeeded: number; percent: number; minutesLeft: number };
   byTopic: Record<TrainingTopic, { required: number; completed: number }>;
   /** Whether finishing training is what stands between a technician and being offered a job. */
-  jobGate: { applies: boolean; cleared: boolean; missing: { id: string; code: string }[] };
+  jobGate: { applies: boolean; cleared: boolean; missing: { id: string; code: string; needs: 'lessons' | 'test' }[] };
   at: string;
 }
 
@@ -2458,7 +2460,7 @@ export interface LessonView {
 }
 
 export interface ModuleLessonsView {
-  module: { id: string; code: string; topic: TrainingTopic; version: number; status: 'not_started' | 'in_progress' | 'completed' | 'update_needed'; minutes: number; required: boolean; gatesJobAssignment: boolean; changeKey: string | null };
+  module: { id: string; code: string; topic: TrainingTopic; version: number; status: 'not_started' | 'in_progress' | 'completed' | 'update_needed'; minutes: number; required: boolean; gatesJobAssignment: boolean; changeKey: string | null; assessment: TrainingModuleView['assessment'] };
   lessons: LessonView[];
   lessonsDone: number;
   percent: number;
@@ -2481,6 +2483,108 @@ export interface LessonCompleteResult {
 }
 
 export type LessonError = TrainingError | 'none_chosen' | 'single_only' | 'out_of_range' | 'not_finished' | 'checks_open' | 'no_lessons' | 'unknown_check';
+
+/* ------------------------------------ Quiz and certification (154) */
+
+export type AssessmentStateName = 'locked' | 'to_take' | 'in_progress' | 'cooldown' | 'certified';
+
+export interface AssessmentHistoryRow {
+  attemptNumber: number;
+  score: number;
+  passed: boolean;
+  submittedAt: string;
+  version: number;
+}
+
+export interface AssessmentReviewRow {
+  questionId: string;
+  kind: 'single' | 'multi';
+  options: number;
+  selected: number[];
+  correct: boolean;
+  /** Shown only now that the attempt is handed in: what the right answer was. */
+  correctAnswer: number[];
+}
+
+export interface AssessmentResultView {
+  attemptId: string;
+  moduleId: string;
+  moduleCode: string;
+  version: number;
+  attemptNumber: number;
+  score: number;
+  correctCount: number;
+  total: number;
+  passPercent: number;
+  passed: boolean;
+  submittedAt: string;
+  review: AssessmentReviewRow[];
+  badge: { id: string; issuedAt: string } | null;
+  /** When another attempt may start (after a fail). */
+  nextAttemptAt: string | null;
+  /** Admin has been told this partner may need coaching. */
+  coaching: boolean;
+  gatesJobAssignment: boolean;
+  /** For a technician: whether finishing training no longer stands between them and a job. */
+  jobGateCleared: boolean | null;
+}
+
+export interface AssessmentView {
+  assessmentId: string;
+  moduleId: string;
+  moduleCode: string;
+  topic: TrainingTopic;
+  version: number;
+  passPercent: number;
+  cooldownHours: [number, number, number];
+  questionCount: number;
+  state: AssessmentStateName;
+  attemptsThisVersion: number;
+  failedThisVersion: number;
+  nextAttemptNumber: number;
+  cooldownUntil: string | null;
+  badge: { id: string; issuedAt: string; score: number; version: number } | null;
+  history: AssessmentHistoryRow[];
+  last: AssessmentResultView | null;
+  draft: { attemptId: string; answers: { questionId: string; selected: number[] }[]; startedAt: string } | null;
+  gatesJobAssignment: boolean;
+  coaching: boolean;
+}
+
+export interface AssessmentAttemptView {
+  attemptId: string;
+  assessmentId: string;
+  moduleId: string;
+  moduleCode: string;
+  version: number;
+  attemptNumber: number;
+  passPercent: number;
+  questions: { id: string; kind: 'single' | 'multi'; options: number }[];
+  answers: { questionId: string; selected: number[] }[];
+  startedAt: string;
+}
+
+export interface AssessmentOverviewRow {
+  assessmentId: string;
+  moduleId: string;
+  moduleCode: string;
+  version: number;
+  passPercent: number;
+  cooldownHours: [number, number, number];
+  questionCount: number;
+  attempts: number;
+  passes: number;
+  certified: number;
+  /** Partners with several failed attempts on this version and no pass: a coaching conversation, not a block. */
+  struggling: { userId: string; name: string; fails: number; lastAt: string }[];
+}
+
+export interface AssessmentOverviewView {
+  rows: AssessmentOverviewRow[];
+  at: string;
+}
+
+export type AssessmentError = TrainingError | 'not_ready' | 'cooldown' | 'already_certified' | 'no_assessment' | 'outdated' | 'incomplete' | 'attempt_not_found' | 'already_submitted' | 'not_admin' | 'none_chosen' | 'single_only' | 'out_of_range' | 'unknown_question' | 'pass_range' | 'cooldown_range';
 
 /* ------------------------------------ SOP document repository (153) */
 
@@ -6119,6 +6223,13 @@ export interface Repository {
   saveLessonPlayback(lessonId: string, input: { positionS: number; furthestS: number }, userId: string): Promise<LessonView>;
   answerLessonCheck(lessonId: string, checkId: string, selected: number[], userId: string): Promise<LessonAnswerResult>;
   completeLesson(lessonId: string, userId: string): Promise<LessonCompleteResult>;
+  // Quiz and certification (154)
+  getAssessment(moduleId: string, userId: string): Promise<AssessmentView>;
+  startAssessmentAttempt(moduleId: string, userId: string): Promise<AssessmentAttemptView>;
+  saveAssessmentDraft(attemptId: string, answers: { questionId: string; selected: number[] }[], userId: string): Promise<{ saved: number }>;
+  submitAssessment(attemptId: string, answers: { questionId: string; selected: number[] }[], userId: string): Promise<AssessmentResultView>;
+  getAssessmentOverview(adminId: string): Promise<AssessmentOverviewView>;
+  saveAssessmentConfig(assessmentId: string, input: { passPercent: number; cooldownHours: [number, number, number] }, adminId: string): Promise<AssessmentOverviewRow>;
   // SOP document repository (153)
   getSopLibrary(userId: string): Promise<SopLibraryView>;
   toggleSopBookmark(docId: string, on: boolean, userId: string): Promise<{ docId: string; bookmarked: boolean }>;
