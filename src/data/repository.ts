@@ -3,6 +3,7 @@ import type { ElecSignOffProblem, ElecState } from '@/features/qc/electrical';
 import type { DisputeDecision, SnagProblem, SnagSeverity } from '@/features/qc/snags';
 import type { AmcTierId, ReminderDef, WarrantyProblem } from '@/features/qc/warranty';
 import type { CompletionProblem, IssueProblem, MilestoneId } from '@/features/qc/completion';
+import type { Gate, ItemKind, ItemState as VerifyItemState } from '@/features/recruitment/verification';
 import type { CompleteInput, DecisionSignal, Phase as InterviewPhase } from '@/features/recruitment/interview';
 import type { Demand, GuideAnswers, InterestProblem, InterestRole, RecruitRole, RecruitSource } from '@/features/recruitment/interest';
 import type { Outstanding, SectionId } from '@/features/recruitment/application';
@@ -33,6 +34,9 @@ import type {
   InterviewConcernCategory,
   InterviewMode,
   PartnerInterview,
+  PartnerVerification,
+  VerificationHow,
+  VerificationRecord,
   ScreeningFactorRow,
   PartnerApplication,
   HandoverCompletion,
@@ -1992,6 +1996,76 @@ export type InterviewError =
   | 'lead'
   | 'nothing_open'
   | 'closed_date';
+
+/* ------------------------------------ Recruitment: background and document verification (145) */
+
+export interface VerificationItemView {
+  key: string;
+  kind: ItemKind;
+  skill?: string;
+  thirdParty: boolean;
+  canBeConditional: boolean;
+  state: VerifyItemState;
+  record: VerificationRecord | null;
+  /** What is on file for the item, as plain facts the screen words in the active language. */
+  facts: Record<string, string | number | boolean>;
+}
+
+export interface VerificationRowView {
+  id: string;
+  code: string;
+  name: string;
+  role: PartnerApplication['role'];
+  gate: Gate['state'];
+  passed: number;
+  total: number;
+  failed: number;
+  lapsed: number;
+  /** The earliest deadline among conditional allowances. */
+  conditionalDue: string | null;
+  approvedAt: string | null;
+  waitingDays: number;
+  interviewSignal: DecisionSignal['level'];
+}
+
+export interface VerificationServiceView {
+  status: 'up' | 'down';
+  changedAt: string | null;
+  changedByName: string | null;
+}
+
+export interface VerificationBoardView {
+  rows: VerificationRowView[];
+  counts: { all: number; blocked: number; conditional: number; clear: number; failed: number };
+  service: VerificationServiceView;
+}
+
+export interface VerificationDetailView {
+  row: VerificationRowView;
+  applicant: { name: string; phone: string; city: string };
+  items: VerificationItemView[];
+  gate: Gate;
+  interview: { signal: DecisionSignal['level']; concerns: DecisionSignal['concerns']; outcome: string | null };
+  service: VerificationServiceView;
+  events: PartnerVerification['events'];
+}
+
+export type VerificationError =
+  | ApplicationError
+  | 'not_approved'
+  | 'not_open'
+  | 'service_unavailable'
+  | 'not_third_party'
+  | 'how_required'
+  | 'note_required'
+  | 'fallback_note_required'
+  | 'reference_not_verified'
+  | 'red_flag_failed_only'
+  | 'not_allowed'
+  | 'reason_required'
+  | 'deadline_invalid'
+  | 'too_many'
+  | 'already_resolved';
 
 /* ------------------------------------ Recruitment: the public front door (141) */
 
@@ -5425,6 +5499,16 @@ export interface Repository {
   addInterviewAddendum(applicationId: string, input: { text: string; concern?: { category: InterviewConcernCategory; text: string } }, userId: string): Promise<InterviewDetailView>;
   saveInterviewAvailability(availability: Omit<InterviewAvailability, 'updatedAt' | 'updatedByName'>, userId: string): Promise<InterviewSaveResult>;
   getInterviewForApplicant(applicationId: string, key: string): Promise<InterviewApplicantView>;
+  // Recruitment: background and document verification (145)
+  getVerificationBoard(userId: string): Promise<VerificationBoardView>;
+  getVerification(applicationId: string, userId: string): Promise<VerificationDetailView>;
+  /** The one answer the offer (146) must read: it may not go ahead while this is `blocked`. */
+  getVerificationGate(applicationId: string, userId: string): Promise<Gate>;
+  runVerificationCheck(applicationId: string, itemKey: string, userId: string): Promise<VerificationDetailView>;
+  recordVerification(applicationId: string, itemKey: string, input: { result: 'passed' | 'failed'; how: VerificationHow | undefined; note: string; redFlag?: boolean }, userId: string): Promise<VerificationDetailView>;
+  grantConditionalVerification(applicationId: string, itemKey: string, input: { reason: string; dueDate: string }, userId: string): Promise<VerificationDetailView>;
+  /** Demo control standing in for the ID service's own availability: a real connector reports it. */
+  setVerificationService(status: 'up' | 'down', userId: string): Promise<VerificationServiceView>;
   chooseInterviewSlot(applicationId: string, key: string, input: { start: string; mode: InterviewMode }): Promise<InterviewApplicantView>;
 
   /* Recruitment: the public front door (141) */

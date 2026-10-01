@@ -110,6 +110,7 @@ export const INTERVIEW_KEYS = {
     save: 'interview.action.save',
     keep: 'interview.action.keep',
     call: 'interview.action.call',
+    verification: 'interview.action.verification',
   },
   invite: {
     heading: 'interview.invite.heading',

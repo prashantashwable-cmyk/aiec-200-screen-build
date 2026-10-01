@@ -274,6 +274,7 @@ function Detail({ s, d, t, lang, setMode }: { s: InterviewState; d: InterviewDet
         {phase === 'scheduled' && <Button variant="secondary" style={{ flex: 1 }} data-ask-move onClick={() => setMode('move')}>{t(K.action.askMove)}</Button>}
         {phase === 'completed' && <Button style={{ flex: 1 }} data-add-note onClick={() => setMode('addendum')}>{t(K.action.addNote)}</Button>}
         {(phase === 'invited' || phase === 'scheduled' || phase === 'move_requested' || phase === 'missed') && <Button variant="ghost" data-cancel onClick={() => setMode('cancel')}>{t(K.action.cancel)}</Button>}
+        <Button variant="ghost" data-open-verification onClick={() => s.goto(`/verification/${r.id}`)}>{t(K.action.verification)}</Button>
         {d.canSkip && <Button variant="ghost" data-skip onClick={() => setMode('skip')}>{t(K.action.skip)}</Button>}
       </Footer>
     </div>

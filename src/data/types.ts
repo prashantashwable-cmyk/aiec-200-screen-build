@@ -2710,6 +2710,8 @@ export interface PartnerApplication {
   screening?: ApplicationScreening;
   /** The one conversation AIEC has before an offer (144); optional, an approved applicant may go straight to the offer. */
   interview?: PartnerInterview;
+  /** What AIEC has checked before an offer can be made (145): role-aware, with the method, the evidence and who did it. */
+  verification?: PartnerVerification;
   isDemo: boolean;
 }
 
@@ -2780,6 +2782,37 @@ export interface InterviewAvailability {
   horizonDays: number;
   updatedAt: string | null;
   updatedByName: string | null;
+}
+
+/* ------------------------------------ Background and document verification (145) */
+
+export type VerificationMethod = 'third_party' | 'manual';
+export type VerificationHow = 'saw_original' | 'called_issuer' | 'online_registry' | 'practical_test' | 'other';
+
+export interface VerificationRecord {
+  /** `conditional` lets an offer go ahead while a document that is hard to get is still on its way, with a firm deadline. */
+  status: 'passed' | 'failed' | 'conditional';
+  method: VerificationMethod;
+  at: string;
+  byName: string;
+  note?: string;
+  how?: VerificationHow;
+  /** The service's own reference for a third-party answer. */
+  reference?: string;
+  /** Recorded by hand because the service was down: it carries a stronger note. */
+  serviceDown?: boolean;
+  /** A concerning result (not just a missing document): it blocks the offer and its reason is kept for consistency. */
+  redFlag?: boolean;
+  conditional?: { dueAt: string; reason: string; grantedBy: string; at: string };
+  /** Every earlier result for this item, never overwritten. */
+  history: { at: string; status: VerificationRecord['status']; method: VerificationMethod; byName: string; note?: string; dueAt?: string }[];
+}
+
+export interface PartnerVerification {
+  records: Record<string, VerificationRecord>;
+  /** Items already sent to the ID service automatically, so each goes once. */
+  autoSent: string[];
+  events: { id: string; at: string; kind: 'service_check' | 'manual' | 'conditional' | 'lapsed' | 'service_down' | 'cleared'; byName: string; item?: string; note?: string }[];
 }
 
 /* ------------------------------------ Handover completion certificate (140) */
@@ -4014,6 +4047,8 @@ export type CommitmentKind =
   | 'interview_arrange'
   | 'interview_slot_wait'
   | 'interview_conduct'
+  | 'verification_pending'
+  | 'verification_conditional_due'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'

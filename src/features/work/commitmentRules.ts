@@ -61,6 +61,7 @@ import { FEED_RESTORE_DUE, REVIEW_DUE, severityOf } from '@/features/finance/rec
 import { MANUAL_UPDATE_EVERY } from '@/features/logistics/shipmentTracking';
 import { SCREEN_DUE } from '@/features/recruitment/screening';
 import { ARRANGE_DUE as INTERVIEW_ARRANGE_DUE, INVITE_WAIT } from '@/features/recruitment/interview';
+import { VERIFY_DUE, gateOf as verificationGate, requiredItemsOf as requiredVerification } from '@/features/recruitment/verification';
 
 /**
  * The manager's rulebook: every dated promise the business runs on, as data.
@@ -1796,6 +1797,70 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
             oversightRoute: `/interviews/${a.id}`,
           };
         });
+    },
+  },
+  {
+    // Everything an approved applicant must have checked before an offer (145): chased until nothing is pending, failed or lapsed.
+    kind: 'verification_pending',
+    nudgeBefore: hours(12),
+    escalateAfter: hours(48),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'staffing',
+    collect(src) {
+      const admin = adminId(src);
+      const now = Date.now();
+      return src.applications
+        .filter((a) => a.status === 'approved' && a.screening?.decision && (a.interview || a.verification || now - new Date(a.screening.decision.at).getTime() < INTERVIEW_ARRANGE_DUE * 10))
+        .map((a) => {
+          const g = verificationGate(requiredVerification(a.role, a.form), a.verification, now);
+          const open = g.pending.length + g.failed.length + g.lapsed.length;
+          return {
+            ...base('verification_pending', 'application', a.id),
+            ownerUserId: admin,
+            titleKey: 'work.title.verification_pending',
+            titleParams: { name: a.form.personal.fullName, count: String(open) },
+            dueAt: plus((a.screening as NonNullable<typeof a.screening>).decision!.at, VERIFY_DUE),
+            state: open === 0 ? ('done' as const) : ('open' as const),
+            paused: false,
+            completedAt: open === 0 ? (Object.values(a.verification?.records ?? {}).map((r) => r.at).sort().pop() ?? undefined) : undefined,
+            actionRoute: `/verification/${a.id}`,
+            oversightRoute: `/verification/${a.id}`,
+          };
+        });
+    },
+  },
+  {
+    // A document allowed conditionally has a firm deadline: Admin chases it before it lapses (145).
+    kind: 'verification_conditional_due',
+    nudgeBefore: days(3),
+    escalateAfter: hours(24),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'staffing',
+    collect(src) {
+      const admin = adminId(src);
+      return src.applications.flatMap((a) =>
+        Object.entries(a.verification?.records ?? {}).flatMap(([key, r]) => {
+          const was = r.history.find((h) => h.status === 'conditional' && h.dueAt);
+          const due = r.status === 'conditional' ? r.conditional?.dueAt : r.status === 'passed' ? was?.dueAt : undefined;
+          if (!due) return [];
+          return [
+            {
+              ...base('verification_conditional_due', 'application', `${a.id}:${key}`),
+              ownerUserId: admin,
+              titleKey: 'work.title.verification_conditional_due',
+              titleParams: { name: a.form.personal.fullName },
+              dueAt: due,
+              state: r.status === 'passed' ? ('done' as const) : ('open' as const),
+              paused: false,
+              completedAt: r.status === 'passed' ? r.at : undefined,
+              actionRoute: `/verification/${a.id}`,
+              oversightRoute: `/verification/${a.id}`,
+            },
+          ];
+        }),
+      );
     },
   },
   {

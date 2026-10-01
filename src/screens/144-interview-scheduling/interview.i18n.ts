@@ -116,7 +116,7 @@ const translations: ScreenTranslations = {
         noSlots: 'No open times are left in your availability, so they cannot pick one. Open more time, or book one yourself.',
         nearest: 'Nearest open times',
       },
-      action: { invite: 'Invite to pick a time', book: 'Book a time', skip: 'Skip interview', reschedule: 'Change time', askMove: 'Ask them to move', cancel: 'Cancel', held: 'It was held', notJoined: 'They did not join', addNote: 'Add a note', back: 'Back', send: 'Send invitation', confirm: 'Confirm', save: 'Save', keep: 'Keep', call: 'Call' },
+      action: { invite: 'Invite to pick a time', book: 'Book a time', skip: 'Skip interview', reschedule: 'Change time', askMove: 'Ask them to move', cancel: 'Cancel', held: 'It was held', notJoined: 'They did not join', addNote: 'Add a note', back: 'Back', send: 'Send invitation', confirm: 'Confirm', save: 'Save', keep: 'Keep', call: 'Call', verification: 'Verification' },
       invite: {
         heading: 'Invite {{name}}',
         body: 'They choose a time from your open windows and it is confirmed straight away. No messages back and forth.',
@@ -347,7 +347,7 @@ const translations: ScreenTranslations = {
         noSlots: 'आपकी उपलब्धता में कोई खुला समय नहीं बचा, इसलिए वे चुन नहीं सकते। और समय खोलें, या खुद एक तय करें।',
         nearest: 'सबसे नज़दीकी खुले समय',
       },
-      action: { invite: 'समय चुनने बुलाएँ', book: 'समय तय करें', skip: 'इंटरव्यू छोड़ें', reschedule: 'समय बदलें', askMove: 'उनसे बदलने को कहें', cancel: 'रद्द करें', held: 'इंटरव्यू हुआ', notJoined: 'वे नहीं जुड़े', addNote: 'नोट जोड़ें', back: 'वापस', send: 'निमंत्रण भेजें', confirm: 'पक्का करें', save: 'सहेजें', keep: 'रखें', call: 'फ़ोन करें' },
+      action: { invite: 'समय चुनने बुलाएँ', book: 'समय तय करें', skip: 'इंटरव्यू छोड़ें', reschedule: 'समय बदलें', askMove: 'उनसे बदलने को कहें', cancel: 'रद्द करें', held: 'इंटरव्यू हुआ', notJoined: 'वे नहीं जुड़े', addNote: 'नोट जोड़ें', back: 'वापस', send: 'निमंत्रण भेजें', confirm: 'पक्का करें', save: 'सहेजें', keep: 'रखें', call: 'फ़ोन करें', verification: 'सत्यापन' },
       invite: {
         heading: '{{name}} को बुलाएँ',
         body: 'वे आपके खुले समयों में से समय चुनते हैं और वह तुरंत पक्का हो जाता है। बार-बार संदेश नहीं।',
@@ -578,7 +578,7 @@ const translations: ScreenTranslations = {
         noSlots: 'तुमच्या उपलब्धतेत कोणतीही खुली वेळ उरलेली नाही, त्यामुळे ते निवडू शकत नाहीत. अधिक वेळ उघडा, किंवा स्वतः एक ठरवा.',
         nearest: 'सर्वात जवळच्या खुल्या वेळा',
       },
-      action: { invite: 'वेळ निवडायला बोलवा', book: 'वेळ ठरवा', skip: 'मुलाखत वगळा', reschedule: 'वेळ बदला', askMove: 'त्यांना बदलायला सांगा', cancel: 'रद्द करा', held: 'मुलाखत झाली', notJoined: 'ते आले नाहीत', addNote: 'नोंद जोडा', back: 'मागे', send: 'निमंत्रण पाठवा', confirm: 'निश्चित करा', save: 'जतन करा', keep: 'ठेवा', call: 'फोन करा' },
+      action: { invite: 'वेळ निवडायला बोलवा', book: 'वेळ ठरवा', skip: 'मुलाखत वगळा', reschedule: 'वेळ बदला', askMove: 'त्यांना बदलायला सांगा', cancel: 'रद्द करा', held: 'मुलाखत झाली', notJoined: 'ते आले नाहीत', addNote: 'नोंद जोडा', back: 'मागे', send: 'निमंत्रण पाठवा', confirm: 'निश्चित करा', save: 'जतन करा', keep: 'ठेवा', call: 'फोन करा', verification: 'पडताळणी' },
       invite: {
         heading: '{{name}} यांना बोलवा',
         body: 'ते तुमच्या खुल्या वेळांतून वेळ निवडतात आणि ती लगेच निश्चित होते. संदेशांची देवाणघेवाण नाही.',

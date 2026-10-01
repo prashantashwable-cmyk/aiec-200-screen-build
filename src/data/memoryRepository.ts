@@ -236,6 +236,11 @@ import type {
   InterviewRowView,
   InterviewSaveResult,
   ScreeningDecision,
+  VerificationBoardView,
+  VerificationDetailView,
+  VerificationItemView,
+  VerificationRowView,
+  VerificationServiceView,
   ScreeningDetailView,
   ScreeningFactorView,
   ScreeningQueueView,
@@ -458,7 +463,9 @@ import type {
   InterviewAvailability,
   InterviewMode,
   PartnerInterview,
+  PartnerVerification,
   ScreeningFactorRow,
+  VerificationRecord,
   ApplicationForm,
   ApplicationReference,
   HandoverCompletion,
@@ -649,6 +656,8 @@ import { issueProblem as coIssueProblem, readinessOf as coReadiness, signoffDueA
 import { QC_FEE as FP_QC_FEE, crewShares as fpCrewShares, installPoolOf as fpInstallPool, judgementProblem as fpJudgementProblem, qcShares as fpQcShares, salesCloseOf as fpSalesClose } from '@/features/commission/finalPayout';
 import type { Contributor as FpContributor } from '@/features/commission/finalPayout';
 import { SECTIONS as APP_SECTIONS, EMPTY_FORM as APP_EMPTY, maskId as apMask, outstandingOf as apOutstanding, progressOf as apProgress, sectionStates as apSections, submitProblem as apSubmitProblem } from '@/features/recruitment/application';
+import { conditionalProblem as vfConditionalProblem, gateOf as vfGate, itemStateOf as vfItemState, manualProblem as vfManualProblem, requiredItemsOf as vfRequired, serviceCheck as vfServiceCheck } from '@/features/recruitment/verification';
+import type { RequiredItem } from '@/features/recruitment/verification';
 import { ARRANGE_DUE as IV_ARRANGE_DUE, DEFAULT_AVAILABILITY as IV_DEFAULT_AVAILABILITY, GRACE as IV_GRACE, INVITE_WAIT as IV_INVITE_WAIT, MAX_MISSES as IV_MAX_MISSES, REASON_MIN as IV_REASON_MIN, REMINDERS as IV_REMINDERS, adminSlotProblem as ivAdminSlotProblem, availabilityProblem as ivAvailabilityProblem, completeProblem as ivCompleteProblem, decisionSignal as ivSignal, icsOf as ivIcs, phaseOf as ivPhaseOf, selfServiceOpen as ivSelfServe, slotProblem as ivSlotProblem, slotsFor as ivSlots, stillFits as ivFits, NOTE_MIN as IV_NOTE_MIN } from '@/features/recruitment/interview';
 import type { Busy as IvBusy, Phase as IvPhase } from '@/features/recruitment/interview';
 import { DECLINE_REASONS, DEFAULT_WEIGHTS as SCREEN_DEFAULT_WEIGHTS, RATE_AFTER as SCREEN_RATE_AFTER, RESHUFFLE_SHARE, SCREEN_DUE, adjustProblem as screeningAdjustProblem, clampScore as clampScreen, factorValues, feedbackOf as screeningFeedback, reshuffleShare as screeningReshuffle, scoreOf as scoreWith, weightsProblem as screeningWeightsProblem } from '@/features/recruitment/screening';
@@ -2597,6 +2606,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   syncTechnicianClashes(now);
   syncRecruitmentIntake(now);
   syncPartnerInterviews(now);
+  syncVerification(now);
   syncSafetyAlerts(true, now);
   syncIssueAlerts(true, now);
   syncMaterialDeviations(true, now);
@@ -7553,7 +7563,7 @@ function stepFinisherName(job: Job, st: Job['steps'][number]): string | null {
 
 /* ============================== Recruitment: the applicant's full details (142) */
 
-const partnerApplications: PartnerApplication[] = seedPartnerApplications.map((a) => ({ ...a, form: JSON.parse(JSON.stringify(a.form)) as ApplicationForm, events: a.events.map((e) => ({ ...e })), messages: a.messages.map((m) => ({ ...m, params: { ...m.params } })), ...(a.screening ? { screening: JSON.parse(JSON.stringify(a.screening)) as ApplicationScreening } : {}), ...(a.interview ? { interview: JSON.parse(JSON.stringify(a.interview)) as PartnerInterview } : {}) }));
+const partnerApplications: PartnerApplication[] = seedPartnerApplications.map((a) => ({ ...a, form: JSON.parse(JSON.stringify(a.form)) as ApplicationForm, events: a.events.map((e) => ({ ...e })), messages: a.messages.map((m) => ({ ...m, params: { ...m.params } })), ...(a.screening ? { screening: JSON.parse(JSON.stringify(a.screening)) as ApplicationScreening } : {}), ...(a.interview ? { interview: JSON.parse(JSON.stringify(a.interview)) as PartnerInterview } : {}), ...(a.verification ? { verification: JSON.parse(JSON.stringify(a.verification)) as PartnerVerification } : {}) }));
 /** A form can be changed by its applicant until screening has decided it; an asked-for correction reopens it. */
 const apLocked = (status: PartnerApplication['status']): boolean => status === 'approved' || status === 'rejected' || status === 'withdrawn';
 let applicationCounter = 100;
@@ -7887,6 +7897,129 @@ function syncPartnerInterviews(now: number): void {
       ivMessage(app, 'interview_nudge', 'nudge', 'AIEC');
       i.events.push(ivEvent('nudged', 'AIEC'));
       logAutomatedAction({ sourceKey: 'interview.nudge', triggeringCondition: `${app.form.personal.fullName} has not chosen an interview time after the waiting period`, actionTaken: 'Sent one gentle reminder on their application link', affectedRecordId: app.id, affectedRecordType: 'other', subjectLabel: app.code });
+    }
+  }
+}
+
+/* ============================== Recruitment: background and document verification (145) */
+
+const verificationService: VerificationServiceView = { status: 'up', changedAt: null, changedByName: null };
+let verificationEventCounter = 0;
+const VERIFY_ALERT_FAILED = 'verification.alert.failed';
+const VERIFY_ALERT_LAPSED = 'verification.alert.lapsed';
+
+const vfEvent = (kind: PartnerVerification['events'][number]['kind'], byName: string, item?: string, note?: string): PartnerVerification['events'][number] => {
+  verificationEventCounter += 1;
+  return { id: `vfev-${verificationEventCounter}`, at: new Date().toISOString(), kind, byName, ...(item ? { item } : {}), ...(note ? { note } : {}) };
+};
+const vfOf = (app: PartnerApplication): PartnerVerification => {
+  if (!app.verification) app.verification = { records: {}, autoSent: [], events: [] };
+  return app.verification;
+};
+function vfAdmin(userId: string): User {
+  const u = byId(users, userId);
+  if (!u || u.role !== 'admin') throw new RepositoryError('not_admin');
+  return u;
+}
+function vfApp(applicationId: string): PartnerApplication {
+  const app = byId(partnerApplications, applicationId);
+  if (!app) throw new RepositoryError('not_found');
+  if (app.status !== 'approved') throw new RepositoryError('not_approved');
+  return app;
+}
+/** Moved forward long ago and never touched is history, not a pending job (the same cutoff the interview step and the commitments use). */
+const vfLive = (app: PartnerApplication, now: number): boolean => app.status === 'approved' && (!!app.interview || !!app.verification || now - new Date(app.screening?.decision?.at ?? 0).getTime() < IV_ARRANGE_DUE * 10);
+
+function vfFacts(app: PartnerApplication, item: RequiredItem): VerificationItemView['facts'] {
+  const f = app.form;
+  if (item.kind === 'identity') {
+    const pan = f.identity.panNumber.trim();
+    const aad = f.identity.aadhaarNumber.trim();
+    return pan ? { type: 'pan', number: apMask(pan), doc: !!f.identity.panDoc } : aad ? { type: 'aadhaar', number: apMask(aad), doc: !!f.identity.aadhaarDoc } : { type: 'none', number: '', doc: false };
+  }
+  if (item.kind === 'registration') return { type: 'gstin', number: f.identity.gstin.trim(), doc: !!f.identity.gstDoc };
+  if (item.kind === 'reference') {
+    const refs = f.references;
+    return { total: refs.length, verified: refs.filter((r) => r.outcome?.status === 'verified').length, unreachable: refs.filter((r) => r.outcome?.status === 'unreachable').length, declined: refs.filter((r) => r.outcome?.status === 'declined').length, unchecked: refs.filter((r) => !r.outcome).length, none: f.noReferences };
+  }
+  if (item.kind === 'skill') return { skill: item.skill ?? '' };
+  return {};
+}
+
+function vfRowOf(app: PartnerApplication, now: number): VerificationRowView {
+  const g = vfGate(vfRequired(app.role, app.form), app.verification, now);
+  const dues = g.conditional.map((c) => c.dueAt).sort();
+  const decidedAt = app.screening?.decision?.at ?? null;
+  return {
+    id: app.id,
+    code: app.code,
+    name: app.form.personal.fullName,
+    role: app.role,
+    gate: g.state,
+    passed: g.passed,
+    total: g.total,
+    failed: g.failed.length,
+    lapsed: g.lapsed.length,
+    conditionalDue: dues[0] ?? null,
+    approvedAt: decidedAt,
+    waitingDays: decidedAt ? Math.max(0, Math.floor((now - new Date(decidedAt).getTime()) / 86_400_000)) : 0,
+    interviewSignal: ivSignal(app.interview).level,
+  };
+}
+
+function vfDetailOf(app: PartnerApplication, now: number): VerificationDetailView {
+  const required = vfRequired(app.role, app.form);
+  const v = app.verification;
+  const sig = ivSignal(app.interview);
+  return {
+    row: vfRowOf(app, now),
+    applicant: { name: app.form.personal.fullName, phone: app.form.personal.phone, city: app.form.personal.city },
+    items: required.map((it): VerificationItemView => ({ key: it.key, kind: it.kind, ...(it.skill ? { skill: it.skill } : {}), thirdParty: it.thirdParty, canBeConditional: it.canBeConditional, state: vfItemState(v?.records[it.key], now), record: v?.records[it.key] ? (JSON.parse(JSON.stringify(v.records[it.key])) as VerificationRecord) : null, facts: vfFacts(app, it) })),
+    gate: vfGate(required, v, now),
+    interview: { signal: sig.level, concerns: sig.concerns.map((c) => ({ ...c })), outcome: app.interview?.completed?.outcome ?? null },
+    service: { ...verificationService },
+    events: (v?.events ?? []).map((e) => ({ ...e })),
+  };
+}
+
+function vfRecord(app: PartnerApplication, key: string, rec: Omit<VerificationRecord, 'history'>): void {
+  const v = vfOf(app);
+  const prior = v.records[key];
+  v.records[key] = { ...rec, history: [...(prior ? [...prior.history, { at: prior.at, status: prior.status, method: prior.method, byName: prior.byName, ...(prior.note ? { note: prior.note } : {}), ...(prior.conditional ? { dueAt: prior.conditional.dueAt } : {}) }] : [])] };
+}
+
+function vfAlert(relatedId: string, titleKey: string, context: string, severity: 'medium' | 'high', app: PartnerApplication, want: boolean, at: string): void {
+  const open = alerts.find((a) => a.relatedId === relatedId && a.titleKey === titleKey && a.status !== 'resolved');
+  if (want && !open) raiseAlert({ titleKey, context, severity, category: 'staffing', relatedId, sourceRoute: `/verification/${app.id}` });
+  if (!want && open) patchInPlace(alerts, open.id, { status: 'resolved', resolvedAt: at, resolvedBy: 'system', resolutionNote: 'The item is no longer open.' });
+}
+
+/** Sends identity to the ID service as soon as someone is moved forward (when it is up), and keeps the alerts for failed and lapsed items true. */
+function syncVerification(now: number): void {
+  const at = new Date(now).toISOString();
+  for (const app of partnerApplications) {
+    if (!vfLive(app, now)) continue;
+    const required = vfRequired(app.role, app.form);
+    const v = vfOf(app);
+    if (verificationService.status === 'up') {
+      for (const it of required.filter((x) => x.thirdParty)) {
+        if (v.records[it.key] || v.autoSent.includes(it.key)) continue;
+        v.autoSent.push(it.key);
+        const r = vfServiceCheck(app.role, app.form);
+        if (r.result === 'inconclusive') {
+          v.events.push(vfEvent('service_check', 'AIEC', it.key, `inconclusive:${r.detail}`));
+        } else {
+          vfRecord(app, it.key, { status: r.result === 'passed' ? 'passed' : 'failed', method: 'third_party', at, byName: 'AIEC', reference: `IDV-${app.code.slice(-4)}-${Math.abs(it.key.length * 7919) % 9999}`, note: r.detail });
+          v.events.push(vfEvent('service_check', 'AIEC', it.key, r.result));
+        }
+        logAutomatedAction({ sourceKey: 'verification.service_check', triggeringCondition: `${app.form.personal.fullName} moved forward; ${it.key} can be answered by the ID service`, actionTaken: r.result === 'inconclusive' ? 'Sent to the ID service: it could not decide, left for Admin to check by hand' : `Sent to the ID service: ${r.result}`, affectedRecordId: app.id, affectedRecordType: 'other', subjectLabel: app.code });
+      }
+    }
+    for (const it of required) {
+      const st = vfItemState(v.records[it.key], now);
+      vfAlert(`verif:${app.id}:${it.key}:failed`, VERIFY_ALERT_FAILED, `${app.form.personal.fullName}: ${it.key} failed verification`, 'medium', app, st === 'failed', at);
+      vfAlert(`verif:${app.id}:${it.key}:lapsed`, VERIFY_ALERT_LAPSED, `${app.form.personal.fullName}: the allowance for ${it.key} has passed its deadline`, 'high', app, st === 'lapsed', at);
+      if (st === 'lapsed' && !v.events.some((e) => e.kind === 'lapsed' && e.item === it.key && e.at >= (v.records[it.key]?.at ?? ''))) v.events.push(vfEvent('lapsed', 'AIEC', it.key));
     }
   }
 }
@@ -14845,6 +14978,99 @@ export const memoryRepository: Repository = {
       ivMessage(app, 'interview_confirmed', 'confirmed', 'AIEC', { at: i.slot.start, mode: input.mode });
       app.updatedAt = at;
       return ivApplicantViewOf(app, now);
+    }),
+
+  /* --------------------------------- Recruitment: background and document verification (145) */
+  getVerificationBoard: (userId) =>
+    simulateRead((): VerificationBoardView => {
+      vfAdmin(userId);
+      const now = Date.now();
+      const rows = partnerApplications.filter((a) => vfLive(a, now)).map((a) => vfRowOf(a, now)).sort((a, b) => (a.gate === 'blocked' ? 0 : a.gate === 'conditional' ? 1 : 2) - (b.gate === 'blocked' ? 0 : b.gate === 'conditional' ? 1 : 2) || b.failed + b.lapsed - (a.failed + a.lapsed) || b.waitingDays - a.waitingDays);
+      return { rows, counts: { all: rows.length, blocked: rows.filter((r) => r.gate === 'blocked').length, conditional: rows.filter((r) => r.gate === 'conditional').length, clear: rows.filter((r) => r.gate === 'clear').length, failed: rows.filter((r) => r.failed + r.lapsed > 0).length }, service: { ...verificationService } };
+    }),
+
+  getVerification: (applicationId, userId) =>
+    simulateRead((): VerificationDetailView => {
+      vfAdmin(userId);
+      return vfDetailOf(vfApp(applicationId), Date.now());
+    }),
+
+  getVerificationGate: (applicationId, userId) =>
+    simulateRead(() => {
+      vfAdmin(userId);
+      const app = vfApp(applicationId);
+      return vfGate(vfRequired(app.role, app.form), app.verification, Date.now());
+    }),
+
+  runVerificationCheck: (applicationId, itemKey, userId) =>
+    simulateWrite((): VerificationDetailView => {
+      const admin = vfAdmin(userId);
+      const app = vfApp(applicationId);
+      const item = vfRequired(app.role, app.form).find((i) => i.key === itemKey);
+      if (!item) throw new RepositoryError('not_found');
+      if (!item.thirdParty) throw new RepositoryError('not_third_party');
+      const now = Date.now();
+      if (vfItemState(app.verification?.records[itemKey], now) === 'passed') throw new RepositoryError('already_resolved');
+      if (app.verification?.records[itemKey]?.redFlag) throw new RepositoryError('not_open');
+      // An outage never stalls the pipeline: Admin is told to use the manual fallback, with a stronger note.
+      if (verificationService.status === 'down') throw new RepositoryError('service_unavailable');
+      const r = vfServiceCheck(app.role, app.form);
+      const v = vfOf(app);
+      const at = new Date(now).toISOString();
+      if (r.result === 'inconclusive') v.events.push(vfEvent('service_check', admin.name, itemKey, `inconclusive:${r.detail}`));
+      else {
+        vfRecord(app, itemKey, { status: r.result === 'passed' ? 'passed' : 'failed', method: 'third_party', at, byName: admin.name, reference: `IDV-${app.code.slice(-4)}-${Math.floor(now / 1000) % 10000}`, note: r.detail });
+        v.events.push(vfEvent('service_check', admin.name, itemKey, r.result));
+      }
+      syncVerification(now);
+      return vfDetailOf(app, now);
+    }),
+
+  recordVerification: (applicationId, itemKey, input, userId) =>
+    simulateWrite((): VerificationDetailView => {
+      const admin = vfAdmin(userId);
+      const app = vfApp(applicationId);
+      const item = vfRequired(app.role, app.form).find((i) => i.key === itemKey);
+      if (!item) throw new RepositoryError('not_found');
+      const now = Date.now();
+      const refs = app.form.references;
+      const problem = vfManualProblem({ result: input.result, how: input.how, note: input.note, serviceDown: verificationService.status === 'down', item, redFlag: input.redFlag, verifiedReferences: refs.filter((r) => r.outcome?.status === 'verified').length, noReferences: app.form.noReferences });
+      if (problem) throw new RepositoryError(problem);
+      // Clearing something that failed needs the reason it now holds, not a quick tick: what changed is kept with the record.
+      if (app.verification?.records[itemKey]?.status === 'failed' && input.result === 'passed' && input.note.replace(/[^\p{L}\p{N}]/gu, '').length < 25) throw new RepositoryError('fallback_note_required');
+      const at = new Date(now).toISOString();
+      vfRecord(app, itemKey, { status: input.result, method: 'manual', at, byName: admin.name, note: input.note.trim(), how: input.how, ...(verificationService.status === 'down' && item.thirdParty ? { serviceDown: true } : {}), ...(input.redFlag ? { redFlag: true } : {}) });
+      vfOf(app).events.push(vfEvent('manual', admin.name, itemKey, input.result));
+      syncVerification(now);
+      return vfDetailOf(app, now);
+    }),
+
+  grantConditionalVerification: (applicationId, itemKey, input, userId) =>
+    simulateWrite((): VerificationDetailView => {
+      const admin = vfAdmin(userId);
+      const app = vfApp(applicationId);
+      const required = vfRequired(app.role, app.form);
+      const item = required.find((i) => i.key === itemKey);
+      if (!item) throw new RepositoryError('not_found');
+      const now = Date.now();
+      const v = vfOf(app);
+      const open = required.filter((i) => vfItemState(v.records[i.key], now) === 'conditional').length;
+      const due = new Date(`${input.dueDate}T23:59:59`);
+      const problem = vfConditionalProblem(item, vfItemState(v.records[itemKey], now), input.reason, due.toISOString(), open, now);
+      if (problem) throw new RepositoryError(problem);
+      const at = new Date(now).toISOString();
+      vfRecord(app, itemKey, { status: 'conditional', method: 'manual', at, byName: admin.name, note: input.reason.trim(), conditional: { dueAt: due.toISOString(), reason: input.reason.trim(), grantedBy: admin.name, at } });
+      v.events.push(vfEvent('conditional', admin.name, itemKey, input.dueDate));
+      return vfDetailOf(app, now);
+    }),
+
+  setVerificationService: (status, userId) =>
+    simulateWrite((): VerificationServiceView => {
+      const admin = vfAdmin(userId);
+      verificationService.status = status;
+      verificationService.changedAt = new Date().toISOString();
+      verificationService.changedByName = admin.name;
+      return { ...verificationService };
     }),
 
   /* --------------------------------- Recruitment: the public front door (141) */
