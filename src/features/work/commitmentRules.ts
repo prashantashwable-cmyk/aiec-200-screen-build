@@ -1,6 +1,6 @@
 import { ASSIGN_DUE, DISPUTE_DECIDE_DUE, REVERIFY_DUE } from '@/features/qc/snags';
 import { ARRANGE_DUE, FOLLOWUP_DUE, SIGNOFF_DUE_PRESENT, SIGNOFF_DUE_REMOTE } from '@/features/qc/walkthrough';
-import type { PartnerApplication, TierDispute, TierReview, WarrantyRegistration, HandoverWalkthrough, ReworkRequest,
+import type { PartnerApplication, PartnerExit, TierDispute, TierReview, WarrantyRegistration, HandoverWalkthrough, ReworkRequest,
   Alert,
   AlertSeverity,
   CatalogPriceChange,
@@ -64,6 +64,7 @@ import { ARRANGE_DUE as INTERVIEW_ARRANGE_DUE, INVITE_WAIT } from '@/features/re
 import { PREPARE_DUE as OFFER_PREPARE_DUE, SIGN_WAIT as OFFER_SIGN_WAIT, STEPS_DUE as OFFER_STEPS_DUE } from '@/features/recruitment/agreement';
 import { WAITLIST_REVIEW as WAITLIST_REVIEW_AFTER } from '@/features/recruitment/dashboard';
 import { DISPUTE_DECIDE_DUE as TIER_DISPUTE_DUE } from '@/features/partners/tiers';
+import { DISPUTE_DECIDE_DUE as EXIT_DISPUTE_DUE, INVOLUNTARY_WORK_DUE, PAY_DUE_AFTER_ACCESS, SETTLEMENT_DUE } from '@/features/partners/exit';
 import { VERIFY_DUE, gateOf as verificationGate, requiredItemsOf as requiredVerification } from '@/features/recruitment/verification';
 
 /**
@@ -138,6 +139,8 @@ export interface CommitmentSources {
   /** Questions raised about a partner's tier, and partners put up for review after the criteria were raised (148). */
   tierDisputes: TierDispute[];
   tierReviews: TierReview[];
+  /** Exits under way and how much of the partner's work is still in their hands (150). */
+  exits: { exit: PartnerExit; workOpen: number; finishing: number }[];
   /** Mechanical quality-check attempts and the differences from the install record the inspector raised (132). */
   qcMechChecks: QcMechCheck[];
   qcFindings: QcFinding[];
@@ -2034,6 +2037,82 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
         actionRoute: `/partner-tiers/${r.userId}`,
         oversightRoute: `/partner-tiers/${r.userId}`,
       }));
+    },
+  },
+  {
+    // Work a leaving partner still holds: handed on by their last day (at once for a removal), by Admin (150).
+    kind: 'exit_work_handover',
+    nudgeBefore: hours(12),
+    escalateAfter: hours(12),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'staffing',
+    collect(src) {
+      const admin = adminId(src);
+      return src.exits.map(({ exit, workOpen }) => ({
+        ...base('exit_work_handover', 'application', exit.id),
+        ownerUserId: admin,
+        titleKey: 'work.title.exit_work_handover',
+        titleParams: { name: exit.partnerName, count: String(workOpen) },
+        dueAt: exit.kind === 'involuntary' ? plus(exit.startedAt, INVOLUNTARY_WORK_DUE) : new Date(`${exit.lastDay}T17:00:00`).toISOString(),
+        state: workOpen === 0 ? ('done' as const) : ('open' as const),
+        paused: false,
+        actionRoute: `/partner-exit/${exit.partnerId}`,
+        oversightRoute: `/partner-exit/${exit.partnerId}`,
+      }));
+    },
+  },
+  {
+    // What a leaving partner is owed: worked out from the ledgers within days, and paid soon after access ends (150).
+    kind: 'exit_settlement',
+    nudgeBefore: days(1),
+    escalateAfter: days(2),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'payment',
+    collect(src) {
+      const admin = adminId(src);
+      return src.exits.map(({ exit }) => {
+        const s = exit.settlement;
+        const total = s ? s.amount + (s.adjustment?.amount ?? 0) : 0;
+        const done = !!s && (s.status === 'paid' || (s.status === 'agreed' && !s.withheld && total <= 0));
+        return {
+          ...base('exit_settlement', 'application', exit.id),
+          ownerUserId: admin,
+          titleKey: s ? 'work.title.exit_settlement_pay' : 'work.title.exit_settlement',
+          titleParams: { name: exit.partnerName },
+          dueAt: s ? plus(exit.accessRevoked?.at ?? new Date(`${exit.lastDay}T00:00:00`).toISOString(), PAY_DUE_AFTER_ACCESS) : plus(exit.startedAt, SETTLEMENT_DUE),
+          state: done ? ('done' as const) : ('open' as const),
+          paused: s?.status === 'disputed',
+          completedAt: s?.paid?.at,
+          actionRoute: `/partner-exit/${exit.partnerId}`,
+          oversightRoute: `/partner-exit/${exit.partnerId}`,
+        };
+      });
+    },
+  },
+  {
+    // A leaving partner who says they are owed more: decided with the reasons written down, like any payout dispute (150).
+    kind: 'exit_dispute_decide',
+    nudgeBefore: days(1),
+    escalateAfter: days(2),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'payment',
+    collect(src) {
+      const admin = adminId(src);
+      return src.exits.flatMap(({ exit }) => (exit.settlement?.dispute ? [exit.settlement.dispute] : []).map((d) => ({
+        ...base('exit_dispute_decide', 'application', d.id),
+        ownerUserId: admin,
+        titleKey: 'work.title.exit_dispute_decide',
+        titleParams: { name: exit.partnerName },
+        dueAt: plus(d.raisedAt, EXIT_DISPUTE_DUE),
+        state: d.status === 'decided' ? ('done' as const) : ('open' as const),
+        paused: false,
+        completedAt: d.decision?.at,
+        actionRoute: `/partner-exit/${exit.partnerId}`,
+        oversightRoute: `/partner-exit/${exit.partnerId}`,
+      })));
     },
   },
   {

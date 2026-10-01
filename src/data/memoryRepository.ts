@@ -242,6 +242,12 @@ import type {
   PartnerDirectoryProfileView,
   PartnerDirectoryRowView,
   PartnerDirectoryView,
+  ExitBoardView,
+  ExitPreviewView,
+  ExitRowView,
+  ExitTargetsView,
+  ExitWorkItem,
+  PartnerExitView,
   PartnerTierDetailView,
   PartnerTierRowView,
   TierCriteriaView,
@@ -489,6 +495,14 @@ import type {
   PartnerVerification,
   PartnerTierEntry,
   PartnerTerritoryChange,
+  PartnerExit,
+  ExitAction,
+  ExitActionKind,
+  ExitHeldLine,
+  ExitItemType,
+  ExitKind,
+  ExitSettlement,
+  ExitSettlementLine,
   TierCriteriaVersion,
   TierDeferral,
   TierDispute,
@@ -688,6 +702,8 @@ import { SECTIONS as APP_SECTIONS, EMPTY_FORM as APP_EMPTY, maskId as apMask, ou
 import { FUNNEL as RD_FUNNEL, NOW_STAGES as RD_NOW, SMALL_SAMPLE as RD_SMALL, WAITLIST_MIN as RD_WAITLIST_MIN, funnelOf as rdFunnelOf, medianOf as rdMedian, roomOf as rdRoom, signalOf as rdSignalOf, trendOf as rdTrend } from '@/features/recruitment/dashboard';
 import type { NowStage as RdNowStage, Period as RdPeriod, RecruitStage as RdRecruitStage } from '@/features/recruitment/dashboard';
 import { GRADUATION_MIN_ORDERS, GRADUATION_MIN_SCORE } from '@/features/suppliers/paymentTerms';
+import { ACTION_NOTE_MIN as EX_ACTION_NOTE_MIN, DISPUTE_MIN as EX_DISPUTE_MIN, INTERVIEW_REASONS as EX_INTERVIEW_REASONS, LAST_DAY_MAX_DAYS as EX_LAST_DAY_MAX, REASON_MIN as EX_REASON_MIN, WITHHOLD_MIN as EX_WITHHOLD_MIN, blockersOf as exBlockersOf, decidedExtra as exDecidedExtra, decisionProblem as exDecisionProblem, startProblem as exStartProblem } from '@/features/partners/exit';
+import type { Stage as ExitStage, Blocker as ExitBlocker } from '@/features/partners/exit';
 import { DEFAULT_CRITERIA as TIER_DEFAULT_CRITERIA, DEFER_MAX_DAYS as TIER_DEFER_MAX_DAYS, DISPUTE_DECIDE_DUE as TIER_DISPUTE_DUE, EFFECTIVE_MAX_DAYS as TIER_EFFECTIVE_MAX_DAYS, INCIDENT_WINDOW as TIER_INCIDENT_WINDOW, REASON_MIN as TIER_REASON_MIN, REVIEW_WITHIN as TIER_REVIEW_WITHIN, TIER_IDS as TIER_IDS_OF, criteriaProblem as tierCriteriaProblem, directionOf as tierDirection, eligibleIndex as tierEligible, evaluate as tierEvaluate, indexOf as tierIndexOf, supplierCriteria as tierSupplierCriteria } from '@/features/partners/tiers';
 import type { Metrics, TierEffects, TierRole } from '@/features/partners/tiers';
 import { CONVERSION_PCT as TIER_BASE_PCT } from '@/features/recruitment/agreement';
@@ -2388,6 +2404,7 @@ function commitmentSources(now: number): CommitmentSources {
     applications: partnerApplications,
     tierDisputes: (tcEnsure(Date.now()), tierDisputes),
     tierReviews,
+    exits: exitSignals(),
     handoverReviews: handoverSignals().reviews,
     qcMechChecks,
     qcFindings,
@@ -2643,6 +2660,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   sendDueSos(now);
   syncTechnicianClashes(now);
   syncRecruitmentIntake(now);
+  syncPartnerExits(now);
   syncPartnerInterviews(now);
   syncVerification(now);
   syncOffers(now);
@@ -6338,7 +6356,7 @@ function jobTeamViewOf(job: Job, viewerId: string, now: number): JobTeamView {
     log: [...(job.teamLog ?? [])].reverse(),
     addable: isAdmin
       ? users
-          .filter((u) => u.role === 'technician' && u.status === 'active' && !isOnJob(job, u.id))
+          .filter((u) => u.role === 'technician' && u.status === 'active' && acceptsNewWork(u.id) && !isOnJob(job, u.id))
           .map((u) => ({ id: u.id, name: u.name, otherJobsToday: jobs.filter((j) => j.id !== job.id && isOnJob(j, u.id) && (j.status === 'in_progress' || dayKey(j.scheduledFor) === dayKey(now))).length }))
       : [],
     disagreement: disagreementIssue ? { issueId: disagreementIssue.id, code: disagreementIssue.code, at: disagreementIssue.createdAt, resolved: disagreementIssue.status === 'resolved' } : null,
@@ -8625,6 +8643,8 @@ const partnerTerritoryChanges: PartnerTerritoryChange[] = [];
 let territoryChangeCounter = 0;
 const PD_REASON_MIN = 15;
 
+/** An exit under way shows on the directory row: still active, but being handed on. */
+const exitingOf = (id: string): { lastDay: string; kind: ExitKind } | null => { const e = partnerExits.find((x) => x.partnerId === id && x.status === 'in_progress'); return e ? { lastDay: e.lastDay, kind: e.kind } : null; };
 const pdStatusOf = (s: string): DirectoryStatus => (s === 'active' ? 'active' : s === 'suspended' ? 'deactivated' : s === 'rejected' ? 'rejected' : 'pending');
 const pdPhoneKey = (phone: string | undefined) => (phone ?? '').replace(/\D/g, '').slice(-10);
 
@@ -8635,7 +8655,7 @@ function pdRolesOf(now: number): { phone: string; name: string; role: DirectoryR
   for (const u of users) {
     if (u.role !== 'surveyor' && u.role !== 'technician') continue;
     const app = partnerApplications.find((a) => a.offer?.activation?.userId === u.id);
-    const base = { partnerId: u.id, status: pdStatusOf(u.status), tier: tierNow(u.id, now), city: u.city ?? '', joinedAt: u.joinedAt ?? null, applicationId: app?.id ?? null };
+    const base = { partnerId: u.id, status: pdStatusOf(u.status), tier: tierNow(u.id, now), city: u.city ?? '', joinedAt: u.joinedAt ?? null, applicationId: app?.id ?? null, exiting: exitingOf(u.id) };
     if (u.role === 'surveyor') {
       const mine = leads.filter((l) => l.surveyorId === u.id);
       out.push({ phone: u.phone, name: u.name, role: { ...base, type: 'surveyor', territory: zones.filter((z) => z.assignedUserIds.includes(u.id)).map((z) => ({ kind: 'zone' as const, value: z.name })), perf: { leads: mine.length, won: deals.filter((d) => d.status === 'won' && resolveLead(d.leadId)?.originalSurveyorId === u.id).length }, inFlight: mine.filter((l) => l.stage !== 'won' && l.stage !== 'lost').length, profileRoute: `/admin/tracking/surveyor/${u.id}` } });
@@ -8650,7 +8670,7 @@ function pdRolesOf(now: number): { phone: string; name: string; role: DirectoryR
     const portal = supplierUserFor(sup);
     const { score, rated } = supplierScoreNow(sup.id);
     const open = supplierPurchaseOrders.filter((po) => po.supplierId === sup.id && po.status === 'sent' && poStageOf(po) !== 'delivered').length;
-    out.push({ phone: portal?.phone ?? sup.contactPhone ?? '', name: sup.name, role: { type: 'supplier', partnerId: sup.id, status: pdStatusOf(sup.status), tier: tierOf(sup), city: sup.city, joinedAt: portal?.joinedAt ?? sup.invitedAt ?? null, applicationId: partnerApplications.find((a) => a.offer?.activation?.supplierId === sup.id)?.id ?? null, territory: sup.categories.map((v) => ({ kind: 'category' as const, value: v })), perf: { score: score === null ? null : Math.round(score * 100), rated, onTimeRate: rated ? Math.round(sup.onTimeRate * 100) : null }, inFlight: open, profileRoute: `/scorecard?supplierId=${sup.id}` } });
+    out.push({ phone: portal?.phone ?? sup.contactPhone ?? '', name: sup.name, role: { type: 'supplier', partnerId: sup.id, status: pdStatusOf(sup.status), tier: tierOf(sup), city: sup.city, joinedAt: portal?.joinedAt ?? sup.invitedAt ?? null, applicationId: partnerApplications.find((a) => a.offer?.activation?.supplierId === sup.id)?.id ?? null, exiting: exitingOf(sup.id), territory: sup.categories.map((v) => ({ kind: 'category' as const, value: v })), perf: { score: score === null ? null : Math.round(score * 100), rated, onTimeRate: rated ? Math.round(sup.onTimeRate * 100) : null }, inFlight: open, profileRoute: `/scorecard?supplierId=${sup.id}` } });
   }
   return out;
 }
@@ -8688,6 +8708,196 @@ function pdProfile(key: string, now: number): PartnerDirectoryProfileView {
     zoneOptions: surveyor ? zones.filter((z) => z.status === 'active').map((z) => ({ id: z.id, name: z.name, assigned: z.assignedUserIds.includes(surveyor.partnerId) })) : [],
     changes: partnerTerritoryChanges.filter((c) => ids.includes(c.partnerId)).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 5),
   };
+}
+
+/* ============================== Partner deactivation and exit (150) */
+
+const partnerExits: PartnerExit[] = [];
+let exitCounter = 0;
+const EXIT_STUCK_ALERT = 'partnerExit.alert.stuck';
+const EXIT_VIOLATION_ALERT = 'partnerExit.alert.violation';
+const exLetters = (s: string) => s.replace(/[^\p{L}\p{N}]/gu, '').length;
+
+/** The exit under way for a partner, if any: from the first step until access, work and money are all done. */
+const exitUnderWay = (partnerId: string): PartnerExit | undefined => partnerExits.find((e) => e.partnerId === partnerId && e.status === 'in_progress');
+const exitLatest = (partnerId: string): PartnerExit | undefined => [...partnerExits].filter((e) => e.partnerId === partnerId).sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
+/** Someone on their way out is not given new work. */
+const acceptsNewWork = (id: string): boolean => !exitUnderWay(id);
+
+function exPartner(id: string): { type: 'surveyor' | 'technician' | 'supplier'; name: string; phone: string; city: string; status: DirectoryStatus; user?: User; supplier?: Supplier } {
+  const u = byId(users, id);
+  if (u && (u.role === 'surveyor' || u.role === 'technician')) return { type: u.role, name: u.name, phone: u.phone, city: u.city ?? '', status: pdStatusOf(u.status), user: u };
+  const sup = byId(suppliers, id);
+  if (sup) return { type: 'supplier', name: sup.name, phone: supplierUserFor(sup)?.phone ?? sup.contactPhone ?? '', city: sup.city, status: pdStatusOf(sup.status), supplier: sup };
+  throw new RepositoryError('not_found');
+}
+
+const exBlockers = (kind: ExitKind, workOpen: number, finishing: number, settlement: 'none' | 'proposed' | 'agreed' | 'disputed' | 'paid'): ExitBlocker[] => exBlockersOf({ kind, workOpen, finishing, settlement });
+
+function exWorkOf(exit: PartnerExit | undefined, partnerId: string, type: 'surveyor' | 'technician' | 'supplier'): ExitWorkItem[] {
+  const decided = (t: ExitItemType, id: string): ExitAction | null => [...(exit?.actions ?? [])].reverse().find((a) => a.itemType === t && a.itemId === id) ?? null;
+  const out: ExitWorkItem[] = [];
+  if (type === 'surveyor') {
+    for (const l of leads.filter((x) => x.surveyorId === partnerId && x.stage !== 'won' && x.stage !== 'lost')) out.push({ type: 'lead', id: l.id, label: l.code, detail: l.builderName, route: `/admin/leads/${l.id}`, done: decided('lead', l.id), open: true, finishing: false });
+  } else if (type === 'technician') {
+    for (const j of jobs.filter((x) => x.status !== 'completed' && isOnJob(x, partnerId))) out.push({ type: 'job', id: j.id, label: j.code, detail: j.siteName, route: `/job-team/${j.id}`, done: decided('job', j.id), open: true, finishing: false });
+  } else {
+    for (const po of supplierPurchaseOrders.filter((x) => x.supplierId === partnerId && x.status !== 'failed' && !(x.status === 'sent' && poStageOf(x) === 'delivered'))) {
+      const done = decided('order', po.id);
+      const finishing = done?.action === 'finish_first';
+      const settled = !!done && (done.action === 'alternate_sourcing' || done.action === 'cancelled');
+      out.push({ type: 'order', id: po.id, label: po.code, detail: po.status, route: '/orders', done, open: !settled, finishing });
+    }
+  }
+  return out;
+}
+
+/** What the partner is owed, read from the commission ledger (surveyors, technicians) or the supplier payment records, never typed in. */
+function exSettlementOf(partnerId: string, type: 'surveyor' | 'technician' | 'supplier'): ExitPreviewView {
+  const lines: ExitSettlementLine[] = [];
+  const held: ExitHeldLine[] = [];
+  if (type === 'supplier') {
+    for (const p of supplierPayments.filter((x) => x.supplierId === partnerId && x.status !== 'executed')) lines.push({ kind: 'payment_owed', ref: p.id, label: p.code, amount: p.amount });
+    for (const r of supplierRetentions.filter((x) => x.supplierId === partnerId && (x.status === 'held' || x.status === 'paused'))) held.push({ kind: 'retention_held', ref: r.id, label: byId(supplierPurchaseOrders, r.poId)?.code ?? r.poId, amount: r.amount });
+    for (const a of advanceRecoveries.filter((x) => x.supplierId === partnerId && x.status === 'open')) lines.push({ kind: 'advance_recoverable', ref: a.id, label: a.code, amount: -Math.max(0, a.amount - a.recoveredAmount - a.writtenOffAmount) });
+  } else {
+    for (const c of commissions.filter((x) => x.userId === partnerId)) {
+      if (c.status === 'approved') lines.push({ kind: 'commission_payable', ref: c.id, label: c.reasonKey, amount: c.amount });
+      else if (c.status === 'projected') held.push({ kind: 'commission_pending', ref: c.id, label: c.reasonKey, amount: c.amount });
+    }
+  }
+  return { lines, held, amount: lines.reduce((n, l) => n + l.amount, 0) };
+}
+
+const exTotal = (s: ExitSettlement) => s.amount + (s.adjustment?.amount ?? 0);
+
+/** A supplier's money is paid through the payment queue (111), so its settlement reads as paid once every owed payment there has been made. */
+function exRefreshPaid(exit: PartnerExit, now: number): void {
+  const s = exit.settlement;
+  if (!s || s.paid || s.status === 'disputed' || exit.partnerType !== 'supplier') return;
+  const owed = s.lines.filter((l) => l.kind === 'payment_owed');
+  if (s.status === 'agreed' && !s.withheld && owed.length > 0 && owed.every((l) => byId(supplierPayments, l.ref)?.status === 'executed')) {
+    s.status = 'paid';
+    s.paid = { at: new Date(now).toISOString(), byName: 'AIEC', reference: 'supplier-payments', amount: owed.reduce((n, l) => n + l.amount, 0) };
+  }
+}
+
+function exViewOf(partnerId: string, now: number): PartnerExitView {
+  const info = exPartner(partnerId);
+  const exit = exitLatest(partnerId);
+  const live = exit && exit.status === 'in_progress' ? exit : undefined;
+  if (live) exRefreshPaid(live, now);
+  const work = exWorkOf(live, partnerId, info.type);
+  const workOpen = work.filter((w) => w.open && !w.finishing).length;
+  const finishing = work.filter((w) => w.open && w.finishing).length;
+  const settleState = !live?.settlement ? 'none' : live.settlement.status;
+  const blockers = live ? exBlockers(live.kind, workOpen, finishing, settleState) : [];
+  const paidOrNothing = !!live?.settlement && (live.settlement.status === 'paid' || (live.settlement.status === 'agreed' && !live.settlement.withheld && exTotal(live.settlement) <= 0));
+  let stage: ExitStage = 'plan';
+  if (live) {
+    if (live.kind === 'involuntary' && !live.accessRevoked) stage = 'access';
+    else if (workOpen + finishing > 0) stage = 'work';
+    else if (!live.settlement || live.settlement.status === 'proposed' || live.settlement.status === 'disputed' || !paidOrNothing) stage = 'settlement';
+    else if (!live.accessRevoked) stage = 'access';
+    else stage = live.interview ? 'done' : 'interview';
+  } else if (exit?.status === 'completed') stage = exit.interview ? 'done' : 'interview';
+  const targets: ExitTargetsView = {
+    surveyors: users.filter((u) => u.role === 'surveyor' && u.status === 'active' && u.id !== partnerId && acceptsNewWork(u.id)).map((u) => ({ id: u.id, name: u.name, openLeads: leads.filter((l) => l.surveyorId === u.id && l.stage !== 'won' && l.stage !== 'lost').length })),
+    technicians: users.filter((u) => u.role === 'technician' && u.status === 'active' && u.id !== partnerId && acceptsNewWork(u.id)).map((u) => ({ id: u.id, name: u.name, openJobs: jobs.filter((j) => j.status !== 'completed' && isOnJob(j, u.id)).length, canLead: tcCanLead(u.id) })),
+    suppliers: suppliers.filter((x) => x.status === 'active' && x.id !== partnerId && !x.mergedIntoSupplierId && acceptsNewWork(x.id)).map((x) => ({ id: x.id, name: x.name })),
+  };
+  return {
+    partner: { id: partnerId, type: info.type, name: info.name, phone: info.phone, city: info.city, status: info.status, tier: info.type === 'supplier' ? tierOf(info.supplier as Supplier) : tierNow(partnerId, now) },
+    exit: exit ? JSON.parse(JSON.stringify(exit)) as PartnerExit : null,
+    work,
+    workOpen,
+    finishing,
+    targets,
+    preview: exSettlementOf(partnerId, info.type),
+    blockers,
+    stage,
+    canEndAccess: !!live && !live.accessRevoked && blockers.length === 0,
+  };
+}
+
+const exRowOf = (e: PartnerExit, now: number): ExitRowView => {
+  const v = exViewOf(e.partnerId, now);
+  const own = v.exit?.id === e.id;
+  return { id: e.id, code: e.code, partnerId: e.partnerId, partnerName: e.partnerName, partnerType: e.partnerType, kind: e.kind, reason: e.reason, lastDay: e.lastDay, stage: own ? v.stage : e.status === 'completed' ? 'done' : 'plan', status: e.status, workOpen: own ? v.workOpen : 0, blockers: own ? v.blockers : [], amount: e.settlement ? exTotal(e.settlement) : null, startedAt: e.startedAt, completedAt: e.completedAt ?? null };
+};
+
+function exEvent(exit: PartnerExit, kind: string, byName: string, detail?: string): void {
+  exit.events.push({ kind, at: new Date().toISOString(), byName, ...(detail ? { detail } : {}) });
+}
+
+function exOpenExit(partnerId: string): PartnerExit {
+  const e = exitUnderWay(partnerId);
+  if (!e) throw new RepositoryError('not_open');
+  return e;
+}
+
+/** Ending access is the last switch: the account stops signing in, no new work reaches it, and a supplier is closed to new orders. */
+function exEndAccess(exit: PartnerExit, byName: string, first: boolean, now: number): void {
+  const at = new Date(now).toISOString();
+  exit.accessRevoked = { at, byName, first };
+  exEvent(exit, 'access_ended', byName, first ? 'first' : undefined);
+  if (exit.partnerType === 'supplier') {
+    const sup = byId(suppliers, exit.partnerId);
+    if (sup) {
+      patchInPlace(suppliers, sup.id, { status: 'suspended' as const, suspendedReason: `Exit ${exit.code}`, suspendedBy: byName, suspendedAt: at });
+      const portal = supplierUserFor(sup);
+      if (portal) patchInPlace(users, portal.id, { status: 'suspended' as const });
+    }
+  } else {
+    patchInPlace(users, exit.partnerId, { status: 'suspended' as const, onDuty: false });
+    for (const z of zones.filter((x) => x.assignedUserIds.includes(exit.partnerId))) patchInPlace(zones, z.id, { assignedUserIds: z.assignedUserIds.filter((x) => x !== exit.partnerId) });
+  }
+}
+
+function exMaybeComplete(exit: PartnerExit, now: number): boolean {
+  if (exit.status !== 'in_progress' || !exit.accessRevoked || !exit.settlement) return false;
+  const v = exViewOf(exit.partnerId, now);
+  const s = exit.settlement;
+  const settled = s.status === 'paid' || (s.status === 'agreed' && !s.withheld && exTotal(s) <= 0);
+  if (v.workOpen + v.finishing > 0 || !settled) return false;
+  exit.status = 'completed';
+  exit.completedAt = new Date(now).toISOString();
+  exEvent(exit, 'completed', 'AIEC');
+  return true;
+}
+
+/** The heartbeat's part: supplier payments that have been made, exits whose last step just closed, and a last day that has arrived with something still open. */
+function syncPartnerExits(now: number): void {
+  const today = tcToday(now);
+  for (const exit of partnerExits) {
+    if (exit.status !== 'in_progress') {
+      const a = alerts.filter((x) => (x.relatedId === `exit:${exit.id}`) && x.status !== 'resolved');
+      for (const x of a) patchInPlace(alerts, x.id, { status: 'resolved', resolvedAt: new Date(now).toISOString(), resolvedBy: 'system', resolutionNote: 'The exit is closed.' });
+      continue;
+    }
+    exRefreshPaid(exit, now);
+    const v = exViewOf(exit.partnerId, now);
+    if (exit.kind === 'voluntary' && !exit.accessRevoked) {
+      const stuckRel = `exit:${exit.id}`;
+      const stuck = alerts.find((a) => a.relatedId === stuckRel && a.titleKey === EXIT_STUCK_ALERT && a.status !== 'resolved');
+      if (today >= exit.lastDay && v.blockers.length === 0) {
+        exEndAccess(exit, 'AIEC', false, now);
+        logAutomatedAction({ sourceKey: 'partner_exit.access_ended', triggeringCondition: `${exit.partnerName}'s last day (${exit.lastDay}) arrived with work handed on and the settlement confirmed`, actionTaken: 'Ended their access', affectedRecordId: exit.id, affectedRecordType: 'other' });
+        if (stuck) patchInPlace(alerts, stuck.id, { status: 'resolved', resolvedAt: new Date(now).toISOString(), resolvedBy: 'system', resolutionNote: 'Nothing is blocking the exit any more.' });
+      } else if (today >= exit.lastDay && v.blockers.length > 0 && !stuck) {
+        raiseAlert({ titleKey: EXIT_STUCK_ALERT, context: `${exit.partnerName}'s last day has come but the exit is not ready`, severity: 'medium', category: 'staffing', relatedId: stuckRel, sourceRoute: `/partner-exit/${exit.partnerId}` });
+      }
+    }
+    if (exMaybeComplete(exit, now)) logAutomatedAction({ sourceKey: 'partner_exit.completed', triggeringCondition: `${exit.partnerName}'s exit has no work, money or access left open`, actionTaken: 'Closed the exit', affectedRecordId: exit.id, affectedRecordType: 'other' });
+  }
+}
+
+/** What the follow-up engine reads: each exit with how much work is still in hand. */
+function exitSignals(): { exit: PartnerExit; workOpen: number; finishing: number }[] {
+  return partnerExits.filter((e) => e.status === 'in_progress').map((e) => {
+    const w = exWorkOf(e, e.partnerId, e.partnerType);
+    return { exit: e, workOpen: w.filter((x) => x.open && !x.finishing).length, finishing: w.filter((x) => x.open && x.finishing).length };
+  });
 }
 
 /* ============================== Handover completion certificate (140) */
@@ -10601,7 +10811,7 @@ export const memoryRepository: Repository = {
       const lead = byId(leads, leadId);
       if (!lead) throw new RepositoryError('not_found');
       const target = byId(users, toSurveyorId);
-      if (!target || target.role !== 'surveyor' || target.status !== 'active') {
+      if (!target || target.role !== 'surveyor' || target.status !== 'active' || !acceptsNewWork(target.id)) {
         throw new RepositoryError('ineligible_assignee');
       }
       const fromId = lead.surveyorId;
@@ -10622,7 +10832,7 @@ export const memoryRepository: Repository = {
   bulkReassignLeads: (leadIds, toSurveyorId, reasonNote, actorName) =>
     simulateWrite(() => {
       const target = byId(users, toSurveyorId);
-      if (!target || target.role !== 'surveyor' || target.status !== 'active') {
+      if (!target || target.role !== 'surveyor' || target.status !== 'active' || !acceptsNewWork(target.id)) {
         throw new RepositoryError('ineligible_assignee');
       }
       const now = new Date().toISOString();
@@ -10649,7 +10859,7 @@ export const memoryRepository: Repository = {
     simulateRead(() => {
       const lead = resolveLead(leadId);
       if (!lead) return null;
-      const candidates = users.filter((u) => u.role === 'surveyor' && u.status === 'active' && u.onDuty);
+      const candidates = users.filter((u) => u.role === 'surveyor' && u.status === 'active' && u.onDuty && acceptsNewWork(u.id));
       if (candidates.length === 0) return null;
       let best: { userId: string; name: string; reasonKey: string; score: number } | null = null;
       for (const candidate of candidates) {
@@ -15978,6 +16188,271 @@ export const memoryRepository: Repository = {
       return rdBuild(90, Date.now());
     }),
 
+  /* --------------------------------- Partner deactivation and exit (150) */
+  getExitBoard: (userId) =>
+    simulateRead((): ExitBoardView => {
+      ofAdmin(userId);
+      const now = Date.now();
+      syncPartnerExits(now);
+      const rows = partnerExits.map((e) => exRowOf(e, now));
+      const year = rows.filter((r) => r.status !== 'cancelled' && now - new Date(r.startedAt).getTime() < 365 * 86_400_000);
+      const tally = new Map<string, { reason: string; kind: ExitKind; count: number }>();
+      for (const r of year) {
+        const k = `${r.kind}:${r.reason}`;
+        const cur = tally.get(k) ?? { reason: r.reason, kind: r.kind, count: 0 };
+        cur.count += 1;
+        tally.set(k, cur);
+      }
+      const tenure = partnerExits.filter((e) => e.status === 'completed').map((e) => { const j = exPartner(e.partnerId); const from = (j.user?.joinedAt ?? (j.supplier ? supplierUserFor(j.supplier)?.joinedAt ?? j.supplier.invitedAt : undefined)); return from ? (new Date(`${e.lastDay}T00:00:00`).getTime() - new Date(from).getTime()) / (30 * 86_400_000) : null; }).filter((x): x is number => x !== null && x >= 0);
+      return {
+        open: rows.filter((r) => r.status === 'in_progress').sort((a, b) => a.lastDay.localeCompare(b.lastDay)),
+        done: rows.filter((r) => r.status !== 'in_progress').sort((a, b) => (b.completedAt ?? b.startedAt).localeCompare(a.completedAt ?? a.startedAt)),
+        attrition: { total: year.length, involuntary: year.filter((r) => r.kind === 'involuntary').length, byReason: [...tally.values()].sort((a, b) => b.count - a.count), byType: { surveyor: year.filter((r) => r.partnerType === 'surveyor').length, technician: year.filter((r) => r.partnerType === 'technician').length, supplier: year.filter((r) => r.partnerType === 'supplier').length }, avgTenureMonths: tenure.length >= 3 ? Math.round(tenure.reduce((n, x) => n + x, 0) / tenure.length) : null },
+      };
+    }),
+
+  getPartnerExit: (partnerId, userId) =>
+    simulateRead((): PartnerExitView => {
+      ofAdmin(userId);
+      const now = Date.now();
+      syncPartnerExits(now);
+      return exViewOf(partnerId, now);
+    }),
+
+  startPartnerExit: (partnerId, input, userId) =>
+    simulateWrite((): PartnerExitView => {
+      const admin = ofAdmin(userId);
+      const now = Date.now();
+      const info = exPartner(partnerId);
+      if (exitUnderWay(partnerId)) throw new RepositoryError('exit_open');
+      if (info.status !== 'active') throw new RepositoryError('not_active');
+      const problem = exStartProblem(input, tcToday(now), tcToday(now + EX_LAST_DAY_MAX * 86_400_000));
+      if (problem) throw new RepositoryError(problem);
+      exitCounter += 1;
+      const at = new Date(now).toISOString();
+      const exit: PartnerExit = { id: `ex-${exitCounter}`, code: `AIEC-EX-${1000 + exitCounter}`, partnerId, partnerType: info.type, partnerName: info.name, kind: input.kind, reason: input.reason, note: input.note.trim(), lastDay: input.kind === 'involuntary' ? tcToday(now) : input.lastDay, startedAt: at, startedByName: admin.name, status: 'in_progress', actions: [], events: [], isDemo: true };
+      partnerExits.push(exit);
+      exEvent(exit, 'started', admin.name, input.reason);
+      if (input.kind === 'involuntary') {
+        // A serious violation: nothing waits. Access ends first, and the work and the money are handled afterwards by someone who is not them.
+        exEndAccess(exit, admin.name, true, now);
+        raiseAlert({ titleKey: EXIT_VIOLATION_ALERT, context: `${info.name} was removed from the network (${input.reason})`, severity: 'high', category: input.reason === 'safety_violation' ? 'safety' : 'staffing', relatedId: `exit:${exit.id}`, sourceRoute: `/partner-exit/${partnerId}` });
+      }
+      return exViewOf(partnerId, now);
+    }),
+
+  resolveExitItems: (partnerId, input, userId) =>
+    simulateWrite((): PartnerExitView => {
+      const admin = ofAdmin(userId);
+      const now = Date.now();
+      const exit = exOpenExit(partnerId);
+      if (exLetters(input.note) < EX_ACTION_NOTE_MIN) throw new RepositoryError('note_required');
+      const work = exWorkOf(exit, partnerId, exit.partnerType).filter((w) => w.type === input.type && input.itemIds.includes(w.id));
+      if (work.length === 0 || work.length !== new Set(input.itemIds).size) throw new RepositoryError('item_not_open');
+      const allowed: Record<ExitItemType, ExitActionKind[]> = { lead: ['reassigned', 'returned_to_pool'], job: ['reassigned'], order: exit.kind === 'voluntary' ? ['reassigned', 'finish_first', 'alternate_sourcing', 'cancelled'] : ['reassigned', 'alternate_sourcing', 'cancelled'] };
+      if (!allowed[input.type].includes(input.action)) throw new RepositoryError(input.action === 'finish_first' ? 'finish_not_allowed' : 'action_invalid');
+      const at = new Date(now).toISOString();
+      let toName: string | undefined;
+      if (input.action === 'reassigned' || input.action === 'alternate_sourcing') {
+        if (!input.toId) throw new RepositoryError('target_required');
+        const to = input.type === 'order' ? byId(suppliers, input.toId) : byId(users, input.toId);
+        const okTarget = input.type === 'lead' ? (to as User | null)?.role === 'surveyor' : input.type === 'job' ? (to as User | null)?.role === 'technician' : !!to;
+        const activeTarget = input.type === 'order' ? (to as Supplier | null)?.status === 'active' : (to as User | null)?.status === 'active';
+        if (!to || !okTarget || !activeTarget || input.toId === partnerId || !acceptsNewWork(input.toId)) throw new RepositoryError('target_invalid');
+        toName = to.name;
+      }
+      for (const w of work) {
+        if (w.type === 'lead') {
+          const lead = byId(leads, w.id) as Lead;
+          const toId = input.action === 'reassigned' ? (input.toId as string) : '';
+          patchInPlace(leads, lead.id, { surveyorId: toId, updatedAt: at });
+          pushTimelineEvent({ leadId: lead.id, kind: 'reassigned', actorName: admin.name, at, detail: input.note.trim(), fromValue: nameOf(partnerId), toValue: toId ? nameOf(toId) : undefined });
+        } else if (w.type === 'job') {
+          const job = byId(jobs, w.id) as Job;
+          const toId = input.toId as string;
+          let crew = crewOf(job);
+          if (!crew.some((c) => c.userId === toId)) crew = [...crew, { userId: toId, role: 'assistant' as const, stepIds: [] }];
+          const member = crew.find((c) => c.userId === partnerId);
+          const isLead = job.technicianId === partnerId;
+          if (isLead && !tcCanLead(toId)) throw new RepositoryError('target_invalid');
+          // Their finished steps keep their name; what is still open goes to the person taking over, with their notes carried on the job's own team log.
+          const openOwned = (member?.stepIds ?? []).filter((id) => job.steps.find((st) => st.id === id)?.status !== 'complete');
+          const next = crew.filter((c) => c.userId !== partnerId).map((c) => (c.userId === toId ? { ...c, role: isLead ? ('lead' as const) : c.role, stepIds: isLead ? [] : [...new Set([...c.stepIds, ...openOwned])] } : c));
+          logTeam(job, teamEvent('reassigned', admin.name, nameOf(partnerId), input.note.trim()), { crew: next, ...(isLead ? { technicianId: toId } : {}) });
+          if (isLead) logTeam(byId(jobs, job.id) as Job, teamEvent('lead_changed', admin.name, nameOf(toId), input.note.trim()));
+          // A site visit left open by someone who has gone is closed at the moment they were last known to be there, never guessed.
+          for (const v of siteCheckIns.filter((x) => x.jobId === job.id && x.userId === partnerId && !x.checkOutAt)) patchInPlace(siteCheckIns, v.id, { checkOutAt: v.checkInAt, checkOutNote: 'Closed when the partner left the network' } as Partial<SiteCheckIn>);
+        } else if (input.action === 'reassigned') {
+          const po = byId(supplierPurchaseOrders, w.id) as SupplierPurchaseOrder;
+          if (po.status === 'sent') throw new RepositoryError('action_invalid');
+          const repriced = (po.lineItems ?? []).map((line): PurchaseOrderLineItem => { const price = catalogPriceFor(input.toId as string, line.category) ?? 0; return { ...line, catalogUnitPriceAtDraft: price, agreedUnitPrice: price }; });
+          patchInPlace(supplierPurchaseOrders, po.id, { supplierId: input.toId as string, lineItems: repriced, approvedBy: undefined, approvedAt: undefined, selection: undefined, matchedByRulesVersion: undefined });
+        } else if (input.action === 'cancelled' && w.detail !== 'sent') {
+          patchInPlace(supplierPurchaseOrders, w.id, { status: 'failed' as const, failureReason: `Partner exit ${exit.code}` });
+        }
+        exit.actions.push({ id: `exa-${exit.actions.length + 1}-${exit.id}`, itemType: w.type, itemId: w.id, label: w.label, action: input.action, ...(input.toId ? { toId: input.toId } : {}), ...(toName ? { toName } : {}), note: input.note.trim(), byName: admin.name, at });
+      }
+      exEvent(exit, 'work_handled', admin.name, `${work.length} ${input.type}`);
+      if (exit.partnerType === 'supplier' && input.action !== 'finish_first') {
+        const sup = byId(suppliers, partnerId);
+        const portal = sup ? supplierUserFor(sup) : undefined;
+        if (sup && portal && (input.action === 'cancelled' || input.action === 'alternate_sourcing')) {
+          const thread = ensureSupplierThread(partnerId);
+          pushSupplierMessage(thread, { author: 'aiec', authorName: admin.name, authorUserId: admin.id, body: input.note.trim(), channel: 'in_app', at, expectsReply: false });
+        }
+      }
+      exMaybeComplete(exit, now);
+      return exViewOf(partnerId, now);
+    }),
+
+  confirmExitSettlement: (partnerId, input, userId) =>
+    simulateWrite((): PartnerExitView => {
+      const admin = ofAdmin(userId);
+      const now = Date.now();
+      const exit = exOpenExit(partnerId);
+      const at = new Date(now).toISOString();
+      if (exit.settlement?.withheld && input.releaseNote !== undefined) {
+        if (exLetters(input.releaseNote) < EX_WITHHOLD_MIN) throw new RepositoryError('reason_required');
+        delete exit.settlement.withheld;
+        exEvent(exit, 'withhold_released', admin.name, input.releaseNote.trim());
+        return exViewOf(partnerId, now);
+      }
+      if (exit.settlement && exit.settlement.status !== 'proposed') throw new RepositoryError('settlement_locked');
+      if (input.withholdReason !== undefined && (exit.kind !== 'involuntary' || exLetters(input.withholdReason) < EX_WITHHOLD_MIN)) throw new RepositoryError('reason_required');
+      const calc = exSettlementOf(partnerId, exit.partnerType);
+      exit.settlement = { calculatedAt: at, byName: admin.name, lines: calc.lines, held: calc.held, amount: calc.amount, status: 'proposed', ...(input.withholdReason !== undefined ? { withheld: { reason: input.withholdReason.trim(), byName: admin.name, at } } : {}) };
+      exEvent(exit, 'settlement_confirmed', admin.name, String(calc.amount));
+      return exViewOf(partnerId, now);
+    }),
+
+  recordExitAgreement: (partnerId, input, userId) =>
+    simulateWrite((): PartnerExitView => {
+      const admin = ofAdmin(userId);
+      const now = Date.now();
+      const exit = exOpenExit(partnerId);
+      const s = exit.settlement;
+      if (!s) throw new RepositoryError('settlement_missing');
+      if (s.status !== 'proposed') throw new RepositoryError('settlement_locked');
+      if (exLetters(input.note) < EX_ACTION_NOTE_MIN) throw new RepositoryError('note_required');
+      s.status = 'agreed';
+      s.agreed = { at: new Date(now).toISOString(), byName: admin.name, how: input.how, note: input.note.trim() };
+      exEvent(exit, 'settlement_agreed', admin.name, input.how);
+      exMaybeComplete(exit, now);
+      return exViewOf(partnerId, now);
+    }),
+
+  raiseExitSettlementDispute: (partnerId, input, userId) =>
+    simulateWrite((): PartnerExitView => {
+      const admin = ofAdmin(userId);
+      const now = Date.now();
+      const exit = exOpenExit(partnerId);
+      const s = exit.settlement;
+      if (!s) throw new RepositoryError('settlement_missing');
+      if (s.status === 'paid' || s.dispute?.status === 'open') throw new RepositoryError(s.status === 'paid' ? 'settlement_locked' : 'dispute_open');
+      if (s.dispute) throw new RepositoryError('settlement_locked');
+      if (!(input.claimedAmount > exTotal(s))) throw new RepositoryError('amount_invalid');
+      if (exLetters(input.grounds) < EX_DISPUTE_MIN) throw new RepositoryError('note_required');
+      s.status = 'disputed';
+      s.dispute = { id: `exd-${exit.id}`, claimedAmount: Math.round(input.claimedAmount), grounds: input.grounds.trim(), raisedAt: new Date(now).toISOString(), raisedByName: admin.name, status: 'open' };
+      exEvent(exit, 'settlement_disputed', admin.name, String(input.claimedAmount));
+      return exViewOf(partnerId, now);
+    }),
+
+  decideExitSettlementDispute: (partnerId, input, userId) =>
+    simulateWrite((): PartnerExitView => {
+      const admin = ofAdmin(userId);
+      const now = Date.now();
+      const exit = exOpenExit(partnerId);
+      const s = exit.settlement;
+      if (!s?.dispute || s.dispute.status !== 'open') throw new RepositoryError('no_dispute');
+      const problem = exDecisionProblem(input, exTotal(s), s.dispute.claimedAmount);
+      if (problem) throw new RepositoryError(problem === 'amount_invalid' ? 'amount_invalid' : 'note_required');
+      const extra = exDecidedExtra(input.outcome, input.amount, exTotal(s), s.dispute.claimedAmount);
+      const at = new Date(now).toISOString();
+      s.dispute.status = 'decided';
+      s.dispute.decision = { outcome: input.outcome, amount: extra, note: input.note.trim(), byName: admin.name, at };
+      if (extra > 0) {
+        let entryId: string | undefined;
+        // The ledger is the one record of what a person is paid: a decision in their favour becomes an entry in it, not a figure kept on the side.
+        if (exit.partnerType !== 'supplier') {
+          closureCommissionCounter += 1;
+          entryId = `c-new-${closureCommissionCounter}`;
+          commissions.push({ id: entryId, userId: partnerId, reasonKey: 'commission.reason.exitSettlement', amount: extra, status: 'approved', earnedAt: at, isDemo: true });
+        }
+        s.adjustment = { amount: extra, ...(entryId ? { entryId } : {}), at };
+      }
+      s.status = 'agreed';
+      s.agreed = { at, byName: admin.name, how: 'decision', note: input.note.trim() };
+      exEvent(exit, 'dispute_decided', admin.name, `${input.outcome}:${extra}`);
+      exMaybeComplete(exit, now);
+      return exViewOf(partnerId, now);
+    }),
+
+  recordExitPayment: (partnerId, input, userId) =>
+    simulateWrite((): PartnerExitView => {
+      const admin = ofAdmin(userId);
+      const now = Date.now();
+      const exit = exOpenExit(partnerId);
+      const s = exit.settlement;
+      if (!s) throw new RepositoryError('settlement_missing');
+      if (exit.partnerType === 'supplier') throw new RepositoryError('action_invalid');
+      if (s.withheld) throw new RepositoryError('withheld');
+      if (s.status !== 'agreed') throw new RepositoryError('settlement_locked');
+      if (exTotal(s) <= 0) throw new RepositoryError('nothing_to_pay');
+      if (input.reference.trim().length < 4) throw new RepositoryError('reference_required');
+      const at = new Date(now).toISOString();
+      for (const l of s.lines.filter((x) => x.kind === 'commission_payable')) {
+        const c = byId(commissions, l.ref);
+        if (c && c.status === 'approved') patchInPlace(commissions, c.id, { status: 'paid' as const, paidAt: at });
+      }
+      if (s.adjustment?.entryId) patchInPlace(commissions, s.adjustment.entryId, { status: 'paid' as const, paidAt: at });
+      s.status = 'paid';
+      s.paid = { at, byName: admin.name, reference: input.reference.trim(), amount: exTotal(s) };
+      exEvent(exit, 'paid', admin.name, input.reference.trim());
+      exMaybeComplete(exit, now);
+      return exViewOf(partnerId, now);
+    }),
+
+  endPartnerAccess: (partnerId, userId) =>
+    simulateWrite((): PartnerExitView => {
+      const admin = ofAdmin(userId);
+      const now = Date.now();
+      const exit = exOpenExit(partnerId);
+      if (exit.accessRevoked) throw new RepositoryError('access_ended');
+      const v = exViewOf(partnerId, now);
+      if (v.blockers.length > 0) throw new RepositoryError('gate_blocked');
+      exEndAccess(exit, admin.name, false, now);
+      exMaybeComplete(exit, now);
+      return exViewOf(partnerId, now);
+    }),
+
+  recordExitInterview: (partnerId, input, userId) =>
+    simulateWrite((): PartnerExitView => {
+      const admin = ofAdmin(userId);
+      const now = Date.now();
+      const exit = exitLatest(partnerId);
+      if (!exit || exit.status === 'cancelled') throw new RepositoryError('not_open');
+      if (exit.interview) throw new RepositoryError('settlement_locked');
+      if (input.how !== 'declined' && !input.reasons.every((r) => (EX_INTERVIEW_REASONS as readonly string[]).includes(r))) throw new RepositoryError('reason_required');
+      if (input.how !== 'declined' && input.reasons.length === 0 && exLetters(input.notes) < EX_ACTION_NOTE_MIN) throw new RepositoryError('note_required');
+      exit.interview = { at: new Date(now).toISOString(), byName: admin.name, how: input.how, reasons: input.how === 'declined' ? [] : input.reasons, wouldReturn: input.how === 'declined' ? null : input.wouldReturn, notes: input.notes.trim() };
+      exEvent(exit, 'interview', admin.name, input.how);
+      return exViewOf(partnerId, now);
+    }),
+
+  cancelPartnerExit: (partnerId, reason, userId) =>
+    simulateWrite((): PartnerExitView => {
+      const admin = ofAdmin(userId);
+      const now = Date.now();
+      const exit = exOpenExit(partnerId);
+      if (exit.accessRevoked) throw new RepositoryError('access_ended');
+      if (exLetters(reason) < EX_REASON_MIN) throw new RepositoryError('reason_required');
+      exit.status = 'cancelled';
+      exit.cancelled = { at: new Date(now).toISOString(), byName: admin.name, reason: reason.trim() };
+      exEvent(exit, 'cancelled', admin.name, reason.trim());
+      return exViewOf(partnerId, now);
+    }),
+
   /* --------------------------------- Partner directory (149) */
   searchPartnerDirectory: (filter, userId) =>
     simulateRead((): PartnerDirectoryView => {
@@ -17213,7 +17688,7 @@ export const memoryRepository: Repository = {
         rows,
         inspectors: isAdmin
           ? users
-              .filter((u) => u.role === 'technician' && u.status === 'active' && missingQcSkills(u.skills).length === 0)
+              .filter((u) => u.role === 'technician' && u.status === 'active' && acceptsNewWork(u.id) && missingQcSkills(u.skills).length === 0)
               .map((u) => ({ userId: u.id, name: u.name, eligibleInGeneral: true, qcThisWeek: qcAssignments.filter((a) => a.inspectorId === u.id && qcActive(a) && a.scheduledDate && a.scheduledDate >= weekAgo && a.scheduledDate <= weekAhead).length, unavailable: inspectorOff.filter((o) => o.userId === u.id && o.date >= qcDay(now)).map((o) => ({ ...o })) }))
           : [],
         totals: { ready: rows.filter((r) => r.ready).length, unassigned: rows.filter((r) => r.ready && !r.assignment).length, scheduled: rows.filter((r) => r.assignment?.status === 'scheduled').length, conflicts: rows.filter((r) => r.assignment?.conflict).length },
@@ -17513,7 +17988,7 @@ export const memoryRepository: Repository = {
       adminOnly(adminId);
       const { job, user } = teamActor(jobId, adminId);
       const tech = byId(users, technicianId);
-      if (!tech || tech.role !== 'technician' || tech.status !== 'active') throw new RepositoryError('unknown_member');
+      if (!tech || tech.role !== 'technician' || tech.status !== 'active' || !acceptsNewWork(tech.id)) throw new RepositoryError('unknown_member');
       if (isOnJob(job, technicianId)) throw new RepositoryError('already_on_job');
       if (job.status === 'completed') throw new RepositoryError('read_only');
       const known = new Set(job.steps.filter((st) => st.status !== 'complete').map((st) => st.id));

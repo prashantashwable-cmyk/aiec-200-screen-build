@@ -4,6 +4,7 @@ import type { DisputeDecision, SnagProblem, SnagSeverity } from '@/features/qc/s
 import type { AmcTierId, ReminderDef, WarrantyProblem } from '@/features/qc/warranty';
 import type { CompletionProblem, IssueProblem, MilestoneId } from '@/features/qc/completion';
 import type { CriterionResult, Metric, TierEffects, TierRole } from '@/features/partners/tiers';
+import type { Blocker as ExitBlocker, Stage as ExitStage } from '@/features/partners/exit';
 import type { FunnelRow, RecruitStage, NowStage, Period as DashboardPeriod, TerritorySignal } from '@/features/recruitment/dashboard';
 import type { Gate, ItemKind, ItemState as VerifyItemState } from '@/features/recruitment/verification';
 import type { CompleteInput, DecisionSignal, Phase as InterviewPhase } from '@/features/recruitment/interview';
@@ -40,6 +41,13 @@ import type {
   PartnerAgreementTemplate,
   PartnerOffer,
   PartnerTierEntry,
+  PartnerExit,
+  ExitAction,
+  ExitActionKind,
+  ExitHeldLine,
+  ExitItemType,
+  ExitKind,
+  ExitSettlementLine,
   PartnerTerritoryChange,
   PartnerVerification,
   TierCriteriaVersion,
@@ -2329,6 +2337,8 @@ export interface DirectoryRoleView {
   inFlight: number;
   profileRoute: string;
   applicationId: string | null;
+  /** An exit is under way (150): still active, but being handed on. */
+  exiting: { lastDay: string; kind: ExitKind } | null;
 }
 
 export interface PartnerDirectoryRowView {
@@ -2367,6 +2377,78 @@ export interface PartnerDirectoryProfileView {
 }
 
 export type DirectoryError = 'not_admin' | 'not_found' | 'reason_required' | 'not_surveyor' | 'not_active' | 'no_change' | 'unknown_zone';
+
+/* ------------------------------------ Partner deactivation and exit (150) */
+
+export interface ExitWorkItem {
+  type: ExitItemType;
+  id: string;
+  label: string;
+  detail: string;
+  route: string | null;
+  /** The decision recorded for it, if any. */
+  done: ExitAction | null;
+  /** Still in the partner's hands (the work itself, not the decision, is what keeps it open). */
+  open: boolean;
+  /** An order the supplier will finish before leaving. */
+  finishing: boolean;
+}
+
+export interface ExitTargetsView {
+  surveyors: { id: string; name: string; openLeads: number }[];
+  technicians: { id: string; name: string; openJobs: number; canLead: boolean }[];
+  suppliers: { id: string; name: string }[];
+}
+
+export interface ExitPreviewView {
+  lines: ExitSettlementLine[];
+  held: ExitHeldLine[];
+  amount: number;
+}
+
+export interface PartnerExitView {
+  partner: { id: string; type: DirectoryType; name: string; phone: string; city: string; status: DirectoryStatus; tier: string };
+  exit: PartnerExit | null;
+  work: ExitWorkItem[];
+  workOpen: number;
+  finishing: number;
+  targets: ExitTargetsView;
+  /** The figure as the records read now (a confirmed figure is the exit's own snapshot). */
+  preview: ExitPreviewView;
+  blockers: ExitBlocker[];
+  stage: ExitStage;
+  canEndAccess: boolean;
+}
+
+export interface ExitRowView {
+  id: string;
+  code: string;
+  partnerId: string;
+  partnerName: string;
+  partnerType: DirectoryType;
+  kind: ExitKind;
+  reason: string;
+  lastDay: string;
+  stage: ExitStage;
+  status: PartnerExit['status'];
+  workOpen: number;
+  blockers: ExitBlocker[];
+  amount: number | null;
+  startedAt: string;
+  completedAt: string | null;
+}
+
+export interface ExitBoardView {
+  open: ExitRowView[];
+  done: ExitRowView[];
+  attrition: { total: number; involuntary: number; byReason: { reason: string; kind: ExitKind; count: number }[]; byType: Record<DirectoryType, number>; avgTenureMonths: number | null };
+}
+
+export type ExitError =
+  | 'not_admin' | 'not_found' | 'reason_invalid' | 'note_required' | 'last_day_invalid' | 'exit_open' | 'not_active' | 'not_open'
+  | 'target_required' | 'target_invalid' | 'action_invalid' | 'item_not_open' | 'finish_not_allowed'
+  | 'gate_blocked' | 'settlement_exists' | 'settlement_missing' | 'settlement_locked' | 'no_dispute' | 'dispute_open' | 'nothing_to_pay' | 'reference_required'
+  | 'amount_invalid' | 'reason_required' | 'access_ended' | 'access_not_ended' | 'withheld';
 
 /* ------------------------------------ Recruitment: the public front door (141) */
 
@@ -5826,6 +5908,20 @@ export interface Repository {
   getRecruitmentDashboard(period: DashboardPeriod, userId: string): Promise<RecruitmentDashboardView>;
   waitlistApplicant(applicationId: string, reason: string, userId: string): Promise<RecruitmentDashboardView>;
   releaseWaitlisted(applicationId: string, userId: string): Promise<RecruitmentDashboardView>;
+  // Partner deactivation and exit (150)
+  getExitBoard(userId: string): Promise<ExitBoardView>;
+  getPartnerExit(partnerId: string, userId: string): Promise<PartnerExitView>;
+  startPartnerExit(partnerId: string, input: { kind: ExitKind; reason: string; note: string; lastDay: string }, userId: string): Promise<PartnerExitView>;
+  resolveExitItems(partnerId: string, input: { type: ExitItemType; itemIds: string[]; action: ExitActionKind; toId?: string; note: string }, userId: string): Promise<PartnerExitView>;
+  confirmExitSettlement(partnerId: string, input: { withholdReason?: string; releaseNote?: string }, userId: string): Promise<PartnerExitView>;
+  recordExitAgreement(partnerId: string, input: { how: 'call' | 'message' | 'in_person'; note: string }, userId: string): Promise<PartnerExitView>;
+  raiseExitSettlementDispute(partnerId: string, input: { claimedAmount: number; grounds: string }, userId: string): Promise<PartnerExitView>;
+  decideExitSettlementDispute(partnerId: string, input: { outcome: 'uphold' | 'partner_favor' | 'partial'; amount?: number; note: string }, userId: string): Promise<PartnerExitView>;
+  recordExitPayment(partnerId: string, input: { reference: string }, userId: string): Promise<PartnerExitView>;
+  endPartnerAccess(partnerId: string, userId: string): Promise<PartnerExitView>;
+  recordExitInterview(partnerId: string, input: { how: 'call' | 'in_person' | 'form' | 'declined'; reasons: string[]; wouldReturn: 'yes' | 'maybe' | 'no' | null; notes: string }, userId: string): Promise<PartnerExitView>;
+  cancelPartnerExit(partnerId: string, reason: string, userId: string): Promise<PartnerExitView>;
+
   // Partner directory (149)
   searchPartnerDirectory(filter: PartnerDirectoryFilter, userId: string): Promise<PartnerDirectoryView>;
   getPartnerDirectoryProfile(key: string, userId: string): Promise<PartnerDirectoryProfileView>;

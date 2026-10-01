@@ -11,6 +11,7 @@ const translations: ScreenTranslations = {
     commission: {
       reason: {
         leadConverted: 'Lead converted to a sale',
+        exitSettlement: 'Final settlement after leaving',
         leadQualified: 'Lead reached a qualified stage',
         siteVisitVerified: 'Site visit verified',
         monthlyBonus: 'Monthly performance bonus',
@@ -60,6 +61,7 @@ const translations: ScreenTranslations = {
     commission: {
       reason: {
         leadConverted: 'लीड बिक्री में बदला',
+        exitSettlement: 'छोड़ने के बाद अंतिम निपटान',
         leadQualified: 'लीड योग्य चरण तक पहुँचा',
         siteVisitVerified: 'साइट विज़िट सत्यापित',
         monthlyBonus: 'मासिक प्रदर्शन बोनस',
@@ -109,6 +111,7 @@ const translations: ScreenTranslations = {
     commission: {
       reason: {
         leadConverted: 'लीड विक्रीत रूपांतरित झाला',
+        exitSettlement: 'सोडल्यानंतरचा अंतिम हिशोब',
         leadQualified: 'लीड पात्र टप्प्यावर पोहोचला',
         siteVisitVerified: 'साइट भेट पडताळली',
         monthlyBonus: 'मासिक कामगिरी बोनस',

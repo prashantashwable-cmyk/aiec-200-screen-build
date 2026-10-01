@@ -100,6 +100,7 @@ function RoleLine({ r, t, compact }: { r: DirectoryRoleView; t: T; compact?: boo
         <Badge tone="neutral">{t(K.typeOne[r.type])}</Badge>
         <Badge tone="accent">{tierName(t, r.type, r.tier)}</Badge>
         {r.status !== 'active' && <Badge tone={STATUS_TONE[r.status]}>{t(K.statusOne[r.status])}</Badge>}
+        {r.exiting && <Badge tone="warning">{t(K.row.leaving)}</Badge>}
       </span>
       <span className="t-sm">{area}</span>
       {!compact && <span className="t-xs t-muted">{perfText(t, r)} · {t(K.row.inHand[r.type], { count: r.inFlight })}</span>}
@@ -174,7 +175,7 @@ function Profile({ s, t, p, lang, onReassign }: { s: DirectoryState; t: T; p: Pa
             </div>
             {r.status === 'active' ? (
               <div className="stack gap-1">
-                <Button size="sm" variant="secondary" style={{ width: 'fit-content' }} data-deactivate={r.partnerId} onClick={() => s.goto(exitPath(r.partnerId))}>{t(K.profile.deactivate)}</Button>
+                <Button size="sm" variant="secondary" style={{ width: 'fit-content' }} data-deactivate={r.partnerId} onClick={() => s.goto(exitPath(r.partnerId))}>{r.exiting ? t(K.profile.openExit) : t(K.profile.deactivate)}</Button>
                 <span className="t-xs t-muted">{r.inFlight > 0 ? t(K.profile.deactivateInFlight, { count: r.inFlight, what: t(K.row.inHand[r.type], { count: r.inFlight }) }) : t(K.profile.deactivateHint)}</span>
               </div>
             ) : <span className="t-xs t-muted">{t(K.profile.notActive, { status: t(K.statusOne[r.status]) })}</span>}

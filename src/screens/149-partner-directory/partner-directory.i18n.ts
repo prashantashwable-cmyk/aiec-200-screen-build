@@ -98,6 +98,7 @@ const translations: ScreenTranslations = {
           supplierNew: 'Not rated yet',
         },
         noTerritory: 'No area or specialty on record',
+        leaving: 'Leaving',
         roles: '{{count}} roles',
       },
       skill: {
@@ -133,6 +134,7 @@ const translations: ScreenTranslations = {
         messageSupplier: 'Message in the order thread',
         reassign: 'Reassign territory',
         deactivate: 'Deactivate or exit',
+        openExit: 'Open the exit',
         deactivateHint: 'Opens the exit steps. Nothing is switched off until they are done.',
         deactivateInFlight: '{{count}} in hand ({{what}}): the exit steps hand each one to someone before access ends.',
         notActive: 'Status: {{status}}. Nothing to do here until they are active.',
@@ -262,6 +264,7 @@ const translations: ScreenTranslations = {
           supplierNew: 'अभी रेटिंग नहीं',
         },
         noTerritory: 'कोई क्षेत्र या विशेषज्ञता दर्ज नहीं',
+        leaving: 'जा रहे हैं',
         roles: '{{count}} भूमिकाएँ',
       },
       skill: {
@@ -297,6 +300,7 @@ const translations: ScreenTranslations = {
         messageSupplier: 'ऑर्डर थ्रेड में संदेश',
         reassign: 'क्षेत्र फिर से सौंपें',
         deactivate: 'निष्क्रिय करें या विदाई',
+        openExit: 'विदाई खोलें',
         deactivateHint: 'विदाई के चरण खुलते हैं। उनके पूरे होने तक कुछ भी बंद नहीं होता।',
         deactivateInFlight: '{{count}} हाथ में हैं ({{what}}): पहुँच खत्म होने से पहले विदाई के चरण हर एक किसी को सौंपते हैं।',
         notActive: 'स्थिति: {{status}}। उनके सक्रिय होने तक यहाँ कुछ करने को नहीं।',
@@ -426,6 +430,7 @@ const translations: ScreenTranslations = {
           supplierNew: 'अजून रेटिंग नाही',
         },
         noTerritory: 'कोणतेही क्षेत्र किंवा विशेषज्ञता नोंदलेली नाही',
+        leaving: 'जात आहेत',
         roles: '{{count}} भूमिका',
       },
       skill: {
@@ -461,6 +466,7 @@ const translations: ScreenTranslations = {
         messageSupplier: 'ऑर्डर थ्रेडमध्ये संदेश',
         reassign: 'क्षेत्र पुन्हा सोपवा',
         deactivate: 'निष्क्रिय करा किंवा निरोप',
+        openExit: 'निरोप उघडा',
         deactivateHint: 'निरोपाचे टप्पे उघडतात. ते पूर्ण होईपर्यंत काहीही बंद होत नाही.',
         deactivateInFlight: '{{count}} हातात आहेत ({{what}}): प्रवेश संपण्यापूर्वी निरोपाचे टप्पे प्रत्येक एक कोणाला तरी सोपवतात.',
         notActive: 'स्थिती: {{status}}. ते सक्रिय होईपर्यंत इथे करण्यासारखे काही नाही.',

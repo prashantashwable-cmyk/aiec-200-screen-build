@@ -2957,6 +2957,98 @@ export interface PartnerTerritoryChange {
   isDemo: boolean;
 }
 
+/* ------------------------------------ Partner deactivation and exit (150) */
+
+export type ExitKind = 'voluntary' | 'involuntary';
+export type ExitItemType = 'lead' | 'job' | 'order';
+export type ExitActionKind = 'reassigned' | 'returned_to_pool' | 'finish_first' | 'alternate_sourcing' | 'cancelled';
+
+/** One decision about one piece of work in hand: append-only, the reassignment_actions the exit keeps. */
+export interface ExitAction {
+  id: string;
+  itemType: ExitItemType;
+  itemId: string;
+  /** A code or name from the record itself (data, not prose). */
+  label: string;
+  action: ExitActionKind;
+  toId?: string;
+  toName?: string;
+  note: string;
+  byName: string;
+  at: string;
+}
+
+export interface ExitSettlementLine {
+  kind: 'commission_payable' | 'payment_owed' | 'advance_recoverable' | 'adjustment';
+  ref: string;
+  label: string;
+  /** Signed: a recovery AIEC may make is negative. */
+  amount: number;
+}
+export interface ExitHeldLine {
+  kind: 'commission_pending' | 'retention_held';
+  ref: string;
+  label: string;
+  amount: number;
+}
+export interface ExitDispute {
+  id: string;
+  claimedAmount: number;
+  grounds: string;
+  raisedAt: string;
+  raisedByName: string;
+  status: 'open' | 'decided';
+  decision?: { outcome: 'uphold' | 'partner_favor' | 'partial'; amount: number; note: string; byName: string; at: string };
+}
+export interface ExitSettlement {
+  calculatedAt: string;
+  byName: string;
+  lines: ExitSettlementLine[];
+  held: ExitHeldLine[];
+  /** What is owed to the partner at the moment it was confirmed (adjustments from a decided dispute are added on top). */
+  amount: number;
+  status: 'proposed' | 'agreed' | 'disputed' | 'paid';
+  /** An involuntary exit: the figure stands, but nothing is released until Admin has reviewed the violation. */
+  withheld?: { reason: string; byName: string; at: string };
+  agreed?: { at: string; byName: string; how: 'call' | 'message' | 'in_person' | 'decision'; note: string };
+  dispute?: ExitDispute;
+  adjustment?: { amount: number; entryId?: string; at: string };
+  paid?: { at: string; byName: string; reference: string; amount: number };
+}
+export interface ExitInterview {
+  at: string;
+  byName: string;
+  how: 'call' | 'in_person' | 'form' | 'declined';
+  reasons: string[];
+  wouldReturn: 'yes' | 'maybe' | 'no' | null;
+  notes: string;
+}
+export interface PartnerExit {
+  id: string;
+  code: string;
+  partnerId: string;
+  partnerType: 'surveyor' | 'technician' | 'supplier';
+  partnerName: string;
+  kind: ExitKind;
+  /** An `exit_reason` key from the reasons list for this kind. */
+  reason: string;
+  note: string;
+  /** `yyyy-mm-dd`: the day they stop being a partner. */
+  lastDay: string;
+  startedAt: string;
+  startedByName: string;
+  status: 'in_progress' | 'completed' | 'cancelled';
+  actions: ExitAction[];
+  settlement?: ExitSettlement;
+  interview?: ExitInterview;
+  /** access_revoked_timestamp: set once, only after the work and the money are handled (an involuntary exit ends access first). */
+  accessRevoked?: { at: string; byName: string; first: boolean };
+  cancelled?: { at: string; byName: string; reason: string };
+  completedAt?: string;
+  events: { kind: string; at: string; byName: string; detail?: string }[];
+  isDemo: boolean;
+}
+
 /* ------------------------------------ Handover completion certificate (140) */
 
 export interface FinalPayoutLine {
@@ -4196,6 +4288,9 @@ export type CommitmentKind =
   | 'partner_onboarding_finish'
   | 'waitlist_review'
   | 'tier_dispute_decide'
+  | 'exit_work_handover'
+  | 'exit_settlement'
+  | 'exit_dispute_decide'
   | 'tier_review_due'
   | 'qc_finding_explain'
   | 'lead_signoff'
