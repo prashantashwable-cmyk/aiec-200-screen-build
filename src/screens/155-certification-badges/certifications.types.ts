@@ -2,7 +2,7 @@
 
 import type { CertBadgeStatus, CertNextStep } from '@/data/repository';
 
-export const STATUSES: CertBadgeStatus[] = ['valid', 'expiring', 'expired', 'superseded', 'retired'];
+export const STATUSES: CertBadgeStatus[] = ['valid', 'expiring', 'grace', 'expired', 'superseded', 'retired'];
 export const BECAUSE: CertNextStep['because'][] = ['blocks_jobs', 'expired', 'expiring', 'required'];
 export const KINDS: CertNextStep['kind'][] = ['renew', 'test', 'lessons'];
 export const libraryPath = '/training';
@@ -34,6 +34,8 @@ export const CERT_KEYS = {
     earlierStandard: 'certifications.badge.earlierStandard',
     retiredStandard: 'certifications.badge.retiredStandard',
     lapsedNote: 'certifications.badge.lapsedNote',
+    graceNote: 'certifications.badge.graceNote',
+    refreshers: 'certifications.badge.refreshers',
     expiringNote: 'certifications.badge.expiringNote',
     download: 'certifications.badge.download',
     renew: 'certifications.badge.renew',

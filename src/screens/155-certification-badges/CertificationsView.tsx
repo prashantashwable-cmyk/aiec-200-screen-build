@@ -11,7 +11,7 @@ import { useCertifications } from './useCertifications';
 import type { CertificationsState } from './useCertifications';
 
 type T = ReturnType<typeof useTranslation>['t'];
-const STATUS_TONE: Record<CertBadgeView['status'], BadgeTone> = { valid: 'success', expiring: 'warning', expired: 'warning', superseded: 'neutral', retired: 'neutral' };
+const STATUS_TONE: Record<CertBadgeView['status'], BadgeTone> = { valid: 'success', expiring: 'warning', grace: 'warning', expired: 'warning', superseded: 'neutral', retired: 'neutral' };
 const moduleTitle = (t: T, code: string) => t(`trainingLib.content.${code.toLowerCase()}.title`, { defaultValue: code });
 const KIND_ICON: Record<CertNextStep['kind'], ReactNode> = { renew: <Timer size={20} aria-hidden="true" />, test: <Medal size={20} aria-hidden="true" />, lessons: <GraduationCap size={20} aria-hidden="true" /> };
 
@@ -92,7 +92,10 @@ function NextSteps({ s, t }: { s: CertificationsState; t: T }) {
   const steps = (s.view as NonNullable<CertificationsState['view']>).nextSteps;
   return (
     <section className="stack gap-2" data-next>
-      <h2 className="t-lg">{t(K.next.heading)}</h2>
+      <div className="row between gap-2" style={{ alignItems: 'center' }}>
+        <h2 className="t-lg">{t(K.next.heading)}</h2>
+        {steps.some((n) => n.kind === 'renew') && <Button size="sm" variant="ghost" data-refreshers onClick={() => s.goto('/refreshers')}>{t(K.badge.refreshers)}</Button>}
+      </div>
       {steps.length === 0 ? <Card><p className="t-sm" data-next-none>{t(K.next.none)}</p></Card> : steps.map((n) => (
         <Card key={`${n.kind}-${n.moduleId}`}>
           <div className="row gap-3" data-next-step={n.kind} data-module={n.moduleCode} style={{ alignItems: 'center' }}>
@@ -162,9 +165,10 @@ function BadgeCard({ b, s, t, index, name }: { b: CertBadgeView; s: Certificatio
         <p className="t-sm">{t(K.badge.earned, { date: formatDate(b.issuedAt, lang) })} · {t(K.badge.score, { score: b.score })}</p>
         <p className="t-sm" data-validity>
           {b.expiresAt ? t(K.badge.validUntil, { date: formatDate(b.expiresAt, lang) }) : t(K.badge.noExpiry)}
-          {b.daysLeft !== null && b.status !== 'superseded' && b.status !== 'retired' && <span className="t-xs t-muted"> · {b.daysLeft >= 0 ? t(K.badge.daysLeft, { count: b.daysLeft }) : t(K.badge.daysAgo, { count: Math.abs(b.daysLeft) })}</span>}
+          {b.daysLeft !== null && b.status !== 'superseded' && b.status !== 'retired' && b.status !== 'grace' && <span className="t-xs t-muted"> · {b.daysLeft >= 0 ? t(K.badge.daysLeft, { count: b.daysLeft }) : t(K.badge.daysAgo, { count: Math.abs(b.daysLeft) })}</span>}
         </p>
         {b.status === 'expiring' && <p className="t-xs" data-note="expiring">{t(K.badge.expiringNote)}</p>}
+        {b.status === 'grace' && <p className="t-xs" data-note="grace" style={{ color: 'var(--color-warning)' }}>{t(K.badge.graceNote, { date: b.eligibleUntil ? formatDate(b.eligibleUntil, lang) : '' })}</p>}
         {b.status === 'expired' && <p className="t-xs" data-note="expired" style={{ color: 'var(--color-warning)' }}>{t(K.badge.lapsedNote)}</p>}
         {b.status === 'superseded' && <p className="t-xs t-muted" data-note="superseded">{t(K.badge.earlierStandard, { version: b.version })}</p>}
         {b.status === 'retired' && <p className="t-xs t-muted" data-note="retired">{t(K.badge.retiredStandard)}</p>}

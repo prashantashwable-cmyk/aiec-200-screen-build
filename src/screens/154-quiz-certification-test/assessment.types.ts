@@ -10,7 +10,7 @@ export const STATES: AssessmentStateName[] = ['locked', 'to_take', 'in_progress'
 export const TICK_MS = 30_000;
 
 const rec = <T extends string>(ns: string, keys: readonly T[]) => Object.fromEntries(keys.map((k) => [k, `${ns}.${k}`])) as Record<T, string>;
-const PROBLEMS: (AssessmentError | 'offline' | 'generic')[] = ['valid_range', 'forbidden', 'not_found', 'locked', 'not_for_you', 'retired', 'invalid_state', 'not_ready', 'cooldown', 'already_certified', 'no_assessment', 'outdated', 'incomplete', 'attempt_not_found', 'already_submitted', 'not_admin', 'none_chosen', 'single_only', 'out_of_range', 'unknown_question', 'pass_range', 'cooldown_range', 'offline', 'generic'];
+const PROBLEMS: (AssessmentError | 'offline' | 'generic')[] = ['forbidden', 'not_found', 'locked', 'not_for_you', 'retired', 'invalid_state', 'not_ready', 'cooldown', 'already_certified', 'no_assessment', 'outdated', 'incomplete', 'attempt_not_found', 'already_submitted', 'not_admin', 'none_chosen', 'single_only', 'out_of_range', 'unknown_question', 'pass_range', 'cooldown_range', 'offline', 'generic'];
 
 export const ASSESS_KEYS = {
   title: 'assessment.title',
@@ -106,8 +106,8 @@ export const ASSESS_KEYS = {
     editBody: 'assessment.admin.editBody',
     passPercent: 'assessment.admin.passPercent',
     passHint: 'assessment.admin.passHint',
-    validMonths: 'assessment.admin.validMonths',
-    validHint: 'assessment.admin.validHint',
+    cadenceNote: 'assessment.admin.cadenceNote',
+    refreshers: 'assessment.admin.refreshers',
     validRow: 'assessment.admin.validRow',
     noExpiryRow: 'assessment.admin.noExpiryRow',
     cooldown1: 'assessment.admin.cooldown1',

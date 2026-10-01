@@ -70,11 +70,10 @@ export const badgeValid = (b: Pick<CertificationBadge, 'version'> | undefined, m
 
 export type AssessmentState = 'none' | 'locked' | 'to_take' | 'in_progress' | 'cooldown' | 'certified';
 
-export type ConfigProblem = 'pass_range' | 'cooldown_range' | 'valid_range';
-export function configProblem(passPercent: number, cooldowns: number[], validMonths: number | null = null): ConfigProblem | null {
+export type ConfigProblem = 'pass_range' | 'cooldown_range';
+export function configProblem(passPercent: number, cooldowns: number[]): ConfigProblem | null {
   if (!Number.isInteger(passPercent) || passPercent < PASS_MIN || passPercent > PASS_MAX) return 'pass_range';
   if (cooldowns.length !== 3 || cooldowns.some((h) => !Number.isFinite(h) || h < 0 || h > COOLDOWN_MAX_H)) return 'cooldown_range';
-  if (validMonths !== null && (!Number.isInteger(validMonths) || validMonths < 1 || validMonths > VALID_MONTHS_MAX)) return 'valid_range';
   return null;
 }
 
@@ -91,30 +90,22 @@ export function failsSinceLastPass(attempts: (AttemptKind & { submittedAt?: stri
 
 /** A certification can be renewed this long before it lapses, and the reminder starts then. */
 export const RENEWAL_WINDOW_DAYS = 30;
-export const VALID_MONTHS_MAX = 60;
 
-export function expiryOf(issuedAt: string, validMonths: number | null): string | null {
-  if (!validMonths) return null;
-  const d = new Date(issuedAt);
-  d.setUTCMonth(d.getUTCMonth() + validMonths);
-  return d.toISOString();
-}
-
-export type BadgeStatus = 'valid' | 'expiring' | 'expired' | 'superseded' | 'retired';
+export type BadgeStatus = 'valid' | 'expiring' | 'grace' | 'expired' | 'superseded' | 'retired';
 /**
  * Where one certification stands. It was earned under the rules of its day and is kept in the record whatever happens to it: if the module has since been
- * revised past the version it was earned on, or retired, it reads as an earlier standard rather than disappearing; only valid and expiring ones count towards
- * eligibility for work.
+ * revised past the version it was earned on, or retired, it reads as an earlier standard rather than disappearing. `grace` is past its end but the holder is
+ * still eligible while they refresh; `expired` is past all of that. Only valid, expiring and grace count towards eligibility for work.
  */
-export function badgeStatusOf(b: { version: number; expiresAt: string | null }, ctx: { minVersion: number; retired: boolean; now: number }): BadgeStatus {
+export function badgeStatusOf(b: { version: number; expiresAt: string | null }, ctx: { minVersion: number; retired: boolean; now: number; eligibleUntil: number | null }): BadgeStatus {
   if (ctx.retired) return 'retired';
   if (b.version < ctx.minVersion) return 'superseded';
   if (b.expiresAt) {
     const left = Date.parse(b.expiresAt) - ctx.now;
-    if (left <= 0) return 'expired';
-    if (left <= RENEWAL_WINDOW_DAYS * 86_400_000) return 'expiring';
+    if (left > 0) return left <= RENEWAL_WINDOW_DAYS * 86_400_000 ? 'expiring' : 'valid';
+    return ctx.eligibleUntil !== null && ctx.now < ctx.eligibleUntil ? 'grace' : 'expired';
   }
   return 'valid';
 }
-export const countsForWork = (s: BadgeStatus) => s === 'valid' || s === 'expiring';
+export const countsForWork = (s: BadgeStatus) => s === 'valid' || s === 'expiring' || s === 'grace';
 export const daysLeftOf = (expiresAt: string | null, now: number): number | null => (expiresAt ? Math.ceil((Date.parse(expiresAt) - now) / 86_400_000) : null);

@@ -247,6 +247,10 @@ import type {
   TrainingModuleView,
   LessonAnswerResult,
   AssessmentAttemptView,
+  RefresherCadenceView,
+  RefresherQueueView,
+  RefresherRowView,
+  RefresherTierName,
   CertBadgeView,
   CertNextStep,
   CertStanding,
@@ -659,6 +663,8 @@ import type {
   AssessmentAttempt,
   CertificationBadge,
   CertificationPref,
+  RefresherCadence,
+  RefresherExtension,
 } from './types';
 import { formatDate, formatDateTime, formatINR, formatINRCompact, formatTime, haversineKm } from '@/design-system/format';
 import { MAX_SAFE_BOT_DISCOUNT_PCT } from '@/features/communication/botRules';
@@ -746,8 +752,9 @@ import type { NowStage as RdNowStage, Period as RdPeriod, RecruitStage as RdRecr
 import { TOPICS as TN_TOPICS, currentVersionOf as tnCurrentVersion, curriculumOf as tnCurriculum, jobGateOf as tnJobGate, lockedBy as tnLockedBy, percentOfModule as tnPercent, relevantFor as tnRelevant, requiredFor as tnRequired, startProblem as tnStartProblem, statusOf as tnStatus, updatedSince as tnUpdated } from '@/features/training/curriculum';
 import type { ModuleStatus } from '@/features/training/curriculum';
 import { BUILT_IN_CATEGORIES as SOP_BUILT_IN, BUILT_IN_SINCE as SOP_SINCE, categoryProblem as sopCategoryProblem, currentOf as sopCurrent, diffItems as sopDiff, referenceProblem as sopReferenceProblem, stateOf as sopStateOf, upcomingOf as sopUpcoming } from '@/features/sop/library';
-import { RENEWAL_WINDOW_DAYS as AS_RENEW_DAYS, badgeStatusOf as asBadgeStatus, countsForWork as asCounts, daysLeftOf as asDaysLeft, expiryOf as asExpiry, failsSinceLastPass as asFailsSince, badgeValid as asBadgeValid, answerProblem as asAnswerProblem, configProblem as asConfigProblem, cooldownUntilOf as asCooldownUntil, failedCountOf as asFailedCount, isStruggling as asStruggling, orderFor as asOrder, passedAt as asPassed, questionsFor as asQuestions, scoreOf as asScore } from '@/features/training/assessment';
-import { seedAssessmentAttempts, seedAssessments, seedCertBadges, seedTrainingLessonProgress, seedTrainingLessons, seedTrainingModules, seedTrainingProgress } from './trainingSeed';
+import { GRACE_WARN_DAYS as RF_WARN_DAYS, REMIND_EVERY_H as RF_REMIND_H, addMonths as rfAddMonths, cadenceAt as rfCadenceAt, cadenceProblem as rfCadenceProblem, comparePriority as rfCompare, daysBetween as rfDays, eligibleUntilOf as rfEligible, extensionProblem as rfExtensionProblem, priorityOf as rfPriority, tierOf as rfTier } from '@/features/training/refresher';
+import { RENEWAL_WINDOW_DAYS as AS_RENEW_DAYS, badgeStatusOf as asBadgeStatus, countsForWork as asCounts, daysLeftOf as asDaysLeft, failsSinceLastPass as asFailsSince, badgeValid as asBadgeValid, answerProblem as asAnswerProblem, configProblem as asConfigProblem, cooldownUntilOf as asCooldownUntil, failedCountOf as asFailedCount, isStruggling as asStruggling, orderFor as asOrder, passedAt as asPassed, questionsFor as asQuestions, scoreOf as asScore } from '@/features/training/assessment';
+import { seedAssessmentAttempts, seedAssessments, seedCertBadges, seedRefresherCadences, seedTrainingLessonProgress, seedTrainingLessons, seedTrainingModules, seedTrainingProgress } from './trainingSeed';
 import { allowedFurthestS as lsAllowed, answerProblem as lsAnswerProblem, checkAtS as lsCheckAt, clampPlayback as lsClamp, clearedIds as lsCleared, completeProblem as lsCompleteProblem, durationOf as lsDuration, isCorrect as lsIsCorrect, lessonDone as lsDone, lessonStates as lsStates, lessonUpdated as lsUpdated, sceneStartS as lsSceneStart } from '@/features/training/lesson';
 import { GRADUATION_MIN_ORDERS, GRADUATION_MIN_SCORE } from '@/features/suppliers/paymentTerms';
 import { ACTION_NOTE_MIN as EX_ACTION_NOTE_MIN, DISPUTE_MIN as EX_DISPUTE_MIN, INTERVIEW_REASONS as EX_INTERVIEW_REASONS, LAST_DAY_MAX_DAYS as EX_LAST_DAY_MAX, REASON_MIN as EX_REASON_MIN, WITHHOLD_MIN as EX_WITHHOLD_MIN, blockersOf as exBlockersOf, decidedExtra as exDecidedExtra, decisionProblem as exDecisionProblem, startProblem as exStartProblem } from '@/features/partners/exit';
@@ -2712,6 +2719,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   syncPartnerExits(now);
   syncAssessmentAlerts(now);
   syncCertifications(now);
+  syncRefreshers(now);
   syncPartnerInterviews(now);
   syncVerification(now);
   syncOffers(now);
@@ -8772,6 +8780,11 @@ const certBadges: CertificationBadge[] = seedCertBadges.map((b) => ({ ...b }));
 let assessmentAttemptCounter = 100;
 let certCounter = 1100;
 const certPrefs: CertificationPref[] = [];
+const refresherCadences: RefresherCadence[] = seedRefresherCadences.map((c) => ({ ...c, versions: c.versions.map((v) => ({ ...v })) }));
+const refresherExtensions: RefresherExtension[] = [];
+let refresherExtensionCounter = 0;
+/** When each certification's holder was last reminded (by hand or by the heartbeat), so a reminder is never sent twice in a row. */
+const refresherReminders: { badgeId: string; at: string; kind: 'manual' | 'grace' | 'blocked' }[] = [];
 const lessonProgress: TrainingLessonProgress[] = seedTrainingLessonProgress.map((x) => ({ ...x, checks: x.checks.map((c) => ({ ...c, attempts: c.attempts.map((a) => ({ ...a })) })) }));
 
 /** One person across every role they hold (149 groups them the same way, by phone): what they have done in one account counts in another. */
@@ -8905,10 +8918,13 @@ function tnSyncModuleProgress(m: TrainingModule, userId: string, person: { roles
 const asOf = (moduleId: string) => assessments.find((a) => a.moduleId === moduleId);
 const ASSESSMENT_ALERT = 'assessment.alert.struggling';
 
+const rfExtensionsOf = (badgeId: string) => refresherExtensions.filter((x) => x.badgeId === badgeId);
+const rfCadenceOf = (assessmentId: string) => refresherCadences.find((c) => c.assessmentId === assessmentId);
+
 /** The person's current certification for a module: the newest one that still counts for the module as it reads now and has not run out. */
 function asBadgeOf(userIds: string[], m: TrainingModule, now: number): CertificationBadge | undefined {
   const min = tnCurrentVersion(m, now).minVersion;
-  return certBadges.filter((b) => b.moduleId === m.id && userIds.includes(b.userId) && asBadgeValid(b, min) && (!b.expiresAt || Date.parse(b.expiresAt) > now)).sort((a, b) => b.issuedAt.localeCompare(a.issuedAt))[0];
+  return certBadges.filter((b) => b.moduleId === m.id && userIds.includes(b.userId) && asBadgeValid(b, min) && (!b.expiresAt || (rfEligible(b, rfExtensionsOf(b.id)) as number) > now)).sort((a, b) => b.issuedAt.localeCompare(a.issuedAt))[0];
 }
 
 /** A certification close to its end (or whose module is still current but whose badge ran out) can be renewed by passing the test again. */
@@ -8947,7 +8963,7 @@ function asSummaryOf(m: TrainingModule, userIds: string[], now: number): Trainin
   const st = asStateOf(m, a, userIds, now);
   const badge = asBadgeOf(userIds, m, now);
   // A badge that ran out is no longer "certified": the state above is then to-take, and the renewal says why.
-  const lapsed = !badge && certBadges.some((b) => b.moduleId === m.id && userIds.includes(b.userId) && b.expiresAt && Date.parse(b.expiresAt) <= now && asBadgeValid(b, tnCurrentVersion(m, now).minVersion));
+  const lapsed = !badge && certBadges.some((b) => b.moduleId === m.id && userIds.includes(b.userId) && b.expiresAt && (rfEligible(b, rfExtensionsOf(b.id)) as number) <= now && asBadgeValid(b, tnCurrentVersion(m, now).minVersion));
   return { state: st.state, passPercent: a.passPercent, cooldownUntil: st.cooldownUntil, renewal: lapsed ? 'expired' : st.renewable ? 'due_soon' : 'none', expiresAt: badge?.expiresAt ?? null };
 }
 
@@ -8980,8 +8996,8 @@ function asView(m: TrainingModule, a: Assessment, person: { roles: TrainingRole[
     assessmentId: a.id, moduleId: m.id, moduleCode: m.code, topic: m.topic, version, passPercent: a.passPercent, cooldownHours: [...a.cooldownHours] as [number, number, number], questionCount: asQuestions(a, version).length, state: st.state,
     attemptsThisVersion: st.attempts.filter((x) => x.status === 'submitted').length, failedThisVersion: st.failed, nextAttemptNumber: all.length + 1, cooldownUntil: st.cooldownUntil,
     badge: badge ? { id: badge.id, issuedAt: badge.issuedAt, score: badge.score, version: badge.version, expiresAt: badge.expiresAt, code: badge.code } : null,
-    canRenew: st.renewable, validMonths: a.validMonths, renewal: asSummaryOf(m, person.userIds, now)?.renewal ?? 'none',
-    lastExpiredAt: certBadges.filter((b) => b.moduleId === m.id && person.userIds.includes(b.userId) && b.expiresAt && Date.parse(b.expiresAt) <= now).map((b) => b.expiresAt as string).sort().pop() ?? null,
+    canRenew: st.renewable, validMonths: rfCadenceAt(rfCadenceOf(a.id)?.versions ?? [], now)?.months ?? null, renewal: asSummaryOf(m, person.userIds, now)?.renewal ?? 'none',
+    lastExpiredAt: certBadges.filter((b) => b.moduleId === m.id && person.userIds.includes(b.userId) && b.expiresAt && (rfEligible(b, rfExtensionsOf(b.id)) as number) <= now).map((b) => b.expiresAt as string).sort().pop() ?? null,
     history: all.filter((x) => x.status === 'submitted').sort((x, y) => (x.submittedAt ?? '').localeCompare(y.submittedAt ?? '')).map((x) => ({ attemptNumber: x.attemptNumber, score: x.score ?? 0, passed: !!x.passed, submittedAt: x.submittedAt ?? x.updatedAt, version: x.version })),
     last: submitted[0] ? asResultOf(submitted[0], a, m, person, now) : null,
     draft: open ? { attemptId: open.id, answers: open.answers.map((x) => ({ questionId: x.questionId, selected: [...x.selected] })), startedAt: open.startedAt } : null,
@@ -9040,8 +9056,8 @@ function asLapsedOf(a: Assessment, now: number): AssessmentOverviewRow['lapsed']
     if (seen.has(b.userId)) continue;
     seen.add(b.userId);
     const user = byId(users, b.userId);
-    if (!user || user.status !== 'active' || !b.expiresAt || Date.parse(b.expiresAt) > now) continue;
-    out.push({ userId: b.userId, name: user.name, endedAt: b.expiresAt, openJobs: jobs.filter((j) => j.status !== 'completed' && (j.technicianId === b.userId || (j.crew ?? []).some((c) => c.userId === b.userId))).length });
+    if (!user || user.status !== 'active' || !b.expiresAt || (rfEligible(b, rfExtensionsOf(b.id)) as number) > now) continue;
+    out.push({ userId: b.userId, name: user.name, endedAt: new Date(rfEligible(b, rfExtensionsOf(b.id)) as number).toISOString(), openJobs: jobs.filter((j) => j.status !== 'completed' && (j.technicianId === b.userId || (j.crew ?? []).some((c) => c.userId === b.userId))).length });
   }
   return out;
 }
@@ -9060,7 +9076,7 @@ function asOverviewRow(a: Assessment, now: number): AssessmentOverviewRow {
     if (asStruggling(fails, !!asBadgeOf(person.userIds, m, now))) struggling.push({ userId, name: person.name, fails, lastAt: list.map((x) => x.submittedAt ?? '').sort().pop() ?? '' });
   }
   return {
-    assessmentId: a.id, moduleId: m.id, moduleCode: m.code, version, passPercent: a.passPercent, cooldownHours: [...a.cooldownHours] as [number, number, number], validMonths: a.validMonths, questionCount: asQuestions(a, version).length,
+    assessmentId: a.id, moduleId: m.id, moduleCode: m.code, version, passPercent: a.passPercent, cooldownHours: [...a.cooldownHours] as [number, number, number], validMonths: rfCadenceAt(rfCadenceOf(a.id)?.versions ?? [], now)?.months ?? null, questionCount: asQuestions(a, version).length,
     lapsed: asLapsedOf(a, now),
     attempts: attempts.length, passes: attempts.filter((x) => x.passed).length, certified: new Set(certBadges.filter((b) => b.assessmentId === a.id && asBadgeValid(b, tnCurrentVersion(m, now).minVersion)).map((b) => b.userId)).size, struggling,
   };
@@ -9083,7 +9099,7 @@ function certLatestOf(userIds: string[]): CertificationBadge[] {
 
 function certStatusOf(b: CertificationBadge, now: number) {
   const m = byId(trainingModules, b.moduleId);
-  return asBadgeStatus(b, { minVersion: m ? tnCurrentVersion(m, now).minVersion : 1, retired: m?.status === 'retired', now });
+  return asBadgeStatus(b, { minVersion: m ? tnCurrentVersion(m, now).minVersion : 1, retired: m?.status === 'retired', now, eligibleUntil: rfEligible(b, rfExtensionsOf(b.id)) });
 }
 
 /** What the commitment engine reads: each time-limited certification, and whether a newer one has replaced it. */
@@ -9108,8 +9124,8 @@ function certBadgeViewOf(b: CertificationBadge, latest: boolean, now: number): C
   const m = byId(trainingModules, b.moduleId) as TrainingModule;
   const status = certStatusOf(b, now);
   return {
-    id: b.id, code: b.code, moduleId: m.id, moduleCode: m.code, topic: m.topic, version: b.version, score: b.score, issuedAt: b.issuedAt, expiresAt: b.expiresAt, status, daysLeft: asDaysLeft(b.expiresAt, now),
-    latest, renewable: latest && (status === 'expiring' || status === 'expired') && m.status !== 'retired', gatesJobAssignment: m.gatesJobAssignment && tnRequired(m, ['technician']), renewedFromId: b.renewedFromId ?? null, earlierStandard: status === 'superseded' || status === 'retired',
+    id: b.id, code: b.code, moduleId: m.id, moduleCode: m.code, topic: m.topic, version: b.version, score: b.score, issuedAt: b.issuedAt, expiresAt: b.expiresAt, eligibleUntil: rfEligible(b, rfExtensionsOf(b.id)) === null ? null : new Date(rfEligible(b, rfExtensionsOf(b.id)) as number).toISOString(), status, daysLeft: asDaysLeft(b.expiresAt, now),
+    latest, renewable: latest && (status === 'expiring' || status === 'grace' || status === 'expired') && m.status !== 'retired', gatesJobAssignment: m.gatesJobAssignment && tnRequired(m, ['technician']), renewedFromId: b.renewedFromId ?? null, earlierStandard: status === 'superseded' || status === 'retired',
   };
 }
 
@@ -9140,12 +9156,91 @@ function certNextSteps(person: { roles: TrainingRole[]; userIds: string[] }, now
     const st = latest ? certStatusOf(latest, now) : null;
     const base = { moduleId: m.id, moduleCode: m.code, expiresAt: latest?.expiresAt ?? null, order: m.order };
     if (latest && st === 'valid') continue;
-    if (latest && (st === 'expired' || st === 'expiring')) { out.push({ ...base, kind: 'renew', because: st === 'expired' ? (gating ? 'blocks_jobs' : 'expired') : 'expiring', route: `/assessment/${m.id}`, rankKey: st === 'expired' ? (gating ? 0 : 1) : 2 }); continue; }
+    if (latest && (st === 'expired' || st === 'grace' || st === 'expiring')) { out.push({ ...base, kind: 'renew', because: st === 'expired' ? (gating ? 'blocks_jobs' : 'expired') : st === 'grace' ? 'expired' : 'expiring', route: `/assessment/${m.id}`, rankKey: st === 'expired' ? (gating ? 0 : 1) : st === 'grace' ? 1 : 2 }); continue; }
     if (tnLockedBy(m, trainingModules, status).length > 0) continue;
     if (status(m.id) === 'completed') out.push({ ...base, kind: 'test', because: gating ? 'blocks_jobs' : 'required', route: `/assessment/${m.id}`, rankKey: gating ? 0 : 3 });
     else if (trainingLessons.some((l) => l.moduleId === m.id)) out.push({ ...base, kind: 'lessons', because: gating ? 'blocks_jobs' : 'required', route: `/training/${m.id}`, rankKey: gating ? 0 : 4 });
   }
   return out.sort((a, b) => a.rankKey - b.rankKey || a.order - b.order).slice(0, 4).map(({ rankKey, order, ...rest }) => rest);
+}
+
+/* ---- refresher reminders (156) */
+
+const RF_UPCOMING_RENEWAL = AS_RENEW_DAYS;
+
+const rfSafetyCritical = (m: TrainingModule) => m.gatesJobAssignment || m.topic === 'safety';
+
+function rfOpenJobs(userId: string): number {
+  return jobs.filter((j) => j.status !== 'completed' && (j.technicianId === userId || (j.crew ?? []).some((c) => c.userId === userId))).length;
+}
+
+/** One certification's refresher row, or nothing when it is not due, not renewable, or already replaced by a newer one. */
+function rfRowOf(b: CertificationBadge, now: number): RefresherRowView | null {
+  const m = byId(trainingModules, b.moduleId);
+  const user = byId(users, b.userId);
+  if (!m || !user || user.status !== 'active' || m.status === 'retired' || !b.expiresAt) return null;
+  const role = user.role;
+  if (role !== 'surveyor' && role !== 'technician' && role !== 'supplier') return null;
+  if (certBadges.some((x) => x.userId === b.userId && x.moduleId === b.moduleId && x.issuedAt > b.issuedAt)) return null;
+  const exts = rfExtensionsOf(b.id);
+  const tier = rfTier(b, exts, now, RF_UPCOMING_RENEWAL);
+  if (!tier) return null;
+  const until = rfEligible(b, exts) as number;
+  const reminded = refresherReminders.filter((r) => r.badgeId === b.id).map((r) => r.at).sort().pop() ?? null;
+  return {
+    id: b.id, userId: b.userId, name: user.name, role, moduleId: m.id, moduleCode: m.code, safetyCritical: rfSafetyCritical(m), tier, expiresAt: b.expiresAt, eligibleUntil: new Date(until).toISOString(),
+    daysToEnd: rfDays(now, Date.parse(b.expiresAt)), daysEligibleLeft: rfDays(now, until), extensions: exts.map((x) => ({ id: x.id, until: x.until, reason: x.reason, byName: x.byName, at: x.at })),
+    openJobs: rfOpenJobs(b.userId), cadenceVersion: b.cadenceVersion, lastReminderAt: reminded, route: `/assessment/${m.id}`,
+  };
+}
+
+function rfRowsFor(userIds: string[] | null, now: number): RefresherRowView[] {
+  const latest = new Map<string, CertificationBadge>();
+  for (const b of [...certBadges].sort((x, y) => y.issuedAt.localeCompare(x.issuedAt))) {
+    if (userIds && !userIds.includes(b.userId)) continue;
+    const key = `${b.userId}:${b.moduleId}`;
+    if (!latest.has(key)) latest.set(key, b);
+  }
+  return [...latest.values()].map((b) => rfRowOf(b, now)).filter((r): r is RefresherRowView => !!r)
+    .sort((a, b) => rfCompare(rfPriority(a.tier, a.safetyCritical, Date.parse(a.eligibleUntil)), rfPriority(b.tier, b.safetyCritical, Date.parse(b.eligibleUntil))));
+}
+
+function rfCadenceViewOf(c: RefresherCadence, now: number): RefresherCadenceView {
+  const a = byId(assessments, c.assessmentId) as Assessment;
+  const m = byId(trainingModules, a.moduleId) as TrainingModule;
+  const versions = [...c.versions].sort((x, y) => x.version - y.version);
+  const cur = rfCadenceAt(versions, now) ?? versions[0];
+  const up = versions.filter((v) => Date.parse(v.effectiveFrom) > now).sort((x, y) => x.effectiveFrom.localeCompare(y.effectiveFrom))[0];
+  const latestIds = new Set(users.flatMap((u) => certLatestOf([u.id]).map((b) => b.id)));
+  const held = certBadges.filter((b) => b.assessmentId === a.id && latestIds.has(b.id));
+  return {
+    assessmentId: a.id, moduleId: m.id, moduleCode: m.code, safetyCritical: rfSafetyCritical(m),
+    current: { version: cur.version, months: cur.months, graceDays: cur.graceDays, effectiveFrom: cur.effectiveFrom, reason: cur.reason, setByName: cur.setByName },
+    upcoming: up ? { version: up.version, months: up.months, graceDays: up.graceDays, effectiveFrom: up.effectiveFrom } : null,
+    versions: versions.map((v) => ({ version: v.version, months: v.months, graceDays: v.graceDays, effectiveFrom: v.effectiveFrom, reason: v.reason, setByName: v.setByName, setAt: v.setAt, heldCount: held.filter((b) => b.cadenceVersion === v.version).length })),
+  };
+}
+
+function rfRemind(row: RefresherRowView, kind: 'manual' | 'grace' | 'blocked', now: number, minGapH: number): boolean {
+  const last = refresherReminders.filter((r) => r.badgeId === row.id && (kind === 'manual' || r.kind === kind)).map((r) => r.at).sort().pop();
+  if (last && now - Date.parse(last) < minGapH * 3_600_000) return false;
+  syncCommitments(now);
+  const c = commitments.find((x) => x.key === `certification_renewal:${row.id}` && x.status === 'open');
+  const owner = byId(users, row.userId);
+  if (!c || !owner) return false;
+  const at = new Date(now).toISOString();
+  notifyWork(owner.id, c, kind === 'blocked' ? 'overdue' : 'nudge', at);
+  refresherReminders.push({ badgeId: row.id, at, kind });
+  return true;
+}
+
+/** As eligibility runs out the holder is reminded once more, and told once when new work needing it is held; each only once so nobody is nagged. */
+function syncRefreshers(now: number): void {
+  for (const row of rfRowsFor(null, now)) {
+    const warn = row.daysEligibleLeft > 0 && row.daysEligibleLeft <= RF_WARN_DAYS && row.tier !== 'upcoming';
+    if (warn && rfRemind(row, 'grace', now, 48)) logAutomatedAction({ sourceKey: 'refresher.reminder', triggeringCondition: `${row.name}'s ${row.moduleCode} refresher: ${row.daysEligibleLeft} days of eligibility left`, actionTaken: 'Reminded them to refresh before new work is held', affectedRecordId: row.id, affectedRecordType: 'other' });
+    if (row.tier === 'blocked' && rfRemind(row, 'blocked', now, 24 * 365)) logAutomatedAction({ sourceKey: 'refresher.blocked', triggeringCondition: `${row.name}'s ${row.moduleCode} certification ended and its grace period is over`, actionTaken: 'Told them new work needing it is held until they refresh', affectedRecordId: row.id, affectedRecordType: 'other' });
+  }
 }
 
 /** A certification that lapsed while its holder is on a job: the job finishes, new ones wait, and Admin is told so it is a decision, not a surprise (155). */
@@ -9158,7 +9253,7 @@ function syncCertifications(now: number): void {
     const rel = `certlapse:${b.id}`;
     const existing = alerts.find((x) => x.relatedId === rel && x.titleKey === CERT_ALERT && x.status !== 'resolved');
     const renewed = certBadges.some((x) => x.userId === b.userId && x.moduleId === b.moduleId && x.issuedAt > b.issuedAt);
-    const lapsed = Date.parse(b.expiresAt) <= now && !renewed && m.gatesJobAssignment && tnRequired(m, ['technician']) && user.status === 'active';
+    const lapsed = (rfEligible(b, rfExtensionsOf(b.id)) as number) <= now && !renewed && m.gatesJobAssignment && tnRequired(m, ['technician']) && user.status === 'active';
     const onJobs = lapsed ? open(b.userId) : [];
     if (lapsed && onJobs.length > 0 && !existing) {
       raiseAlert({ titleKey: CERT_ALERT, context: `${user.name}'s ${m.code} certification lapsed while on ${onJobs.map((j) => j.code).join(', ')}`, severity: 'medium', category: 'staffing', relatedId: rel, sourceRoute: `/assessment?partner=${b.userId}` });
@@ -16823,6 +16918,63 @@ export const memoryRepository: Repository = {
       return tnViewOf(m, person, now);
     }),
 
+  /* --------------------------------- Refresher reminders (156) */
+  getRefresherQueue: (userId) =>
+    simulateRead((): RefresherQueueView => {
+      const u = byId(users, userId);
+      if (!u) throw new RepositoryError('forbidden');
+      const now = Date.now();
+      syncCertifications(now);
+      syncRefreshers(now);
+      const admin = u.role === 'admin';
+      const person = admin ? null : tnPersonOf(userId);
+      if (!admin && !person) throw new RepositoryError('forbidden');
+      const rows = rfRowsFor(admin ? null : (person as NonNullable<typeof person>).userIds, now);
+      const counts = { upcoming: 0, due: 0, grace: 0, extended: 0, blocked: 0, safetyCritical: rows.filter((r) => r.safetyCritical).length } as RefresherQueueView['counts'];
+      for (const r of rows) counts[r.tier as RefresherTierName] += 1;
+      return { scope: admin ? 'admin' : 'self', rows, counts, cadences: admin ? refresherCadences.map((c) => rfCadenceViewOf(c, now)) : [], at: new Date(now).toISOString() };
+    }),
+
+  sendRefresherReminder: (badgeId, adminId) =>
+    simulateWrite(() => {
+      ofAdmin(adminId);
+      const now = Date.now();
+      const b = byId(certBadges, badgeId);
+      const row = b ? rfRowOf(b, now) : null;
+      if (!row) throw new RepositoryError('not_found');
+      if (!rfRemind(row, 'manual', now, RF_REMIND_H)) throw new RepositoryError('too_soon');
+      return { sentAt: new Date(now).toISOString() };
+    }),
+
+  extendRefresher: (badgeId, input, adminId) =>
+    simulateWrite((): RefresherRowView => {
+      const admin = ofAdmin(adminId);
+      const now = Date.now();
+      const b = byId(certBadges, badgeId);
+      if (!b) throw new RepositoryError('not_found');
+      const problem = rfExtensionProblem(input, b, now);
+      if (problem) throw new RepositoryError(problem);
+      refresherExtensionCounter += 1;
+      refresherExtensions.push({ id: `rx-${refresherExtensionCounter}`, badgeId, userId: b.userId, until: input.until, reason: input.reason.trim(), byName: admin.name, at: new Date(now).toISOString() });
+      syncCertifications(now);
+      const row = rfRowOf(b, now);
+      if (!row) throw new RepositoryError('not_found');
+      return row;
+    }),
+
+  publishRefresherCadence: (assessmentId, input, adminId) =>
+    simulateWrite((): RefresherCadenceView => {
+      const admin = ofAdmin(adminId);
+      const now = Date.now();
+      const c = rfCadenceOf(assessmentId);
+      if (!c) throw new RepositoryError('no_assessment');
+      const last = [...c.versions].sort((x, y) => y.version - x.version)[0];
+      const problem = rfCadenceProblem(input, last?.effectiveFrom ?? null, now);
+      if (problem) throw new RepositoryError(problem);
+      c.versions.push({ version: (last?.version ?? 0) + 1, effectiveFrom: new Date(`${input.effectiveFrom}T00:00:00.000Z`).toISOString(), months: input.months, graceDays: input.graceDays, reason: input.reason.trim(), setByName: admin.name, setAt: new Date(now).toISOString() });
+      return rfCadenceViewOf(c, now);
+    }),
+
   /* --------------------------------- Certification badges and progress (155) */
   getCertifications: (userId) =>
     simulateRead((): CertificationsView => {
@@ -16836,7 +16988,7 @@ export const memoryRepository: Repository = {
       const required = trainingModules.filter((m) => m.status === 'published' && tnRequired(m, person.roles) && asOf(m.id));
       return {
         person: { name: person.name, roles: person.roles }, badges,
-        summary: { current: latest.filter((b) => b.status === 'valid' || b.status === 'expiring').length, expiring: latest.filter((b) => b.status === 'expiring').length, expired: latest.filter((b) => b.status === 'expired').length, earlier: latest.filter((b) => b.earlierStandard).length, required: required.length, requiredHeld: required.filter((m) => latest.some((b) => b.moduleId === m.id && (b.status === 'valid' || b.status === 'expiring'))).length },
+        summary: { current: latest.filter((b) => b.status === 'valid' || b.status === 'expiring' || b.status === 'grace').length, expiring: latest.filter((b) => b.status === 'expiring' || b.status === 'grace').length, expired: latest.filter((b) => b.status === 'expired').length, earlier: latest.filter((b) => b.earlierStandard).length, required: required.length, requiredHeld: required.filter((m) => latest.some((b) => b.moduleId === m.id && (b.status === 'valid' || b.status === 'expiring' || b.status === 'grace'))).length },
         nextSteps: certNextSteps(person, now), standing: certStandingOf(userId, now), hidden: certPrefs.some((p) => p.userId === userId && p.hidden), at: new Date(now).toISOString(),
       };
     }),
@@ -16933,7 +17085,9 @@ export const memoryRepository: Repository = {
       const prior = held ?? certBadges.filter((b) => b.moduleId === m.id && person.userIds.includes(b.userId)).sort((x, y) => y.issuedAt.localeCompare(x.issuedAt))[0];
       if (att.passed && (!held || asRenewable(held, now))) {
         certCounter += 1;
-        certBadges.push({ id: `cb-${att.id}`, code: `AIEC-CT-${certCounter}`, userId, moduleId: m.id, assessmentId: a.id, version: att.version, score: scored.score, attemptId: att.id, issuedAt: at, expiresAt: asExpiry(at, a.validMonths), ...(prior ? { renewedFromId: prior.id } : {}) });
+        // The dates are set by the cadence in force today and frozen on the badge: a later change to the cadence never moves it.
+        const cad = rfCadenceAt(rfCadenceOf(a.id)?.versions ?? [], now);
+        certBadges.push({ id: `cb-${att.id}`, code: `AIEC-CT-${certCounter}`, userId, moduleId: m.id, assessmentId: a.id, version: att.version, score: scored.score, attemptId: att.id, issuedAt: at, expiresAt: cad?.months ? rfAddMonths(at, cad.months) : null, graceDays: cad?.graceDays ?? 0, cadenceVersion: cad?.version ?? 1, ...(prior ? { renewedFromId: prior.id } : {}) });
       }
       syncAssessmentAlerts(now);
       syncCertifications(now);
@@ -16954,9 +17108,8 @@ export const memoryRepository: Repository = {
       ofAdmin(adminId);
       const a = byId(assessments, assessmentId);
       if (!a) throw new RepositoryError('no_assessment');
-      const problem = asConfigProblem(input.passPercent, input.cooldownHours, input.validMonths);
+      const problem = asConfigProblem(input.passPercent, input.cooldownHours);
       if (problem) throw new RepositoryError(problem);
-      a.validMonths = input.validMonths;
       a.passPercent = input.passPercent;
       a.cooldownHours = [input.cooldownHours[0], input.cooldownHours[1], input.cooldownHours[2]];
       return asOverviewRow(a, Date.now());

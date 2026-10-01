@@ -3073,6 +3073,38 @@ export interface TrainingLessonProgress {
   completedAt?: string;
 }
 
+/* ------------------------------------ Refresher cadence (156) */
+
+/** One version of how often a certification must be refreshed. Append-only: a change is a new version with its own effective date and reason. */
+export interface RefresherCadenceVersion {
+  version: number;
+  effectiveFrom: string;
+  /** Months a certification earned from then on lasts; null does not expire. */
+  months: number | null;
+  /** Days after it ends that the holder can still be given work while they refresh. */
+  graceDays: number;
+  reason: string;
+  setByName: string;
+  setAt: string;
+}
+
+export interface RefresherCadence {
+  assessmentId: string;
+  versions: RefresherCadenceVersion[];
+}
+
+/** A documented extension of the grace period (approved leave, say): never a silent move of a date, and kept even after the refresher is done. */
+export interface RefresherExtension {
+  id: string;
+  badgeId: string;
+  userId: string;
+  /** The last day the holder stays eligible without refreshing. */
+  until: string;
+  reason: string;
+  byName: string;
+  at: string;
+}
+
 /* ------------------------------------ Quiz and certification (154) */
 
 export interface AssessmentQuestion {
@@ -3094,8 +3126,6 @@ export interface Assessment {
   passPercent: number;
   /** Hours to wait after the 1st, 2nd and 3rd-or-later failed attempt on the same version (placeholders). */
   cooldownHours: [number, number, number];
-  /** How long a certification earned here lasts, in months; null does not expire (an annual safety refresher is 12). Placeholder, Admin configures it. */
-  validMonths: number | null;
   questions: AssessmentQuestion[];
 }
 
@@ -3140,6 +3170,10 @@ export interface CertificationBadge {
   issuedAt: string;
   /** Frozen when issued, from the rule that applied then: a later change to how long certifications last never moves a badge already earned. */
   expiresAt: string | null;
+  /** How many days after it ends the holder is still eligible for work while they refresh (frozen at issue with the cadence in force). */
+  graceDays: number;
+  /** The cadence version that set the dates above: a later change to the cadence never moves a certification already issued. */
+  cadenceVersion: number;
   /** The certification this one renewed. */
   renewedFromId?: string;
 }

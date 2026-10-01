@@ -143,7 +143,7 @@ export function useAssessment() {
     toAssessment: (id: string) => navigate(assessmentPath(id)),
     leaveWizard: () => { void persist(answers); setAttempt(null); setStep(0); void load(); },
     clearResult: () => setResult(null),
-    saveConfig: async (row: AssessmentOverviewRow, input: { passPercent: number; cooldownHours: [number, number, number]; validMonths: number | null }): Promise<ActionResult> => {
+    saveConfig: async (row: AssessmentOverviewRow, input: { passPercent: number; cooldownHours: [number, number, number] }): Promise<ActionResult> => {
       if (!user) return { ok: false, code: 'generic' };
       setBusy(true);
       try { await repository.saveAssessmentConfig(row.assessmentId, input, user.id); push(t('assessment.admin.saved'), 'success'); await load(); return { ok: true }; } catch (e) { return { ok: false, code: codeOf(e) }; } finally { if (alive.current) setBusy(false); }

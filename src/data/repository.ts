@@ -2594,11 +2594,11 @@ export interface AssessmentOverviewView {
   at: string;
 }
 
-export type AssessmentError = TrainingError | 'not_ready' | 'cooldown' | 'already_certified' | 'no_assessment' | 'outdated' | 'incomplete' | 'attempt_not_found' | 'already_submitted' | 'not_admin' | 'none_chosen' | 'single_only' | 'out_of_range' | 'unknown_question' | 'pass_range' | 'cooldown_range' | 'valid_range';
+export type AssessmentError = TrainingError | 'not_ready' | 'cooldown' | 'already_certified' | 'no_assessment' | 'outdated' | 'incomplete' | 'attempt_not_found' | 'already_submitted' | 'not_admin' | 'none_chosen' | 'single_only' | 'out_of_range' | 'unknown_question' | 'pass_range' | 'cooldown_range';
 
 /* ------------------------------------ Certification badges and progress (155) */
 
-export type CertBadgeStatus = 'valid' | 'expiring' | 'expired' | 'superseded' | 'retired';
+export type CertBadgeStatus = 'valid' | 'expiring' | 'grace' | 'expired' | 'superseded' | 'retired';
 
 export interface CertBadgeView {
   id: string;
@@ -2611,6 +2611,8 @@ export interface CertBadgeView {
   score: number;
   issuedAt: string;
   expiresAt: string | null;
+  /** The last day the holder stays eligible without refreshing (the end plus grace, or a documented extension). */
+  eligibleUntil: string | null;
   status: CertBadgeStatus;
   daysLeft: number | null;
   /** The newest certification the person holds for that module (older ones are history). */
@@ -2667,6 +2669,61 @@ export interface CertificationsView {
 }
 
 export type CertificationError = TrainingError | 'not_found';
+
+/* ------------------------------------ Refresher reminders (156) */
+
+export type RefresherTierName = 'upcoming' | 'due' | 'grace' | 'extended' | 'blocked';
+
+export interface RefresherExtensionView {
+  id: string;
+  until: string;
+  reason: string;
+  byName: string;
+  at: string;
+}
+
+export interface RefresherRowView {
+  /** The certification's own id (one row per certification a partner holds that is coming due or past due). */
+  id: string;
+  userId: string;
+  name: string;
+  role: 'surveyor' | 'technician' | 'supplier';
+  moduleId: string;
+  moduleCode: string;
+  safetyCritical: boolean;
+  tier: RefresherTierName;
+  expiresAt: string;
+  eligibleUntil: string;
+  daysToEnd: number;
+  /** Days of eligibility left (grace and any extension included); negative once new work needing it is held. */
+  daysEligibleLeft: number;
+  extensions: RefresherExtensionView[];
+  openJobs: number;
+  cadenceVersion: number;
+  lastReminderAt: string | null;
+  route: string;
+}
+
+export interface RefresherCadenceView {
+  assessmentId: string;
+  moduleId: string;
+  moduleCode: string;
+  safetyCritical: boolean;
+  current: { version: number; months: number | null; graceDays: number; effectiveFrom: string; reason: string; setByName: string };
+  upcoming: { version: number; months: number | null; graceDays: number; effectiveFrom: string } | null;
+  versions: { version: number; months: number | null; graceDays: number; effectiveFrom: string; reason: string; setByName: string; setAt: string; heldCount: number }[];
+}
+
+export interface RefresherQueueView {
+  scope: 'admin' | 'self';
+  rows: RefresherRowView[];
+  counts: Record<RefresherTierName, number> & { safetyCritical: number };
+  /** Admin only. */
+  cadences: RefresherCadenceView[];
+  at: string;
+}
+
+export type RefresherError = TrainingError | 'not_admin' | 'not_found' | 'nothing_to_extend' | 'date_invalid' | 'date_in_past' | 'too_long' | 'reason_required' | 'months_range' | 'grace_range' | 'no_assessment' | 'too_soon';
 
 /* ------------------------------------ SOP document repository (153) */
 
@@ -6311,7 +6368,12 @@ export interface Repository {
   saveAssessmentDraft(attemptId: string, answers: { questionId: string; selected: number[] }[], userId: string): Promise<{ saved: number }>;
   submitAssessment(attemptId: string, answers: { questionId: string; selected: number[] }[], userId: string): Promise<AssessmentResultView>;
   getAssessmentOverview(adminId: string): Promise<AssessmentOverviewView>;
-  saveAssessmentConfig(assessmentId: string, input: { passPercent: number; cooldownHours: [number, number, number]; validMonths: number | null }, adminId: string): Promise<AssessmentOverviewRow>;
+  saveAssessmentConfig(assessmentId: string, input: { passPercent: number; cooldownHours: [number, number, number] }, adminId: string): Promise<AssessmentOverviewRow>;
+  // Refresher reminders (156)
+  getRefresherQueue(userId: string): Promise<RefresherQueueView>;
+  sendRefresherReminder(badgeId: string, adminId: string): Promise<{ sentAt: string }>;
+  extendRefresher(badgeId: string, input: { until: string; reason: string }, adminId: string): Promise<RefresherRowView>;
+  publishRefresherCadence(assessmentId: string, input: { months: number | null; graceDays: number; effectiveFrom: string; reason: string }, adminId: string): Promise<RefresherCadenceView>;
   // Certification badges and progress (155)
   getCertifications(userId: string): Promise<CertificationsView>;
   setCertificationVisibility(hidden: boolean, userId: string): Promise<{ hidden: boolean }>;

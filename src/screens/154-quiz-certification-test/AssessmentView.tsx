@@ -308,7 +308,7 @@ function AdminOverview({ s, t }: { s: AssessmentState; t: T }) {
   const rows = s.overview?.rows ?? [];
   return (
     <Screen width="wide">
-      <ScreenHeader title={t(K.admin.heading)} subtitle={t(K.admin.intro)} />
+      <ScreenHeader title={t(K.admin.heading)} subtitle={t(K.admin.intro)} action={<Button size="sm" variant="secondary" data-refreshers onClick={() => s.navigateTo('/refreshers')}>{t(K.admin.refreshers)}</Button>} />
       <p className="t-xs t-muted" data-placeholder-note>{t(K.admin.placeholder)}</p>
       {rows.length === 0 ? <EmptyState icon={<GraduationCap size={28} />} title={t(K.admin.empty)} body="" /> : (
         <div className="grid-auto mt-3" style={{ '--min': '360px', alignItems: 'start' } as React.CSSProperties} data-admin>
@@ -348,9 +348,8 @@ function AdminOverview({ s, t }: { s: AssessmentState; t: T }) {
 function ConfigSheet({ s, t, row, onClose }: { s: AssessmentState; t: T; row: AssessmentOverviewRow | null; onClose: () => void }) {
   const [pass, setPass] = useState('80');
   const [c, setC] = useState(['1', '4', '24']);
-  const [valid, setValid] = useState('');
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => { if (row) { setPass(String(row.passPercent)); setC(row.cooldownHours.map(String)); setValid(row.validMonths ? String(row.validMonths) : ''); setError(null); } }, [row?.assessmentId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (row) { setPass(String(row.passPercent)); setC(row.cooldownHours.map(String)); setError(null); } }, [row?.assessmentId]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <Sheet open={!!row} onClose={onClose} title={t(K.admin.editTitle)} closeLabel={t(K.close)}>
       {row && (
@@ -358,11 +357,11 @@ function ConfigSheet({ s, t, row, onClose }: { s: AssessmentState; t: T; row: As
           <p className="t-sm">{t(K.admin.editBody, { module: moduleTitle(t, row.moduleCode) })}</p>
           <Field label={t(K.admin.passPercent)} hint={t(K.admin.passHint)}>{(p) => <Input id={p.id} type="number" inputMode="numeric" min={50} max={100} value={pass} onChange={(e) => setPass(e.target.value)} data-f="pass" />}</Field>
           {[0, 1, 2].map((i) => <Field key={i} label={t([K.admin.cooldown1, K.admin.cooldown2, K.admin.cooldown3][i])} hint={i === 0 ? t(K.admin.cooldownHint) : undefined}>{(p) => <Input id={p.id} type="number" inputMode="numeric" min={0} max={168} value={c[i]} onChange={(e) => setC(c.map((x, n) => (n === i ? e.target.value : x)))} data-f={`cooldown${i + 1}`} />}</Field>)}
-          <Field label={t(K.admin.validMonths)} hint={t(K.admin.validHint)}>{(p) => <Input id={p.id} type="number" inputMode="numeric" min={1} max={60} value={valid} onChange={(e) => setValid(e.target.value)} data-f="valid" />}</Field>
+          <p className="t-xs t-muted" data-cadence-note>{t(K.admin.cadenceNote)}</p>
           {error && <p className="t-xs t-error" role="alert" data-problem={error}>{t(problemKey(error))}</p>}
           <Footer>
             <Button variant="ghost" onClick={onClose}>{t(K.admin.cancel)}</Button>
-            <Button disabled={s.busy} data-save-config onClick={async () => { const r = await s.saveConfig(row, { passPercent: Number(pass), cooldownHours: [Number(c[0]), Number(c[1]), Number(c[2])], validMonths: valid.trim() === '' ? null : Number(valid) }); if (!r.ok) setError(r.code ?? 'generic'); else onClose(); }}>{t(K.admin.save)}</Button>
+            <Button disabled={s.busy} data-save-config onClick={async () => { const r = await s.saveConfig(row, { passPercent: Number(pass), cooldownHours: [Number(c[0]), Number(c[1]), Number(c[2])] }); if (!r.ok) setError(r.code ?? 'generic'); else onClose(); }}>{t(K.admin.save)}</Button>
           </Footer>
         </div>
       )}

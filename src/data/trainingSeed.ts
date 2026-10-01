@@ -1,4 +1,4 @@
-import type { Assessment, AssessmentAttempt, AssessmentQuestion, CertificationBadge, LessonVisual, TrainingCheck, TrainingLesson, TrainingLessonProgress, TrainingModule, TrainingProgress, TrainingRole } from './types';
+import type { RefresherCadence, Assessment, AssessmentAttempt, AssessmentQuestion, CertificationBadge, LessonVisual, TrainingCheck, TrainingLesson, TrainingLessonProgress, TrainingModule, TrainingProgress, TrainingRole } from './types';
 
 /**
  * The seeded curriculum (151). Sixteen modules across four topics, role-aware: some are for everyone, some only for the role whose work they
@@ -111,29 +111,30 @@ const q = (id: string, kind: 'single' | 'multi', options: number, correct: numbe
  * what makes finishing them count towards being given a job (151's gate); the wording is a starting draft for the owner's safety adviser.
  */
 export const seedAssessments: Assessment[] = [
-  { id: 'as-onb-01', moduleId: 'tm-onb-01', passPercent: 80, cooldownHours: [1, 4, 24], validMonths: null, questions: [q('q1', 'single', 3, [0]), q('q2', 'multi', 3, [0, 1]), q('q3', 'single', 3, [0]), q('q4', 'single', 3, [0])] },
-  { id: 'as-saf-02', moduleId: 'tm-saf-02', passPercent: 80, cooldownHours: [1, 4, 24], validMonths: 12, questions: [q('q1', 'multi', 3, [0, 1]), q('q2', 'single', 3, [1], 2), q('q3', 'single', 3, [0]), q('q4', 'single', 3, [0]), q('q5', 'single', 3, [0])] },
-  { id: 'as-saf-03', moduleId: 'tm-saf-03', passPercent: 80, cooldownHours: [1, 4, 24], validMonths: 12, questions: [q('q1', 'single', 3, [1]), q('q2', 'multi', 3, [0, 1]), q('q3', 'single', 3, [0]), q('q4', 'single', 3, [0]), q('q5', 'single', 3, [1])] },
+  { id: 'as-onb-01', moduleId: 'tm-onb-01', passPercent: 80, cooldownHours: [1, 4, 24], questions: [q('q1', 'single', 3, [0]), q('q2', 'multi', 3, [0, 1]), q('q3', 'single', 3, [0]), q('q4', 'single', 3, [0])] },
+  { id: 'as-saf-02', moduleId: 'tm-saf-02', passPercent: 80, cooldownHours: [1, 4, 24], questions: [q('q1', 'multi', 3, [0, 1]), q('q2', 'single', 3, [1], 2), q('q3', 'single', 3, [0]), q('q4', 'single', 3, [0]), q('q5', 'single', 3, [0])] },
+  { id: 'as-saf-03', moduleId: 'tm-saf-03', passPercent: 80, cooldownHours: [1, 4, 24], questions: [q('q1', 'single', 3, [1]), q('q2', 'multi', 3, [0, 1]), q('q3', 'single', 3, [0]), q('q4', 'single', 3, [0]), q('q5', 'single', 3, [1])] },
 ];
 
 let badgeNo = 1000;
 const monthsAfter = (iso: string, months: number | null) => { if (!months) return null; const d = new Date(iso); d.setUTCMonth(d.getUTCMonth() + months); return d.toISOString(); };
 const MONTHS: Record<string, number | null> = { 'onb-01': null, 'saf-02': 12, 'saf-03': 12 };
+const GRACE: Record<string, number> = { 'onb-01': 0, 'saf-02': 14, 'saf-03': 14 };
 const badge = (userId: string, code: string, daysAgo: number, score = 100, version = 1): CertificationBadge => {
   const issuedAt = ts(daysAgo);
   badgeNo += 1;
-  return { id: `cb-${userId}-${code}`, code: `AIEC-CT-${badgeNo}`, userId, moduleId: `tm-${code}`, assessmentId: `as-${code}`, version, score, attemptId: null, issuedAt, expiresAt: monthsAfter(issuedAt, MONTHS[code] ?? null) };
+  return { id: `cb-${userId}-${code}`, code: `AIEC-CT-${badgeNo}`, userId, moduleId: `tm-${code}`, assessmentId: `as-${code}`, version, score, attemptId: null, issuedAt, expiresAt: monthsAfter(issuedAt, MONTHS[code] ?? null), graceDays: GRACE[code] ?? 0, cadenceVersion: 1 };
 };
 
 /**
  * People who finished before the tests existed were certified by the owner's hand at the time: the badge records the version they were certified on.
- * Two safety certifications are seeded near their year: Vishal's saf-03 has about a month left (a renewal reminder is due), and Santosh's has lapsed
- * while he is on a job (that job finishes, new ones wait until he renews).
+ * Three safety certifications are seeded near their year: Vishal's saf-03 has about a month left (a renewal reminder is due), Anand's saf-03 ended a few days
+ * ago and he is in the grace period, and Santosh's ended well past grace while he is on a job (that job finishes, new ones wait until he renews).
  */
 export const seedCertBadges: CertificationBadge[] = [
   badge('u-tech-1', 'onb-01', 38), badge('u-tech-1', 'saf-02', 27, 100, 1), badge('u-tech-1', 'saf-03', 400),
   badge('u-tech-2', 'onb-01', 36), badge('u-tech-2', 'saf-02', 25, 100, 2), badge('u-tech-2', 'saf-03', 340),
-  badge('u-tech-5', 'onb-01', 42), badge('u-tech-5', 'saf-02', 30, 100, 2), badge('u-tech-5', 'saf-03', 28),
+  badge('u-tech-5', 'onb-01', 42), badge('u-tech-5', 'saf-02', 30, 100, 2), badge('u-tech-5', 'saf-03', 370),
   badge('u-tech-3', 'onb-01', 29),
   badge('u-srv-1', 'onb-01', 32), badge('u-sup-1', 'onb-01', 199),
 ];
@@ -149,3 +150,13 @@ export const seedAssessmentAttempts: AssessmentAttempt[] = [50, 50, 75].map((sco
     status: 'submitted' as const, startedAt: at, updatedAt: at, submittedAt: at, correctCount, score, passPercent: 80, passed: false,
   };
 });
+
+/**
+ * How often each certification is refreshed (156): the cadence versions in force. The two safety certifications are refreshed yearly with two weeks' grace;
+ * the welcome certification does not expire. These are placeholder business decisions, flagged on screen, and Admin changes them as versions.
+ */
+export const seedRefresherCadences: RefresherCadence[] = [
+  { assessmentId: 'as-onb-01', versions: [{ version: 1, effectiveFrom: '2026-01-01T00:00:00.000Z', months: null, graceDays: 0, reason: 'Starting cadence: a general introduction does not need refreshing.', setByName: 'Prashant Vasant Wable', setAt: '2026-01-01T00:00:00.000Z' }] },
+  { assessmentId: 'as-saf-02', versions: [{ version: 1, effectiveFrom: '2026-01-01T00:00:00.000Z', months: 12, graceDays: 14, reason: 'Starting cadence: working at height is refreshed every year.', setByName: 'Prashant Vasant Wable', setAt: '2026-01-01T00:00:00.000Z' }] },
+  { assessmentId: 'as-saf-03', versions: [{ version: 1, effectiveFrom: '2026-01-01T00:00:00.000Z', months: 12, graceDays: 14, reason: 'Starting cadence: electrical safety is refreshed every year.', setByName: 'Prashant Vasant Wable', setAt: '2026-01-01T00:00:00.000Z' }] },
+];
