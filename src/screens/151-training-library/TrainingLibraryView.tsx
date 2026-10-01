@@ -177,6 +177,7 @@ function ModuleRow({ m, t, s, index }: { m: TrainingModuleView; t: T; s: Trainin
           {m.lockedBy.length > 0 && <Badge tone="neutral">{t(K.row.locked)}</Badge>}
           {m.updatedSince && <Badge tone="emerald">{t(K.row.updated)}</Badge>}
           {!m.forMe && <Badge tone="neutral">{t(K.row.otherRole)}</Badge>}
+          {!m.hasContent && <Badge tone="neutral">{t(K.row.soon)}</Badge>}
           {s.isSaved(m) && <Badge tone="success">{t(K.row.saved)}</Badge>}
           <span className="t-xs t-muted">{t(K.row.minutes, { count: m.minutes })} · {t(K.row.lessons, { count: m.lessons })}</span>
         </div>
@@ -232,19 +233,20 @@ function DetailSheet({ s, t }: { s: TrainingLibraryState; t: T }) {
             </Card>
           )}
           {!m.forMe && <p className="t-xs t-muted" data-not-for-you>{t(K.detail.notForYou)}</p>}
+          {!m.hasContent && <p className="t-xs t-muted" data-soon>{t(K.detail.soonBody)}</p>}
           <div className="stack gap-1" data-offline-copy>
             {s.isSaved(m) ? (
               <>
                 <span className="row gap-2 t-sm" style={{ alignItems: 'center' }}><CloudCheck size={16} aria-hidden="true" style={{ color: 'var(--color-success)' }} />{t(K.offlineCopy.saved)}</span>
                 {s.savedStale(m) && <span className="t-xs" style={{ color: 'var(--color-warning)' }} data-stale>{t(K.offlineCopy.stale)}</span>}
                 <div className="row gap-2 wrap">
-                  {s.savedStale(m) && <Button size="sm" variant="secondary" icon={<DownloadSimple size={16} />} disabled={!s.online} data-save onClick={() => s.saveOffline(m)}>{t(K.offlineCopy.save)}</Button>}
+                  {s.savedStale(m) && <Button size="sm" variant="secondary" icon={<DownloadSimple size={16} />} disabled={!s.online} data-save onClick={async () => { const r = await s.saveOffline(m); if (!r.ok) setProblem(r.code ?? 'generic'); }}>{t(K.offlineCopy.save)}</Button>}
                   <Button size="sm" variant="ghost" icon={<Trash size={16} />} data-remove-offline onClick={() => s.removeOffline(m)}>{t(K.offlineCopy.remove)}</Button>
                 </div>
               </>
             ) : (
               <>
-                <Button size="sm" variant="secondary" style={{ width: 'fit-content' }} icon={<DownloadSimple size={16} />} disabled={!s.online} data-save onClick={() => s.saveOffline(m)}>{t(K.offlineCopy.save)} · {sizeText(m.offlineKb)}</Button>
+                <Button size="sm" variant="secondary" style={{ width: 'fit-content' }} icon={<DownloadSimple size={16} />} disabled={!s.online || !m.hasContent} data-save onClick={async () => { const r = await s.saveOffline(m); if (!r.ok) setProblem(r.code ?? 'generic'); }}>{t(K.offlineCopy.save)} · {sizeText(m.offlineKb)}</Button>
                 <span className="t-xs t-muted">{s.online ? t(K.offlineCopy.hint) : t(K.offlineCopy.needsSignal)}</span>
               </>
             )}
@@ -254,7 +256,7 @@ function DetailSheet({ s, t }: { s: TrainingLibraryState; t: T }) {
             <Button variant="ghost" onClick={() => { setProblem(null); s.closeModule(); }}>{t(K.close)}</Button>
             <Button
               icon={<PlayCircle size={18} />}
-              disabled={s.busy || m.lockedBy.length > 0 || !m.forMe}
+              disabled={s.busy || m.lockedBy.length > 0 || !m.forMe || !m.hasContent}
               data-begin
               onClick={async () => { const r = await s.begin(m); if (!r.ok) setProblem(r.code ?? 'generic'); }}
             >

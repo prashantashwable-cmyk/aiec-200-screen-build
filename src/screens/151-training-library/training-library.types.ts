@@ -14,7 +14,7 @@ export const modulePath = (moduleId: string) => `/training/${moduleId}`;
 export { TOPICS };
 
 const rec = <T extends string>(ns: string, keys: readonly T[]) => Object.fromEntries(keys.map((k) => [k, `${ns}.${k}`])) as Record<T, string>;
-const PROBLEMS = ['forbidden', 'not_found', 'locked', 'not_for_you', 'retired', 'invalid_state', 'offline', 'generic'] as const;
+const PROBLEMS = ['forbidden', 'not_found', 'locked', 'not_for_you', 'retired', 'invalid_state', 'no_lessons', 'offline', 'generic'] as const;
 
 export const LIB_KEYS = {
   title: 'trainingLib.title',
@@ -55,6 +55,7 @@ export const LIB_KEYS = {
     saved: 'trainingLib.row.saved',
     otherRole: 'trainingLib.row.otherRole',
     needsSignal: 'trainingLib.row.needsSignal',
+    soon: 'trainingLib.row.soon',
   },
   empty: { title: 'trainingLib.empty.title', body: 'trainingLib.empty.body' },
   noMatch: { title: 'trainingLib.noMatch.title', body: 'trainingLib.noMatch.body', action: 'trainingLib.noMatch.action' },
@@ -80,6 +81,7 @@ export const LIB_KEYS = {
     review: 'trainingLib.detail.review',
     retakeButton: 'trainingLib.detail.retakeButton',
     notForYou: 'trainingLib.detail.notForYou',
+    soonBody: 'trainingLib.detail.soonBody',
   },
   offlineCopy: {
     save: 'trainingLib.offlineCopy.save',

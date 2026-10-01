@@ -8,6 +8,7 @@ import type { TrainingLibraryView, TrainingModuleView, TrainingScope } from '@/d
 import type { TrainingTopic } from '@/data/types';
 import { DEFAULT_SCOPE, LIB_KEYS as K, SCOPES, STATUS_FILTERS, TOPICS, cacheKey, modulePath, offlineKey } from './training-library.types';
 import type { StatusFilter } from './training-library.types';
+import { writeLessonCache } from '@/features/training/offline';
 
 export interface ActionResult {
   ok: boolean;
@@ -146,10 +147,18 @@ export function useTrainingLibrary() {
     saved,
     isSaved: (m: TrainingModuleView) => !!saved[m.id],
     savedStale: (m: TrainingModuleView) => !!saved[m.id] && saved[m.id].version < m.version,
-    /** What is saved here is a marker plus the size it will take: 152 puts the lesson content itself in the same record. */
-    saveOffline: (m: TrainingModuleView) => {
+    /** Saving keeps the module's lessons and the person's place in them on the phone (152 opens them from there), plus a marker of which version. */
+    saveOffline: async (m: TrainingModuleView): Promise<ActionResult> => {
+      if (!user) return { ok: false, code: 'generic' };
+      if (!online) return { ok: false, code: 'offline' };
+      try {
+        if (m.hasContent) writeLessonCache(user.id, m.id, await repository.getModuleLessons(m.id, user.id));
+      } catch (e) {
+        return { ok: false, code: codeOf(e) };
+      }
       persist({ ...saved, [m.id]: { version: m.version, savedAt: new Date().toISOString() } });
       push(t(K.offlineCopy.savedToast), 'success');
+      return { ok: true };
     },
     removeOffline: (m: TrainingModuleView) => {
       const next = { ...saved };
@@ -165,6 +174,7 @@ export function useTrainingLibrary() {
     /** Begins (or continues) a module and opens it. A finished one is simply opened again. */
     begin: async (m: TrainingModuleView): Promise<ActionResult> => {
       if (!user) return { ok: false, code: 'generic' };
+      if (!m.hasContent) return { ok: false, code: 'no_lessons' };
       if (m.status === 'not_started' || m.status === 'update_needed') {
         if (!online) return { ok: false, code: 'offline' };
         setBusy(true);

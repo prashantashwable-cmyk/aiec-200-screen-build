@@ -1,4 +1,4 @@
-import type { TrainingModule, TrainingProgress, TrainingRole } from './types';
+import type { LessonVisual, TrainingCheck, TrainingLesson, TrainingLessonProgress, TrainingModule, TrainingProgress, TrainingRole } from './types';
 
 /**
  * The seeded curriculum (151). Sixteen modules across four topics, role-aware: some are for everyone, some only for the role whose work they
@@ -14,12 +14,12 @@ const m = (id: string, topic: TrainingModule['topic'], order: number, requiredFo
 });
 
 export const seedTrainingModules: TrainingModule[] = [
-  m('onb-01', 'onboarding', 1, ALL, ALL, [], 15, 4, 1800),
+  m('onb-01', 'onboarding', 1, ALL, ALL, [], 15, 2, 1800),
   m('onb-02', 'onboarding', 2, FIELD, ALL, ['onb-01'], 20, 5, 2600),
   m('onb-03', 'onboarding', 3, ['supplier'], [], ['onb-01'], 20, 5, 2400),
   m('saf-01', 'safety', 1, FIELD, ['supplier'], [], 30, 6, 4200, { gatesJobAssignment: true }),
-  m('saf-02', 'safety', 2, ['technician'], [], ['saf-01'], 40, 7, 6800, { gatesJobAssignment: true, versions: [...v1, { version: 2, effectiveFrom: '2026-08-15', minVersion: 1, changeKey: 'change2' }] }),
-  m('saf-03', 'safety', 3, ['technician'], [], ['saf-01'], 35, 6, 5200, { gatesJobAssignment: true }),
+  m('saf-02', 'safety', 2, ['technician'], [], ['saf-01'], 40, 3, 6800, { gatesJobAssignment: true, versions: [...v1, { version: 2, effectiveFrom: '2026-08-15', minVersion: 1, changeKey: 'change2' }] }),
+  m('saf-03', 'safety', 3, ['technician'], [], ['saf-01'], 35, 3, 5200, { gatesJobAssignment: true }),
   m('saf-04', 'safety', 4, ['technician'], ['surveyor'], ['saf-01'], 25, 5, 3600),
   m('saf-05', 'safety', 5, ['supplier'], [], ['onb-01'], 25, 5, 3000),
   m('cus-01', 'customer', 1, FIELD, ['supplier'], ['onb-01'], 20, 4, 2200),
@@ -50,11 +50,54 @@ export const seedTrainingProgress: TrainingProgress[] = [
   ...techFull('u-tech-1', 3, 1),
   ...techFull('u-tech-2', 1),
   ...techFull('u-tech-5', 5),
-  done('u-tech-3', 'onb-01', 30), done('u-tech-3', 'onb-02', 28), done('u-tech-3', 'saf-01', 20), doing('u-tech-3', 'saf-02', 3, 3),
+  done('u-tech-3', 'onb-01', 30), done('u-tech-3', 'onb-02', 28), done('u-tech-3', 'saf-01', 20), doing('u-tech-3', 'saf-02', 3, 1),
   // Surveyors.
   ...surveyorFull('u-srv-1', 4),
   done('u-srv-2', 'onb-01', 25), done('u-srv-2', 'onb-02', 24), done('u-srv-2', 'saf-01', 20), doing('u-srv-2', 'cus-01', 2, 2),
   done('u-srv-3', 'onb-01', 12),
   // Suppliers.
   done('u-sup-1', 'onb-01', 200), done('u-sup-1', 'onb-03', 198), done('u-sup-1', 'saf-05', 190), done('u-sup-1', 'prd-01', 185), done('u-sup-1', 'prd-05', 180),
+];
+
+/* ------------------------------------------------------------------ lessons (152) */
+
+const scene = (module: string, n: number, lesson: number, durationS: number, visual: LessonVisual) => ({ id: `${module}-${lesson}-s${n}`, durationS, visual });
+const lesson = (code: string, order: number, visuals: LessonVisual[], durations: number[], checks: Omit<TrainingCheck, 'id'>[], points: number, changedInVersion = 1): TrainingLesson => ({
+  id: `tl-${code}-${order}`,
+  moduleId: `tm-${code}`,
+  order,
+  changedInVersion,
+  scenes: visuals.map((v, i) => scene(code, i + 1, order, durations[i] ?? 45, v)),
+  checks: checks.map((c, i) => ({ ...c, id: `${code}-${order}-c${i + 1}` })),
+  points,
+});
+
+/**
+ * The lessons that are authored so far: the welcome module and the two safety modules that decide whether a technician can be put on a job.
+ * Their wording is a starting draft for the owner's own safety adviser to review. A module with no lessons here says so; nobody is shown an empty
+ * player and nothing can be marked finished without being played.
+ */
+export const seedTrainingLessons: TrainingLesson[] = [
+  lesson('onb-01', 1, ['welcome', 'promise', 'person'], [40, 50, 40], [{ afterScene: 1, kind: 'single', options: 3, correct: [1] }], 3),
+  lesson('onb-01', 2, ['phone', 'inspect', 'warning'], [40, 50, 45], [{ afterScene: 1, kind: 'single', options: 3, correct: [1] }], 3),
+  lesson('saf-02', 1, ['harness', 'inspect', 'warning'], [50, 55, 40], [{ afterScene: 1, kind: 'multi', options: 3, correct: [0, 1] }], 3),
+  lesson('saf-02', 2, ['anchor', 'anchor', 'warning'], [45, 55, 40], [{ afterScene: 1, kind: 'single', options: 3, correct: [1] }], 3, 2),
+  lesson('saf-02', 3, ['person', 'rescue', 'warning'], [45, 55, 45], [{ afterScene: 1, kind: 'single', options: 3, correct: [0] }], 3),
+  lesson('saf-03', 1, ['power', 'power', 'person'], [50, 55, 35], [{ afterScene: 1, kind: 'single', options: 3, correct: [0] }], 3),
+  lesson('saf-03', 2, ['lock', 'tag', 'lock'], [40, 40, 55], [{ afterScene: 1, kind: 'multi', options: 3, correct: [0, 1] }], 3),
+  lesson('saf-03', 3, ['meter', 'meter', 'warning'], [40, 55, 40], [{ afterScene: 1, kind: 'single', options: 3, correct: [1] }], 3),
+];
+
+const lessonById = (id: string) => seedTrainingLessons.find((l) => l.id === id) as TrainingLesson;
+const lessonDone = (userId: string, id: string, daysAgo: number, version = 1): TrainingLessonProgress => {
+  const l = lessonById(id);
+  const total = l.scenes.reduce((n, x) => n + x.durationS, 0);
+  const at = ts(daysAgo);
+  return { userId, lessonId: id, moduleId: l.moduleId, version, positionS: total, furthestS: total, checks: l.checks.map((c) => ({ checkId: c.id, attempts: [{ at, selected: c.correct, correct: true }], clearedAt: at })), startedAt: ts(daysAgo + 0.01), updatedAt: at, completedAt: at };
+};
+
+/** Ajay has finished the first hoistway lesson and is part-way through the second. Everyone else's completions are module-level (taken before lessons were recorded one by one). */
+export const seedTrainingLessonProgress: TrainingLessonProgress[] = [
+  lessonDone('u-tech-3', 'tl-saf-02-1', 3),
+  { userId: 'u-tech-3', lessonId: 'tl-saf-02-2', moduleId: 'tm-saf-02', version: 1, positionS: 62, furthestS: 62, checks: [], startedAt: ts(2), updatedAt: ts(2) },
 ];

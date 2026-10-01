@@ -245,6 +245,10 @@ import type {
   ExitBoardView,
   TrainingLibraryView,
   TrainingModuleView,
+  LessonAnswerResult,
+  LessonCompleteResult,
+  LessonView,
+  ModuleLessonsView,
   ExitPreviewView,
   ExitRowView,
   ExitTargetsView,
@@ -499,6 +503,8 @@ import type {
   PartnerTerritoryChange,
   TrainingModule,
   TrainingProgress,
+  TrainingLesson,
+  TrainingLessonProgress,
   TrainingRole,
   TrainingTopic,
   PartnerExit,
@@ -709,7 +715,8 @@ import { FUNNEL as RD_FUNNEL, NOW_STAGES as RD_NOW, SMALL_SAMPLE as RD_SMALL, WA
 import type { NowStage as RdNowStage, Period as RdPeriod, RecruitStage as RdRecruitStage } from '@/features/recruitment/dashboard';
 import { TOPICS as TN_TOPICS, currentVersionOf as tnCurrentVersion, curriculumOf as tnCurriculum, jobGateOf as tnJobGate, lockedBy as tnLockedBy, percentOfModule as tnPercent, relevantFor as tnRelevant, requiredFor as tnRequired, startProblem as tnStartProblem, statusOf as tnStatus, updatedSince as tnUpdated } from '@/features/training/curriculum';
 import type { ModuleStatus } from '@/features/training/curriculum';
-import { seedTrainingModules, seedTrainingProgress } from './trainingSeed';
+import { seedTrainingLessonProgress, seedTrainingLessons, seedTrainingModules, seedTrainingProgress } from './trainingSeed';
+import { allowedFurthestS as lsAllowed, answerProblem as lsAnswerProblem, checkAtS as lsCheckAt, clampPlayback as lsClamp, clearedIds as lsCleared, completeProblem as lsCompleteProblem, durationOf as lsDuration, isCorrect as lsIsCorrect, lessonDone as lsDone, lessonStates as lsStates, lessonUpdated as lsUpdated, sceneStartS as lsSceneStart } from '@/features/training/lesson';
 import { GRADUATION_MIN_ORDERS, GRADUATION_MIN_SCORE } from '@/features/suppliers/paymentTerms';
 import { ACTION_NOTE_MIN as EX_ACTION_NOTE_MIN, DISPUTE_MIN as EX_DISPUTE_MIN, INTERVIEW_REASONS as EX_INTERVIEW_REASONS, LAST_DAY_MAX_DAYS as EX_LAST_DAY_MAX, REASON_MIN as EX_REASON_MIN, WITHHOLD_MIN as EX_WITHHOLD_MIN, blockersOf as exBlockersOf, decidedExtra as exDecidedExtra, decisionProblem as exDecisionProblem, startProblem as exStartProblem } from '@/features/partners/exit';
 import type { Stage as ExitStage, Blocker as ExitBlocker } from '@/features/partners/exit';
@@ -8723,6 +8730,8 @@ function pdProfile(key: string, now: number): PartnerDirectoryProfileView {
 
 const trainingModules: TrainingModule[] = seedTrainingModules.map((x) => ({ ...x, versions: x.versions.map((v) => ({ ...v })) }));
 const trainingProgress: TrainingProgress[] = seedTrainingProgress.map((x) => ({ ...x }));
+const trainingLessons: TrainingLesson[] = seedTrainingLessons;
+const lessonProgress: TrainingLessonProgress[] = seedTrainingLessonProgress.map((x) => ({ ...x, checks: x.checks.map((c) => ({ ...c, attempts: c.attempts.map((a) => ({ ...a })) })) }));
 
 /** One person across every role they hold (149 groups them the same way, by phone): what they have done in one account counts in another. */
 function tnPersonOf(userId: string): { name: string; roles: TrainingRole[]; userIds: string[] } | null {
@@ -8755,7 +8764,98 @@ function tnViewOf(m: TrainingModule, person: { roles: TrainingRole[]; userIds: s
     version: v.version, changeKey: v.version > 1 ? v.changeKey ?? null : null, status: st, updatedSince: tnUpdated(m, p, now), lessonsDone: p?.lessonsDone ?? 0, percent: tnPercent(m, p, st),
     completedAt: p?.status === 'completed' ? p.completedAt ?? null : null, completedVersion: p?.status === 'completed' ? p.version : null,
     lockedBy: locked.map((x) => ({ id: x.id, code: x.code })), gatesJobAssignment: m.gatesJobAssignment && tnRequired(m, ['technician']),
+    hasContent: trainingLessons.some((l) => l.moduleId === m.id),
   };
+}
+
+/* ---- lessons (152) */
+
+/** What one person has recorded on one lesson: the finished record first, else the latest. People who hold two roles (one phone) share their work. */
+function tnLessonRowOf(userIds: string[], lessonId: string): TrainingLessonProgress | undefined {
+  const mine = lessonProgress.filter((p) => p.lessonId === lessonId && userIds.includes(p.userId));
+  return mine.filter((p) => p.completedAt).sort((a, b) => b.version - a.version)[0] ?? mine.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+}
+
+function tnLessonViewOf(l: TrainingLesson, m: TrainingModule, userIds: string[], states: Record<string, 'done' | 'current' | 'locked'>, now: number): LessonView {
+  const own = tnLessonRowOf(userIds, l.id);
+  const mod = tnProgressOf(userIds, m.id);
+  const counts = tnStatus(m, mod, now) === 'completed';
+  const state = states[l.id] ?? 'locked';
+  const cleared = state === 'done' ? l.checks.map((c) => c.id) : lsCleared(own);
+  const total = lsDuration(l);
+  const done = state === 'done';
+  const clamped = lsClamp(l, cleared, own?.positionS ?? 0, own?.furthestS ?? 0);
+  return {
+    id: l.id, moduleId: l.moduleId, order: l.order, durationS: total,
+    scenes: l.scenes.map((x, i) => ({ id: x.id, durationS: x.durationS, startS: lsSceneStart(l, i), visual: x.visual })),
+    checks: l.checks.map((c) => ({ id: c.id, afterScene: c.afterScene, atS: lsCheckAt(l, c), kind: c.kind, options: c.options, cleared: cleared.includes(c.id), attempts: own?.checks.find((r) => r.checkId === c.id)?.attempts.length ?? 0 })),
+    points: l.points, state, updated: lsUpdated(l, own, mod, counts), changedInVersion: l.changedInVersion,
+    // A finished lesson opens at its start for a replay; one in hand resumes exactly where it was left.
+    positionS: done ? 0 : clamped.positionS, furthestS: done ? total : clamped.furthestS, allowedS: done ? total : lsAllowed(l, cleared),
+    completedAt: done ? own?.completedAt ?? mod?.completedAt ?? null : null,
+  };
+}
+
+function tnModuleLessonsOf(m: TrainingModule, person: { roles: TrainingRole[]; userIds: string[] }, now: number): ModuleLessonsView {
+  const lessons = trainingLessons.filter((l) => l.moduleId === m.id).sort((a, b) => a.order - b.order);
+  const mod = tnProgressOf(person.userIds, m.id);
+  const counts = tnStatus(m, mod, now) === 'completed';
+  const states = lsStates(lessons, (l) => lsDone(l, tnLessonRowOf(person.userIds, l.id), mod, counts));
+  const done = lessons.filter((l) => states[l.id] === 'done').length;
+  const st = tnStatus(m, mod, now);
+  const v = tnCurrentVersion(m, now);
+  return {
+    module: { id: m.id, code: m.code, topic: m.topic, version: v.version, status: st, minutes: m.minutes, required: tnRequired(m, person.roles), gatesJobAssignment: m.gatesJobAssignment && tnRequired(m, ['technician']), changeKey: v.version > 1 ? v.changeKey ?? null : null },
+    lessons: lessons.map((l) => tnLessonViewOf(l, m, person.userIds, states, now)),
+    lessonsDone: done,
+    percent: lessons.length ? Math.round((done / lessons.length) * 100) : 0,
+    moduleDone: lessons.length > 0 && done === lessons.length && st !== 'update_needed' && st !== 'not_started',
+    at: new Date(now).toISOString(),
+  };
+}
+
+/** A lesson can be opened by someone the module is shown to, once what it builds on is done. */
+function tnLessonAccess(lessonId: string, userId: string, now: number) {
+  const person = tnPersonOf(userId);
+  if (!person) throw new RepositoryError('forbidden');
+  const l = byId(trainingLessons, lessonId);
+  const m = l ? byId(trainingModules, l.moduleId) : undefined;
+  if (!l || !m) throw new RepositoryError('not_found');
+  const status = tnStatusFn(person.userIds, now);
+  const problem = tnStartProblem(m, person.roles, tnLockedBy(m, trainingModules, status));
+  if (problem) throw new RepositoryError(problem);
+  const view = tnModuleLessonsOf(m, person, now);
+  const lv = view.lessons.find((x) => x.id === lessonId) as LessonView;
+  if (lv.state === 'locked') throw new RepositoryError('locked');
+  return { person, l, m, lv, view };
+}
+
+/** The person's own working row for a lesson, created when they begin it (on the version in force now, so a retake is recorded as one). */
+function tnLessonRowForWrite(userId: string, l: TrainingLesson, version: number, at: string): TrainingLessonProgress {
+  let row = lessonProgress.find((p) => p.userId === userId && p.lessonId === l.id);
+  if (!row) {
+    row = { userId, lessonId: l.id, moduleId: l.moduleId, version, positionS: 0, furthestS: 0, checks: [], startedAt: at, updatedAt: at };
+    lessonProgress.push(row);
+  } else if (row.completedAt && row.version < l.changedInVersion) {
+    // A lesson that has changed since it was finished begins afresh: what was finished stays in the history of the version it was taken on.
+    row.version = version; row.completedAt = undefined; row.positionS = 0; row.furthestS = 0; row.checks = []; row.startedAt = at;
+  } else if (!row.completedAt) row.version = version;
+  return row;
+}
+
+/** Brings the module's own progress row in line with its lessons: how many are done, and finished only when all are. */
+function tnSyncModuleProgress(m: TrainingModule, userId: string, person: { roles: TrainingRole[]; userIds: string[] }, now: number): void {
+  const lessons = trainingLessons.filter((l) => l.moduleId === m.id);
+  if (lessons.length === 0) return;
+  const at = new Date(now).toISOString();
+  const version = tnCurrentVersion(m, now).version;
+  const view = tnModuleLessonsOf(m, person, now);
+  const own = trainingProgress.find((p) => p.userId === userId && p.moduleId === m.id);
+  const allDone = view.lessonsDone === lessons.length;
+  if (own) {
+    if (own.status === 'completed' && tnStatus(m, own, now) === 'completed') return;
+    Object.assign(own, allDone ? { status: 'completed', version, lessonsDone: lessons.length, completedAt: at } : { status: 'in_progress', version, lessonsDone: view.lessonsDone, completedAt: undefined });
+  } else trainingProgress.push({ userId, moduleId: m.id, status: allDone ? 'completed' : 'in_progress', startedAt: at, ...(allDone ? { completedAt: at } : {}), version, lessonsDone: view.lessonsDone });
 }
 
 /** Whether a person may be put on a job: for a technician, every gating safety module must be done. Anyone else is not held by it. */
@@ -16276,16 +16376,100 @@ export const memoryRepository: Repository = {
       if (problem) throw new RepositoryError(problem);
       const at = new Date(now).toISOString();
       const version = tnCurrentVersion(m, now).version;
+      const mine = trainingLessons.filter((l) => l.moduleId === moduleId);
+      // A module with lessons is finished only by playing them (completeLesson); one without cannot be started.
+      if (mine.length === 0) throw new RepositoryError('invalid_state');
+      if (input.status === 'completed') throw new RepositoryError('invalid_state');
       const own = trainingProgress.find((p) => p.userId === userId && p.moduleId === moduleId);
-      const lessonsDone = Math.max(0, Math.min(m.lessons, input.status === 'completed' ? m.lessons : input.lessonsDone ?? own?.lessonsDone ?? 0));
-      if (own) {
-        // Starting again on a module already completed on a counting version changes nothing; a retake after an update begins afresh.
-        if (own.status === 'completed' && input.status === 'in_progress' && tnStatus(m, own, now) === 'completed') return tnViewOf(m, person, now);
-        Object.assign(own, { status: input.status, version, lessonsDone, ...(input.status === 'completed' ? { completedAt: at } : { startedAt: own.status === 'completed' ? at : own.startedAt, completedAt: undefined }) });
-      } else {
-        trainingProgress.push({ userId, moduleId, status: input.status, startedAt: at, ...(input.status === 'completed' ? { completedAt: at } : {}), version, lessonsDone });
+      if (own && own.status === 'completed') {
+        if (tnStatus(m, own, now) === 'completed') return tnViewOf(m, person, now);
+        // A retake after a revision: what they finished and that has not changed since stays done; only what moved is asked again.
+        for (const l of mine) {
+          if (l.changedInVersion <= own.version && !lessonProgress.some((p) => p.userId === userId && p.lessonId === l.id && p.completedAt)) {
+            const total = lsDuration(l);
+            lessonProgress.push({ userId, lessonId: l.id, moduleId, version: own.version, positionS: 0, furthestS: total, checks: l.checks.map((c) => ({ checkId: c.id, attempts: [], clearedAt: own.completedAt ?? at })), startedAt: own.startedAt, updatedAt: at, completedAt: own.completedAt ?? at });
+          }
+        }
       }
+      if (!own) trainingProgress.push({ userId, moduleId, status: 'in_progress', startedAt: at, version, lessonsDone: 0 });
+      tnSyncModuleProgress(m, userId, person, now);
       return tnViewOf(m, person, now);
+    }),
+
+  /* --------------------------------- Lesson player (152) */
+  getModuleLessons: (moduleId, userId) =>
+    simulateRead((): ModuleLessonsView => {
+      const person = tnPersonOf(userId);
+      if (!person) throw new RepositoryError('forbidden');
+      const m = byId(trainingModules, moduleId);
+      if (!m) throw new RepositoryError('not_found');
+      const now = Date.now();
+      const problem = tnStartProblem(m, person.roles, tnLockedBy(m, trainingModules, tnStatusFn(person.userIds, now)));
+      if (problem) throw new RepositoryError(problem);
+      if (!trainingLessons.some((l) => l.moduleId === moduleId)) throw new RepositoryError('no_lessons');
+      return tnModuleLessonsOf(m, person, now);
+    }),
+
+  saveLessonPlayback: (lessonId, input, userId) =>
+    simulateWrite((): LessonView => {
+      const now = Date.now();
+      const { person, l, m, lv } = tnLessonAccess(lessonId, userId, now);
+      if (lv.state === 'done') return lv;
+      const at = new Date(now).toISOString();
+      const row = tnLessonRowForWrite(userId, l, tnCurrentVersion(m, now).version, at);
+      const clamp = lsClamp(l, lsCleared(tnLessonRowOf(person.userIds, l.id)), input.positionS, input.furthestS);
+      // Playback only ever moves forward as far as it has genuinely been played; going back (to replay) does not lose it.
+      row.furthestS = Math.max(row.furthestS, clamp.furthestS);
+      row.positionS = Math.min(clamp.positionS, row.furthestS);
+      row.updatedAt = at;
+      tnSyncModuleProgress(m, userId, person, now);
+      return tnModuleLessonsOf(m, person, now).lessons.find((x) => x.id === lessonId) as LessonView;
+    }),
+
+  answerLessonCheck: (lessonId, checkId, selected, userId) =>
+    simulateWrite((): LessonAnswerResult => {
+      const now = Date.now();
+      const { person, l, m, lv } = tnLessonAccess(lessonId, userId, now);
+      const check = l.checks.find((c) => c.id === checkId);
+      if (!check) throw new RepositoryError('unknown_check');
+      const bad = lsAnswerProblem(check, selected);
+      if (bad) throw new RepositoryError(bad);
+      const at = new Date(now).toISOString();
+      const row = tnLessonRowForWrite(userId, l, tnCurrentVersion(m, now).version, at);
+      // A check can only be answered once the lesson has been played up to it.
+      if (row.furthestS < lsCheckAt(l, check) - 1 && lv.state !== 'done') throw new RepositoryError('invalid_state');
+      let resp = row.checks.find((c) => c.checkId === checkId);
+      if (!resp) { resp = { checkId, attempts: [] }; row.checks.push(resp); }
+      const correct = lsIsCorrect(check, selected);
+      if (!resp.clearedAt) {
+        resp.attempts.push({ at, selected: [...new Set(selected)].sort(), correct });
+        if (correct) resp.clearedAt = at;
+      }
+      row.updatedAt = at;
+      tnSyncModuleProgress(m, userId, person, now);
+      const view = tnModuleLessonsOf(m, person, now).lessons.find((x) => x.id === lessonId) as LessonView;
+      return { correct, cleared: !!resp.clearedAt, attempts: resp.attempts.length, lesson: view };
+    }),
+
+  completeLesson: (lessonId, userId) =>
+    simulateWrite((): LessonCompleteResult => {
+      const now = Date.now();
+      const { person, l, m, lv } = tnLessonAccess(lessonId, userId, now);
+      if (lv.state !== 'done') {
+        const at = new Date(now).toISOString();
+        const row = tnLessonRowForWrite(userId, l, tnCurrentVersion(m, now).version, at);
+        const problem = lsCompleteProblem(l, row);
+        if (problem) throw new RepositoryError(problem);
+        row.completedAt = at;
+        row.positionS = lsDuration(l);
+        row.furthestS = lsDuration(l);
+        row.updatedAt = at;
+        tnSyncModuleProgress(m, userId, person, now);
+      }
+      const view = tnModuleLessonsOf(m, person, now);
+      const idx = view.lessons.findIndex((x) => x.id === lessonId);
+      const next = view.lessons.slice(idx + 1).find((x) => x.state === 'current');
+      return { lesson: view.lessons[idx], module: view, moduleDone: view.moduleDone, nextLessonId: next?.id ?? null };
     }),
 
   /* --------------------------------- Partner deactivation and exit (150) */

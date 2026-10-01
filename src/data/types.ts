@@ -3010,6 +3010,69 @@ export interface TrainingProgress {
   lessonsDone: number;
 }
 
+/* ------------------------------------ Lesson player (152) */
+
+/** The picture shown for a scene (a drawn icon, never a stock photo). */
+export type LessonVisual = 'welcome' | 'promise' | 'person' | 'phone' | 'warning' | 'harness' | 'inspect' | 'anchor' | 'rescue' | 'power' | 'lock' | 'tag' | 'meter';
+
+export interface TrainingScene {
+  id: string;
+  durationS: number;
+  visual: LessonVisual;
+}
+
+/** A knowledge check shown at the end of a scene: playback cannot go past it until it is answered correctly. */
+export interface TrainingCheck {
+  id: string;
+  /** Index of the scene it follows (0-based). */
+  afterScene: number;
+  kind: 'single' | 'multi';
+  options: number;
+  correct: number[];
+}
+
+/**
+ * A lesson belongs to a module and is authored with it (151): its words are translation keys `lessonContent.<module code>.l<order>.*`, so there
+ * is no second content system. `changedInVersion` is the module version in which the lesson last changed, so a partner who finished an older
+ * version redoes only what moved.
+ */
+export interface TrainingLesson {
+  id: string;
+  moduleId: string;
+  order: number;
+  changedInVersion: number;
+  scenes: TrainingScene[];
+  checks: TrainingCheck[];
+  points: number;
+}
+
+export interface LessonCheckAttempt {
+  at: string;
+  selected: number[];
+  correct: boolean;
+}
+
+export interface LessonCheckResponse {
+  checkId: string;
+  attempts: LessonCheckAttempt[];
+  clearedAt?: string;
+}
+
+/** One person's run through one lesson: where they are, how far they have genuinely played, what they answered, and when it was finished. */
+export interface TrainingLessonProgress {
+  userId: string;
+  lessonId: string;
+  moduleId: string;
+  /** The module version they took it on. */
+  version: number;
+  positionS: number;
+  furthestS: number;
+  checks: LessonCheckResponse[];
+  startedAt: string;
+  updatedAt: string;
+  completedAt?: string;
+}
+
 /* ------------------------------------ Partner deactivation and exit (150) */
 
 export type ExitKind = 'voluntary' | 'involuntary';

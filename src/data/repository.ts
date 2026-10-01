@@ -41,6 +41,7 @@ import type {
   PartnerAgreementTemplate,
   PartnerOffer,
   PartnerTierEntry,
+  LessonVisual,
   TrainingRole,
   TrainingTopic,
   PartnerExit,
@@ -2408,6 +2409,8 @@ export interface TrainingModuleView {
   completedVersion: number | null;
   lockedBy: { id: string; code: string }[];
   gatesJobAssignment: boolean;
+  /** Whether the module's lessons have been written yet: a module without them cannot be started. */
+  hasContent: boolean;
 }
 
 export interface TrainingLibraryView {
@@ -2421,6 +2424,63 @@ export interface TrainingLibraryView {
 }
 
 export type TrainingError = 'not_found' | 'forbidden' | 'locked' | 'not_for_you' | 'retired' | 'invalid_state';
+
+/* ------------------------------------ Lesson player (152) */
+
+export interface LessonCheckView {
+  id: string;
+  afterScene: number;
+  /** The second at which it appears. */
+  atS: number;
+  kind: 'single' | 'multi';
+  options: number;
+  cleared: boolean;
+  attempts: number;
+}
+
+export interface LessonView {
+  id: string;
+  moduleId: string;
+  order: number;
+  durationS: number;
+  scenes: { id: string; durationS: number; startS: number; visual: LessonVisual }[];
+  checks: LessonCheckView[];
+  points: number;
+  state: 'done' | 'current' | 'locked';
+  /** Done on an earlier version of the lesson, which has changed since. */
+  updated: boolean;
+  changedInVersion: number;
+  positionS: number;
+  furthestS: number;
+  /** How far playback may go until the next check is answered. */
+  allowedS: number;
+  completedAt: string | null;
+}
+
+export interface ModuleLessonsView {
+  module: { id: string; code: string; topic: TrainingTopic; version: number; status: 'not_started' | 'in_progress' | 'completed' | 'update_needed'; minutes: number; required: boolean; gatesJobAssignment: boolean; changeKey: string | null };
+  lessons: LessonView[];
+  lessonsDone: number;
+  percent: number;
+  moduleDone: boolean;
+  at: string;
+}
+
+export interface LessonAnswerResult {
+  correct: boolean;
+  cleared: boolean;
+  attempts: number;
+  lesson: LessonView;
+}
+
+export interface LessonCompleteResult {
+  lesson: LessonView;
+  module: ModuleLessonsView;
+  moduleDone: boolean;
+  nextLessonId: string | null;
+}
+
+export type LessonError = TrainingError | 'none_chosen' | 'single_only' | 'out_of_range' | 'not_finished' | 'checks_open' | 'no_lessons' | 'unknown_check';
 
 /* ------------------------------------ Partner deactivation and exit (150) */
 
@@ -5955,6 +6015,11 @@ export interface Repository {
   // Training module library (151)
   getTrainingLibrary(scope: TrainingScope, userId: string): Promise<TrainingLibraryView>;
   recordTrainingProgress(moduleId: string, input: { status: 'in_progress' | 'completed'; lessonsDone?: number }, userId: string): Promise<TrainingModuleView>;
+  // Lesson player (152)
+  getModuleLessons(moduleId: string, userId: string): Promise<ModuleLessonsView>;
+  saveLessonPlayback(lessonId: string, input: { positionS: number; furthestS: number }, userId: string): Promise<LessonView>;
+  answerLessonCheck(lessonId: string, checkId: string, selected: number[], userId: string): Promise<LessonAnswerResult>;
+  completeLesson(lessonId: string, userId: string): Promise<LessonCompleteResult>;
 
   // Partner deactivation and exit (150)
   getExitBoard(userId: string): Promise<ExitBoardView>;
