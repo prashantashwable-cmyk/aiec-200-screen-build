@@ -94,7 +94,7 @@ the module's section to `BUILD_README.md`.
 
 ## Current status (as of 2026-09-30)
 
-- Modules 1–12 (`001`–`120`) are built. Modules 5–12 are checkpoint-verified. Module 13 (`121`–`130`) is built and checkpoint-verified.
+- Modules 1–16 (`001`–`160`) are built. Modules 5–16 are checkpoint-verified.
 - **Module 9 Payments & Financing is done**, including its checkpoint (all 10 screens clicked
   through as both Admin and Customer, 4 earlier-module screens spot-checked, nothing regressed —
   see `BUILD_README.md`'s Module 9 section for the full writeup, including the shared aging
@@ -113,7 +113,7 @@ the module's section to `BUILD_README.md`.
 - **Module 13 Installation & Technician is done, including its checkpoint** (`121`–`130`, see BUILD_README's Module 13 section).
 - **Module 14 Quality Check & Handover is done, including its checkpoint** (`131`–`140`, see BUILD_README's Module 14 section).
 - **Module 15 Worker & Partner Recruitment is done, including its checkpoint** (`141`–`150`, see BUILD_README's Module 15 section).
-- **Module 16 Training & SOP Library in progress:** `151`–`160` built. **Next: the Module 16 checkpoint** (click through 151–160, spot-check earlier modules, write BUILD_README's Module 16 section), then Module 17 `161`.
+- **Module 16 Training & SOP Library is done, including its checkpoint** (`151`–`160`, see BUILD_README's Module 16 section). **Next: Module 17, `161`.**
   160 facts:
   - **Feedback is two ratings and optional words, per person per module version.** `TrainingFeedback` (memoryRepository `trainingFeedback`): clarity and relevance 1–5 (both required), a comment ≤ 1000 letters, optional target (a lesson, or a quiz question of 154 via `?question=` / `?lesson=`), a `serious` flag ("possibly wrong or unsafe", needs ≥ `SERIOUS_MIN` 15 letters of words), `status` new / reviewing / addressed / dismissed (Admin `handleTrainingFeedback`; addressed or dismissed needs a ≥ 10-letter note, addressed can name the module version that fixed it, shown back to the partner on their form). A partner can change their own reply for the same version (`saveTrainingFeedback` updates, never duplicates); a new module version asks again. Only partners with progress on a module that has lessons can reply (`not_eligible`). Pure rules `@/features/training/feedback` (`feedbackProblem`, `authorKeyOf`, `summaryOf`, `dueAtOf`, `handleProblem`, `moderationProblem`, `isOpen`).
   - **Anonymous means anonymous**: the default is on, and an anonymous reply stores only a one-way `authorKey` (so the same person can update their reply and is counted once), never a user id; Admin sees "Anonymous". A named reply shows the name. The key is shared across the roles one person holds (grouped by phone).

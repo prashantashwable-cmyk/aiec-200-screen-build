@@ -1253,3 +1253,76 @@ for surveyors and technicians, so an exit settlement dispute follows 117's patte
 adjustment is kept on the exit, not pushed through 115. Paying a field partner is recording a bank reference and marking their approved
 entries paid: moving money is payroll, which this build does not have. Alternate sourcing for a leaving supplier's order records the
 decision; the new order is placed from the order screens. Directory rows have no swipe actions (the sheet is the quick-action surface).
+
+## Module 16 — Training & SOP Library (`151`–`160`, checkpoint-verified)
+
+How a partner learns what the business needs of them, proves they have learned it, keeps it current, and tells AIEC when the
+training itself is wrong. The idea throughout is that **training is a structural gate on work, not a library**: a technician who has
+not finished and passed the safety modules cannot be given a job, and the same certifications that decide that are what the partner
+sees on their own screen. Nothing here keeps a second copy of anything: the SOP library reads the checklists' own versions, the
+skill matrix and the compliance tracker are derived on read, and every deadline is a commitment row.
+
+| # | Screen | What it owns |
+|---|---|---|
+| 151 | Training Library | One governed curriculum read per person: modules, versions, what is required for your roles, the job gate, save for offline |
+| 152 | Video Training Player | Lessons as timed scenes with knowledge checks judged on the server; nobody skips a check; place is kept even offline; reference sheets |
+| 153 | SOP Document Viewer | A reading view over the governed procedures (never a copy), version history, bookmarks, offline copies, reference-only categories |
+| 154 | Quiz & Certification Test | The test follows the lessons and its pass is the certification; retake waits; coaching flag after repeated fails |
+| 155 | Certification Badges | The badges that decide eligibility, renewal, mid-job lapse, a calm peer standing, a downloadable credential |
+| 156 | Refresher Training Reminders | A versioned cadence with grace and documented extensions; one pattern of grace, extension, then blocking |
+| 157 | Skill Matrix & Gap Analysis | Who can do what, where the workforce is thin against the pipeline; assigning training is a commitment |
+| 158 | Training Compliance Tracker | Is the whole workforce trained right now, who is not and why; renewal waves; reminders, snapshots, review record |
+| 159 | SOP Update Rollout | Announcing a procedure change with who must read it and a short quiz; urgent changes never block work |
+| 160 | Training Feedback | Partners rate and flag trainings (anonymous by default); Admin handles each item with a documented outcome |
+
+**Shared vocabulary worth knowing before building on this module**
+
+- **The gate.** `trainingClear(userId)` is true unless a technician still has a `gatesJobAssignment` module unfinished, its test
+  unpassed, a certification past its grace period, or an in-force, non-urgent SOP rollout they have not acknowledged. Every assignment
+  path (`addTeamMember`, `changeJobLead`, `delegateLead`, `assignRework`, `assignQcInspector`, candidate lists, 150's exit targets)
+  refuses with `training_incomplete`. Work already in hand always finishes.
+- **One badge, one truth.** `CertificationBadge` is issued only by a passed test, freezes the module version and the cadence in force the
+  day it was issued, and is never rewritten. `badgeStatusOf` (valid / expiring / grace / extended / expired / superseded / retired) is read
+  by the job gate, the partner's screen and the compliance tracker alike, so they cannot disagree.
+- **Versions send people back only to what moved.** A module revision with a higher `minVersion` returns people to "update needed" and
+  asks again only for the lessons whose `changedInVersion` is above what they finished.
+- **Content is translation keys.** Titles, lessons, quiz questions and key points live under `trainingLib.content.*`,
+  `lessonContent.*` and `assessmentContent.*`; adding a lesson or question is seed plus i18n only. SOP texts return as `SopText`
+  (a key with parameters, or words in up to three languages): the repository never returns English for a key-owned text.
+- **Admin hears through commitments and one beacon per issue**: `training_assignment`, `certification_renewal`, `compliance_review`,
+  `sop_rollout_ack` / `sop_rollout_close`, `training_feedback_urgent` / `training_feedback_review` are rows in `commitmentRules.ts`;
+  alerts are raised once per issue and resolve themselves (`certifications.alert.lapsedOnJob`, `assessment.alert.struggling`,
+  `sopRollout.alert.overdue`, `trainingFeedback.alert.error`); every automatic step is a `logAutomatedAction`.
+- **Small numbers are said plainly.** Skill coverage, compliance trend, certification standing and feedback averages all name how few
+  people stand behind a figure instead of drawing a percentage or a ranking from it (`SMALL_WORKFORCE`, `SMALL_GROUP`,
+  `MIN_RESPONSES`). Peers appear as first name and initial, and a partner can turn off being named.
+- **Anonymous means anonymous.** A feedback reply stores a one-way `authorKey`, never a user id, so the same person can update their
+  reply and count once while nobody, Admin included, can tell who wrote it. Moderation hides a comment, never a rating.
+
+**Checkpoint (as of this module).** All ten screens were clicked through as Admin, technician (English, Hindi and Marathi), surveyor and
+supplier at 390, 820 and 1440: no horizontal overflow, no raw translation keys, no console errors. The paths exercised end to end include
+the lesson check that cannot be skipped, a failed test and its cool-down, the mid-job certification lapse and its Admin alert, an
+urgent SOP rollout that does not block work against a routine one that does, a compliance reminder turning into a `TrainingAssignment`,
+and a serious feedback flag raising an alert and an urgent commitment that clear when the flag is withdrawn. Checkpoint fixes: 160's
+"thank you" card was cleared the instant a first reply saved (the form re-keyed on the new record), and a pluralised sentence read
+"1 replies". Earlier screens spot-checked: 121/122 technician home and job, 126 safety checklist, 130 job team (the training gate
+refuses an uncleared technician), 107 delivery SOP, 134/137/135 handover screens, 141–150 recruitment screens, 111 supplier payments,
+101 deliveries: all clean.
+
+**Placeholder business decisions to confirm (flagged in code and on screen where they show)**
+
+- 151/152: module durations and every seeded module text and lesson wording are **starting drafts for the owner's safety adviser**; only
+  eight lessons are authored (ONB-01 ×2, SAF-02 ×3, SAF-03 ×3), every other module says "lessons coming soon".
+- 154: pass mark 80%, cool-down waits 1 / 4 / 24 h, the struggle threshold of 3 fails. 156: refresher cadence months and grace days (12
+  months, 14 days of grace), the 7-day last reminder, the 120-day extension limit. 155: the 30-day renewal window.
+- 157: the drive-to-skill mapping, the 50% gap line, stretched / tight deals per person, the small-workforce limit of 8. 158: the
+  small-group limit of 5 and the renewal-wave window. 159: 2 days of notice, 24 h to acknowledge an urgent change, 90 days of away.
+- 160: `MIN_RESPONSES` 5, the low average of 3, routine review within 14 days, serious flags within 24 h (4 h for safety modules).
+
+**Honest limits.** There is no real video player: a lesson is a timed presentation of scenes with captions and optional read-aloud
+(`hi-IN` / `mr-IN` voices may be missing on a device); a `mediaUrl` per scene would be the way to add one. Installation has no SOP editor,
+so its versions come from the seed. SOP rollout quiz questions and summaries are shown in the words Admin wrote (not translated). The
+compliance tracker takes a person's territory from their city and its trend leaves out partners who have since left. Suppliers hold
+no expiring certifications, so they have no refresher route, and surveyors have no SOP library route. A credential has no public
+verification page, only a number AIEC can confirm. Technician home (121) shows no banner for pending safety training; the job screens
+show the generic `training_incomplete` message.
