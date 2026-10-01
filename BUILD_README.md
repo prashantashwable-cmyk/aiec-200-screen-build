@@ -1181,3 +1181,7 @@ certificate summarises them. A rework part joins the deal's order lines once its
   a reassigned lead's closer paid separately while the original keeps the capture commission; an installer who left midway still
   paid for their time; hold / adjust / release on a payout and refusal to touch a paid one; a certificate opened years later
   from the customer's portal and downloaded as a standalone file.
+
+Recheck of 129–132 (after the checkpoint): re-run as Admin, the lead, the inspector and the customer at 390, 820 and 1440px, with
+no errors, raw keys or overflow. One real fix: on a job with no assistants, steps finished before names were recorded showed "steps
+completed: 0" for the lead on 129/130 (and would have counted nothing in 140's payout); they are now credited to the lead.

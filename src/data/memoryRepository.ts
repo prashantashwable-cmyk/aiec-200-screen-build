@@ -6087,7 +6087,7 @@ function timelineViewOf(job: Job, user: User, audience: TimelineAudience, now: n
           role: roleOf(job, uid) ?? 'assistant',
           owned: mine === null ? null : mine.length,
           ownedDone: mine === null ? core.stepsDone : mine.filter((x) => isDone(x.step)).length,
-          completedByThem: core.steps.filter((x) => x.step.completedByName && x.step.completedByName === person?.name).length,
+          completedByThem: core.steps.filter((x) => stepFinisherName(job, x.step) === person?.name && !!person?.name).length,
           onSiteNow: siteCheckIns.some((v) => v.jobId === job.id && v.userId === uid && !v.checkOutAt),
         };
       })
@@ -6207,7 +6207,7 @@ function jobTeamViewOf(job: Job, viewerId: string, now: number): JobTeamView {
       steps: (mine ?? []).map((x) => ({ id: x.st.id, labelKey: x.st.labelKey, status: x.st.status })),
       owned: mine === null ? null : mine.length,
       ownedDone: (mine ?? steps).filter((x) => isDone(x.st)).length,
-      completedByThem: steps.filter((x) => x.st.completedByName && x.st.completedByName === u?.name).length,
+      completedByThem: steps.filter((x) => stepFinisherName(job, x.st) === u?.name && !!u?.name).length,
       currentStepLabelKey: current?.st.labelKey ?? null,
       onSiteSince: visit?.checkInAt ?? null,
       isMe: c.userId === viewerId,
@@ -7506,6 +7506,14 @@ function syncWarrantyReminders(now: number): void {
   }
 }
 
+/** Who finished a step. Steps finished before names were kept have none: on a job with no assistants they were the lead's. */
+function stepFinisherName(job: Job, st: Job['steps'][number]): string | null {
+  if (st.completedByName) return st.completedByName;
+  if (st.status !== 'complete' || !job.technicianId) return null;
+  const alone = !(job.crew ?? []).some((c) => c.role === 'assistant');
+  return alone ? nameOf(job.technicianId) : null;
+}
+
 /* ============================== Handover completion certificate (140) */
 
 const handoverCompletions: HandoverCompletion[] = [];
@@ -7572,7 +7580,7 @@ function payoutPlanOf(job: Job, now: number): PayoutPlan {
   const contributors: FpContributor[] = [...onJob]
     .map((id) => byId(users, id))
     .filter((u): u is User => !!u && u.role === 'technician')
-    .map((u) => ({ userId: u.id, name: u.name, isLead: u.id === job.technicianId, minutes: timeOf(sessions, u.id, now).minutes, steps: job.steps.filter((st) => st.status === 'complete' && !st.notApplicable && st.completedByName === u.name).length }));
+    .map((u) => ({ userId: u.id, name: u.name, isLead: u.id === job.technicianId, minutes: timeOf(sessions, u.id, now).minutes, steps: job.steps.filter((st) => st.status === 'complete' && !st.notApplicable && stepFinisherName(job, st) === u.name).length }));
   const pool = fpInstallPool(value);
   const crew = fpCrewShares(pool, contributors);
   const current = new Set<string>([...(job.technicianId ? [job.technicianId] : []), ...(job.crew ?? []).map((c) => c.userId)]);
