@@ -60,7 +60,7 @@ export function SkillMatrixScreen() {
     <div onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} data-skill-matrix>
       <Screen width="wide">
         {(pull > 0 || s.refreshing) && <p className="t-xs t-muted" role="status" style={{ textAlign: 'center' }} data-pull>{s.refreshing ? t(K.refresh.busy) : pull >= PULL_DISTANCE ? t(K.refresh.release) : t(K.refresh.pull)}</p>}
-        <ScreenHeader title={t(K.title)} subtitle={t(K.subtitle)} action={<Button size="sm" variant="ghost" icon={<ArrowsClockwise size={16} />} data-refresh disabled={s.refreshing} onClick={() => void s.refresh()}>{t(K.refresh.button)}</Button>} />
+        <ScreenHeader title={t(K.title)} subtitle={t(K.subtitle)} action={<span className="row gap-2 wrap"><Button size="sm" variant="ghost" data-compliance onClick={() => s.goto('/training-compliance')}>{t(K.compliance)}</Button><Button size="sm" variant="ghost" icon={<ArrowsClockwise size={16} />} data-refresh disabled={s.refreshing} onClick={() => void s.refresh()}>{t(K.refresh.button)}</Button></span>} />
         <div className="stack gap-4">
           <Kpis s={s} d={d} t={t} />
           <SegBar label={t(K.title)} value={s.view} onChange={s.setView} items={VIEWS.map((v) => ({ id: v, label: t(K.view[v]) }))} />

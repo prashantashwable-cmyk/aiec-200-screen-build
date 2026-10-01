@@ -5,6 +5,7 @@ const translations: ScreenTranslations = {
   en: {
     skillMatrix: {
       title: 'Skill matrix',
+      compliance: 'Training compliance',
       subtitle: 'Who can do what, where the workforce is thin, and what the pipeline will ask of it',
       loading: 'Loading the skill matrix',
       error: {
@@ -176,6 +177,7 @@ const translations: ScreenTranslations = {
   hi: {
     skillMatrix: {
       title: 'स्किल मैट्रिक्स',
+      compliance: 'प्रशिक्षण अनुपालन',
       subtitle: 'कौन क्या कर सकता है, कार्यबल कहाँ कम है, और पाइपलाइन उससे क्या माँगेगी',
       loading: 'स्किल मैट्रिक्स लोड हो रहा है',
       error: {
@@ -347,6 +349,7 @@ const translations: ScreenTranslations = {
   mr: {
     skillMatrix: {
       title: 'स्किल मॅट्रिक्स',
+      compliance: 'प्रशिक्षण अनुपालन',
       subtitle: 'कोण काय करू शकतो, मनुष्यबळ कुठे कमी आहे, आणि पाइपलाइन त्याच्याकडून काय मागेल',
       loading: 'स्किल मॅट्रिक्स लोड होत आहे',
       error: {

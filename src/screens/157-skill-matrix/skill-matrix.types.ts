@@ -19,6 +19,7 @@ const PROBLEMS = ['not_admin', 'not_found', 'no_content', 'no_people', 'date_inv
 export const MATRIX_KEYS = {
   title: 'skillMatrix.title',
   subtitle: 'skillMatrix.subtitle',
+  compliance: 'skillMatrix.compliance',
   loading: 'skillMatrix.loading',
   error: { title: 'skillMatrix.error.title', body: 'skillMatrix.error.body' },
   refresh: { button: 'skillMatrix.refresh.button', pull: 'skillMatrix.refresh.pull', release: 'skillMatrix.refresh.release', busy: 'skillMatrix.refresh.busy' },

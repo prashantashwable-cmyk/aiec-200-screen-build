@@ -3089,6 +3089,39 @@ export interface TrainingAssignment {
   status: 'open' | 'cancelled';
 }
 
+/* ------------------------------------ Training compliance (158) */
+
+/** The workforce's compliance as last observed in one calendar month; the month's record stops changing once the month has passed. */
+export interface ComplianceSnapshot {
+  id: string;
+  /** yyyy-mm. */
+  month: string;
+  observedAt: string;
+  compliant: number;
+  total: number;
+  safetyOpen: number;
+  byRole: { role: TrainingRole; compliant: number; total: number }[];
+}
+
+/** Admin looked at the figures and said so: the governance record an auditor reads. */
+export interface ComplianceReview {
+  id: string;
+  at: string;
+  byName: string;
+  note: string;
+  compliant: number;
+  total: number;
+  safetyOpen: number;
+}
+
+/** A reminder sent to one partner from the tracker, kept so the same person is not nagged twice in a row and Admin can see who was told. */
+export interface ComplianceReminder {
+  userId: string;
+  at: string;
+  byName: string;
+  moduleCodes: string[];
+}
+
 /* ------------------------------------ Refresher cadence (156) */
 
 /** One version of how often a certification must be refreshed. Append-only: a change is a new version with its own effective date and reason. */
@@ -4585,7 +4618,7 @@ export type CommitmentKind =
   | 'exit_dispute_decide'
   | 'tier_review_due'
   | 'certification_renewal'
-  | 'training_assignment'
+  | 'training_assignment' | 'compliance_review'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'

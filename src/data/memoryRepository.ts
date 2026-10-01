@@ -252,6 +252,14 @@ import type {
   SkillCellView,
   SkillColumnView,
   SkillMatrixView,
+  ComplianceItemView,
+  ComplianceGroupView,
+  CompliancePartnerView,
+  ComplianceReasonName,
+  ComplianceReminderResult,
+  ComplianceReviewView,
+  ComplianceTrackerView,
+  ComplianceTrendPoint,
   SkillRowView,
   RefresherCadenceView,
   RefresherQueueView,
@@ -672,6 +680,9 @@ import type {
   RefresherCadence,
   RefresherExtension,
   TrainingAssignment,
+  ComplianceSnapshot,
+  ComplianceReview,
+  ComplianceReminder,
 } from './types';
 import { formatDate, formatDateTime, formatINR, formatINRCompact, formatTime, haversineKm } from '@/design-system/format';
 import { MAX_SAFE_BOT_DISCOUNT_PCT } from '@/features/communication/botRules';
@@ -759,6 +770,7 @@ import type { NowStage as RdNowStage, Period as RdPeriod, RecruitStage as RdRecr
 import { TOPICS as TN_TOPICS, currentVersionOf as tnCurrentVersion, curriculumOf as tnCurriculum, jobGateOf as tnJobGate, lockedBy as tnLockedBy, percentOfModule as tnPercent, relevantFor as tnRelevant, requiredFor as tnRequired, startProblem as tnStartProblem, statusOf as tnStatus, updatedSince as tnUpdated } from '@/features/training/curriculum';
 import type { ModuleStatus } from '@/features/training/curriculum';
 import { BUILT_IN_CATEGORIES as SOP_BUILT_IN, BUILT_IN_SINCE as SOP_SINCE, categoryProblem as sopCategoryProblem, currentOf as sopCurrent, diffItems as sopDiff, referenceProblem as sopReferenceProblem, stateOf as sopStateOf, upcomingOf as sopUpcoming } from '@/features/sop/library';
+import { NEW_PARTNER_DAYS as cpNewDays, REASONS as cpReasons, TREND_MONTHS as cpTrendMonths, partnerStatusOf as cpPartnerStatus, rateOf as cpRate, recentlyReminded as cpRecent, reminderDue as cpReminderDue, responseOf as cpResponse, reviewDueAt as cpReviewDue, wavesOf as cpWaves, noteProblem as cpNoteProblem } from '@/features/training/compliance';
 import { DRIVE_SKILL as SK_DRIVE_SKILL, DRIVE_TYPES as SK_DRIVES, SKILL_TAGS as SK_TAGS, SMALL_DEMAND as SK_SMALL_DEMAND, SMALL_WORKFORCE as SK_SMALL, TREND_MONTHS as SK_TREND_MONTHS, assignProblem as skAssignProblem, columnGap as skColumnGap, coverageOf as skCoverage, demandRatio as skRatio, demandSignal as skSignal, trendOf as skTrend } from '@/features/training/skills';
 import { GRACE_WARN_DAYS as RF_WARN_DAYS, REMIND_EVERY_H as RF_REMIND_H, addMonths as rfAddMonths, cadenceAt as rfCadenceAt, cadenceProblem as rfCadenceProblem, comparePriority as rfCompare, daysBetween as rfDays, eligibleUntilOf as rfEligible, extensionProblem as rfExtensionProblem, priorityOf as rfPriority, tierOf as rfTier } from '@/features/training/refresher';
 import { RENEWAL_WINDOW_DAYS as AS_RENEW_DAYS, badgeStatusOf as asBadgeStatus, countsForWork as asCounts, daysLeftOf as asDaysLeft, failsSinceLastPass as asFailsSince, badgeValid as asBadgeValid, answerProblem as asAnswerProblem, configProblem as asConfigProblem, cooldownUntilOf as asCooldownUntil, failedCountOf as asFailedCount, isStruggling as asStruggling, orderFor as asOrder, passedAt as asPassed, questionsFor as asQuestions, scoreOf as asScore } from '@/features/training/assessment';
@@ -2469,6 +2481,7 @@ function commitmentSources(now: number): CommitmentSources {
     tierReviews,
     certRenewals: certRenewalSignals(Date.now()),
     trainingAssignments: trainingAssignmentSignals(Date.now()),
+    complianceReview: complianceReviewSignal(Date.now()),
     exits: exitSignals(),
     handoverReviews: handoverSignals().reviews,
     qcMechChecks,
@@ -2729,6 +2742,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   syncAssessmentAlerts(now);
   syncCertifications(now);
   syncRefreshers(now);
+  syncCompliance(now);
   syncPartnerInterviews(now);
   syncVerification(now);
   syncOffers(now);
@@ -9385,6 +9399,195 @@ function trainingClear(userId: string, now = Date.now()): boolean {
   const person = tnPersonOf(userId);
   if (!person) return true;
   return tnJobGate(trainingModules, person.roles, tnStatusFn(person.userIds, now), (id) => asCertified(person.userIds, id, now)).cleared;
+}
+
+/* ---- training compliance (158) */
+
+const complianceSnapshots: ComplianceSnapshot[] = [];
+const complianceReviews: ComplianceReview[] = [{ id: 'cr-1', at: new Date(Date.now() - 20 * 86_400_000).toISOString(), byName: 'Prashant Vasant Wable', note: 'Looked at the month together: onboarding is on track and the safety refreshers are being chased.', compliant: 6, total: 11, safetyOpen: 2 }];
+const complianceReminders: ComplianceReminder[] = [];
+let complianceReviewCounter = 1;
+const COMPLIANCE_ALERT = 'trainingCompliance.alert.safetyOnJob';
+
+type CpPerson = { key: string; user: User; person: NonNullable<ReturnType<typeof tnPersonOf>> };
+
+/** Every active partner with a login, once each: the same phone across roles is one person. */
+function cpPeople(): CpPerson[] {
+  const seen = new Set<string>();
+  const out: CpPerson[] = [];
+  for (const u of users) {
+    if (u.status !== 'active' || (u.role !== 'surveyor' && u.role !== 'technician' && u.role !== 'supplier')) continue;
+    const key = pdPhoneKey(u.phone) || u.id;
+    if (seen.has(key)) continue;
+    const person = tnPersonOf(u.id);
+    if (!person) continue;
+    seen.add(key);
+    out.push({ key, user: u, person });
+  }
+  return out;
+}
+
+/** Only what can be taught in the app counts: a module with no lessons cannot make anybody non-compliant. */
+const cpModules = () => trainingModules.filter((m) => m.status === 'published' && trainingLessons.some((l) => l.moduleId === m.id));
+
+/** One required training of one person, read from the records lessons, tests, certifications and refreshers already keep. */
+function cpItemOf(m: TrainingModule, p: CpPerson, now: number, inWave: boolean): ComplianceItemView {
+  const userIds = p.person.userIds;
+  const progress = tnProgressOf(userIds, m.id);
+  const st = tnStatus(m, progress, now);
+  const a = asOf(m.id);
+  const version = tnCurrentVersion(m, now);
+  const assignment = skAssignmentOf(userIds, m.id, now);
+  let state: ComplianceItemView['state'] = 'current';
+  let since: string | null = null;
+  let fails = 0;
+  let struggling = false;
+  if (st === 'completed') {
+    if (a) {
+      const badge = asBadgeOf(userIds, m, now);
+      if (badge) {
+        const bs = certStatusOf(badge, now);
+        state = bs === 'expiring' ? 'due_soon' : bs === 'grace' ? 'grace' : 'current';
+        since = state === 'current' ? null : badge.expiresAt ?? null;
+      } else {
+        const mine = certBadges.filter((b) => b.moduleId === m.id && userIds.includes(b.userId)).sort((x, y) => y.issuedAt.localeCompare(x.issuedAt));
+        const lapsed = mine.find((b) => b.expiresAt && asBadgeValid(b, version.minVersion) && (rfEligible(b, rfExtensionsOf(b.id)) as number) <= now);
+        if (lapsed) { state = 'lapsed'; since = new Date(rfEligible(lapsed, rfExtensionsOf(lapsed.id)) as number).toISOString(); }
+        else if (mine.length > 0 && !mine.some((b) => asBadgeValid(b, version.minVersion))) state = 'update_needed';
+        else {
+          const attempts = asAttemptsOf(userIds, a.id, version.version);
+          const last = attempts.filter((x) => x.status === 'submitted').sort((x, y) => (y.submittedAt ?? '').localeCompare(x.submittedAt ?? ''))[0];
+          fails = asFailsSince(attempts);
+          if (!attempts.some((x) => x.status === 'in_progress') && last && !last.passed) { state = 'failed'; since = last.submittedAt ?? null; struggling = asStruggling(fails, false); }
+          else { state = 'test_pending'; since = progress?.completedAt ?? null; }
+        }
+      }
+    }
+  } else if (st === 'update_needed') { state = 'update_needed'; since = version.effectiveFrom; }
+  else {
+    state = st === 'in_progress' ? 'in_progress' : 'never_started';
+    since = progress?.startedAt ?? null;
+    // Someone who has only just joined is starting, not behind.
+    const joined = p.user.joinedAt ? Date.parse(p.user.joinedAt) : 0;
+    if (joined && now - joined < cpNewDays * 86_400_000) state = 'new';
+  }
+  const reason = (cpReasons as string[]).includes(state) ? (state as ComplianceReasonName) : null;
+  const safety = rfSafetyCritical(m);
+  return {
+    moduleId: m.id, moduleCode: m.code, safetyCritical: safety, state, response: reason ? cpResponse(reason, fails, struggling) : null, since, fails, assignedUntil: assignment?.dueDate ?? null,
+    holdsWork: !!reason && safety && m.gatesJobAssignment && p.person.roles.includes('technician'), inWave: !!reason && inWave, route: `/training/${m.id}`,
+  };
+}
+
+/** Compliance of one person at a past moment, from dated records only: what the history can honestly say. */
+function cpWasCompliant(p: CpPerson, mods: TrainingModule[], at: number): boolean {
+  const joined = p.user.joinedAt ? Date.parse(p.user.joinedAt) : 0;
+  if (joined && joined > at) return true;
+  for (const m of mods) {
+    if (!tnRequired(m, p.person.roles)) continue;
+    const done = trainingProgress.some((x) => x.moduleId === m.id && p.person.userIds.includes(x.userId) && x.status === 'completed' && x.completedAt && Date.parse(x.completedAt) <= at);
+    if (!done) return false;
+    if (asOf(m.id) && !certBadges.some((b) => b.moduleId === m.id && p.person.userIds.includes(b.userId) && Date.parse(b.issuedAt) <= at && (!b.expiresAt || at < (rfEligible(b, rfExtensionsOf(b.id)) as number)))) return false;
+  }
+  return true;
+}
+
+function cpBuild(now: number): ComplianceTrackerView {
+  const mods = cpModules();
+  const people = cpPeople();
+  const waveInputs: Parameters<typeof cpWaves>[0] = [];
+  for (const p of people) for (const m of mods) {
+    if (!tnRequired(m, p.person.roles) || !asOf(m.id)) continue;
+    const b = certLatestOf(p.person.userIds).find((x) => x.moduleId === m.id);
+    if (!b || !b.expiresAt) continue;
+    waveInputs.push({ moduleId: m.id, moduleCode: m.code, safetyCritical: rfSafetyCritical(m), userId: p.user.id, name: p.person.name, endsAt: rfEligible(b, rfExtensionsOf(b.id)) as number });
+  }
+  const waves = cpWaves(waveInputs, now);
+  const waveKeys = new Set(waves.flatMap((w) => w.people.map((x) => `${x.userId}:${w.moduleId}`)));
+  const partners: CompliancePartnerView[] = [];
+  for (const p of people) {
+    const items = mods.filter((m) => tnRequired(m, p.person.roles)).map((m) => cpItemOf(m, p, now, waveKeys.has(`${p.user.id}:${m.id}`)));
+    if (items.length === 0) continue;
+    const status = cpPartnerStatus(items.map((i) => i.state));
+    const open = items.filter((i) => i.response);
+    const role = p.person.roles.includes('technician') ? 'technician' : p.person.roles.includes('surveyor') ? 'surveyor' : 'supplier';
+    partners.push({
+      userId: p.user.id, name: p.person.name, role, roles: p.person.roles, territory: p.user.city ?? '', status,
+      urgency: status === 'non_compliant' ? (open.some((i) => i.safetyCritical) ? 'safety' : 'routine') : null,
+      blocked: p.person.roles.includes('technician') && !trainingClear(p.user.id, now), openJobs: p.person.userIds.reduce((n, id) => n + rfOpenJobs(id), 0), items,
+      lastReminderAt: complianceReminders.filter((r) => r.userId === p.user.id).map((r) => r.at).sort().pop() ?? null, waveOnly: open.length > 0 && open.every((i) => i.inWave),
+    });
+  }
+  partners.sort((a, b) => (a.status === 'non_compliant' ? 0 : a.status === 'due_soon' ? 1 : 2) - (b.status === 'non_compliant' ? 0 : b.status === 'due_soon' ? 1 : 2) || Number(b.urgency === 'safety') - Number(a.urgency === 'safety') || Number(b.blocked) - Number(a.blocked) || a.name.localeCompare(b.name));
+  const group = (key: string, list: CompliancePartnerView[]): ComplianceGroupView => ({ key, ...cpRate(list.filter((x) => x.status !== 'non_compliant').length, list.length) });
+  const territories = [...new Set(partners.map((x) => x.territory))];
+  const live = group('all', partners);
+  const points: ComplianceTrendPoint[] = [];
+  const base = new Date(now);
+  for (let i = cpTrendMonths - 1; i >= 0; i--) {
+    const monthStart = Date.UTC(base.getUTCFullYear(), base.getUTCMonth() - i, 1);
+    const month = new Date(monthStart).toISOString().slice(0, 7);
+    if (i === 0) { points.push({ month, percent: live.percent, compliant: live.compliant, total: live.total, basis: 'live' }); continue; }
+    const snap = complianceSnapshots.find((x) => x.month === month);
+    if (snap) { const r = cpRate(snap.compliant, snap.total); points.push({ month, percent: r.percent, compliant: snap.compliant, total: snap.total, basis: 'recorded' }); continue; }
+    const at = Date.UTC(base.getUTCFullYear(), base.getUTCMonth() - i + 1, 1) - 1;
+    const here = people.filter((p) => { const joined = p.user.joinedAt ? Date.parse(p.user.joinedAt) : 0; return !joined || joined <= at; });
+    const okCount = here.filter((p) => cpWasCompliant(p, mods, at)).length;
+    const r = cpRate(okCount, here.length);
+    points.push({ month, percent: r.percent, compliant: okCount, total: here.length, basis: 'rebuilt' });
+  }
+  const tr = skTrend(points.map((x) => x.percent));
+  const nonc = partners.filter((x) => x.status === 'non_compliant');
+  const has = (p: CompliancePartnerView, r: 'nudge' | 'coaching' | 'refresher') => p.items.some((i) => i.response === r);
+  const portalSuppliers = new Set(users.filter((u) => u.role === 'supplier').map((u) => pdPhoneKey(u.phone)));
+  return {
+    overall: live,
+    byRole: (['technician', 'surveyor', 'supplier'] as const).map((r) => group(r, partners.filter((x) => x.role === r))).filter((g) => g.total > 0),
+    byTerritory: territories.map((t) => group(t, partners.filter((x) => x.territory === t))).sort((a, b) => b.total - a.total || a.key.localeCompare(b.key)),
+    byModule: mods.map((m) => {
+      const req = partners.filter((x) => x.items.some((i) => i.moduleId === m.id));
+      return { moduleId: m.id, moduleCode: m.code, safetyCritical: rfSafetyCritical(m), required: req.length, current: req.filter((x) => { const i = x.items.find((y) => y.moduleId === m.id); return !!i && !i.response; }).length };
+    }).filter((m) => m.required > 0),
+    partners,
+    counts: { nonCompliant: nonc.length, safety: nonc.filter((x) => x.urgency === 'safety').length, routine: nonc.filter((x) => x.urgency === 'routine').length, blocked: partners.filter((x) => x.blocked).length, dueSoon: partners.filter((x) => x.status === 'due_soon').length, nudge: nonc.filter((x) => has(x, 'nudge')).length, coaching: nonc.filter((x) => has(x, 'coaching')).length, refresher: nonc.filter((x) => has(x, 'refresher')).length, inWave: nonc.filter((x) => x.waveOnly).length },
+    waves,
+    trend: { points, direction: tr.direction, delta: tr.delta },
+    notCounted: { modulesWithoutLessons: trainingModules.filter((m) => m.status === 'published' && !trainingLessons.some((l) => l.moduleId === m.id)).length, suppliersWithoutLogin: suppliers.filter((s) => !s.mergedIntoSupplierId && s.status === 'active' && !portalSuppliers.has(pdPhoneKey(supplierUserFor(s)?.phone ?? s.contactPhone))).length },
+    reviews: [...complianceReviews].sort((a, b) => b.at.localeCompare(a.at)).map((r) => ({ ...r })),
+    reviewDueAt: cpReviewDue(complianceReviews.map((r) => r.at).sort().pop() ?? null, now),
+    at: new Date(now).toISOString(),
+  };
+}
+
+/** What the commitment engine reads: the one standing promise to look at these figures, due a month after the last look. */
+function complianceReviewSignal(now: number): { dueAt: string; cycle: string; done: boolean } {
+  const last = complianceReviews.map((r) => r.at).sort().pop() ?? null;
+  return { dueAt: cpReviewDue(last, now), cycle: (last ?? 'first').slice(0, 10), done: false };
+}
+
+/** Each heartbeat keeps the month's figures as last observed (a month that has passed stops changing) and tells Admin about a safety training that is open on someone who holds work. */
+function syncCompliance(now: number): void {
+  const view = cpBuild(now);
+  const month = new Date(now).toISOString().slice(0, 7);
+  const safetyOpen = view.counts.safety;
+  const byRole = view.byRole.map((g) => ({ role: g.key as TrainingRole, compliant: g.compliant, total: g.total }));
+  const snap = complianceSnapshots.find((x) => x.month === month);
+  if (!snap) {
+    complianceSnapshots.push({ id: `cs-${complianceSnapshots.length + 1}`, month, observedAt: new Date(now).toISOString(), compliant: view.overall.compliant, total: view.overall.total, safetyOpen, byRole });
+    logAutomatedAction({ sourceKey: 'compliance.snapshot', triggeringCondition: `A new month (${month}) began with ${view.overall.compliant} of ${view.overall.total} partners fully trained`, actionTaken: 'Kept the month’s compliance figures for the training record', affectedRecordId: month, affectedRecordType: 'other' });
+  } else patchInPlace(complianceSnapshots, snap.id, { observedAt: new Date(now).toISOString(), compliant: view.overall.compliant, total: view.overall.total, safetyOpen, byRole });
+  // A lapse is 155's to tell; this is the safety training someone has not finished while they hold open work.
+  for (const p of view.partners) {
+    const open = p.items.filter((i) => i.response && i.response !== 'refresher' && i.safetyCritical);
+    const rel = `compsafe:${p.userId}`;
+    const existing = alerts.find((x) => x.relatedId === rel && x.titleKey === COMPLIANCE_ALERT && x.status !== 'resolved');
+    if (p.role === 'technician' && p.openJobs > 0 && open.length > 0 && !existing) {
+      raiseAlert({ titleKey: COMPLIANCE_ALERT, context: `${p.name} holds ${p.openJobs} open job${p.openJobs === 1 ? '' : 's'} and has not finished ${open.map((i) => i.moduleCode).join(', ')}`, severity: 'medium', category: 'staffing', relatedId: rel, sourceRoute: `/training-compliance?partner=${p.userId}` });
+      logAutomatedAction({ sourceKey: 'compliance.safety_on_job', triggeringCondition: `${p.name} has safety training open while holding work`, actionTaken: 'Told Admin so it is decided, not discovered', affectedRecordId: p.userId, affectedRecordType: 'other' });
+    } else if (existing && (open.length === 0 || p.openJobs === 0)) {
+      patchInPlace(alerts, existing.id, { status: 'resolved', resolvedAt: new Date(now).toISOString(), resolvedBy: 'system', resolutionNote: 'Finished, or no work in hand.' });
+    }
+  }
 }
 
 /* ============================== SOP document repository (153) */
@@ -17066,6 +17269,72 @@ export const memoryRepository: Repository = {
       }
       syncCommitments(now);
       return result;
+    }),
+
+  /* --------------------------------- Training compliance tracker (158) */
+  getComplianceTracker: (adminId) =>
+    simulateRead((): ComplianceTrackerView => {
+      ofAdmin(adminId);
+      const now = Date.now();
+      syncCertifications(now);
+      syncRefreshers(now);
+      syncCompliance(now);
+      return cpBuild(now);
+    }),
+
+  sendComplianceReminders: (input, adminId) =>
+    simulateWrite((): ComplianceReminderResult => {
+      const admin = ofAdmin(adminId);
+      const now = Date.now();
+      const ids = [...new Set(input.userIds)];
+      if (ids.length === 0) throw new RepositoryError('no_people');
+      const view = cpBuild(now);
+      const result: ComplianceReminderResult = { sent: [], skipped: [] };
+      const at = new Date(now).toISOString();
+      for (const id of ids) {
+        const row = view.partners.find((p) => p.userId === id);
+        if (!row) { result.skipped.push({ userId: id, reason: 'not_active' }); continue; }
+        if (row.status !== 'non_compliant') { result.skipped.push({ userId: id, reason: 'compliant' }); continue; }
+        if (cpRecent(row.lastReminderAt, now)) { result.skipped.push({ userId: id, reason: 'recently_reminded' }); continue; }
+        const items = row.items.filter((i) => i.response === 'nudge' || i.response === 'refresher');
+        if (items.length === 0) { result.skipped.push({ userId: id, reason: row.items.some((i) => i.response === 'coaching') ? 'coaching_only' : 'nothing_to_send' }); continue; }
+        const person = tnPersonOf(id) as NonNullable<ReturnType<typeof tnPersonOf>>;
+        const mods: string[] = [];
+        let assigned = 0;
+        for (const it of items) {
+          if (it.response === 'refresher') {
+            const rr = rfRowsFor(person.userIds, now).find((r) => r.moduleId === it.moduleId);
+            if (rr && rfRemind(rr, 'manual', now, 0)) { mods.push(it.moduleCode); continue; }
+          }
+          let a = trainingAssignments.find((x) => x.status === 'open' && x.moduleId === it.moduleId && person.userIds.includes(x.userId));
+          if (!a) {
+            trainingAssignmentCounter += 1;
+            a = { id: `ta-${trainingAssignmentCounter}`, userId: id, moduleId: it.moduleId, assignedById: admin.id, assignedByName: admin.name, assignedAt: at, dueDate: cpReminderDue(now, it.safetyCritical), note: '', status: 'open' };
+            trainingAssignments.push(a);
+            assigned += 1;
+          }
+          syncCommitments(now);
+          const c = commitments.find((x) => x.key === `training_assignment:${(a as TrainingAssignment).id}` && x.status === 'open');
+          if (c) notifyWork(id, c, 'nudge', at);
+          mods.push(it.moduleCode);
+        }
+        complianceReminders.push({ userId: id, at, byName: admin.name, moduleCodes: mods });
+        result.sent.push({ userId: id, modules: mods, assigned });
+      }
+      return result;
+    }),
+
+  recordComplianceReview: (input, adminId) =>
+    simulateWrite((): ComplianceReviewView => {
+      const admin = ofAdmin(adminId);
+      const now = Date.now();
+      if (cpNoteProblem(input.note)) throw new RepositoryError('note_long');
+      const view = cpBuild(now);
+      complianceReviewCounter += 1;
+      const entry: ComplianceReview = { id: `cr-${complianceReviewCounter}`, at: new Date(now).toISOString(), byName: admin.name, note: input.note.trim(), compliant: view.overall.compliant, total: view.overall.total, safetyOpen: view.counts.safety };
+      complianceReviews.push(entry);
+      syncCommitments(now);
+      return { ...entry };
     }),
 
   /* --------------------------------- Refresher reminders (156) */

@@ -308,7 +308,7 @@ function AdminOverview({ s, t }: { s: AssessmentState; t: T }) {
   const rows = s.overview?.rows ?? [];
   return (
     <Screen width="wide">
-      <ScreenHeader title={t(K.admin.heading)} subtitle={t(K.admin.intro)} action={<span className="row gap-2 wrap"><Button size="sm" variant="secondary" data-refreshers onClick={() => s.navigateTo('/refreshers')}>{t(K.admin.refreshers)}</Button><Button size="sm" variant="secondary" data-skill-matrix onClick={() => s.navigateTo('/skill-matrix')}>{t(K.admin.skillMatrix)}</Button></span>} />
+      <ScreenHeader title={t(K.admin.heading)} subtitle={t(K.admin.intro)} action={<span className="row gap-2 wrap"><Button size="sm" variant="secondary" data-refreshers onClick={() => s.navigateTo('/refreshers')}>{t(K.admin.refreshers)}</Button><Button size="sm" variant="secondary" data-skill-matrix onClick={() => s.navigateTo('/skill-matrix')}>{t(K.admin.skillMatrix)}</Button><Button size="sm" variant="secondary" data-compliance onClick={() => s.navigateTo('/training-compliance')}>{t(K.admin.compliance)}</Button></span>} />
       <p className="t-xs t-muted" data-placeholder-note>{t(K.admin.placeholder)}</p>
       {rows.length === 0 ? <EmptyState icon={<GraduationCap size={28} />} title={t(K.admin.empty)} body="" /> : (
         <div className="grid-auto mt-3" style={{ '--min': '360px', alignItems: 'start' } as React.CSSProperties} data-admin>

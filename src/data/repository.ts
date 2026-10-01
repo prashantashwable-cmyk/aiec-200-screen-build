@@ -2737,6 +2737,89 @@ export interface AssignTrainingResult {
 
 export type SkillError = TrainingError | 'not_admin' | 'not_found' | 'no_content' | 'no_people' | 'date_invalid' | 'date_in_past' | 'date_far' | 'note_long';
 
+/* ------------------------------------ Training compliance tracker (158) */
+
+export type ComplianceReasonName = 'never_started' | 'in_progress' | 'update_needed' | 'test_pending' | 'failed' | 'lapsed';
+export type ComplianceItemState = 'current' | 'due_soon' | 'grace' | 'new' | ComplianceReasonName;
+
+export interface ComplianceItemView {
+  moduleId: string;
+  moduleCode: string;
+  safetyCritical: boolean;
+  state: ComplianceItemState;
+  /** `nudge` they have not got to it; `coaching` they have tried and not passed; `refresher` it ran out. Null while the item is fine. */
+  response: 'nudge' | 'coaching' | 'refresher' | null;
+  /** When the reason began (a lapse date, a failed attempt, the day they started), if known. */
+  since: string | null;
+  fails: number;
+  assignedUntil: string | null;
+  /** The thing a job needs: this one is what holds a technician back from new work. */
+  holdsWork: boolean;
+  /** Part of a renewal wave (certified together), so its lapse is expected. */
+  inWave: boolean;
+  route: string;
+}
+
+export interface CompliancePartnerView {
+  userId: string;
+  name: string;
+  role: TrainingRole;
+  roles: TrainingRole[];
+  territory: string;
+  status: 'compliant' | 'due_soon' | 'non_compliant';
+  /** Safety-critical when any open item is a safety training; null while compliant or only close to ending. */
+  urgency: 'safety' | 'routine' | null;
+  /** A technician who cannot be put on a new job right now. */
+  blocked: boolean;
+  openJobs: number;
+  items: ComplianceItemView[];
+  lastReminderAt: string | null;
+  /** Every open item is part of a renewal wave. */
+  waveOnly: boolean;
+}
+
+export interface ComplianceGroupView { key: string; compliant: number; total: number; percent: number | null; small: boolean }
+
+export interface ComplianceWaveView {
+  moduleId: string;
+  moduleCode: string;
+  safetyCritical: boolean;
+  people: { userId: string; name: string; endsAt: string }[];
+  from: string;
+  to: string;
+  lapsed: number;
+  upcoming: number;
+}
+
+export interface ComplianceTrendPoint { month: string; percent: number | null; compliant: number; total: number; basis: 'recorded' | 'rebuilt' | 'live' }
+
+export interface ComplianceModuleView { moduleId: string; moduleCode: string; safetyCritical: boolean; required: number; current: number }
+
+export interface ComplianceReviewView { id: string; at: string; byName: string; note: string; compliant: number; total: number; safetyOpen: number }
+
+export interface ComplianceTrackerView {
+  overall: ComplianceGroupView;
+  byRole: ComplianceGroupView[];
+  byTerritory: ComplianceGroupView[];
+  byModule: ComplianceModuleView[];
+  partners: CompliancePartnerView[];
+  counts: { nonCompliant: number; safety: number; routine: number; blocked: number; dueSoon: number; nudge: number; coaching: number; refresher: number; inWave: number };
+  waves: ComplianceWaveView[];
+  trend: { points: ComplianceTrendPoint[]; direction: 'up' | 'down' | 'flat'; delta: number | null };
+  /** What is left out of the figures, said plainly. */
+  notCounted: { modulesWithoutLessons: number; suppliersWithoutLogin: number };
+  reviews: ComplianceReviewView[];
+  reviewDueAt: string;
+  at: string;
+}
+
+export interface ComplianceReminderResult {
+  sent: { userId: string; modules: string[]; assigned: number }[];
+  skipped: { userId: string; reason: 'compliant' | 'recently_reminded' | 'coaching_only' | 'not_active' | 'nothing_to_send' }[];
+}
+
+export type TrainingComplianceError = TrainingError | 'not_admin' | 'no_people' | 'note_long';
+
 /* ------------------------------------ Refresher reminders (156) */
 
 export type RefresherTierName = 'upcoming' | 'due' | 'grace' | 'extended' | 'blocked';
@@ -6439,6 +6522,11 @@ export interface Repository {
   // Skill matrix and gap analysis (157)
   getSkillMatrix(adminId: string): Promise<SkillMatrixView>;
   assignTraining(input: { userIds: string[]; moduleId: string; dueDate: string; note: string }, adminId: string): Promise<AssignTrainingResult>;
+  getComplianceTracker(adminId: string): Promise<ComplianceTrackerView>;
+  /** Reminds every named partner that is out of compliance: a dated assignment for what they have not done, the refresher flow for what lapsed. A partner who needs coaching is skipped, not nagged. */
+  sendComplianceReminders(input: { userIds: string[] }, adminId: string): Promise<ComplianceReminderResult>;
+  /** Admin says they have looked at the figures: the dated governance record. */
+  recordComplianceReview(input: { note: string }, adminId: string): Promise<ComplianceReviewView>;
   // Refresher reminders (156)
   getRefresherQueue(userId: string): Promise<RefresherQueueView>;
   sendRefresherReminder(badgeId: string, adminId: string): Promise<{ sentAt: string }>;

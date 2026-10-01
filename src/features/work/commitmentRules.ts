@@ -142,6 +142,8 @@ export interface CommitmentSources {
   /** Time-limited certifications: when each ends and whether a newer one has taken its place (155). */
   /** Training Admin assigned to a partner, by a date (157). */
   trainingAssignments: { a: TrainingAssignment; moduleCode: string; done: boolean; ownerActive: boolean }[];
+  /** Admin's standing promise to look at workforce training compliance, due a month after the last look (158). */
+  complianceReview: { dueAt: string; cycle: string; done: boolean };
   certRenewals: { badgeId: string; userId: string; moduleId: string; moduleCode: string; expiresAt: string; renewed: boolean; ownerActive: boolean }[];
   /** Exits under way and how much of the partner's work is still in their hands (150). */
   exits: { exit: PartnerExit; workOpen: number; finishing: number }[];
@@ -2065,6 +2067,30 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
           actionRoute: `/training/${x.a.moduleId}`,
           oversightRoute: '/skill-matrix',
         }));
+    },
+  },
+  {
+    // The owner looks at whether the whole workforce is properly trained, at least monthly; each look is kept as a dated record for an auditor (158).
+    kind: 'compliance_review',
+    nudgeBefore: days(3),
+    escalateAfter: days(7),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'staffing',
+    collect(src) {
+      return [
+        {
+          ...base('compliance_review', 'application', src.complianceReview.cycle),
+          ownerUserId: adminId(src),
+          titleKey: 'work.title.compliance_review',
+          titleParams: {},
+          dueAt: src.complianceReview.dueAt,
+          state: src.complianceReview.done ? ('done' as const) : ('open' as const),
+          paused: false,
+          actionRoute: '/training-compliance',
+          oversightRoute: '/training-compliance',
+        },
+      ];
     },
   },
   {
