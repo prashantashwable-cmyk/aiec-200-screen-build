@@ -263,6 +263,14 @@ import type {
   TrainingFeedbackModuleView,
   TrainingFeedbackOverview,
   TrainingFeedbackRow,
+  CommissionChangePreview,
+  CommissionRatesView,
+  CommissionRuleView,
+  CommissionRulesView,
+  CommissionSimulationView,
+  CommissionTierRow,
+  CommissionTraceView,
+  CommissionVersionView,
   MySopUpdatesView,
   SopQuizResult,
   SopRolloutBoardView,
@@ -627,6 +635,8 @@ import type {
   ChannelStat,
   CommChannel,
   CommissionEntry,
+  CommissionRule,
+  CommissionRuleVersion,
   CommMessage,
   CommSequence,
   CommTemplate,
@@ -788,7 +798,7 @@ import type { DisputeDecision, SnagSeverity } from '@/features/qc/snags';
 import { AMC_RENEWAL_DAYS as WR_RENEW_DAYS, INCLUDED_VISITS as WR_VISITS, SERVICE_WARRANTY_MONTHS as WR_SERVICE_MONTHS, addDays as wrAddDays, amcPrice as wrAmcPrice, amcProblem as wrAmcProblem, endOfTerm as wrEndOfTerm, reminderPlan as wrReminderPlan } from '@/features/qc/warranty';
 import type { AmcTierId as WrTierId } from '@/features/qc/warranty';
 import { issueProblem as coIssueProblem, readinessOf as coReadiness, signoffDueAt as coSignoffDue } from '@/features/qc/completion';
-import { QC_FEE as FP_QC_FEE, crewShares as fpCrewShares, installPoolOf as fpInstallPool, judgementProblem as fpJudgementProblem, qcShares as fpQcShares, salesCloseOf as fpSalesClose } from '@/features/commission/finalPayout';
+import { crewShares as fpCrewShares, installPoolOf as fpInstallPool, judgementProblem as fpJudgementProblem, qcShares as fpQcShares, salesCloseOf as fpSalesClose } from '@/features/commission/finalPayout';
 import type { Contributor as FpContributor } from '@/features/commission/finalPayout';
 import { SECTIONS as APP_SECTIONS, EMPTY_FORM as APP_EMPTY, maskId as apMask, outstandingOf as apOutstanding, progressOf as apProgress, sectionStates as apSections, submitProblem as apSubmitProblem } from '@/features/recruitment/application';
 import { FUNNEL as RD_FUNNEL, NOW_STAGES as RD_NOW, SMALL_SAMPLE as RD_SMALL, WAITLIST_MIN as RD_WAITLIST_MIN, funnelOf as rdFunnelOf, medianOf as rdMedian, roomOf as rdRoom, signalOf as rdSignalOf, trendOf as rdTrend } from '@/features/recruitment/dashboard';
@@ -809,7 +819,8 @@ import { ACTION_NOTE_MIN as EX_ACTION_NOTE_MIN, DISPUTE_MIN as EX_DISPUTE_MIN, I
 import type { Stage as ExitStage, Blocker as ExitBlocker } from '@/features/partners/exit';
 import { DEFAULT_CRITERIA as TIER_DEFAULT_CRITERIA, DEFER_MAX_DAYS as TIER_DEFER_MAX_DAYS, DISPUTE_DECIDE_DUE as TIER_DISPUTE_DUE, EFFECTIVE_MAX_DAYS as TIER_EFFECTIVE_MAX_DAYS, INCIDENT_WINDOW as TIER_INCIDENT_WINDOW, REASON_MIN as TIER_REASON_MIN, REVIEW_WITHIN as TIER_REVIEW_WITHIN, TIER_IDS as TIER_IDS_OF, criteriaProblem as tierCriteriaProblem, directionOf as tierDirection, eligibleIndex as tierEligible, evaluate as tierEvaluate, indexOf as tierIndexOf, supplierCriteria as tierSupplierCriteria } from '@/features/partners/tiers';
 import type { Metrics, TierEffects, TierRole } from '@/features/partners/tiers';
-import { CONVERSION_PCT as TIER_BASE_PCT } from '@/features/recruitment/agreement';
+import { DEFAULT_PARAMS as CR_DEFAULTS, NOTICE_DAYS as CR_NOTICE_DAYS, NOTICE_MAX as CR_NOTICE_MAX, REASON_MIN as CR_REASON_MIN, RULE_DEFS as CR_DEFS, RULE_IDS as CR_IDS, RULE_OF_REASON as CR_RULE_OF_REASON, SIGNIFICANT_CHANGE as CR_SIGNIFICANT, STACK_GROUPS as CR_STACK, amountOf as crAmountOf, changeSize as crChangeSize, crewRatesOf as crCrewRates, defOf as crDefOf, inForce as crInForce, isRuleId as crIsRuleId, normaliseParams as crNormalise, newChecks as crNewChecks, paramsProblem as crParamsProblem, resultChecks as crResultChecks, sameParams as crSameParams, scenariosFor as crScenarios, simulate as crSimulate, upcomingOf as crUpcoming } from '@/features/commission/rules';
+import type { CommissionParams as CrParams, CommissionRuleId as CrRuleId, Rates as CrRates } from '@/features/commission/rules';
 import { ACTIVATION_STEPS as ofSteps, REASON_MIN as OF_REASON_MIN, REQUEST_MIN as OF_REQUEST_MIN, SIGN_WAIT as OF_SIGN_WAIT, TERM_DEFS as ofTermDefs, addendumProblem as ofAddendumProblem, bindingTermsOf as ofBinding, capabilityOf as ofCapability, clausesOf as ofClauses, defaultTermsOf as ofDefaultTerms, signProblem as ofSignProblem } from '@/features/recruitment/agreement';
 import { conditionalProblem as vfConditionalProblem, gateOf as vfGate, itemStateOf as vfItemState, manualProblem as vfManualProblem, requiredItemsOf as vfRequired, serviceCheck as vfServiceCheck } from '@/features/recruitment/verification';
 import type { RequiredItem } from '@/features/recruitment/verification';
@@ -1242,7 +1253,9 @@ function createOrReuseLeadConvertedCommission(deal: Deal, lead: Lead): string {
     leadId: lead.id,
     dealId: deal.id,
     reasonKey: 'commission.reason.leadConverted',
-    amount: Math.round((deal.agreedPrice || deal.quotedPrice) * (surveyorConversionPct(lead.originalSurveyorId) / 100)),
+    amount: crConversionAmount(lead.originalSurveyorId, deal.agreedPrice || deal.quotedPrice, Date.parse(deal.closedAt ?? new Date().toISOString())),
+    ruleId: 'conversion',
+    ruleVersion: crVersionAt('conversion', Date.parse(deal.closedAt ?? new Date().toISOString())).version,
     status: 'projected',
     earnedAt: deal.closedAt ?? new Date().toISOString(),
     isDemo: true,
@@ -2512,6 +2525,7 @@ function commitmentSources(now: number): CommitmentSources {
     complianceReview: complianceReviewSignal(Date.now()),
     sopRollouts: sopRolloutSignals(Date.now()),
     trainingFeedback: trainingFeedbackSignals(Date.now()),
+    commissionNotices: commissionNoticeSignals(Date.now()),
     exits: exitSignals(),
     handoverReviews: handoverSignals().reviews,
     qcMechChecks,
@@ -8218,8 +8232,12 @@ function ofApp(applicationId: string): PartnerApplication {
   if (app.status !== 'approved') throw new RepositoryError('not_approved');
   return app;
 }
-const templateInForce = (role: PartnerApplication['role'], now: number): PartnerAgreementTemplate => agreementTemplates.filter((t) => t.role === role && new Date(`${t.effectiveFrom}T00:00:00`).getTime() <= now).sort((a, b) => b.version - a.version)[0];
-const ofDefs = (role: PartnerApplication['role']) => ofTermDefs[role].map((d) => ({ ...d, standard: Number((ofDefaultTerms(role) as Record<string, unknown>)[d.key]) }));
+/** The template in force, with the commission figures read from the rules (161): a template never holds a rate of its own. */
+const templateInForce = (role: PartnerApplication['role'], now: number): PartnerAgreementTemplate => {
+  const t = agreementTemplates.filter((x) => x.role === role && new Date(`${x.effectiveFrom}T00:00:00`).getTime() <= now).sort((a, b) => b.version - a.version)[0];
+  return { ...t, terms: { ...t.terms, ...crTermsFor(role, now) } };
+};
+const ofDefs = (role: PartnerApplication['role']) => ofTermDefs[role].map((d) => ({ ...d, standard: Number(({ ...(ofDefaultTerms(role) as Record<string, unknown>), ...(crTermsFor(role, Date.now()) as Record<string, unknown>) })[d.key]), ...((CR_TERM_KEYS as readonly string[]).includes(d.key) ? { fromRules: true } : {}) }));
 const ofInterviewOpen = (app: PartnerApplication): boolean => !!app.interview && ['invited', 'scheduled', 'missed'].includes(app.interview.status);
 const ofGateOf = (app: PartnerApplication, now: number) => vfGate(vfRequired(app.role, app.form), app.verification, now);
 
@@ -8637,13 +8655,177 @@ function tierNow(id: string, now = Date.now()): string {
 }
 const tcEffectsOf = (role: 'surveyor' | 'technician', tier: string, now: number): TierEffects => tcInForce(role, now).tiers.find((t) => t.id === tier)?.effects ?? {};
 
-/** A surveyor's conversion share: what their signed agreement says (146), plus what their tier adds. */
-function surveyorConversionPct(userId: string): number {
-  const offer = partnerApplications.find((a) => a.offer?.activation?.userId === userId)?.offer;
-  const base = offer?.status === 'signed' ? ofBinding(offer).conversionPct ?? TIER_BASE_PCT : TIER_BASE_PCT;
-  const plus = byId(users, userId)?.role === 'surveyor' ? tcEffectsOf('surveyor', tierNow(userId), Date.now()).commissionPlusPct ?? 0 : 0;
-  return Math.round((base + plus) * 100) / 100;
+/* ------------------------------------------------------------------ Commission rules engine (161) */
+
+/** The first version of every rule is what the ledger already paid, so nothing earned before this existed is re-read. */
+const commissionRules: CommissionRule[] = CR_IDS.map((id) => ({
+  id,
+  versions: [{ version: 1, effectiveFrom: '2026-01-01', params: { ...CR_DEFAULTS[id] }, reason: 'Starting figures: the rates the ledger already paid before rules were versioned.', setByName: 'AIEC', at: '2026-01-01T00:00:00.000Z', acknowledged: [] }],
+}));
+const crRule = (id: CrRuleId): CommissionRule => commissionRules.find((r) => r.id === id) as CommissionRule;
+/** The version of a rule that was in force at a moment: what an event at that moment is paid under. */
+function crVersionAt(id: CrRuleId, ms: number): CommissionRuleVersion {
+  const r = crRule(id);
+  return crInForce(r.versions, tcToday(ms)) ?? r.versions[0];
 }
+const crParamsAt = (id: CrRuleId, ms: number): CrParams => crVersionAt(id, ms).params;
+const crTierPlus = (tier: string, ms: number): number => tcInForce('surveyor', ms).tiers.find((t) => t.id === tier)?.effects.commissionPlusPct ?? 0;
+const crSurveyorPlus = (userId: string, ms: number): number => (byId(users, userId)?.role === 'surveyor' ? tcEffectsOf('surveyor', tierNow(userId, ms), ms).commissionPlusPct ?? 0 : 0);
+
+/** A figure Admin approved in writing for one person (146's addendum) replaces the standard one; otherwise the rule decides. */
+function crNegotiated(userId: string, key: 'conversionPct' | 'closePct' | 'leadBonusPct' | 'qcFee'): number | undefined {
+  const o = partnerApplications.find((a) => a.offer?.activation?.userId === userId)?.offer;
+  if (!o || o.status !== 'signed') return undefined;
+  return o.addendum?.items.find((i) => i.key === key)?.value;
+}
+
+/** A surveyor's conversion commission on a deal: the rule's share (or the one negotiated for them), plus what their tier adds, never under the floor. */
+function crConversionAmount(userId: string, dealValue: number, ms: number): number {
+  const p = { ...crParamsAt('conversion', ms) };
+  const neg = crNegotiated(userId, 'conversionPct');
+  if (neg !== undefined) p.pct = neg;
+  return crAmountOf('conversion', p, { dealValue, tierPlusPct: crSurveyorPlus(userId, ms) });
+}
+
+/** What an entry was earned under: recorded when earned, or (for older ones) read from its reason and the day it was earned. */
+function crTraceOf(e: CommissionEntry): { ruleId: CrRuleId | null; version: number | null; inferred: boolean } {
+  const rid = e.ruleId && crIsRuleId(e.ruleId) ? e.ruleId : (CR_RULE_OF_REASON[e.reasonKey] ?? null);
+  if (!rid) return { ruleId: null, version: null, inferred: false };
+  if (e.ruleId && e.ruleVersion) return { ruleId: rid, version: e.ruleVersion, inferred: false };
+  return { ruleId: rid, version: crVersionAt(rid, Date.parse(e.earnedAt)).version, inferred: true };
+}
+
+const crAudience = (group: 'surveyor' | 'technician' | 'inspector'): User[] => users.filter((u) => u.role === (group === 'surveyor' ? 'surveyor' : 'technician') && u.status === 'active');
+
+function crRates(now: number, over: { ruleId: CrRuleId; params: CrParams }[] = []): CrRates {
+  return {
+    paramsOf: (id) => over.find((o) => o.ruleId === id)?.params ?? crParamsAt(id, now),
+    versionOf: (id) => (over.some((o) => o.ruleId === id) ? Math.max(...crRule(id).versions.map((v) => v.version)) + 1 : crVersionAt(id, now).version),
+    tierPlusOf: (tier) => crTierPlus(tier, now),
+  };
+}
+
+function crVersionView(id: CrRuleId, v: CommissionRuleVersion, now: number): CommissionVersionView {
+  const day = tcToday(now);
+  const mine = commissions.map((e) => ({ e, t: crTraceOf(e) })).filter((x) => x.t.ruleId === id && x.t.version === v.version);
+  return {
+    version: v.version,
+    effectiveFrom: v.effectiveFrom,
+    params: { ...v.params },
+    reason: v.reason,
+    setByName: v.setByName,
+    at: v.at,
+    state: v.effectiveFrom > day ? 'upcoming' : crVersionAt(id, now).version === v.version ? 'current' : 'past',
+    notice: v.notice ? { ...v.notice } : null,
+    acknowledged: [...(v.acknowledged ?? [])],
+    entries: { count: mine.length, amount: mine.reduce((a, x) => a + x.e.amount, 0) },
+  };
+}
+
+function crViewOf(now: number): CommissionRulesView {
+  tcEnsure(now);
+  const day = tcToday(now);
+  const rules = CR_DEFS.map((d): CommissionRuleView => {
+    const r = crRule(d.id);
+    const cur = crVersionAt(d.id, now);
+    const up = crUpcoming(r.versions, day);
+    return {
+      id: d.id,
+      group: d.group,
+      trigger: d.trigger,
+      ledger: d.ledger,
+      reasonKey: d.reasonKey,
+      paramDefs: d.params.map((x) => ({ ...x })),
+      tierAware: d.tierAware,
+      negotiable: Object.values(d.negotiable) as string[],
+      current: crVersionView(d.id, cur, now),
+      upcoming: up ? crVersionView(d.id, up, now) : null,
+      versions: [...r.versions].sort((a, b) => b.version - a.version).map((v) => crVersionView(d.id, v, now)),
+    };
+  });
+  const tiers: CommissionTierRow[] = [
+    ...tcInForce('surveyor', now).tiers.map((t): CommissionTierRow => ({ role: 'surveyor', tier: t.id, plusPct: t.effects.commissionPlusPct ?? 0, canLead: null })),
+    ...tcInForce('technician', now).tiers.map((t): CommissionTierRow => ({ role: 'technician', tier: t.id, plusPct: null, canLead: t.effects.canLead !== false })),
+  ];
+  const traced = commissions.map((e) => ({ e, t: crTraceOf(e) }));
+  const none = new Map<string, { count: number; amount: number }>();
+  for (const x of traced.filter((y) => !y.t.ruleId)) none.set(x.e.reasonKey, { count: (none.get(x.e.reasonKey)?.count ?? 0) + 1, amount: (none.get(x.e.reasonKey)?.amount ?? 0) + x.e.amount });
+  return {
+    rules,
+    tiers,
+    stacking: CR_STACK.map((g) => ({ ...g, rules: [...g.rules] })),
+    trace: {
+      total: commissions.length,
+      stamped: traced.filter((x) => x.t.ruleId && !x.t.inferred).length,
+      inferred: traced.filter((x) => x.t.ruleId && x.t.inferred).length,
+      notFromRule: [...none.entries()].map(([reasonKey, v]) => ({ reasonKey, ...v })),
+    },
+    today: day,
+    at: new Date(now).toISOString(),
+  };
+}
+
+/** The agreement figures that follow the rules, so a new offer always states what is paid today. */
+const CR_TERM_KEYS = ['conversionPct', 'closePct', 'installPoolPct', 'leadBonusPct', 'qcFee'] as const;
+function crTermsFor(role: PartnerApplication['role'], ms: number): AgreementTerms {
+  if (role === 'surveyor') return { conversionPct: crParamsAt('conversion', ms).pct, closePct: crParamsAt('sales_close', ms).pct };
+  if (role === 'technician') return { installPoolPct: crParamsAt('install_pool', ms).pct, leadBonusPct: crParamsAt('install_pool', ms).leadBonusPct, qcFee: crParamsAt('qc_fee', ms).amount };
+  return {};
+}
+
+const crFormat = (key: keyof CrParams, v: number | undefined): string => (v === undefined ? '' : key === 'pct' || key === 'leadBonusPct' || key === 'minCrewPct' ? `${v}%` : `₹${v.toLocaleString('en-IN')}`);
+/** The first number a version changed against the one before it, as text for the partner's notice. */
+function crChangedText(id: CrRuleId, v: CommissionRuleVersion): { from: string; to: string } {
+  const r = crRule(id);
+  const prev = [...r.versions].filter((x) => x.version < v.version).sort((a, b) => b.version - a.version)[0];
+  const key = (crDefOf(id).params.find((d) => (prev?.params[d.key] ?? null) !== (v.params[d.key] ?? null))?.key ?? crDefOf(id).params[0].key) as keyof CrParams;
+  return { from: crFormat(key, prev?.params[key]), to: crFormat(key, v.params[key]) };
+}
+
+/** Partners told ahead: one commitment each, open until the change takes effect (a heads-up, never counted as work done on time). */
+function commissionNoticeSignals(now: number): { ruleId: CrRuleId; version: number; userId: string; role: 'surveyor' | 'technician'; effectiveFrom: string; from: string; to: string; open: boolean }[] {
+  const day = tcToday(now);
+  const out: ReturnType<typeof commissionNoticeSignals> = [];
+  for (const r of commissionRules) {
+    const d = crDefOf(r.id as CrRuleId);
+    for (const v of r.versions) {
+      if (!v.notice) continue;
+      const open = v.effectiveFrom > day;
+      if (!open && tcToday(now - 3 * 86_400_000) >= v.effectiveFrom) continue;
+      const { from, to } = crChangedText(r.id as CrRuleId, v);
+      for (const u of crAudience(d.group)) out.push({ ruleId: r.id as CrRuleId, version: v.version, userId: u.id, role: u.role === 'surveyor' ? 'surveyor' : 'technician', effectiveFrom: v.effectiveFrom, from, to, open });
+    }
+  }
+  return out;
+}
+
+
+function crPreview(id: CrRuleId, params: CrParams, effectiveFrom: string, now: number): CommissionChangePreview {
+  const before = crRates(now);
+  const after = crRates(now, [{ ruleId: id, params }]);
+  // The best-paid tier is the worst case for what a change costs.
+  const tiers = tcInForce('surveyor', now).tiers.map((t) => t.id);
+  const tier = tiers[tiers.length - 1] ?? 'new';
+  const scenarios = crScenarios(tier).map((sc) => {
+    const b = crSimulate(sc.input, before);
+    const a = crSimulate(sc.input, after);
+    return { id: sc.id, input: sc.input, before: b, after: a, checks: crResultChecks(sc.id, a), beforeChecks: crResultChecks(sc.id, b) };
+  });
+  const brought = crNewChecks(scenarios.flatMap((x) => x.checks), scenarios.flatMap((x) => x.beforeChecks));
+  const latest = [...crRule(id).versions].sort((a, b) => b.version - a.version)[0];
+  const size = crChangeSize(latest.params, params);
+  const significant = size >= CR_SIGNIFICANT;
+  const lead = Date.parse(`${effectiveFrom}T00:00:00`) - Date.parse(`${tcToday(now)}T00:00:00`);
+  return {
+    size: Math.round(size * 1000) / 1000,
+    significant,
+    audience: crAudience(crDefOf(id).group).length,
+    scenarios: scenarios.map(({ beforeChecks: _b, ...rest }) => (void _b, rest)),
+    newChecks: brought,
+    noticeShort: significant && lead < CR_NOTICE_DAYS * 86_400_000,
+  };
+}
+
 const tcCanLead = (userId: string): boolean => (byId(users, userId)?.role === 'technician' ? tcEffectsOf('technician', tierNow(userId), Date.now()).canLead !== false : true);
 
 /** A newly activated field partner starts on the tier their record already earns: a technician with no installations is a trainee until the criteria say otherwise. */
@@ -10278,12 +10460,12 @@ function payoutPlanOf(job: Job, now: number): PayoutPlan {
 
   if (deal && lead?.originalSurveyorId) {
     const e = existing(lead.originalSurveyorId, COMPLETION_REASONS.converted);
-    lines.push({ userId: lead.originalSurveyorId, name: nameOf(lead.originalSurveyorId), role: 'surveyor', reasonKey: COMPLETION_REASONS.converted, basis: e ? 'existing' : 'percent', amount: e ? e.amount : Math.round(value * (surveyorConversionPct(lead.originalSurveyorId) / 100)), existingId: e?.id ?? null });
+    lines.push({ userId: lead.originalSurveyorId, name: nameOf(lead.originalSurveyorId), role: 'surveyor', reasonKey: COMPLETION_REASONS.converted, basis: e ? 'existing' : 'percent', amount: e ? e.amount : crConversionAmount(lead.originalSurveyorId, value, now), ...(e ? {} : { ruleId: 'conversion', ruleVersion: crVersionAt('conversion', now).version }), existingId: e?.id ?? null });
     touch(lead.originalSurveyorId, 'surveyor');
   }
   if (deal && lead && lead.surveyorId && lead.surveyorId !== lead.originalSurveyorId) {
     const e = existing(lead.surveyorId, COMPLETION_REASONS.closed);
-    lines.push({ userId: lead.surveyorId, name: nameOf(lead.surveyorId), role: 'sales', reasonKey: COMPLETION_REASONS.closed, basis: e ? 'existing' : 'percent', amount: e ? e.amount : fpSalesClose(value), existingId: e?.id ?? null });
+    lines.push({ userId: lead.surveyorId, name: nameOf(lead.surveyorId), role: 'sales', reasonKey: COMPLETION_REASONS.closed, basis: e ? 'existing' : 'percent', amount: e ? e.amount : fpSalesClose(value, crNegotiated(lead.surveyorId, 'closePct') ?? crParamsAt('sales_close', now).pct), ...(e ? {} : { ruleId: 'sales_close', ruleVersion: crVersionAt('sales_close', now).version }), existingId: e?.id ?? null });
     touch(lead.surveyorId, 'sales');
   }
 
@@ -10298,8 +10480,11 @@ function payoutPlanOf(job: Job, now: number): PayoutPlan {
     .map((id) => byId(users, id))
     .filter((u): u is User => !!u && u.role === 'technician')
     .map((u) => ({ userId: u.id, name: u.name, isLead: u.id === job.technicianId, minutes: timeOf(sessions, u.id, now).minutes, steps: job.steps.filter((st) => st.status === 'complete' && !st.notApplicable && stepFinisherName(job, st) === u.name).length }));
-  const pool = fpInstallPool(value);
-  const crew = fpCrewShares(pool, contributors);
+  const ip = crParamsAt('install_pool', now);
+  const pool = fpInstallPool(value, ip.pct);
+  // The lead's bonus share is the rule's, unless Admin approved a different one for them in writing (146).
+  const leadNegotiated = job.technicianId ? crNegotiated(job.technicianId, 'leadBonusPct') : undefined;
+  const crew = fpCrewShares(pool, contributors, crCrewRates({ ...ip, ...(leadNegotiated !== undefined ? { leadBonusPct: leadNegotiated } : {}) }));
   const current = new Set<string>([...(job.technicianId ? [job.technicianId] : []), ...(job.crew ?? []).map((c) => c.userId)]);
   for (const l of crew.lines) {
     const c = contributors.find((x) => x.userId === l.userId) as FpContributor;
@@ -10315,6 +10500,7 @@ function payoutPlanOf(job: Job, now: number): PayoutPlan {
       minutes: c.minutes,
       steps: c.steps,
       ...(l.leadBonus > 0 ? { leadBonus: l.leadBonus } : {}),
+      ...(e ? {} : { ruleId: 'install_pool', ruleVersion: crVersionAt('install_pool', now).version }),
       ...(current.has(l.userId) ? {} : { leftEarly: true }),
       existingId: e?.id ?? null,
     });
@@ -10329,15 +10515,18 @@ function payoutPlanOf(job: Job, now: number): PayoutPlan {
   }
   const assigned = qcOf(job.id)?.inspectorId;
   if (counts.size === 0 && assigned && byId(users, assigned)?.role === 'technician') counts.set(assigned, 0);
-  const qc = fpQcShares(FP_QC_FEE, [...counts.entries()].map(([userId, results]) => ({ userId, name: nameOf(userId), results })));
+  // A fee Admin approved in writing for a sole inspector replaces the rule's; a fee shared among several is always the rule's.
+  const qcNegotiated = counts.size === 1 ? crNegotiated([...counts.keys()][0], 'qcFee') : undefined;
+  const qcFee = qcNegotiated ?? (crParamsAt('qc_fee', now).amount ?? 0);
+  const qc = fpQcShares(qcFee, [...counts.entries()].map(([userId, results]) => ({ userId, name: nameOf(userId), results })));
   for (const q of qc) {
     const e = existing(q.userId, COMPLETION_REASONS.qc);
-    lines.push({ userId: q.userId, name: nameOf(q.userId), role: 'qc_inspector', reasonKey: COMPLETION_REASONS.qc, basis: e ? 'existing' : 'fixed', amount: e ? e.amount : q.amount, results: counts.get(q.userId) ?? 0, existingId: e?.id ?? null });
+    lines.push({ userId: q.userId, name: nameOf(q.userId), role: 'qc_inspector', reasonKey: COMPLETION_REASONS.qc, basis: e ? 'existing' : 'fixed', amount: e ? e.amount : q.amount, results: counts.get(q.userId) ?? 0, ...(e ? {} : { ruleId: 'qc_fee', ruleVersion: crVersionAt('qc_fee', now).version }), existingId: e?.id ?? null });
     touch(q.userId, 'qc_inspector', { results: counts.get(q.userId) ?? 0 });
   }
   return {
     lines,
-    pools: { installation: pool, qc: qc.length > 0 ? FP_QC_FEE : 0, salesClose: lines.find((l) => l.role === 'sales')?.amount ?? 0 },
+    pools: { installation: pool, qc: qc.length > 0 ? qcFee : 0, salesClose: lines.find((l) => l.role === 'sales')?.amount ?? 0 },
     basis: crew.basis,
     notPaid: crew.notPaid.map((id) => ({ userId: id, name: nameOf(id) })),
     team: [...team.values()],
@@ -12338,7 +12527,7 @@ export const memoryRepository: Repository = {
       const sources: LeadSource[] = ['field_survey', 'referral_repeat', 'inbound_website', 'inbound_whatsapp', 'bulk_import'];
       // A referral carries a flat bonus cost; field-capture cost is the
       // surveyor's own conversion incentive; inbound channels are organic.
-      const REFERRAL_BONUS = 5_000;
+      const REFERRAL_BONUS = crParamsAt('referral_bonus', Date.now()).amount ?? 5_000;
       return sources
         .map<LeadSourceAttribution>((source) => {
           const own = leads.filter((l) => l.source === source);
@@ -17969,6 +18158,119 @@ export const memoryRepository: Repository = {
       return fbItemView(byId(trainingFeedback, f.id) as TrainingFeedback);
     }),
 
+  /* --------------------------------- Commission rules engine (161) */
+  getCommissionRules: (adminId) =>
+    simulateRead((): CommissionRulesView => {
+      ofAdmin(adminId);
+      return crViewOf(Date.now());
+    }),
+
+  simulateCommission: (input, proposal, adminId) =>
+    simulateRead((): CommissionSimulationView => {
+      ofAdmin(adminId);
+      const now = Date.now();
+      tcEnsure(now);
+      const tiers = tcInForce('surveyor', now).tiers.map((t) => ({ tier: t.id, plusPct: t.effects.commissionPlusPct ?? 0 }));
+      const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Number.isFinite(n) ? n : lo));
+      const safe = {
+        dealValue: clamp(Math.round(input.dealValue), 0, 1_000_000_000),
+        source: input.source === 'referral' ? ('referral' as const) : ('field' as const),
+        surveyorTier: tiers.some((t) => t.tier === input.surveyorTier) ? input.surveyorTier : (tiers[0]?.tier ?? 'new'),
+        closer: !!input.closer,
+        closerIsOriginal: !!input.closer && !!input.closerIsOriginal,
+        crew: input.crew.slice(0, 12).map((c, i) => ({ id: `tech-${i + 1}`, isLead: !!c.isLead, minutes: clamp(Math.round(c.minutes), 0, 100_000) })),
+        inspectors: clamp(Math.round(input.inspectors), 0, 4),
+      };
+      const over = (proposal ?? []).map((x) => {
+        if (!crIsRuleId(x.ruleId)) throw new RepositoryError('unknown_rule');
+        const problem = crParamsProblem(x.ruleId, x.params);
+        if (problem) throw new RepositoryError(problem);
+        return { ruleId: x.ruleId, params: crNormalise(x.ruleId, x.params) };
+      });
+      return { current: crSimulate(safe, crRates(now)), proposed: over.length > 0 ? crSimulate(safe, crRates(now, over)) : null, tierPlusPct: crTierPlus(safe.surveyorTier, now), tiers };
+    }),
+
+  previewCommissionChange: (ruleId, params, effectiveFrom, adminId) =>
+    simulateRead((): CommissionChangePreview => {
+      ofAdmin(adminId);
+      if (!crIsRuleId(ruleId)) throw new RepositoryError('unknown_rule');
+      const problem = crParamsProblem(ruleId, params);
+      if (problem) throw new RepositoryError(problem);
+      const now = Date.now();
+      tcEnsure(now);
+      return crPreview(ruleId, crNormalise(ruleId, params), /^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom) ? effectiveFrom : tcToday(now), now);
+    }),
+
+  publishCommissionRule: (ruleId, input, adminId) =>
+    simulateWrite((): CommissionRulesView => {
+      const admin = ofAdmin(adminId);
+      if (!crIsRuleId(ruleId)) throw new RepositoryError('unknown_rule');
+      const now = Date.now();
+      tcEnsure(now);
+      const problem = crParamsProblem(ruleId, input.params);
+      if (problem) throw new RepositoryError(problem);
+      const params = crNormalise(ruleId, input.params);
+      const rule = crRule(ruleId);
+      const latest = [...rule.versions].sort((a, b) => b.version - a.version)[0];
+      if (crSameParams(latest.params, params)) throw new RepositoryError('no_change');
+      const today = tcToday(now);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(input.effectiveFrom) || input.effectiveFrom < today) throw new RepositoryError('effective_past');
+      if (input.effectiveFrom <= latest.effectiveFrom) throw new RepositoryError('effective_before_current');
+      if (input.reason.replace(/[^\p{L}\p{N}]/gu, '').length < CR_REASON_MIN) throw new RepositoryError('reason_required');
+      const message = (input.notice?.message ?? '').trim();
+      if (message.length > CR_NOTICE_MAX) throw new RepositoryError('notice_too_long');
+      // What the simulation brings in has to have been seen: a flawed rule is caught before real partners are affected.
+      const preview = crPreview(ruleId, params, input.effectiveFrom, now);
+      const needed = [...preview.newChecks.map((c) => c.kind as string), ...(preview.noticeShort ? ['notice_short'] : [])];
+      if (needed.some((k) => !input.acknowledged.includes(k))) throw new RepositoryError('checks_unacknowledged');
+      const at = new Date(now).toISOString();
+      const version: CommissionRuleVersion = {
+        version: latest.version + 1,
+        effectiveFrom: input.effectiveFrom,
+        params,
+        reason: input.reason.trim(),
+        setByName: admin.name,
+        at,
+        acknowledged: needed,
+        ...(input.notice ? { notice: { sentAt: at, message, recipients: crAudience(crDefOf(ruleId).group).length } } : {}),
+      };
+      rule.versions.push(version);
+      // Nothing already earned is touched: entries keep the version they were earned under. A notice becomes a commitment for each partner.
+      syncCommitments(now);
+      return crViewOf(now);
+    }),
+
+  getMyCommissionRates: (userId) =>
+    simulateRead((): CommissionRatesView => {
+      const u = byId(users, userId);
+      if (!u) throw new RepositoryError('forbidden');
+      const now = Date.now();
+      tcEnsure(now);
+      const day = tcToday(now);
+      const surveyor = u.role === 'surveyor';
+      const mine = CR_DEFS.filter((d) => (surveyor ? d.group === 'surveyor' : u.role === 'technician' ? d.group !== 'surveyor' : false));
+      return {
+        tier: u.role === 'surveyor' || u.role === 'technician' ? tierNow(userId, now) : '',
+        tierPlusPct: surveyor ? crSurveyorPlus(userId, now) : 0,
+        rules: mine.map((d) => {
+          const cur = crVersionAt(d.id, now);
+          const up = crUpcoming(crRule(d.id).versions, day);
+          return { id: d.id, params: { ...cur.params }, version: cur.version, upcoming: up ? { effectiveFrom: up.effectiveFrom, params: { ...up.params } } : null };
+        }),
+      };
+    }),
+
+  getCommissionEntryTrace: (entryId, userId) =>
+    simulateRead((): CommissionTraceView => {
+      const e = byId(commissions, entryId);
+      const u = byId(users, userId);
+      if (!e || !u) throw new RepositoryError('not_found');
+      if (u.role !== 'admin' && e.userId !== userId) throw new RepositoryError('forbidden');
+      const t = crTraceOf(e);
+      const v = t.ruleId && t.version ? crRule(t.ruleId).versions.find((x) => x.version === t.version) : undefined;
+      return { entryId, reasonKey: e.reasonKey, ruleId: t.ruleId, version: t.version, effectiveFrom: v?.effectiveFrom ?? null, params: v ? { ...v.params } : null, inferred: t.inferred };
+    }),
+
   /* --------------------------------- Refresher reminders (156) */
   getRefresherQueue: (userId) =>
     simulateRead((): RefresherQueueView => {
@@ -18850,7 +19152,7 @@ export const memoryRepository: Repository = {
         if (!entry && l.role === 'surveyor' && lead) entry = byId(commissions, createOrReuseLeadConvertedCommission(deal, lead));
         if (!entry) {
           finalPayoutCounter += 1;
-          entry = { id: `c-fin-${finalPayoutCounter}`, userId: l.userId, ...(lead ? { leadId: lead.id } : {}), dealId: deal.id, reasonKey: l.reasonKey, amount: l.amount, status: 'approved', earnedAt: at, isDemo: true };
+          entry = { id: `c-fin-${finalPayoutCounter}`, userId: l.userId, ...(lead ? { leadId: lead.id } : {}), dealId: deal.id, reasonKey: l.reasonKey, amount: l.amount, ...(l.ruleId ? { ruleId: l.ruleId, ruleVersion: l.ruleVersion } : {}), status: 'approved', earnedAt: at, isDemo: true };
           commissions.push(entry);
         }
         patchInPlace(commissions, entry.id, { jobId: job.id, payoutRole: l.role, ...(entry.status === 'projected' ? { status: 'approved' as const } : {}) });

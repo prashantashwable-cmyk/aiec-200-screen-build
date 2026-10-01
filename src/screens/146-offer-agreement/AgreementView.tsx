@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 import { CheckCircle, FileText, SealCheck, ShieldCheck, WarningCircle } from '@phosphor-icons/react';
 import { ActionBar, AscensionLine, Badge, Button, Card, Checkbox, Chip, EmptyState, ErrorState, Field, Input, LoadingState, OtpInput, Screen, ScreenHeader, Select, Sheet, SignaturePad, Tabs, TextArea, formatDate, formatDateTime, formatINR } from '@/design-system';
 import type { BadgeTone } from '@/design-system';
@@ -368,7 +369,13 @@ function TemplateCard({ s, t, lang, v }: { s: AgreementState; t: T; lang: string
     <Card>
       <div className="stack gap-3" data-template={v.role}>
         <div className="row gap-2" style={{ justifyContent: 'space-between', alignItems: 'center' }}><strong className="t-md">{t(roleKey(v.role))}</strong><Badge tone="accent">{t(K.templates.version, { version: v.current.version })}</Badge></div>
-        {v.defs.map((d) => (
+        {v.defs.map((d) => d.fromRules ? (
+          <div key={d.key} className="stack gap-1" data-from-rules={d.key}>
+            <span className="t-sm t-semibold">{t(K.term[d.key])}</span>
+            <span className="t-sm num">{vals[d.key]}</span>
+            <span className="t-xs t-muted">{t('commissionRules.link.fromRules')} <Link to="/commission-rules">{t('commissionRules.link.open')}</Link></span>
+          </div>
+        ) : (
           <Field key={d.key} label={`${t(K.term[d.key])} (${d.min}–${d.max})`}>{(p) => <Input id={p.id} inputMode="decimal" value={vals[d.key]} onChange={(e) => setVals({ ...vals, [d.key]: e.target.value.replace(/[^\d.]/g, '') })} data-f={d.key} />}</Field>
         ))}
         {v.role === 'supplier' && <Field label={t(K.templates.standards)}>{(p) => <TextArea id={p.id} rows={2} value={standards} onChange={(e) => setStandards(e.target.value)} />}</Field>}

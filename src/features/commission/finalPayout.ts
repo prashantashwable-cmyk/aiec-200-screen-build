@@ -3,8 +3,9 @@
  * their final-stage share from this one event. Attribution follows the work actually recorded, never the job's title, so someone who left the
  * job midway keeps what they did and nobody is paid for a day they were not there.
  *
- * The pool sizes below are AIEC's own placeholder business decisions, kept in one place and flagged to Admin on the screen. The capture /
- * conversion commission for the original surveyor is not a number from here: it is the one 077 already recorded for the deal.
+ * The sizes below are only the starting (version 1) values of the commission rules (161); the rules engine is the one place a rate is read
+ * from, and every function here takes the rates in force as an argument. The capture / conversion commission for the original surveyor is
+ * not a number from here: it is the one 077 already recorded for the deal.
  */
 export const INSTALL_POOL_PCT = 1;
 /** The lead answers for the whole installation and keeps this part of the pool on top of their own work. */
@@ -54,10 +55,18 @@ export function allocate(total: number, weights: number[]): number[] {
 }
 
 /** The crew's share of the installation pool: the lead's bonus first, the rest by time on site (or steps finished, or equally when nothing was recorded). */
-export function crewShares(pool: number, people: Contributor[]): { lines: CrewLine[]; basis: ShareBasis; notPaid: string[] } {
+export interface CrewRates {
+  /** The part of the pool the lead keeps on top (0–1). */
+  leadBonusShare: number;
+  /** The least part of the crew's share anyone with recorded work receives (0–1). */
+  minCrewShare: number;
+}
+export const DEFAULT_CREW_RATES: CrewRates = { leadBonusShare: LEAD_BONUS_SHARE, minCrewShare: MIN_CREW_SHARE };
+
+export function crewShares(pool: number, people: Contributor[], rates: CrewRates = DEFAULT_CREW_RATES): { lines: CrewLine[]; basis: ShareBasis; notPaid: string[] } {
   if (pool <= 0 || people.length === 0) return { lines: [], basis: 'equal', notPaid: [] };
   const lead = people.find((p) => p.isLead);
-  const bonus = lead ? Math.round(pool * LEAD_BONUS_SHARE) : 0;
+  const bonus = lead ? Math.round(pool * rates.leadBonusShare) : 0;
   const rest = pool - bonus;
   const worked = people.filter((p) => p.minutes > 0 || p.steps > 0);
   const basis: ShareBasis = worked.some((p) => p.minutes > 0) ? 'time' : worked.length > 0 ? 'steps' : 'equal';
@@ -66,11 +75,12 @@ export function crewShares(pool: number, people: Contributor[]): { lines: CrewLi
   const weight = (p: Contributor) => (basis === 'time' ? p.minutes : basis === 'steps' ? p.steps : 1);
   const total = paid.reduce((s, p) => s + weight(p), 0);
   let shares = paid.map((p) => weight(p) / total);
-  const low = shares.filter((s) => s < MIN_CREW_SHARE);
-  if (low.length > 0 && low.length * MIN_CREW_SHARE < 1) {
-    const high = shares.filter((s) => s >= MIN_CREW_SHARE).reduce((a, b) => a + b, 0);
-    const scale = high > 0 ? (1 - low.length * MIN_CREW_SHARE) / high : 1;
-    shares = shares.map((s) => (s < MIN_CREW_SHARE ? MIN_CREW_SHARE : s * scale));
+  const min = rates.minCrewShare;
+  const low = shares.filter((s) => s < min);
+  if (low.length > 0 && low.length * min < 1) {
+    const high = shares.filter((s) => s >= min).reduce((a, b) => a + b, 0);
+    const scale = high > 0 ? (1 - low.length * min) / high : 1;
+    shares = shares.map((s) => (s < min ? min : s * scale));
   }
   const parts = allocate(rest, shares);
   const lines = paid.map((p, i): CrewLine => {
@@ -95,8 +105,8 @@ export function qcShares(fee: number, people: QcContributor[]): { userId: string
   return people.map((p, i) => ({ userId: p.userId, amount: parts[i] }));
 }
 
-export const installPoolOf = (dealValue: number): number => Math.round((dealValue * INSTALL_POOL_PCT) / 100);
-export const salesCloseOf = (dealValue: number): number => Math.round((dealValue * SALES_CLOSE_PCT) / 100);
+export const installPoolOf = (dealValue: number, pct: number = INSTALL_POOL_PCT): number => Math.round((dealValue * pct) / 100);
+export const salesCloseOf = (dealValue: number, pct: number = SALES_CLOSE_PCT): number => Math.round((dealValue * pct) / 100);
 
 /* ------------------------------------------------------------------ a late issue */
 

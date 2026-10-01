@@ -2,6 +2,7 @@
 
 export type SubmitStatus = 'idle' | 'submitting' | 'queuedOffline' | 'success' | 'error';
 
+/** The starting (version 1) figures of the commission rules (161): the screen reads the rates in force, and uses these only until they have loaded. */
 /** Base capture bonus, floored — paid the instant the lead is accepted. */
 export const BASE_CAPTURE_BONUS = 500;
 /** Rate applied to estimated deal value for the conversion bonus preview. */

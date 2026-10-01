@@ -11,6 +11,7 @@ import type { CompleteInput, DecisionSignal, Phase as InterviewPhase } from '@/f
 import type { Demand, GuideAnswers, InterestProblem, InterestRole, RecruitRole, RecruitSource } from '@/features/recruitment/interest';
 import type { Outstanding, SectionId } from '@/features/recruitment/application';
 import type { JudgementDecision, JudgementProblem, ShareBasis } from '@/features/commission/finalPayout';
+import type { Check as CommissionCheck, CommissionParams, CommissionRuleId, ParamDef as CommissionParamDef, RuleGroup, RuleLedger, RuleTrigger, Scenario as CommissionScenario, SimInput as CommissionSimInput, SimResult as CommissionSimResult, StackGroup as CommissionStackGroup } from '@/features/commission/rules';
 import type { ScriptGroup, WalkthroughMode, WalkthroughProblem } from '@/features/qc/walkthrough';
 import type { DocBasis, DocBlock, DocState, HandoverDocKind, HandoverProblem, ReadinessProblem as HandoverReadinessProblem } from '@/features/qc/handover';
 import type { PartStatus, ReworkProblem, Urgency } from '@/features/qc/rework';
@@ -2122,6 +2123,8 @@ export interface OfferTermDef {
   max: number;
   negotiable: boolean;
   standard: number;
+  /** The figure follows the commission rules (161): shown, not edited, here. */
+  fromRules?: boolean;
 }
 
 export interface OfferDetailView {
@@ -5948,6 +5951,108 @@ export interface PurchaseOrderDealView {
   eligibleSuppliers: Supplier[];
 }
 
+/* ------------------------------------------------------------------ Commission rules engine (161) */
+
+export interface CommissionVersionView {
+  version: number;
+  effectiveFrom: string;
+  params: CommissionParams;
+  reason: string;
+  setByName: string;
+  at: string;
+  state: 'past' | 'current' | 'upcoming';
+  notice: { sentAt: string; message: string; recipients: number } | null;
+  /** What Admin had seen and accepted from the simulation when this was published. */
+  acknowledged: string[];
+  /** Ledger entries earned under this version (recorded against it, or traced to it by reason and day). */
+  entries: { count: number; amount: number };
+}
+export interface CommissionRuleView {
+  id: CommissionRuleId;
+  group: RuleGroup;
+  trigger: RuleTrigger;
+  ledger: RuleLedger;
+  reasonKey: string | null;
+  paramDefs: CommissionParamDef[];
+  tierAware: boolean;
+  /** The agreement terms (146) that may replace a figure for one person once Admin has approved it in writing. */
+  negotiable: string[];
+  current: CommissionVersionView;
+  upcoming: CommissionVersionView | null;
+  /** Newest first. */
+  versions: CommissionVersionView[];
+}
+export interface CommissionTierRow {
+  role: 'surveyor' | 'technician';
+  tier: string;
+  /** Percentage points this tier adds to a conversion share (a surveyor tier), read from the partner tiers (148). */
+  plusPct: number | null;
+  /** Whether a technician at this tier may lead a job (148). */
+  canLead: boolean | null;
+}
+export interface CommissionTraceSummary {
+  total: number;
+  /** Recorded against a rule version when earned. */
+  stamped: number;
+  /** Older entries traced to a rule version by their reason and the day they were earned. */
+  inferred: number;
+  /** Entries that were not earned from a rate: a contest prize, an exit settlement Admin decided. */
+  notFromRule: { reasonKey: string; count: number; amount: number }[];
+}
+export interface CommissionRulesView {
+  rules: CommissionRuleView[];
+  tiers: CommissionTierRow[];
+  stacking: CommissionStackGroup[];
+  trace: CommissionTraceSummary;
+  today: string;
+  at: string;
+}
+export interface CommissionSimulationView {
+  current: CommissionSimResult;
+  /** The same deal under the proposed numbers, when a proposal was given. */
+  proposed: CommissionSimResult | null;
+  tierPlusPct: number;
+  /** The tiers a surveyor can be on, with what each adds. */
+  tiers: { tier: string; plusPct: number }[];
+}
+export interface CommissionChangePreview {
+  size: number;
+  significant: boolean;
+  /** People who would be told if Admin sends a notice. */
+  audience: number;
+  scenarios: { id: CommissionScenario['id']; input: CommissionSimInput; before: CommissionSimResult; after: CommissionSimResult; checks: CommissionCheck[] }[];
+  /** What the change brings in that is not already true today. These need to be accepted before publishing. */
+  newChecks: CommissionCheck[];
+  /** Whether the notice would reach partners with less than the usual notice. */
+  noticeShort: boolean;
+}
+export type CommissionProblem =
+  | 'unknown_rule'
+  | 'param_missing'
+  | 'param_range'
+  | 'param_unknown'
+  | 'no_change'
+  | 'effective_past'
+  | 'effective_before_current'
+  | 'reason_required'
+  | 'notice_too_long'
+  | 'checks_unacknowledged';
+export interface CommissionRatesView {
+  tier: string;
+  tierPlusPct: number;
+  rules: { id: CommissionRuleId; params: CommissionParams; version: number; upcoming: { effectiveFrom: string; params: CommissionParams } | null }[];
+}
+export interface CommissionTraceView {
+  entryId: string;
+  reasonKey: string;
+  ruleId: CommissionRuleId | null;
+  version: number | null;
+  effectiveFrom: string | null;
+  params: CommissionParams | null;
+  /** Traced by reason and day rather than recorded when earned. */
+  inferred: boolean;
+}
+
 export interface Repository {
   /* Users */
   listUsers(filter?: { role?: Role; status?: User['status'] }): Promise<User[]>;
@@ -6795,6 +6900,19 @@ export interface Repository {
   handleTrainingFeedback(feedbackId: string, input: { status: FeedbackStatusName; note: string; addressedInVersion?: number }, adminId: string): Promise<FeedbackItemView>;
   /** Hides (or restores) a comment that is abusive or not constructive; its ratings keep counting. */
   moderateTrainingFeedback(feedbackId: string, input: { hide: boolean; reason: string }, adminId: string): Promise<FeedbackItemView>;
+  // Commission rules engine (161)
+  getCommissionRules(adminId: string): Promise<CommissionRulesView>;
+  simulateCommission(input: CommissionSimInput, proposal: { ruleId: CommissionRuleId; params: CommissionParams }[] | null, adminId: string): Promise<CommissionSimulationView>;
+  previewCommissionChange(ruleId: CommissionRuleId, params: CommissionParams, effectiveFrom: string, adminId: string): Promise<CommissionChangePreview>;
+  publishCommissionRule(
+    ruleId: CommissionRuleId,
+    input: { params: CommissionParams; effectiveFrom: string; reason: string; notice?: { message: string } | null; acknowledged: string[] },
+    adminId: string,
+  ): Promise<CommissionRulesView>;
+  /** The rates a partner is paid under today and any announced change: what the person's own screens read. */
+  getMyCommissionRates(userId: string): Promise<CommissionRatesView>;
+  /** Which rule and version a ledger entry was earned under. */
+  getCommissionEntryTrace(entryId: string, userId: string): Promise<CommissionTraceView>;
   // Refresher reminders (156)
   getRefresherQueue(userId: string): Promise<RefresherQueueView>;
   sendRefresherReminder(badgeId: string, adminId: string): Promise<{ sentAt: string }>;

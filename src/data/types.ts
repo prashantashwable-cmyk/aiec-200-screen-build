@@ -3469,6 +3469,9 @@ export interface FinalPayoutLine {
   leadBonus?: number;
   /** The person was no longer on the job at the end: what they did is still theirs. */
   leftEarly?: boolean;
+  /** The rule (161) and version this was paid under. */
+  ruleId?: string;
+  ruleVersion?: number;
 }
 
 /** Admin's documented decision about a defect found after payouts were triggered. Append-only. */
@@ -4573,7 +4576,29 @@ export interface CommissionEntry {
   payoutRole?: 'surveyor' | 'sales' | 'technician_lead' | 'technician' | 'qc_inspector';
   /** The judgement (140) that is holding this entry back: it stays `projected` until Admin releases it. */
   heldBy?: string;
+  /** The commission rule (161) and the version of it that was in force when this was earned. Older entries carry none and are traced by their reason and date. */
+  ruleId?: string;
+  ruleVersion?: number;
   isDemo: boolean;
+}
+
+/** One version of a commission rule's numbers (161). Append-only: a version applies from its own day and is never edited. */
+export interface CommissionRuleVersion {
+  version: number;
+  /** yyyy-mm-dd: the first day an event is paid under these numbers. */
+  effectiveFrom: string;
+  params: { amount?: number; pct?: number; floor?: number; leadBonusPct?: number; minCrewPct?: number };
+  reason: string;
+  setByName: string;
+  at: string;
+  /** Partners told ahead of the change, with what they were told. */
+  notice?: { sentAt: string; message: string; recipients: number };
+  /** What Admin had seen and accepted from the simulation when publishing. */
+  acknowledged?: string[];
+}
+export interface CommissionRule {
+  id: string;
+  versions: CommissionRuleVersion[];
 }
 
 export interface Badge {
@@ -4693,7 +4718,7 @@ export type CommitmentKind =
   | 'exit_dispute_decide'
   | 'tier_review_due'
   | 'certification_renewal'
-  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review'
+  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'

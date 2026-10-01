@@ -148,6 +148,7 @@ export interface CommitmentSources {
   complianceReview: { dueAt: string; cycle: string; done: boolean };
   /** SOP rollouts: each affected partner's own acknowledgement, and Admin's look at what is still open (159). */
   /** Serious training feedback Admin has not dealt with, and the standing look at the routine kind (160). */
+  commissionNotices: { ruleId: string; version: number; userId: string; role: 'surveyor' | 'technician'; effectiveFrom: string; from: string; to: string; open: boolean }[];
   trainingFeedback: { urgent: { f: TrainingFeedback; code: string; safety: boolean }[]; routine: { open: number; oldestAt: string | null } };
   sopRollouts: { acks: { r: SopRollout; userId: string; done: boolean; away: boolean }[]; closes: { r: SopRollout; pending: number }[] };
   certRenewals: { badgeId: string; userId: string; moduleId: string; moduleCode: string; expiresAt: string; renewed: boolean; ownerActive: boolean }[];
@@ -2121,6 +2122,28 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
           oversightRoute: '/training-feedback',
         },
       ];
+    },
+  },
+  {
+    // A partner is told, ahead of time, that a rate they are paid under is about to change (161). It stays in their list until the change takes effect: a heads-up, not work, so it is never counted as done.
+    kind: 'commission_rule_notice',
+    nudgeBefore: days(60),
+    escalateAfter: days(365),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'staffing',
+    collect(src) {
+      return src.commissionNotices.map((x) => ({
+        ...base('commission_rule_notice', 'application', `${x.ruleId}:v${x.version}:${x.userId}`),
+        ownerUserId: x.userId,
+        titleKey: `work.title.commission_notice_${x.ruleId}`,
+        titleParams: { date: x.effectiveFrom, from: x.from, to: x.to },
+        dueAt: new Date(`${x.effectiveFrom}T00:00:00`).toISOString(),
+        state: x.open ? ('open' as const) : ('cancelled' as const),
+        paused: false,
+        actionRoute: x.role === 'surveyor' ? '/surveyor/earnings' : '/technician',
+        oversightRoute: '/commission-rules',
+      }));
     },
   },
   {
