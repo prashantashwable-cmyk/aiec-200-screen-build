@@ -18,6 +18,7 @@ import {
   Package,
   Storefront,
   Truck,
+  UsersThree,
   Wrench,
 } from '@phosphor-icons/react';
 import type { Role } from '@/data/types';
@@ -53,6 +54,7 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
     { id: 'supplierPay', labelKey: 'nav.supplierPay', path: '/supplier-payments', icon: <Coins size={ICON_SIZE} /> },
     // Every delivery screen (101–110) lives here for Admin; suppliers and technicians reach their own from their own tabs.
     { id: 'logistics', labelKey: 'nav.logistics', path: '/shipments', icon: <Truck size={ICON_SIZE} /> },
+    { id: 'partners', labelKey: 'nav.partners', path: '/applications', icon: <UsersThree size={ICON_SIZE} /> },
     {
       id: 'analytics',
       labelKey: 'nav.analytics',

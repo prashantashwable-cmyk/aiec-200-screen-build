@@ -4,6 +4,7 @@ import type { DisputeDecision, SnagProblem, SnagSeverity } from '@/features/qc/s
 import type { AmcTierId, ReminderDef, WarrantyProblem } from '@/features/qc/warranty';
 import type { CompletionProblem, IssueProblem, MilestoneId } from '@/features/qc/completion';
 import type { Demand, GuideAnswers, InterestProblem, InterestRole, RecruitRole, RecruitSource } from '@/features/recruitment/interest';
+import type { Outstanding, SectionId } from '@/features/recruitment/application';
 import type { JudgementDecision, JudgementProblem, ShareBasis } from '@/features/commission/finalPayout';
 import type { ScriptGroup, WalkthroughMode, WalkthroughProblem } from '@/features/qc/walkthrough';
 import type { DocBasis, DocBlock, DocState, HandoverDocKind, HandoverProblem, ReadinessProblem as HandoverReadinessProblem } from '@/features/qc/handover';
@@ -24,6 +25,9 @@ import type {
   HandoverReadiness,
   HandoverWalkthrough,
   WarrantyRegistration,
+  RecruitmentInterest,
+  ApplicationForm,
+  PartnerApplication,
   HandoverCompletion,
   FinalPayoutLine,
   PayoutJudgement,
@@ -1739,6 +1743,51 @@ export interface QcElecInput {
   clientId?: string;
   capturedAt?: string;
 }
+
+/* ------------------------------------ Recruitment: the applicant's full details (142) */
+
+/** An applicant has no account: their own link carries a key. Admin is identified as usual. */
+export interface ApplicationAccess {
+  key?: string;
+  userId?: string;
+}
+
+export interface ApplicationSectionView {
+  id: SectionId;
+  required: boolean;
+  complete: boolean;
+  missing: string[];
+}
+
+export interface PartnerApplicationView {
+  id: string;
+  code: string;
+  role: PartnerApplication['role'];
+  status: PartnerApplication['status'];
+  viewer: 'applicant' | 'admin';
+  /** Once screening has picked it up the form is read-only; until then the applicant can still correct and resubmit. */
+  locked: boolean;
+  /** Admin sees identity numbers only in part. */
+  form: ApplicationForm;
+  sections: ApplicationSectionView[];
+  progress: { done: number; total: number; percent: number };
+  canSubmit: boolean;
+  outstanding: Outstanding[];
+  zones: { id: string; name: string }[];
+  source: RecruitmentInterest['source'];
+  interestedAt: string;
+  startedAt: string;
+  submittedAt: string | null;
+  updatedAt: string;
+  events: PartnerApplication['events'];
+}
+
+export interface ApplicationBoardView {
+  rows: { id: string; code: string; name: string; role: PartnerApplication['role']; status: PartnerApplication['status']; percent: number; outstanding: number; channel: RecruitmentInterest['source']['channel']; updatedAt: string; submittedAt: string | null }[];
+  counts: { draft: number; submitted: number; outstanding: number };
+}
+
+export type ApplicationError = 'invalid_link' | 'locked' | 'incomplete' | 'not_found' | 'forbidden' | 'not_admin' | 'note_required' | 'invalid_state';
 
 /* ------------------------------------ Recruitment: the public front door (141) */
 
@@ -5137,6 +5186,17 @@ export interface Repository {
   pingSiteLocation(technicianId: string, point: GeoPoint, at?: string): Promise<void>;
   /** Picks which step to do next, when the site does not allow the suggested order. Only steps whose prerequisites are done. */
   focusSopStep(jobId: string, stepId: string, technicianId: string): Promise<InstallationSopView>;
+
+  /* Recruitment: the applicant's full details (142) */
+  /** Public: turns an interest into the application record (or returns the one already started) and hands back the applicant's own key. */
+  startPartnerApplication(interestId: string, phone: string): Promise<{ applicationId: string; accessKey: string }>;
+  getPartnerApplication(applicationId: string, access: ApplicationAccess): Promise<PartnerApplicationView>;
+  /** Applicant only: keeps the form so far. Safe to call as often as they type. */
+  savePartnerApplication(applicationId: string, key: string, patch: Partial<ApplicationForm>): Promise<PartnerApplicationView>;
+  submitPartnerApplication(applicationId: string, key: string): Promise<PartnerApplicationView>;
+  listPartnerApplications(userId: string): Promise<ApplicationBoardView>;
+  /** Admin records what they found when they called a reference. Never blocks the application. */
+  recordReferenceOutcome(applicationId: string, referenceId: string, input: { status: 'verified' | 'unreachable' | 'declined'; note?: string }, userId: string): Promise<PartnerApplicationView>;
 
   /* Recruitment: the public front door (141) */
   /** Public: no session. */

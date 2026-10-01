@@ -25,7 +25,7 @@ const FIELDS: Record<OnboardingRole, { name: string; phone: string }> = {
 };
 
 /** Only fills what is empty: a draft the person already made is never overwritten. */
-export function seedOnboardingDraft(role: OnboardingRole, who: { name: string; phone: string }): void {
+export function seedOnboardingDraft(role: OnboardingRole, who: { name: string; phone: string }, extra: Record<string, unknown> = {}): void {
   try {
     const key = DRAFT_KEYS[role];
     const f = FIELDS[role];
@@ -34,6 +34,10 @@ export function seedOnboardingDraft(role: OnboardingRole, who: { name: string; p
     const draft = { ...(stored?.draft ?? {}) };
     if (!draft[f.name]) draft[f.name] = who.name;
     if (!draft[f.phone]) draft[f.phone] = who.phone;
+    for (const [k, v] of Object.entries(extra)) {
+      const empty = draft[k] === undefined || draft[k] === null || draft[k] === '' || (Array.isArray(draft[k]) && (draft[k] as unknown[]).length === 0);
+      if (empty && v !== undefined && v !== null && v !== '' && !(Array.isArray(v) && v.length === 0)) draft[k] = v;
+    }
     localStorage.setItem(key, JSON.stringify({ draft, startedAt: stored?.startedAt ?? new Date().toISOString(), stepIndex: stored?.stepIndex ?? 0 }));
   } catch {
     // Not kept: the wizard simply asks again.

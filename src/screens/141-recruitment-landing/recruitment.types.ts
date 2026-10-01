@@ -7,6 +7,7 @@ export type LandingStatus = 'loading' | 'ready' | 'error';
 export const DRAFT_KEY = 'aiec.recruitDraft';
 export const SOURCE_KEY = 'aiec.recruitSource';
 export const joinPath = '/join';
+export const applyPath = (applicationId: string) => `/apply/${applicationId}`;
 export const CARD_ROLES = [...RECRUIT_ROLES, 'undecided'] as const satisfies readonly InterestRole[];
 
 const rec = <T extends string>(ns: string, keys: readonly T[]) => Object.fromEntries(keys.map((k) => [k, `${ns}.${k}`])) as Record<T, string>;

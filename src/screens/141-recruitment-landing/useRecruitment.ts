@@ -3,10 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { applyLanguage } from '@/i18n';
 import { useData } from '@/data/DataProvider';
 import type { RecruitmentInterestResult, RecruitmentLandingView } from '@/data/repository';
-import { ONBOARDING_PATH, seedOnboardingDraft } from '@/features/onboarding/handoff';
 import { GUIDE, guideComplete, interestProblem, isMobile, normalisePhone, parseSource, suggestRole } from '@/features/recruitment/interest';
 import type { GuideAnswers, InterestRole, RecruitRole, RecruitSource } from '@/features/recruitment/interest';
-import { DRAFT_KEY, SOURCE_KEY } from './recruitment.types';
+import { DRAFT_KEY, SOURCE_KEY, applyPath } from './recruitment.types';
 import type { LandingStatus } from './recruitment.types';
 
 export interface Draft {
@@ -129,15 +128,19 @@ export function useRecruitment() {
         setBusy(false);
       }
     },
-    /** Into the role's own onboarding wizard, with the name and phone already in it. */
-    continueWith: async (role: RecruitRole, interestId: string, who: { name: string; phone: string }) => {
-      seedOnboardingDraft(role, who);
+    /** On to the full application, which is the one record the rest of the journey adds to. The wizards stay the onboarding step after the offer. */
+    continueWith: async (_role: RecruitRole, interestId: string, who: { name: string; phone: string }) => {
       try {
-        await repository.markRecruitmentStarted(interestId, who.phone);
+        const { applicationId, accessKey } = await repository.startPartnerApplication(interestId, who.phone);
+        try {
+          localStorage.setItem(`aiec.application.${applicationId}`, accessKey);
+        } catch {
+          // The key is also in the link.
+        }
+        navigate(`${applyPath(applicationId)}?k=${encodeURIComponent(accessKey)}`);
       } catch {
-        // The wizard still opens: starting is only a note for the recruiter.
+        setProblem('generic');
       }
-      navigate(ONBOARDING_PATH[role]);
     },
     another: () => {
       setResult(null);

@@ -31,7 +31,7 @@ export interface ScreenRoute {
   chromeless?: boolean;
 }
 
-const modules = import.meta.glob<{ default: ScreenRoute }>('../screens/**/route.tsx', {
+const modules = import.meta.glob<{ default: ScreenRoute | ScreenRoute[] }>('../screens/**/route.tsx', {
   eager: true,
 });
 
@@ -40,18 +40,21 @@ function collect(): ScreenRoute[] {
   const seenPaths = new Map<string, string>();
 
   for (const key of Object.keys(modules).sort()) {
-    const route = modules[key]?.default;
-    if (!route) {
+    const exported = modules[key]?.default;
+    if (!exported) {
       if (import.meta.env.DEV) console.warn(`[routes] ${key} has no default export`);
       continue;
     }
-    const clash = seenPaths.get(route.path);
-    if (clash) {
-      // Two screens on one path means one is unreachable — loud in dev.
-      console.error(`[routes] path "${route.path}" claimed by both ${clash} and ${route.id}`);
+    // One screen may be reached by two roles through two paths (a public applicant link and Admin's own page): it exports a list.
+    for (const route of Array.isArray(exported) ? exported : [exported]) {
+      const clash = seenPaths.get(route.path);
+      if (clash) {
+        // Two screens on one path means one is unreachable — loud in dev.
+        console.error(`[routes] path "${route.path}" claimed by both ${clash} and ${route.id}`);
+      }
+      seenPaths.set(route.path, route.id);
+      routes.push(route);
     }
-    seenPaths.set(route.path, route.id);
-    routes.push(route);
   }
 
   // Static segments before params so '/admin/map/filters' is not swallowed by

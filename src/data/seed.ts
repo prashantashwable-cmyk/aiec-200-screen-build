@@ -1,4 +1,5 @@
 import type {
+  PartnerApplication,
   RecruitmentInterest,
   JobIssue,
   JobSafetyTest,
@@ -4205,4 +4206,79 @@ export const seedRecruitmentInterests: RecruitmentInterest[] = [
   rec(7, 'Vikas More', '9890011107', 'technician', 'walk_in', 30),
   rec(8, 'Anita Gaikwad', '9890011108', 'surveyor', 'whatsapp', 12, { language: 'mr' }),
   rec(9, 'Sagar Bhosale', '9890011109', 'technician', 'qr', 3, { source: { channel: 'qr', campaign: 'flyer-pune-1' } }),
+];
+
+/* ------------------------------------ Partner applications (142) */
+
+const apForm = (over: Partial<PartnerApplication['form']>): PartnerApplication['form'] => ({
+  personal: { fullName: '', phone: '', city: 'Pune', address: '', dob: '', languages: [] },
+  experience: { years: '', skills: [], sectors: [], summary: '' },
+  territory: { zoneIds: [], travelKm: '', ownTransport: false },
+  availability: { days: [], timeOfDay: '', hoursPerWeek: '', earliestStart: '' },
+  identity: { aadhaarNumber: '', aadhaarDoc: null, panNumber: '', panDoc: null, gstin: '', gstDoc: null },
+  references: [],
+  noReferences: false,
+  ...over,
+});
+const apDoc = (name: string) => ({ fileName: name, capturedAt: hoursAgo(130), previewUrl: '' });
+
+export const seedPartnerApplications: PartnerApplication[] = [
+  {
+    id: 'ap-1',
+    code: 'AIEC-AP-2001',
+    interestId: 'ri-1',
+    accessKey: 'demo-key-1',
+    role: 'technician',
+    status: 'submitted',
+    startedAt: hoursAgo(139),
+    updatedAt: hoursAgo(100),
+    submittedAt: hoursAgo(100),
+    form: apForm({
+      personal: { fullName: 'Rahul Jadhav', phone: '9890011101', city: 'Pune', address: 'Wakad, Pune', dob: '1994-03-12', languages: ['mr', 'hi'] },
+      experience: { years: '3_5', skills: ['mechanical', 'electrical'], sectors: [], summary: 'Four years fitting door operators and wiring controls for a local lift installer.' },
+      territory: { zoneIds: ['z-hinjawadi'], travelKm: '20', ownTransport: true },
+      availability: { days: [1, 2, 3, 4, 5, 6], timeOfDay: 'full_day', hoursPerWeek: '40', earliestStart: '2026-10-05' },
+      identity: { aadhaarNumber: '', aadhaarDoc: null, panNumber: 'ABCPJ1234K', panDoc: apDoc('pan-rahul.jpg'), gstin: '', gstDoc: null },
+      references: [
+        { id: 'rf-1', name: 'Suresh Kale', phone: '9890022201', relationship: 'Former supervisor', organisation: 'Kale Lift Services', outcome: { status: 'verified', at: hoursAgo(60), byName: 'Prashant Vasant Wable', note: 'Confirmed four years and good timekeeping.' } },
+        { id: 'rf-2', name: 'Anil Deshmukh', phone: '9890022202', relationship: 'Site engineer', organisation: 'Shree Builders', },
+      ],
+    }),
+    events: [],
+    isDemo: true,
+  },
+  {
+    id: 'ap-2',
+    code: 'AIEC-AP-2002',
+    interestId: 'ri-2',
+    accessKey: 'demo-key-2',
+    role: 'surveyor',
+    status: 'draft',
+    startedAt: hoursAgo(120),
+    updatedAt: hoursAgo(118),
+    form: apForm({ personal: { fullName: 'Sneha Kulkarni', phone: '9890011102', city: 'Pune', address: '', dob: '', languages: ['mr'] } }),
+    events: [],
+    isDemo: true,
+  },
+  {
+    id: 'ap-3',
+    code: 'AIEC-AP-2003',
+    interestId: 'ri-3',
+    accessKey: 'demo-key-3',
+    role: 'technician',
+    status: 'submitted',
+    startedAt: hoursAgo(90),
+    updatedAt: hoursAgo(80),
+    submittedAt: hoursAgo(80),
+    form: apForm({
+      personal: { fullName: 'Mahesh Pawar', phone: '9890011103', city: 'Pimpri-Chinchwad', address: '', dob: '', languages: ['mr'] },
+      experience: { years: '1_3', skills: [], sectors: [], summary: 'I have helped on lift installations for two years without a certificate, mostly guide rails and cabin fitting.' },
+      territory: { zoneIds: ['z-pimpri'], travelKm: '10', ownTransport: false },
+      availability: { days: [1, 2, 3, 4, 5], timeOfDay: 'mornings', hoursPerWeek: '20', earliestStart: '2026-10-12' },
+      identity: { aadhaarNumber: '', aadhaarDoc: null, panNumber: 'AAAPM2345L', panDoc: apDoc('pan-mahesh.jpg'), gstin: '', gstDoc: null },
+      references: [{ id: 'rf-3', name: 'Ramesh Pawar', phone: '9890022203', relationship: 'Previous employer', organisation: '', outcome: { status: 'unreachable', at: hoursAgo(40), byName: 'Prashant Vasant Wable', note: 'Phone off on two attempts.' } }],
+    }),
+    events: [],
+    isDemo: true,
+  },
 ];

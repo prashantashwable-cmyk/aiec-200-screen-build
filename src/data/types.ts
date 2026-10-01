@@ -2658,6 +2658,55 @@ export interface RecruitmentInterest {
   isDemo: boolean;
 }
 
+/* ------------------------------------ Recruitment: the applicant's full details (142) */
+
+/** A document held as a data URL for the session, the same shape the onboarding wizards keep. */
+export interface ApplicationDoc {
+  fileName: string;
+  capturedAt: string;
+  previewUrl: string;
+}
+
+export interface ApplicationReference {
+  id: string;
+  name: string;
+  phone: string;
+  relationship: string;
+  organisation: string;
+  /** What Admin found when they called. Never blocks the application; an unreachable one is simply carried as outstanding. */
+  outcome?: { status: 'verified' | 'unreachable' | 'declined'; at: string; byName: string; note?: string };
+}
+
+export interface ApplicationForm {
+  personal: { fullName: string; phone: string; city: string; address: string; dob: string; languages: ('en' | 'hi' | 'mr')[] };
+  /** Structured answers and the applicant's own words: real experience does not always fit a list, so words alone can be enough. */
+  experience: { years: string; skills: string[]; sectors: string[]; summary: string };
+  territory: { zoneIds: string[]; travelKm: string; ownTransport: boolean };
+  availability: { days: number[]; timeOfDay: 'full_day' | 'mornings' | 'afternoons' | 'evenings' | ''; hoursPerWeek: string; earliestStart: string };
+  /** Surveyor and technician: an Aadhaar or PAN number with its photo. Supplier: the firm's GSTIN with its certificate. */
+  identity: { aadhaarNumber: string; aadhaarDoc: ApplicationDoc | null; panNumber: string; panDoc: ApplicationDoc | null; gstin: string; gstDoc: ApplicationDoc | null };
+  references: ApplicationReference[];
+  /** The applicant has no one to name right now: carried as outstanding for the decision, never a block. */
+  noReferences: boolean;
+}
+
+/** The one record behind a partner's whole journey: the interest becomes this, the form fills it, screening and onboarding add to it. */
+export interface PartnerApplication {
+  id: string;
+  code: string;
+  interestId: string;
+  /** What the applicant's own link carries: there is no account yet. */
+  accessKey: string;
+  role: 'surveyor' | 'technician' | 'supplier';
+  status: 'draft' | 'submitted' | 'in_screening' | 'withdrawn';
+  startedAt: string;
+  updatedAt: string;
+  submittedAt?: string;
+  form: ApplicationForm;
+  events: { id: string; at: string; kind: 'started' | 'saved' | 'submitted' | 'resubmitted' | 'reference_outcome'; byName: string; note?: string }[];
+  isDemo: boolean;
+}
+
 /* ------------------------------------ Handover completion certificate (140) */
 
 export interface FinalPayoutLine {
@@ -3885,6 +3934,7 @@ export type CommitmentKind =
   | 'warranty_register'
   | 'amc_renewal_review'
   | 'handover_certificate_issue'
+  | 'application_reference_check'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'
@@ -3909,6 +3959,7 @@ export type CommitmentKind =
   | 'lead_revisit';
 
 export type CommitmentSubjectType =
+  | 'application'
   | 'snag'
   | 'material_log'
   | 'handoff'

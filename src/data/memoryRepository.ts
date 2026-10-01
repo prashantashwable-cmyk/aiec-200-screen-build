@@ -11,6 +11,7 @@ import {
   seedCommTemplates,
   seedCommissions,
   seedRecruitmentInterests,
+  seedPartnerApplications,
   seedContractSignatures,
   seedContracts,
   seedConversations,
@@ -227,6 +228,9 @@ import type {
   WarrantyView,
   RecruitmentInterestResult,
   RecruitmentLandingView,
+  ApplicationAccess,
+  ApplicationBoardView,
+  PartnerApplicationView,
   CompletionBoardView,
   CompletionDocument,
   CompletionPayoutLineView,
@@ -437,6 +441,9 @@ import type {
   HandoverWalkthrough,
   WarrantyRegistration,
   RecruitmentInterest,
+  PartnerApplication,
+  ApplicationForm,
+  ApplicationReference,
   HandoverCompletion,
   FinalPayoutLine,
   PayoutJudgement,
@@ -624,6 +631,7 @@ import type { AmcTierId as WrTierId } from '@/features/qc/warranty';
 import { issueProblem as coIssueProblem, readinessOf as coReadiness, signoffDueAt as coSignoffDue } from '@/features/qc/completion';
 import { QC_FEE as FP_QC_FEE, crewShares as fpCrewShares, installPoolOf as fpInstallPool, judgementProblem as fpJudgementProblem, qcShares as fpQcShares, salesCloseOf as fpSalesClose } from '@/features/commission/finalPayout';
 import type { Contributor as FpContributor } from '@/features/commission/finalPayout';
+import { EMPTY_FORM as APP_EMPTY, maskId as apMask, outstandingOf as apOutstanding, progressOf as apProgress, sectionStates as apSections, submitProblem as apSubmitProblem } from '@/features/recruitment/application';
 import { INTAKE_SURGE_PER_DAY, INTAKE_WINDOW, RECRUIT_CHANNELS, demandOf as rcDemandOf, interestProblem as rcInterestProblem, normalisePhone as rcPhone } from '@/features/recruitment/interest';
 import { ARRANGE_DUE as WT_ARRANGE_DUE, DOCS as WT_DOCS, FOLLOWUP_DUE as WT_FOLLOWUP_DUE, SIGNOFF_DUE_PRESENT as WT_SIGNOFF_PRESENT, SIGNOFF_DUE_REMOTE as WT_SIGNOFF_REMOTE, amcProblem as wtAmcProblem, arrangeProblem as wtArrangeProblem, conductProblem as wtConductProblem, isNegative as wtIsNegative, questionProblem as wtQuestionProblem, scoreProblem as wtScoreProblem, scriptFor as wtScriptFor, signoffProblem as wtSignoffProblem } from '@/features/qc/walkthrough';
 import { CORRECTION_MIN as HO_CORRECTION_MIN, DOC_KINDS as HO_DOC_KINDS, REVIEW_NOTE_MIN as HO_REVIEW_NOTE_MIN, REVIEW_REASON_MIN as HO_REVIEW_REASON_MIN, blockOf as hoBlockOf, correctionProblem as hoCorrectionProblem, docStateOf as hoDocState, issueProblem as hoIssueProblem, readinessOf as hoReadiness } from '@/features/qc/handover';
@@ -2311,6 +2319,7 @@ function commitmentSources(now: number): CommitmentSources {
     walkthroughs: walkthroughSignals(),
     warranties: warrantyRegistrations,
     completions: completionSignals(),
+    applications: partnerApplications,
     handoverReviews: handoverSignals().reviews,
     qcMechChecks,
     qcFindings,
@@ -7518,6 +7527,61 @@ function stepFinisherName(job: Job, st: Job['steps'][number]): string | null {
   if (st.status !== 'complete' || !job.technicianId) return null;
   const alone = !(job.crew ?? []).some((c) => c.role === 'assistant');
   return alone ? nameOf(job.technicianId) : null;
+}
+
+/* ============================== Recruitment: the applicant's full details (142) */
+
+const partnerApplications: PartnerApplication[] = seedPartnerApplications.map((a) => ({ ...a, form: JSON.parse(JSON.stringify(a.form)) as ApplicationForm, events: a.events.map((e) => ({ ...e })) }));
+let applicationCounter = 100;
+let applicationEventCounter = 0;
+let applicationRefCounter = 0;
+
+const applicationEvent = (kind: PartnerApplication['events'][number]['kind'], byName: string, note?: string): PartnerApplication['events'][number] => {
+  applicationEventCounter += 1;
+  return { id: `apev-${applicationEventCounter}`, at: new Date().toISOString(), kind, byName, ...(note ? { note } : {}) };
+};
+
+/** The applicant is whoever holds their own link's key; Admin is a signed-in Admin. Nobody else sees an application. */
+function applicationFor(applicationId: string, access: ApplicationAccess): { app: PartnerApplication; viewer: 'applicant' | 'admin'; admin: User | null } {
+  const app = byId(partnerApplications, applicationId);
+  if (!app) throw new RepositoryError('not_found');
+  if (access.userId) {
+    const u = byId(users, access.userId);
+    if (u?.role === 'admin') return { app, viewer: 'admin', admin: u };
+    throw new RepositoryError('forbidden');
+  }
+  if (!access.key || access.key !== app.accessKey) throw new RepositoryError('invalid_link');
+  return { app, viewer: 'applicant', admin: null };
+}
+
+function applicationViewOf(app: PartnerApplication, viewer: 'applicant' | 'admin'): PartnerApplicationView {
+  const interest = byId(recruitmentInterests, app.interestId);
+  const sections = apSections(app.role, app.form);
+  const form = JSON.parse(JSON.stringify(app.form)) as ApplicationForm;
+  if (viewer === 'admin') {
+    form.identity.aadhaarNumber = apMask(form.identity.aadhaarNumber);
+    form.identity.panNumber = apMask(form.identity.panNumber);
+  }
+  return {
+    id: app.id,
+    code: app.code,
+    role: app.role,
+    status: app.status,
+    viewer,
+    locked: app.status === 'in_screening' || app.status === 'withdrawn',
+    form,
+    sections: sections.map((s) => ({ ...s, missing: [...s.missing] })),
+    progress: apProgress(sections),
+    canSubmit: apSubmitProblem(app.role, app.form) === null,
+    outstanding: apOutstanding(app.form),
+    zones: zones.filter((z) => z.status === 'active').map((z) => ({ id: z.id, name: z.name })),
+    source: interest ? { ...interest.source } : { channel: 'website' },
+    interestedAt: interest?.interestedAt ?? app.startedAt,
+    startedAt: app.startedAt,
+    submittedAt: app.submittedAt ?? null,
+    updatedAt: app.updatedAt,
+    events: app.events.map((e) => ({ ...e })),
+  };
 }
 
 /* ============================== Recruitment: the public front door (141) */
@@ -13986,6 +14050,103 @@ export const memoryRepository: Repository = {
       if (problem) throw new RepositoryError(problem);
       check.signedOff = { at: new Date().toISOString(), byUserId: user.id, byName: user.name };
       return elecViewOf(job, viewer, assignment);
+    }),
+
+  /* --------------------------------- Recruitment: the applicant's full details (142) */
+  startPartnerApplication: (interestId, phone) =>
+    simulateWrite(() => {
+      const interest = byId(recruitmentInterests, interestId);
+      if (!interest || interest.phone !== rcPhone(phone) || interest.role === 'undecided') throw new RepositoryError('not_found');
+      const existing = partnerApplications.find((a) => a.interestId === interest.id);
+      if (existing) return { applicationId: existing.id, accessKey: existing.accessKey };
+      applicationCounter += 1;
+      const at = new Date().toISOString();
+      const app: PartnerApplication = {
+        id: `ap-${applicationCounter}`,
+        code: `AIEC-AP-${2000 + applicationCounter}`,
+        interestId: interest.id,
+        accessKey: `k${Math.random().toString(36).slice(2, 10)}${Math.random().toString(36).slice(2, 10)}`,
+        role: interest.role,
+        status: 'draft',
+        startedAt: at,
+        updatedAt: at,
+        form: { ...JSON.parse(JSON.stringify(APP_EMPTY)), personal: { ...APP_EMPTY.personal, fullName: interest.name, phone: interest.phone, languages: [interest.language] } },
+        events: [applicationEvent('started', interest.name)],
+        isDemo: true,
+      };
+      partnerApplications.push(app);
+      if (interest.status === 'interested') patchInPlace(recruitmentInterests, interest.id, { status: 'started' as const, startedAt: at });
+      return { applicationId: app.id, accessKey: app.accessKey };
+    }),
+
+  getPartnerApplication: (applicationId, access) =>
+    simulateRead((): PartnerApplicationView => {
+      const { app, viewer } = applicationFor(applicationId, access);
+      return applicationViewOf(app, viewer);
+    }),
+
+  savePartnerApplication: (applicationId, key, patch) =>
+    simulateWrite((): PartnerApplicationView => {
+      const { app } = applicationFor(applicationId, { key });
+      if (app.status === 'in_screening' || app.status === 'withdrawn') throw new RepositoryError('locked');
+      const f = app.form;
+      // The phone is the applicant's identity on this record: it is set when the interest is made and not changed here.
+      if (patch.personal) f.personal = { ...patch.personal, phone: f.personal.phone };
+      if (patch.experience) f.experience = { ...patch.experience };
+      if (patch.territory) f.territory = { ...patch.territory };
+      if (patch.availability) f.availability = { ...patch.availability };
+      if (patch.identity) f.identity = { ...patch.identity };
+      if (patch.noReferences !== undefined) f.noReferences = patch.noReferences;
+      if (patch.references) {
+        // A reference keeps what Admin found only while it is still the same person.
+        f.references = patch.references.slice(0, 3).map((r): ApplicationReference => {
+          applicationRefCounter += 1;
+          const before = f.references.find((x) => x.id === r.id);
+          const same = before && before.name === r.name && before.phone === r.phone;
+          return { id: before ? before.id : `rf-new-${applicationRefCounter}`, name: r.name, phone: r.phone, relationship: r.relationship, organisation: r.organisation, ...(same && before.outcome ? { outcome: before.outcome } : {}) };
+        });
+      }
+      app.updatedAt = new Date().toISOString();
+      return applicationViewOf(app, 'applicant');
+    }),
+
+  submitPartnerApplication: (applicationId, key) =>
+    simulateWrite((): PartnerApplicationView => {
+      const { app } = applicationFor(applicationId, { key });
+      if (app.status === 'in_screening' || app.status === 'withdrawn') throw new RepositoryError('locked');
+      if (apSubmitProblem(app.role, app.form)) throw new RepositoryError('incomplete');
+      const again = app.status === 'submitted';
+      app.status = 'submitted';
+      app.submittedAt = new Date().toISOString();
+      app.updatedAt = app.submittedAt;
+      app.events.push(applicationEvent(again ? 'resubmitted' : 'submitted', app.form.personal.fullName));
+      const interest = byId(recruitmentInterests, app.interestId);
+      if (interest) patchInPlace(recruitmentInterests, interest.id, { status: 'submitted' as const });
+      return applicationViewOf(app, 'applicant');
+    }),
+
+  listPartnerApplications: (userId) =>
+    simulateRead((): ApplicationBoardView => {
+      const u = byId(users, userId);
+      if (!u || u.role !== 'admin') throw new RepositoryError('forbidden');
+      const rows = partnerApplications
+        .map((a) => {
+          const interest = byId(recruitmentInterests, a.interestId);
+          return { id: a.id, code: a.code, name: a.form.personal.fullName, role: a.role, status: a.status, percent: apProgress(apSections(a.role, a.form)).percent, outstanding: apOutstanding(a.form).length, channel: interest?.source.channel ?? ('website' as const), updatedAt: a.updatedAt, submittedAt: a.submittedAt ?? null };
+        })
+        .sort((x, y) => (y.submittedAt ?? y.updatedAt).localeCompare(x.submittedAt ?? x.updatedAt));
+      return { rows, counts: { draft: rows.filter((r) => r.status === 'draft').length, submitted: rows.filter((r) => r.status === 'submitted').length, outstanding: rows.reduce((n, r) => n + r.outstanding, 0) } };
+    }),
+
+  recordReferenceOutcome: (applicationId, referenceId, input, userId) =>
+    simulateWrite((): PartnerApplicationView => {
+      const { app, admin } = applicationFor(applicationId, { userId });
+      const ref = app.form.references.find((r) => r.id === referenceId);
+      if (!ref) throw new RepositoryError('not_found');
+      if (input.status !== 'verified' && (input.note ?? '').replace(/[^\p{L}\p{N}]/gu, '').length < 8) throw new RepositoryError('note_required');
+      ref.outcome = { status: input.status, at: new Date().toISOString(), byName: (admin as User).name, ...(input.note?.trim() ? { note: input.note.trim() } : {}) };
+      app.events.push(applicationEvent('reference_outcome', (admin as User).name, `${ref.name}: ${input.status}`));
+      return applicationViewOf(app, 'admin');
     }),
 
   /* --------------------------------- Recruitment: the public front door (141) */

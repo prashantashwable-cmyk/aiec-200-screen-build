@@ -1,6 +1,6 @@
 import { ASSIGN_DUE, DISPUTE_DECIDE_DUE, REVERIFY_DUE } from '@/features/qc/snags';
 import { ARRANGE_DUE, FOLLOWUP_DUE, SIGNOFF_DUE_PRESENT, SIGNOFF_DUE_REMOTE } from '@/features/qc/walkthrough';
-import type { WarrantyRegistration, HandoverWalkthrough, ReworkRequest,
+import type { PartnerApplication, WarrantyRegistration, HandoverWalkthrough, ReworkRequest,
   Alert,
   AlertSeverity,
   CatalogPriceChange,
@@ -127,6 +127,8 @@ export interface CommitmentSources {
   warranties: WarrantyRegistration[];
   /** Projects with everything the completion certificate needs, and whether it has been issued (140). */
   completions: { jobId: string; readyAt: string; issued: boolean; issuedAt?: string }[];
+  /** Partner applications (142). */
+  applications: PartnerApplication[];
   /** Mechanical quality-check attempts and the differences from the install record the inspector raised (132). */
   qcMechChecks: QcMechCheck[];
   qcFindings: QcFinding[];
@@ -1649,6 +1651,36 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
           oversightRoute: `/handover-certificate/${x.jobId}`,
         };
       });
+    },
+  },
+  {
+    // Whoever an applicant named as a reference is called within three days of the application (142). An unreachable one is an outcome, not a block.
+    kind: 'application_reference_check',
+    nudgeBefore: hours(12),
+    escalateAfter: hours(48),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'staffing',
+    collect(src) {
+      const admin = adminId(src);
+      return src.applications
+        .filter((a) => a.status === 'submitted' && a.submittedAt && a.form.references.length > 0)
+        .map((a) => {
+          const open = a.form.references.filter((r) => !r.outcome);
+          const done = a.form.references.every((r) => !!r.outcome);
+          return {
+            ...base('application_reference_check', 'application', a.id),
+            ownerUserId: admin,
+            titleKey: 'work.title.application_reference_check',
+            titleParams: { name: a.form.personal.fullName, count: String(open.length) },
+            dueAt: plus(a.submittedAt as string, days(3)),
+            state: done ? ('done' as const) : ('open' as const),
+            paused: false,
+            completedAt: done ? a.form.references.map((r) => r.outcome?.at ?? '').sort().pop() : undefined,
+            actionRoute: `/applications/${a.id}`,
+            oversightRoute: `/applications/${a.id}`,
+          };
+        });
     },
   },
   {
