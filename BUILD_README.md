@@ -1107,3 +1107,77 @@ Fixes made at the checkpoint:
 
 - **123's header** overflowed at 390px once three more job links were added; the row now wraps and gains a Team link.
 - **Job links.** 122's action grid, 123's header and 014 now reach materials, timeline and team for a job.
+
+## Module 14 — Quality Check & Handover (`131`–`140`, checkpoint-verified)
+
+The last stretch of a project, from "the crew says it is finished" to "the customer holds one permanent record of it".
+Everything here follows one idea: an independent person checks the work, nothing moves on while a problem is open, and the
+customer is only ever handed something that is true. As with the rest of the build, the job stays the one working record and
+each screen adds a record beside it; what a screen shows is derived on read wherever it can be.
+
+| # | Screen | What it owns |
+|---|---|---|
+| 131 | QC Inspector Assignment | QC as a *separate role* (a technician with the QC skills who took no part in the job), scheduling against the customer's preference, independence watched on every heartbeat |
+| 132 | Mechanical Quality Check | Five measured items read against placeholder reference values, append-only attempts, exceptions for Admin, findings where the lift differs from the install record |
+| 133 | Electrical & Safety Checklist | Electrical and safety checks with fail → fix → retest, intermittent faults treated as failures, trial runs |
+| 134 | Compliance Certification | AIEC's own internal certificate, by drive type's standard (IS 14665 / IS 15259), frozen evidence package, state-specific next steps |
+| 135 | Defect / Snag List | One list for every finding, severity, disputes, waivers with a reason, QC alone closes |
+| 136 | Rework Assignment | Who fixes a snag, parts needed (ordered through the supplier flow), rounds, hand back, escalation |
+| 137 | Final Handover Checklist | The documentation package and the final gate; nothing goes to the customer while a snag is open |
+| 138 | Customer Handover Walkthrough | A wizard: arrange, demonstrate, hand over documents, the customer's own sign-off, AMC choice, feedback, questions |
+| 139 | Warranty & AMC Registration | Three distinct layers (maker's parts warranty per installed part, AIEC's service warranty, optional AMC), terms frozen at registration, reminders that send themselves |
+| 140 | Handover Completion Certificate | The closing record: a frozen nine-stage summary the customer keeps for good, the job set to completed, every final payout triggered fairly |
+
+**Shared vocabulary worth knowing before building on this module**
+
+- **QC is independent by construction.** Eligibility and involvement are pure rules (`@/features/qc/inspectors`) read by the
+  screens and the repository alike. A job only reaches QC after installation, safety checks and the lead's sign-off, and only
+  leaves it when mechanical and electrical are signed off with no open finding or snag.
+- **Nothing passes quietly.** A failed check creates a `ReworkRequest` (the snag record, 135) and an alert; a later pass closes
+  it. A softer verdict than the reference needs an override reason, an exception waits for Admin, a waiver needs words.
+  Reference values are AIEC's own placeholders and are flagged on screen: a qualified engineer must confirm them, and
+  clause-level figures from IS 14665 / NBC are deliberately never invented.
+- **The compliance certificate is AIEC's internal readiness view**, not the government's licence to operate; it says so every
+  time it is shown or downloaded. A paperwork correction is a new version that voids the old, never an edit.
+- **Handover is gated twice**: the final checklist (137) and the customer's own sign-off (138) are separate from, and after,
+  every technical gate. A video call or a site representative is supported; the customer still signs for themselves.
+- **Warranty terms are read, never typed** (139): per part from the supplier agreement the part was bought under, so a
+  substituted or locally bought part is flagged and says "as stated on the purchase receipt". They are frozen at registration.
+- **The certificate is the closing event** (140): issuing it sets the job `completed` (100's retention release already reads
+  that), freezes the summary, and triggers the payouts in one step. Its summary is permanent and downloadable, and the
+  customer can always open it from their Installation tab.
+- **Final payouts follow recorded work** (`@/features/commission/finalPayout`): the original surveyor's conversion commission
+  already recorded by 077 is released, never duplicated; the closer of a reassigned lead is paid separately; installers share a
+  pool by on-site minutes with a bonus for the lead; the independent inspector has a flat fee. Someone who left midway keeps what
+  they did. A defect found later is **Admin's documented judgement** (no change / hold / release / adjust, each with the issue and
+  a reason), never an automatic clawback and never ignored; an amount already paid is never touched from there.
+- **Admin hears through commitments**: `qc_assign`, `qc_schedule`, `qc_visit`, `qc_certificate_issue`, `snag_*`, `handover_confirm`,
+  `handover_admin_review`, `walkthrough_*`, `warranty_register`, `amc_renewal_review`, `handover_certificate_issue` are rows in
+  `commitmentRules.ts`. Automations (warranty and AMC reminders) go through the Communication Engine and `logAutomatedAction`.
+
+**Placeholder business decisions to confirm (flagged in code and on screen where they show)**
+
+- 132/133: every reference threshold; 134: the example state guidance wording (not legal advice).
+- 135/136: severity → due times; 137/138: sign-off windows (24 h in person, 3 days remote), arrange within 48 h.
+- 139: `SERVICE_WARRANTY_MONTHS` 12, visits each AMC tier includes (2 / 4 / 12), reminder cadence (60/30 days before warranty end,
+  60/30/7 before an AMC term ends, 90/180 days after "later", 180 after "declined"). AMC prices are not set here: they are the Pricing Rules'.
+- 140: `INSTALL_POOL_PCT` 1%, `LEAD_BONUS_SHARE` 25%, `MIN_CREW_SHARE` 5%, `QC_FEE` ₹1,500, `SALES_CLOSE_PCT` 0.5%, 48 h to issue.
+
+**Honest limits.** Payout entries are marked approved, not paid: actually paying them is payroll, which this build does not have.
+Historic completed jobs from before this module have no certificate (they are not listed as "not ready"). The customer's
+ongoing-service portal is Module 18: `/customer` is still a pending screen, so "tracking my installation" becomes "my certificate" only
+through the Installation tab and a link on 129 for a finished job. Quotation and contract have no customer-facing screen yet, so the
+certificate summarises them. A rework part joins the deal's order lines once its purchase order is sent.
+
+**Module 14 checkpoint (passed):**
+
+- Clicked through all ten screens as Admin, the independent inspector, the lead technician and the customer (Marathi) at 390px,
+  with a job brought through QC, certificate, snags, documents, handover, walkthrough, warranty and certificate; 820 and 1440px
+  checked on the screens built last. No page or console errors, no raw keys, no horizontal overflow.
+- Earlier screens spot-checked after the changes that touched shared code (commitments, commission reasons, 129 and 138 links):
+  Admin home (028), deal closure (077), delivery scheduling (101), supplier payments (111), reconciliation (120), job team (130),
+  installation timeline (129), delivery confirmation (104), technician home (121) and job detail (122).
+- Exercised the paths each spec names: a customer who never signs off (closed only once overdue, with a documented reason);
+  a reassigned lead's closer paid separately while the original keeps the capture commission; an installer who left midway still
+  paid for their time; hold / adjust / release on a payout and refusal to touch a paid one; a certificate opened years later
+  from the customer's portal and downloaded as a standalone file.
