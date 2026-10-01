@@ -2957,6 +2957,59 @@ export interface PartnerTerritoryChange {
   isDemo: boolean;
 }
 
+/* ------------------------------------ Training module library (151) */
+
+export type TrainingTopic = 'onboarding' | 'safety' | 'customer' | 'product';
+export type TrainingRole = 'surveyor' | 'technician' | 'supplier';
+
+/** One published version of a module's content. Append-only: a partner is always trained on the version in force. */
+export interface TrainingModuleVersion {
+  version: number;
+  effectiveFrom: string;
+  /** The lowest version that still counts as completed: raising it makes earlier completions need a retake. */
+  minVersion: number;
+  /** Translation key (`trainingLib.content.<code>.<key>`) of what changed, when it did. */
+  changeKey?: string;
+}
+
+/**
+ * A training module as the library holds it. This is the one governed dataset the lesson player (152), the quiz (154), the skill matrix (157)
+ * and the compliance tracker (158) all read. Titles and summaries are translation keys under `trainingLib.content.<code>`.
+ */
+export interface TrainingModule {
+  id: string;
+  code: string;
+  topic: TrainingTopic;
+  /** Order inside its topic. */
+  order: number;
+  /** required_for_roles[]: the partner must complete it. */
+  requiredFor: TrainingRole[];
+  /** Roles it is shown to at all (always includes requiredFor). */
+  relevantFor: TrainingRole[];
+  /** sequence_lock_dependency: modules that must be completed before this one unlocks. */
+  dependsOn: string[];
+  /** Completing it is part of being offered a job: a technician who has not cannot be put on one. */
+  gatesJobAssignment: boolean;
+  minutes: number;
+  lessons: number;
+  /** Size of the offline copy, in KB. */
+  offlineKb: number;
+  versions: TrainingModuleVersion[];
+  status: 'published' | 'retired';
+  isDemo: boolean;
+}
+
+export interface TrainingProgress {
+  userId: string;
+  moduleId: string;
+  status: 'in_progress' | 'completed';
+  startedAt: string;
+  completedAt?: string;
+  /** The version they last completed (the lessons seen, for an unfinished one). */
+  version: number;
+  lessonsDone: number;
+}
+
 /* ------------------------------------ Partner deactivation and exit (150) */
 
 export type ExitKind = 'voluntary' | 'involuntary';

@@ -6,6 +6,7 @@ import {
   ChartLineUp,
   Coins,
   FileText,
+  GraduationCap,
   Funnel,
   Gear,
   Handshake,
@@ -85,11 +86,13 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
       icon: <Coins size={ICON_SIZE} />,
     },
     { id: 'route', labelKey: 'nav.route', path: '/surveyor/route', icon: <Path size={ICON_SIZE} /> },
+    { id: 'training', labelKey: 'nav.training', path: '/training', icon: <GraduationCap size={ICON_SIZE} /> },
   ],
   technician: [
     { id: 'home', labelKey: 'nav.home', path: '/technician', icon: <House size={ICON_SIZE} /> },
     { id: 'jobs', labelKey: 'nav.jobs', path: '/technician', icon: <Wrench size={ICON_SIZE} /> },
     { id: 'shipments', labelKey: 'nav.shipments', path: '/shipments', icon: <Truck size={ICON_SIZE} /> },
+    { id: 'training', labelKey: 'nav.training', path: '/training', icon: <GraduationCap size={ICON_SIZE} /> },
     { id: 'settings', labelKey: 'nav.settings', path: '/settings', icon: <Gear size={ICON_SIZE} /> },
   ],
   customer: [
@@ -107,6 +110,7 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
     { id: 'agreement', labelKey: 'nav.agreement', path: '/agreement', icon: <FileText size={ICON_SIZE} /> },
     { id: 'invoices', labelKey: 'nav.invoices', path: '/supplier-invoices', icon: <Receipt size={ICON_SIZE} /> },
     { id: 'payments', labelKey: 'nav.payments', path: '/supplier-payment-history', icon: <Coins size={ICON_SIZE} /> },
+    { id: 'training', labelKey: 'nav.training', path: '/training', icon: <GraduationCap size={ICON_SIZE} /> },
     { id: 'settings', labelKey: 'nav.settings', path: '/settings', icon: <Gear size={ICON_SIZE} /> },
   ],
 };

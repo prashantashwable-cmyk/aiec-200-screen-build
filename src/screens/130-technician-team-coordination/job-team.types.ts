@@ -16,7 +16,7 @@ export const REASON_MIN = 8;
 export const FINAL_ERRORS = [
   'text_required', 'text_too_long', 'note_required', 'unknown_member', 'forbidden', 'not_found', 'read_only', 'captured_in_future', 'captured_invalid',
   'not_lead', 'unknown_step', 'lead_owns_all', 'reason_required', 'dates_invalid', 'dates_too_long', 'invalid_state', 'already_on_job', 'still_checked_in',
-  'new_lead_required', 'already_open', 'job_finished', 'not_ready', 'job_on_hold', 'tier_cannot_lead',
+  'new_lead_required', 'already_open', 'job_finished', 'not_ready', 'job_on_hold', 'tier_cannot_lead', 'training_incomplete',
 ] as const;
 
 const rec = <T extends string>(ns: string, keys: readonly T[]) => Object.fromEntries(keys.map((k) => [k, `${ns}.${k}`])) as Record<T, string>;

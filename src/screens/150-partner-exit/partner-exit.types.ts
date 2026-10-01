@@ -18,7 +18,7 @@ const rec = <T extends string>(ns: string, keys: readonly T[]) => Object.fromEnt
 const PROBLEMS = [
   'not_admin', 'not_found', 'reason_invalid', 'note_required', 'last_day_invalid', 'exit_open', 'not_active', 'not_open', 'target_required', 'target_invalid', 'action_invalid',
   'item_not_open', 'finish_not_allowed', 'gate_blocked', 'settlement_exists', 'settlement_missing', 'settlement_locked', 'no_dispute', 'dispute_open', 'nothing_to_pay',
-  'reference_required', 'amount_invalid', 'reason_required', 'access_ended', 'access_not_ended', 'withheld', 'offline', 'generic',
+  'reference_required', 'amount_invalid', 'reason_required', 'access_ended', 'access_not_ended', 'withheld', 'training_incomplete', 'offline', 'generic',
 ] as const;
 
 export const EXIT_KEYS = {

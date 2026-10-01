@@ -41,6 +41,8 @@ import type {
   PartnerAgreementTemplate,
   PartnerOffer,
   PartnerTierEntry,
+  TrainingRole,
+  TrainingTopic,
   PartnerExit,
   ExitAction,
   ExitActionKind,
@@ -2377,6 +2379,48 @@ export interface PartnerDirectoryProfileView {
 }
 
 export type DirectoryError = 'not_admin' | 'not_found' | 'reason_required' | 'not_surveyor' | 'not_active' | 'no_change' | 'unknown_zone';
+
+/* ------------------------------------ Training module library (151) */
+
+export type TrainingScope = 'required' | 'mine' | 'all';
+
+export interface TrainingModuleView {
+  id: string;
+  code: string;
+  topic: TrainingTopic;
+  order: number;
+  /** Required of this person (one of the roles they hold requires it). */
+  required: boolean;
+  /** Shown to one of the roles they hold (false: another role's module, listed only under "all"). */
+  forMe: boolean;
+  forRoles: TrainingRole[];
+  minutes: number;
+  lessons: number;
+  offlineKb: number;
+  version: number;
+  changeKey: string | null;
+  status: 'not_started' | 'in_progress' | 'completed' | 'update_needed';
+  /** Completed on an earlier version that still counts: they are told what changed, not sent back. */
+  updatedSince: boolean;
+  lessonsDone: number;
+  percent: number;
+  completedAt: string | null;
+  completedVersion: number | null;
+  lockedBy: { id: string; code: string }[];
+  gatesJobAssignment: boolean;
+}
+
+export interface TrainingLibraryView {
+  person: { name: string; roles: TrainingRole[] };
+  modules: TrainingModuleView[];
+  curriculum: { required: number; completed: number; inProgress: number; updateNeeded: number; percent: number; minutesLeft: number };
+  byTopic: Record<TrainingTopic, { required: number; completed: number }>;
+  /** Whether finishing training is what stands between a technician and being offered a job. */
+  jobGate: { applies: boolean; cleared: boolean; missing: { id: string; code: string }[] };
+  at: string;
+}
+
+export type TrainingError = 'not_found' | 'forbidden' | 'locked' | 'not_for_you' | 'retired' | 'invalid_state';
 
 /* ------------------------------------ Partner deactivation and exit (150) */
 
@@ -5908,6 +5952,10 @@ export interface Repository {
   getRecruitmentDashboard(period: DashboardPeriod, userId: string): Promise<RecruitmentDashboardView>;
   waitlistApplicant(applicationId: string, reason: string, userId: string): Promise<RecruitmentDashboardView>;
   releaseWaitlisted(applicationId: string, userId: string): Promise<RecruitmentDashboardView>;
+  // Training module library (151)
+  getTrainingLibrary(scope: TrainingScope, userId: string): Promise<TrainingLibraryView>;
+  recordTrainingProgress(moduleId: string, input: { status: 'in_progress' | 'completed'; lessonsDone?: number }, userId: string): Promise<TrainingModuleView>;
+
   // Partner deactivation and exit (150)
   getExitBoard(userId: string): Promise<ExitBoardView>;
   getPartnerExit(partnerId: string, userId: string): Promise<PartnerExitView>;

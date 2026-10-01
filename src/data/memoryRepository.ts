@@ -243,6 +243,8 @@ import type {
   PartnerDirectoryRowView,
   PartnerDirectoryView,
   ExitBoardView,
+  TrainingLibraryView,
+  TrainingModuleView,
   ExitPreviewView,
   ExitRowView,
   ExitTargetsView,
@@ -495,6 +497,10 @@ import type {
   PartnerVerification,
   PartnerTierEntry,
   PartnerTerritoryChange,
+  TrainingModule,
+  TrainingProgress,
+  TrainingRole,
+  TrainingTopic,
   PartnerExit,
   ExitAction,
   ExitActionKind,
@@ -701,6 +707,9 @@ import type { Contributor as FpContributor } from '@/features/commission/finalPa
 import { SECTIONS as APP_SECTIONS, EMPTY_FORM as APP_EMPTY, maskId as apMask, outstandingOf as apOutstanding, progressOf as apProgress, sectionStates as apSections, submitProblem as apSubmitProblem } from '@/features/recruitment/application';
 import { FUNNEL as RD_FUNNEL, NOW_STAGES as RD_NOW, SMALL_SAMPLE as RD_SMALL, WAITLIST_MIN as RD_WAITLIST_MIN, funnelOf as rdFunnelOf, medianOf as rdMedian, roomOf as rdRoom, signalOf as rdSignalOf, trendOf as rdTrend } from '@/features/recruitment/dashboard';
 import type { NowStage as RdNowStage, Period as RdPeriod, RecruitStage as RdRecruitStage } from '@/features/recruitment/dashboard';
+import { TOPICS as TN_TOPICS, currentVersionOf as tnCurrentVersion, curriculumOf as tnCurriculum, jobGateOf as tnJobGate, lockedBy as tnLockedBy, percentOfModule as tnPercent, relevantFor as tnRelevant, requiredFor as tnRequired, startProblem as tnStartProblem, statusOf as tnStatus, updatedSince as tnUpdated } from '@/features/training/curriculum';
+import type { ModuleStatus } from '@/features/training/curriculum';
+import { seedTrainingModules, seedTrainingProgress } from './trainingSeed';
 import { GRADUATION_MIN_ORDERS, GRADUATION_MIN_SCORE } from '@/features/suppliers/paymentTerms';
 import { ACTION_NOTE_MIN as EX_ACTION_NOTE_MIN, DISPUTE_MIN as EX_DISPUTE_MIN, INTERVIEW_REASONS as EX_INTERVIEW_REASONS, LAST_DAY_MAX_DAYS as EX_LAST_DAY_MAX, REASON_MIN as EX_REASON_MIN, WITHHOLD_MIN as EX_WITHHOLD_MIN, blockersOf as exBlockersOf, decidedExtra as exDecidedExtra, decisionProblem as exDecisionProblem, startProblem as exStartProblem } from '@/features/partners/exit';
 import type { Stage as ExitStage, Blocker as ExitBlocker } from '@/features/partners/exit';
@@ -6356,7 +6365,7 @@ function jobTeamViewOf(job: Job, viewerId: string, now: number): JobTeamView {
     log: [...(job.teamLog ?? [])].reverse(),
     addable: isAdmin
       ? users
-          .filter((u) => u.role === 'technician' && u.status === 'active' && acceptsNewWork(u.id) && !isOnJob(job, u.id))
+          .filter((u) => u.role === 'technician' && u.status === 'active' && acceptsNewWork(u.id) && trainingClear(u.id) && !isOnJob(job, u.id))
           .map((u) => ({ id: u.id, name: u.name, otherJobsToday: jobs.filter((j) => j.id !== job.id && isOnJob(j, u.id) && (j.status === 'in_progress' || dayKey(j.scheduledFor) === dayKey(now))).length }))
       : [],
     disagreement: disagreementIssue ? { issueId: disagreementIssue.id, code: disagreementIssue.code, at: disagreementIssue.createdAt, resolved: disagreementIssue.status === 'resolved' } : null,
@@ -8710,6 +8719,52 @@ function pdProfile(key: string, now: number): PartnerDirectoryProfileView {
   };
 }
 
+/* ============================== Training module library (151) */
+
+const trainingModules: TrainingModule[] = seedTrainingModules.map((x) => ({ ...x, versions: x.versions.map((v) => ({ ...v })) }));
+const trainingProgress: TrainingProgress[] = seedTrainingProgress.map((x) => ({ ...x }));
+
+/** One person across every role they hold (149 groups them the same way, by phone): what they have done in one account counts in another. */
+function tnPersonOf(userId: string): { name: string; roles: TrainingRole[]; userIds: string[] } | null {
+  const u = byId(users, userId);
+  if (!u || (u.role !== 'surveyor' && u.role !== 'technician' && u.role !== 'supplier')) return null;
+  const key = pdPhoneKey(u.phone);
+  const same = key ? users.filter((x) => pdPhoneKey(x.phone) === key && (x.role === 'surveyor' || x.role === 'technician' || x.role === 'supplier') && x.status !== 'rejected') : [u];
+  const roles = new Set<TrainingRole>(same.filter((x) => x.status === 'active' || x.id === userId).map((x) => x.role as TrainingRole));
+  for (const sup of suppliers) if (!sup.mergedIntoSupplierId && sup.status === 'active' && key && pdPhoneKey(supplierUserFor(sup)?.phone ?? sup.contactPhone) === key) roles.add('supplier');
+  return { name: u.name, roles: [...roles], userIds: same.map((x) => x.id) };
+}
+
+function tnProgressOf(userIds: string[], moduleId: string): TrainingProgress | undefined {
+  const mine = trainingProgress.filter((p) => p.moduleId === moduleId && userIds.includes(p.userId));
+  return mine.filter((p) => p.status === 'completed').sort((a, b) => b.version - a.version)[0] ?? mine[0];
+}
+
+function tnStatusFn(userIds: string[], now: number) {
+  return (id: string): ModuleStatus => { const m = byId(trainingModules, id); return m ? tnStatus(m, tnProgressOf(userIds, id), now) : 'not_started'; };
+}
+
+function tnViewOf(m: TrainingModule, person: { roles: TrainingRole[]; userIds: string[] }, now: number): TrainingModuleView {
+  const p = tnProgressOf(person.userIds, m.id);
+  const status = tnStatusFn(person.userIds, now);
+  const st = status(m.id);
+  const v = tnCurrentVersion(m, now);
+  const locked = tnLockedBy(m, trainingModules, status);
+  return {
+    id: m.id, code: m.code, topic: m.topic, order: m.order, required: tnRequired(m, person.roles), forMe: tnRelevant(m, person.roles), forRoles: [...m.relevantFor], minutes: m.minutes, lessons: m.lessons, offlineKb: m.offlineKb,
+    version: v.version, changeKey: v.version > 1 ? v.changeKey ?? null : null, status: st, updatedSince: tnUpdated(m, p, now), lessonsDone: p?.lessonsDone ?? 0, percent: tnPercent(m, p, st),
+    completedAt: p?.status === 'completed' ? p.completedAt ?? null : null, completedVersion: p?.status === 'completed' ? p.version : null,
+    lockedBy: locked.map((x) => ({ id: x.id, code: x.code })), gatesJobAssignment: m.gatesJobAssignment && tnRequired(m, ['technician']),
+  };
+}
+
+/** Whether a person may be put on a job: for a technician, every gating safety module must be done. Anyone else is not held by it. */
+function trainingClear(userId: string, now = Date.now()): boolean {
+  const person = tnPersonOf(userId);
+  if (!person) return true;
+  return tnJobGate(trainingModules, person.roles, tnStatusFn(person.userIds, now)).cleared;
+}
+
 /* ============================== Partner deactivation and exit (150) */
 
 const partnerExits: PartnerExit[] = [];
@@ -8803,7 +8858,7 @@ function exViewOf(partnerId: string, now: number): PartnerExitView {
   } else if (exit?.status === 'completed') stage = exit.interview ? 'done' : 'interview';
   const targets: ExitTargetsView = {
     surveyors: users.filter((u) => u.role === 'surveyor' && u.status === 'active' && u.id !== partnerId && acceptsNewWork(u.id)).map((u) => ({ id: u.id, name: u.name, openLeads: leads.filter((l) => l.surveyorId === u.id && l.stage !== 'won' && l.stage !== 'lost').length })),
-    technicians: users.filter((u) => u.role === 'technician' && u.status === 'active' && u.id !== partnerId && acceptsNewWork(u.id)).map((u) => ({ id: u.id, name: u.name, openJobs: jobs.filter((j) => j.status !== 'completed' && isOnJob(j, u.id)).length, canLead: tcCanLead(u.id) })),
+    technicians: users.filter((u) => u.role === 'technician' && u.status === 'active' && u.id !== partnerId && acceptsNewWork(u.id) && trainingClear(u.id)).map((u) => ({ id: u.id, name: u.name, openJobs: jobs.filter((j) => j.status !== 'completed' && isOnJob(j, u.id)).length, canLead: tcCanLead(u.id) })),
     suppliers: suppliers.filter((x) => x.status === 'active' && x.id !== partnerId && !x.mergedIntoSupplierId && acceptsNewWork(x.id)).map((x) => ({ id: x.id, name: x.name })),
   };
   return {
@@ -16188,6 +16243,51 @@ export const memoryRepository: Repository = {
       return rdBuild(90, Date.now());
     }),
 
+  /* --------------------------------- Training module library (151) */
+  getTrainingLibrary: (scope, userId) =>
+    simulateRead((): TrainingLibraryView => {
+      const person = tnPersonOf(userId);
+      if (!person) throw new RepositoryError('forbidden');
+      const now = Date.now();
+      const status = tnStatusFn(person.userIds, now);
+      const pool = trainingModules.filter((m) => m.status === 'published');
+      const shown = pool.filter((m) => (scope === 'required' ? tnRequired(m, person.roles) : scope === 'mine' ? tnRelevant(m, person.roles) : true));
+      const gate = tnJobGate(pool, person.roles, status);
+      const topicCount = (topic: TrainingTopic) => { const req = pool.filter((m) => m.topic === topic && tnRequired(m, person.roles)); return { required: req.length, completed: req.filter((m) => status(m.id) === 'completed').length }; };
+      return {
+        person: { name: person.name, roles: person.roles },
+        modules: shown.map((m) => tnViewOf(m, person, now)).sort((a, b) => TN_TOPICS.indexOf(a.topic) - TN_TOPICS.indexOf(b.topic) || a.order - b.order),
+        curriculum: tnCurriculum(pool, person.roles, status),
+        byTopic: { onboarding: topicCount('onboarding'), safety: topicCount('safety'), customer: topicCount('customer'), product: topicCount('product') },
+        jobGate: { applies: gate.applies, cleared: gate.cleared, missing: gate.missing.map((m) => ({ id: m.id, code: m.code })) },
+        at: new Date(now).toISOString(),
+      };
+    }),
+
+  recordTrainingProgress: (moduleId, input, userId) =>
+    simulateWrite((): TrainingModuleView => {
+      const person = tnPersonOf(userId);
+      if (!person) throw new RepositoryError('forbidden');
+      const m = byId(trainingModules, moduleId);
+      if (!m) throw new RepositoryError('not_found');
+      const now = Date.now();
+      const status = tnStatusFn(person.userIds, now);
+      const problem = tnStartProblem(m, person.roles, tnLockedBy(m, trainingModules, status));
+      if (problem) throw new RepositoryError(problem);
+      const at = new Date(now).toISOString();
+      const version = tnCurrentVersion(m, now).version;
+      const own = trainingProgress.find((p) => p.userId === userId && p.moduleId === moduleId);
+      const lessonsDone = Math.max(0, Math.min(m.lessons, input.status === 'completed' ? m.lessons : input.lessonsDone ?? own?.lessonsDone ?? 0));
+      if (own) {
+        // Starting again on a module already completed on a counting version changes nothing; a retake after an update begins afresh.
+        if (own.status === 'completed' && input.status === 'in_progress' && tnStatus(m, own, now) === 'completed') return tnViewOf(m, person, now);
+        Object.assign(own, { status: input.status, version, lessonsDone, ...(input.status === 'completed' ? { completedAt: at } : { startedAt: own.status === 'completed' ? at : own.startedAt, completedAt: undefined }) });
+      } else {
+        trainingProgress.push({ userId, moduleId, status: input.status, startedAt: at, ...(input.status === 'completed' ? { completedAt: at } : {}), version, lessonsDone });
+      }
+      return tnViewOf(m, person, now);
+    }),
+
   /* --------------------------------- Partner deactivation and exit (150) */
   getExitBoard: (userId) =>
     simulateRead((): ExitBoardView => {
@@ -16275,6 +16375,7 @@ export const memoryRepository: Repository = {
           const member = crew.find((c) => c.userId === partnerId);
           const isLead = job.technicianId === partnerId;
           if (isLead && !tcCanLead(toId)) throw new RepositoryError('target_invalid');
+          if (!trainingClear(toId)) throw new RepositoryError('training_incomplete');
           // Their finished steps keep their name; what is still open goes to the person taking over, with their notes carried on the job's own team log.
           const openOwned = (member?.stepIds ?? []).filter((id) => job.steps.find((st) => st.id === id)?.status !== 'complete');
           const next = crew.filter((c) => c.userId !== partnerId).map((c) => (c.userId === toId ? { ...c, role: isLead ? ('lead' as const) : c.role, stepIds: isLead ? [] : [...new Set([...c.stepIds, ...openOwned])] } : c));
@@ -17148,6 +17249,7 @@ export const memoryRepository: Repository = {
       if (r.status !== 'open' && r.status !== 'assigned' && r.status !== 'in_progress') throw new RepositoryError('invalid_state');
       const tech = byId(users, technicianId);
       if (!tech || tech.role !== 'technician' || tech.status !== 'active') throw new RepositoryError('not_technician');
+      if (!trainingClear(tech.id)) throw new RepositoryError('training_incomplete');
       if (r.ownerId === tech.id) throw new RepositoryError('invalid_state');
       const problem = rwReassignProblem({ hasOwner: !!r.ownerId, reason });
       if (problem) throw new RepositoryError(problem);
@@ -17688,7 +17790,7 @@ export const memoryRepository: Repository = {
         rows,
         inspectors: isAdmin
           ? users
-              .filter((u) => u.role === 'technician' && u.status === 'active' && acceptsNewWork(u.id) && missingQcSkills(u.skills).length === 0)
+              .filter((u) => u.role === 'technician' && u.status === 'active' && acceptsNewWork(u.id) && trainingClear(u.id) && missingQcSkills(u.skills).length === 0)
               .map((u) => ({ userId: u.id, name: u.name, eligibleInGeneral: true, qcThisWeek: qcAssignments.filter((a) => a.inspectorId === u.id && qcActive(a) && a.scheduledDate && a.scheduledDate >= weekAgo && a.scheduledDate <= weekAhead).length, unavailable: inspectorOff.filter((o) => o.userId === u.id && o.date >= qcDay(now)).map((o) => ({ ...o })) }))
           : [],
         totals: { ready: rows.filter((r) => r.ready).length, unassigned: rows.filter((r) => r.ready && !r.assignment).length, scheduled: rows.filter((r) => r.assignment?.status === 'scheduled').length, conflicts: rows.filter((r) => r.assignment?.conflict).length },
@@ -17711,6 +17813,7 @@ export const memoryRepository: Repository = {
       if (existing && qcActive(existing)) throw new RepositoryError('already_assigned');
       const person = byId(users, input.inspectorId);
       if (!person || person.role !== 'technician') throw new RepositoryError('unknown_inspector');
+      if (!trainingClear(person.id)) throw new RepositoryError('training_incomplete');
       const { mode, gaps } = qcNamable(job, person, input.exceptionNote);
       const now = new Date().toISOString();
       qcCounter += 1;
@@ -17961,6 +18064,7 @@ export const memoryRepository: Repository = {
       const to = crewOf(job).find((c) => c.userId === input.toUserId);
       if (!to || to.userId === job.technicianId) throw new RepositoryError('unknown_member');
       if (!tcCanLead(to.userId)) throw new RepositoryError('tier_cannot_lead');
+      if (!trainingClear(to.userId)) throw new RepositoryError('training_incomplete');
       if (input.reason.trim().length < 8) throw new RepositoryError('reason_required');
       const okDay = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(new Date(`${s}T00:00:00`).getTime());
       if (!okDay(input.from) || !okDay(input.until) || input.until < input.from) throw new RepositoryError('dates_invalid');
@@ -17989,6 +18093,7 @@ export const memoryRepository: Repository = {
       const { job, user } = teamActor(jobId, adminId);
       const tech = byId(users, technicianId);
       if (!tech || tech.role !== 'technician' || tech.status !== 'active' || !acceptsNewWork(tech.id)) throw new RepositoryError('unknown_member');
+      if (!trainingClear(tech.id)) throw new RepositoryError('training_incomplete');
       if (isOnJob(job, technicianId)) throw new RepositoryError('already_on_job');
       if (job.status === 'completed') throw new RepositoryError('read_only');
       const known = new Set(job.steps.filter((st) => st.status !== 'complete').map((st) => st.id));
@@ -18038,6 +18143,7 @@ export const memoryRepository: Repository = {
       const crew = crewOf(job);
       if (newLeadId === job.technicianId || !crew.some((c) => c.userId === newLeadId)) throw new RepositoryError('unknown_member');
       if (!tcCanLead(newLeadId)) throw new RepositoryError('tier_cannot_lead');
+      if (!trainingClear(newLeadId)) throw new RepositoryError('training_incomplete');
       const next = crew.map((c) => (c.userId === newLeadId ? { ...c, role: 'lead' as const, stepIds: [] } : c.userId === job.technicianId ? { ...c, role: 'assistant' as const, stepIds: [] } : c));
       logTeam(job, teamEvent('lead_changed', user.name, byId(users, newLeadId)?.name, reason.trim()), { crew: next, technicianId: newLeadId });
       return jobTeamViewOf(byId(jobs, job.id) as Job, adminId, Date.now());
