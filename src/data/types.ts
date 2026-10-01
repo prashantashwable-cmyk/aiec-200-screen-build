@@ -2698,13 +2698,34 @@ export interface PartnerApplication {
   /** What the applicant's own link carries: there is no account yet. */
   accessKey: string;
   role: 'surveyor' | 'technician' | 'supplier';
-  status: 'draft' | 'submitted' | 'in_screening' | 'withdrawn';
+  /** `info_requested` reopens the form for what Admin asked; `approved` (through screening, on to interview) and `rejected` lock it. */
+  status: 'draft' | 'submitted' | 'info_requested' | 'approved' | 'rejected' | 'withdrawn';
   startedAt: string;
   updatedAt: string;
   submittedAt?: string;
   form: ApplicationForm;
-  events: { id: string; at: string; kind: 'started' | 'saved' | 'submitted' | 'resubmitted' | 'reference_outcome'; byName: string; note?: string }[];
+  events: { id: string; at: string; kind: 'started' | 'saved' | 'submitted' | 'resubmitted' | 'reference_outcome' | 'info_requested' | 'info_answered' | 'approved' | 'rejected' | 'adjusted' | 'outcome'; byName: string; note?: string }[];
+  /** What AIEC said to the applicant: shown on their own link, in their own language, rendered from a key at the time it is read. */
+  messages: { id: string; at: string; kind: 'info_request' | 'decline' | 'approved'; templateKey: string; params: Record<string, string>; note?: string; byName: string }[];
+  screening?: ApplicationScreening;
   isDemo: boolean;
+}
+
+export interface ScreeningFactorRow {
+  key: 'completeness' | 'experience' | 'territory' | 'availability' | 'references';
+  weight: number;
+  value: number;
+  contribution: number;
+}
+
+/** What screening decided, and what it was decided on: the score and its breakdown are frozen with the decision. */
+export interface ApplicationScreening {
+  decision?: { status: 'approved' | 'rejected'; at: string; byName: string; reasonKey?: string; note?: string; score: number; effective: number; rows: ScreeningFactorRow[] };
+  /** Admin's documented override of the ranking: a standout the formula does not capture, or a concern it does not see. */
+  adjustment?: { points: number; reason: string; byName: string; at: string };
+  infoRequest?: { sections: string[]; note: string; at: string; byName: string; answeredAt?: string };
+  /** How the person turned out once working with AIEC: the feedback that tunes the weights. */
+  outcome?: { rating: 'strong' | 'steady' | 'weak'; at: string; byName: string; note?: string };
 }
 
 /* ------------------------------------ Handover completion certificate (140) */
@@ -3935,6 +3956,7 @@ export type CommitmentKind =
   | 'amc_renewal_review'
   | 'handover_certificate_issue'
   | 'application_reference_check'
+  | 'application_screening'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'

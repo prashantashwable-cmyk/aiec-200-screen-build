@@ -102,6 +102,7 @@ import type {
   User,
 } from './types';
 import { addDaysKey, dateKey } from '../features/logistics/deliverySlots';
+import { DEFAULT_WEIGHTS as SCREEN_WEIGHTS, FACTORS as SCREEN_FACTORS } from '../features/recruitment/screening';
 
 /**
  * The seeded AIEC demo dataset.
@@ -4222,6 +4223,56 @@ const apForm = (over: Partial<PartnerApplication['form']>): PartnerApplication['
 });
 const apDoc = (name: string) => ({ fileName: name, capturedAt: hoursAgo(130), previewUrl: '' });
 
+/** People screened before this app kept the work: decided on the default weighting, with what became of those taken on. Frozen like any decision. */
+function screenedHistory(): PartnerApplication[] {
+  type V = [number, number, number, number, number];
+  const mk = (n: number, name: string, role: PartnerApplication['role'], daysAgoN: number, v: V, outcome?: { rating: 'strong' | 'steady' | 'weak'; note?: string }, reject?: string): PartnerApplication => {
+    const values = Object.fromEntries(SCREEN_FACTORS.map((k, i) => [k, v[i]])) as Record<(typeof SCREEN_FACTORS)[number], number>;
+    const rows = SCREEN_FACTORS.map((key) => ({ key, weight: SCREEN_WEIGHTS[key], value: values[key], contribution: (SCREEN_WEIGHTS[key] * values[key]) / 100 }));
+    const score = Math.round(rows.reduce((t, r) => t + r.contribution, 0));
+    const at = daysAgo(daysAgoN);
+    const status = reject ? ('rejected' as const) : ('approved' as const);
+    return {
+      id: `ap-h${n}`,
+      code: `AIEC-AP-${1900 + n}`,
+      interestId: '',
+      accessKey: `demo-key-h${n}`,
+      role,
+      status,
+      startedAt: daysAgo(daysAgoN + 4),
+      updatedAt: at,
+      submittedAt: daysAgo(daysAgoN + 2),
+      form: apForm({
+        personal: { fullName: name, phone: `98900111${20 + n}`, city: 'Pune', address: 'Pune', dob: '', languages: ['mr'] },
+        experience: { years: v[1] >= 70 ? '3_5' : v[1] >= 50 ? '1_3' : 'under_1', skills: role === 'surveyor' ? [] : ['mechanical'], sectors: role === 'surveyor' ? ['real_estate'] : [], summary: 'Experience summary as given in the original application.' },
+        territory: { zoneIds: ['z-hinjawadi'], travelKm: '20', ownTransport: true },
+        availability: { days: [1, 2, 3, 4, 5, 6], timeOfDay: 'full_day', hoursPerWeek: '40', earliestStart: addDaysKey(dateKey(new Date()), 1) },
+        identity: { aadhaarNumber: '', aadhaarDoc: null, panNumber: 'ABCPX1234Z', panDoc: apDoc('pan-on-file.jpg'), gstin: '', gstDoc: null },
+        noReferences: true,
+      }),
+      events: [],
+      messages: [],
+      screening: {
+        decision: { status, at, byName: 'Prashant Vasant Wable', score, effective: score, rows, ...(reject ? { reasonKey: `screening.decline.${reject}` } : {}) },
+        ...(outcome ? { outcome: { rating: outcome.rating, at: daysAgo(Math.max(1, daysAgoN - 40)), byName: 'Prashant Vasant Wable', ...(outcome.note ? { note: outcome.note } : {}) } } : {}),
+      },
+      isDemo: true,
+    };
+  };
+  return [
+    mk(1, 'Sunil Kamble', 'technician', 150, [100, 85, 80, 90, 100], { rating: 'strong', note: 'Leads installs unaided; no rework in six jobs.' }),
+    mk(2, 'Ajay Shinde', 'technician', 140, [100, 80, 60, 70, 100], { rating: 'strong' }),
+    mk(3, 'Neha Patil', 'surveyor', 130, [100, 70, 90, 80, 85], { rating: 'strong', note: 'Converting well in Kharadi.' }),
+    mk(4, 'Dinesh Rane', 'technician', 120, [100, 55, 70, 60, 50], { rating: 'steady' }),
+    mk(5, 'Pravin Chavan', 'technician', 110, [85, 30, 80, 70, 50], { rating: 'weak', note: 'Struggled with electrical checks; moved to helper work.' }),
+    mk(6, 'Rekha Mane', 'surveyor', 100, [100, 35, 50, 40, 20], { rating: 'weak', note: 'Few surveys completed in her first months.' }),
+    mk(7, 'Santosh Jagtap', 'technician', 50, [100, 60, 70, 80, 100]),
+    mk(8, 'Vijay Salunke', 'technician', 90, [70, 20, 40, 30, 0], undefined, 'incomplete_details'),
+    mk(9, 'Manoj Thakur', 'surveyor', 80, [100, 50, 20, 70, 50], undefined, 'area_covered'),
+    mk(10, 'Girish Apte', 'technician', 70, [100, 30, 80, 60, 50], undefined, 'more_experience'),
+  ];
+}
+
 export const seedPartnerApplications: PartnerApplication[] = [
   {
     id: 'ap-1',
@@ -4245,6 +4296,7 @@ export const seedPartnerApplications: PartnerApplication[] = [
       ],
     }),
     events: [],
+    messages: [],
     isDemo: true,
   },
   {
@@ -4258,6 +4310,7 @@ export const seedPartnerApplications: PartnerApplication[] = [
     updatedAt: hoursAgo(118),
     form: apForm({ personal: { fullName: 'Sneha Kulkarni', phone: '9890011102', city: 'Pune', address: '', dob: '', languages: ['mr'] } }),
     events: [],
+    messages: [],
     isDemo: true,
   },
   {
@@ -4279,6 +4332,101 @@ export const seedPartnerApplications: PartnerApplication[] = [
       references: [{ id: 'rf-3', name: 'Ramesh Pawar', phone: '9890022203', relationship: 'Previous employer', organisation: '', outcome: { status: 'unreachable', at: hoursAgo(40), byName: 'Prashant Vasant Wable', note: 'Phone off on two attempts.' } }],
     }),
     events: [],
+    messages: [],
     isDemo: true,
   },
+  // Further applications waiting for a first look (143), a spread so the ranking has something to say.
+  {
+    id: 'ap-4',
+    code: 'AIEC-AP-2004',
+    interestId: '',
+    accessKey: 'demo-key-4',
+    role: 'surveyor',
+    status: 'submitted',
+    startedAt: hoursAgo(60),
+    updatedAt: hoursAgo(30),
+    submittedAt: hoursAgo(30),
+    form: apForm({
+      personal: { fullName: 'Priya Deshpande', phone: '9890011110', city: 'Pune', address: 'Viman Nagar, Pune', dob: '1992-07-21', languages: ['en', 'mr', 'hi'] },
+      experience: { years: 'over_5', skills: [], sectors: ['real_estate', 'elevators'], summary: 'Seven years selling flats and, for the last two, lift packages to housing societies, with a steady monthly close rate and my own list of society committees across Kharadi and Viman Nagar.' },
+      territory: { zoneIds: ['z-kharadi'], travelKm: '20', ownTransport: true },
+      availability: { days: [1, 2, 3, 4, 5, 6], timeOfDay: 'full_day', hoursPerWeek: '40', earliestStart: addDaysKey(dateKey(new Date()), 7) },
+      identity: { aadhaarNumber: '', aadhaarDoc: null, panNumber: 'BCDPD4567E', panDoc: apDoc('pan-priya.jpg'), gstin: '', gstDoc: null },
+      references: [
+        { id: 'rf-4', name: 'Nitin Phadke', phone: '9890022204', relationship: 'Former sales head', organisation: 'Horizon Realty', outcome: { status: 'verified', at: hoursAgo(12), byName: 'Prashant Vasant Wable', note: 'Strong closer, left on good terms.' } },
+        { id: 'rf-5', name: 'Smita Kulkarni', phone: '9890022205', relationship: 'Society secretary', organisation: 'Orchid Heights CHS', outcome: { status: 'verified', at: hoursAgo(10), byName: 'Prashant Vasant Wable' } },
+      ],
+    }),
+    events: [],
+    messages: [],
+    isDemo: true,
+  },
+  {
+    id: 'ap-5',
+    code: 'AIEC-AP-2005',
+    interestId: 'ri-5',
+    accessKey: 'demo-key-5',
+    role: 'supplier',
+    status: 'submitted',
+    startedAt: hoursAgo(70),
+    updatedAt: hoursAgo(50),
+    submittedAt: hoursAgo(50),
+    form: apForm({
+      personal: { fullName: 'Imran Shaikh', phone: '9890011105', city: 'Pune', address: 'Bhosari MIDC, Pune', dob: '', languages: ['en', 'hi'] },
+      experience: { years: '3_5', skills: ['door_operator', 'vfd'], sectors: [], summary: 'We assemble and supply door operators and VFD drives for lift installers across Pune and Nashik, with a small test bench of our own.' },
+      territory: { zoneIds: ['z-pimpri'], travelKm: '40', ownTransport: true },
+      availability: { days: [1, 2, 3, 4, 5, 6], timeOfDay: 'full_day', hoursPerWeek: '40', earliestStart: addDaysKey(dateKey(new Date()), 10) },
+      identity: { aadhaarNumber: '', aadhaarDoc: null, panNumber: '', panDoc: null, gstin: '27AAACS7788K1Z4', gstDoc: apDoc('gst-shaikh.pdf') },
+      references: [{ id: 'rf-6', name: 'Dilip Kamble', phone: '9890022206', relationship: 'Customer', organisation: 'Kamble Lifts', }],
+    }),
+    events: [],
+    messages: [],
+    isDemo: true,
+  },
+  {
+    id: 'ap-6',
+    code: 'AIEC-AP-2006',
+    interestId: '',
+    accessKey: 'demo-key-6',
+    role: 'technician',
+    status: 'submitted',
+    startedAt: hoursAgo(140),
+    updatedAt: hoursAgo(120),
+    submittedAt: hoursAgo(120),
+    form: apForm({
+      personal: { fullName: 'Rohan Gaikwad', phone: '9890011111', city: 'Pune', address: '', dob: '2003-01-15', languages: ['mr'] },
+      experience: { years: 'none', skills: ['mechanical'], sectors: [], summary: 'Just finished my ITI in fitter trade and would like to learn lift installation.' },
+      territory: { zoneIds: ['z-hinjawadi'], travelKm: '10', ownTransport: false },
+      availability: { days: [1, 2, 3, 4, 5, 6], timeOfDay: 'full_day', hoursPerWeek: '40', earliestStart: addDaysKey(dateKey(new Date()), 5) },
+      identity: { aadhaarNumber: '', aadhaarDoc: null, panNumber: 'CDEPG5678F', panDoc: apDoc('pan-rohan.jpg'), gstin: '', gstDoc: null },
+      noReferences: true,
+    }),
+    events: [],
+    messages: [],
+    isDemo: true,
+  },
+  {
+    id: 'ap-7',
+    code: 'AIEC-AP-2007',
+    interestId: '',
+    accessKey: 'demo-key-7',
+    role: 'surveyor',
+    status: 'info_requested',
+    startedAt: hoursAgo(100),
+    updatedAt: hoursAgo(20),
+    submittedAt: hoursAgo(90),
+    form: apForm({
+      personal: { fullName: 'Kavita Joshi', phone: '9890011112', city: 'Pune', address: 'Kothrud, Pune', dob: '1996-11-02', languages: ['mr', 'hi'] },
+      experience: { years: '1_3', skills: [], sectors: ['other_sales'], summary: 'Sold insurance and home loans for two years.' },
+      territory: { zoneIds: ['z-hinjawadi'], travelKm: '10', ownTransport: true },
+      availability: { days: [1, 2, 3, 4, 5], timeOfDay: 'afternoons', hoursPerWeek: '20', earliestStart: addDaysKey(dateKey(new Date()), 14) },
+      identity: { aadhaarNumber: '', aadhaarDoc: null, panNumber: 'DEFPJ6789G', panDoc: apDoc('pan-kavita.jpg'), gstin: '', gstDoc: null },
+      noReferences: true,
+    }),
+    events: [],
+    messages: [{ id: 'apm-seed-1', at: hoursAgo(20), kind: 'info_request', templateKey: 'screening.message.infoRequest', params: { name: 'Kavita' }, note: 'Please tell us a little more about the kind of customers you sold to and how many you closed in a typical month.', byName: 'Prashant Vasant Wable' }],
+    screening: { infoRequest: { sections: ['experience'], note: 'Please tell us a little more about the kind of customers you sold to and how many you closed in a typical month.', at: hoursAgo(20), byName: 'Prashant Vasant Wable' } },
+    isDemo: true,
+  },
+  ...screenedHistory(),
 ];

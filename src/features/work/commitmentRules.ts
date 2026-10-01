@@ -59,6 +59,7 @@ import { PROCESS_REVIEW_TARGET, dueAtOf } from '@/features/suppliers/disputes';
 import { RECOVERY_CHASE_EVERY, RELEASE_DUE_AFTER } from '@/features/suppliers/exposure';
 import { FEED_RESTORE_DUE, REVIEW_DUE, severityOf } from '@/features/finance/reconciliation';
 import { MANUAL_UPDATE_EVERY } from '@/features/logistics/shipmentTracking';
+import { SCREEN_DUE } from '@/features/recruitment/screening';
 
 /**
  * The manager's rulebook: every dated promise the business runs on, as data.
@@ -1681,6 +1682,33 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
             oversightRoute: `/applications/${a.id}`,
           };
         });
+    },
+  },
+  {
+    // Submitted applications wait for a first look (143). One promise for the whole queue, so a surge is one line to act on, not sixty; it is due
+    // when the oldest one has waited the screening window, and it moves as the oldest are cleared.
+    kind: 'application_screening',
+    nudgeBefore: hours(12),
+    escalateAfter: hours(24),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'staffing',
+    collect(src) {
+      const waiting = src.applications.filter((a) => a.status === 'submitted' && a.submittedAt).sort((a, b) => (a.submittedAt as string).localeCompare(b.submittedAt as string));
+      if (waiting.length === 0) return [];
+      return [
+        {
+          ...base('application_screening', 'application', 'queue'),
+          ownerUserId: adminId(src),
+          titleKey: 'work.title.application_screening',
+          titleParams: { count: String(waiting.length) },
+          dueAt: plus(waiting[0].submittedAt as string, SCREEN_DUE),
+          state: 'open' as const,
+          paused: false,
+          actionRoute: '/screening',
+          oversightRoute: '/screening',
+        },
+      ];
     },
   },
   {

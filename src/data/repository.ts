@@ -27,6 +27,8 @@ import type {
   WarrantyRegistration,
   RecruitmentInterest,
   ApplicationForm,
+  ApplicationScreening,
+  ScreeningFactorRow,
   PartnerApplication,
   HandoverCompletion,
   FinalPayoutLine,
@@ -1780,6 +1782,9 @@ export interface PartnerApplicationView {
   submittedAt: string | null;
   updatedAt: string;
   events: PartnerApplication['events'];
+  /** What AIEC has said to this applicant (a template key, filled in the reader's language) and, while it is open, what was asked for. */
+  messages: PartnerApplication['messages'];
+  infoRequest: { sections: string[]; note: string; at: string } | null;
 }
 
 export interface ApplicationBoardView {
@@ -1788,6 +1793,97 @@ export interface ApplicationBoardView {
 }
 
 export type ApplicationError = 'invalid_link' | 'locked' | 'incomplete' | 'not_found' | 'forbidden' | 'not_admin' | 'note_required' | 'invalid_state';
+
+/* ------------------------------------ Recruitment: applicant screening and scoring (143) */
+
+export interface ScreeningFactorView {
+  key: ScreeningFactorRow['key'];
+  weight: number;
+  value: number;
+  contribution: number;
+  detail: Record<string, number | string>;
+}
+
+export interface ScreeningRowView {
+  id: string;
+  code: string;
+  name: string;
+  role: PartnerApplication['role'];
+  status: PartnerApplication['status'];
+  channel: RecruitmentInterest['source']['channel'];
+  city: string;
+  submittedAt: string | null;
+  waitingDays: number;
+  /** Over the time a first look should take. */
+  overdue: boolean;
+  score: number;
+  adjustment: number;
+  effective: number;
+  /** Frozen with the decision once there is one; live until then. */
+  frozen: boolean;
+  outstanding: number;
+  /** The single biggest thing behind the number, for the row's one-line "why". */
+  topFactor: ScreeningFactorRow['key'];
+  weakFactor: ScreeningFactorRow['key'];
+}
+
+export interface ScreeningQueueView {
+  /** Submitted and waiting, best first. */
+  queue: ScreeningRowView[];
+  /** Asked for more and waiting on the applicant. */
+  waiting: ScreeningRowView[];
+  /** Decided, newest first. */
+  decided: ScreeningRowView[];
+  counts: { queue: number; waiting: number; approved: number; rejected: number; overdue: number };
+  weights: Record<ScreeningFactorRow['key'], number>;
+  demand: { level: Demand; lastDay: number };
+}
+
+export interface ScreeningDetailView {
+  application: PartnerApplicationView;
+  rows: ScreeningFactorView[];
+  score: number;
+  adjustment: ApplicationScreening['adjustment'] | null;
+  effective: number;
+  frozen: boolean;
+  decision: NonNullable<ApplicationScreening['decision']> | null;
+  infoRequest: ApplicationScreening['infoRequest'] | null;
+  outcome: ApplicationScreening['outcome'] | null;
+  /** 1-based place in the open queue, or null once it has left it. */
+  place: number | null;
+  queueSize: number;
+  canDecide: boolean;
+  nextId: string | null;
+}
+
+export interface ScoringConfigView {
+  weights: Record<ScreeningFactorRow['key'], number>;
+  defaults: Record<ScreeningFactorRow['key'], number>;
+  updatedAt: string | null;
+  updatedByName: string | null;
+  feedback: {
+    rated: number;
+    enough: boolean;
+    perFactor: { key: ScreeningFactorRow['key']; strong: number | null; weak: number | null; gap: number | null }[];
+    suggest: ScreeningFactorRow['key'] | null;
+  };
+  /** Approved people still waiting for an outcome to be recorded. */
+  toRate: { id: string; code: string; name: string; role: PartnerApplication['role']; decidedAt: string }[];
+}
+
+export interface ScoringSaveResult {
+  saved: boolean;
+  /** How many places in today's queue would move three or more under the new weights, as a share. */
+  reshuffle: number;
+  queueSize: number;
+}
+
+export type ScreeningDecision =
+  | { decision: 'approve'; note?: string }
+  | { decision: 'reject'; reason: string; note?: string }
+  | { decision: 'request_info'; sections: string[]; note: string };
+
+export type ScreeningError = ApplicationError | 'reason_required' | 'adjust_range' | 'sum_not_100' | 'out_of_range' | 'not_open' | 'not_approved' | 'nothing_selected';
 
 /* ------------------------------------ Recruitment: the public front door (141) */
 
@@ -5197,6 +5293,15 @@ export interface Repository {
   listPartnerApplications(userId: string): Promise<ApplicationBoardView>;
   /** Admin records what they found when they called a reference. Never blocks the application. */
   recordReferenceOutcome(applicationId: string, referenceId: string, input: { status: 'verified' | 'unreachable' | 'declined'; note?: string }, userId: string): Promise<PartnerApplicationView>;
+  // Recruitment: applicant screening and scoring (143)
+  getScreeningQueue(userId: string): Promise<ScreeningQueueView>;
+  getScreeningDetail(applicationId: string, userId: string): Promise<ScreeningDetailView>;
+  decideApplication(applicationId: string, input: ScreeningDecision, userId: string): Promise<ScreeningDetailView>;
+  bulkRejectApplications(applicationIds: string[], input: { reason: string; note?: string }, userId: string): Promise<{ rejected: number; skipped: number }>;
+  setApplicationAdjustment(applicationId: string, input: { points: number; reason: string } | null, userId: string): Promise<ScreeningDetailView>;
+  getScoringConfig(userId: string): Promise<ScoringConfigView>;
+  saveScoringConfig(weights: Record<ScreeningFactorRow['key'], number>, confirm: boolean, userId: string): Promise<ScoringSaveResult>;
+  recordApplicantOutcome(applicationId: string, input: { rating: 'strong' | 'steady' | 'weak'; note?: string }, userId: string): Promise<ScreeningDetailView>;
 
   /* Recruitment: the public front door (141) */
   /** Public: no session. */

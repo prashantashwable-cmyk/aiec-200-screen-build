@@ -230,6 +230,13 @@ import type {
   RecruitmentLandingView,
   ApplicationAccess,
   ApplicationBoardView,
+  ScreeningDecision,
+  ScreeningDetailView,
+  ScreeningFactorView,
+  ScreeningQueueView,
+  ScreeningRowView,
+  ScoringConfigView,
+  ScoringSaveResult,
   PartnerApplicationView,
   CompletionBoardView,
   CompletionDocument,
@@ -442,6 +449,8 @@ import type {
   WarrantyRegistration,
   RecruitmentInterest,
   PartnerApplication,
+  ApplicationScreening,
+  ScreeningFactorRow,
   ApplicationForm,
   ApplicationReference,
   HandoverCompletion,
@@ -631,7 +640,9 @@ import type { AmcTierId as WrTierId } from '@/features/qc/warranty';
 import { issueProblem as coIssueProblem, readinessOf as coReadiness, signoffDueAt as coSignoffDue } from '@/features/qc/completion';
 import { QC_FEE as FP_QC_FEE, crewShares as fpCrewShares, installPoolOf as fpInstallPool, judgementProblem as fpJudgementProblem, qcShares as fpQcShares, salesCloseOf as fpSalesClose } from '@/features/commission/finalPayout';
 import type { Contributor as FpContributor } from '@/features/commission/finalPayout';
-import { EMPTY_FORM as APP_EMPTY, maskId as apMask, outstandingOf as apOutstanding, progressOf as apProgress, sectionStates as apSections, submitProblem as apSubmitProblem } from '@/features/recruitment/application';
+import { SECTIONS as APP_SECTIONS, EMPTY_FORM as APP_EMPTY, maskId as apMask, outstandingOf as apOutstanding, progressOf as apProgress, sectionStates as apSections, submitProblem as apSubmitProblem } from '@/features/recruitment/application';
+import { DECLINE_REASONS, DEFAULT_WEIGHTS as SCREEN_DEFAULT_WEIGHTS, RATE_AFTER as SCREEN_RATE_AFTER, RESHUFFLE_SHARE, SCREEN_DUE, adjustProblem as screeningAdjustProblem, clampScore as clampScreen, factorValues, feedbackOf as screeningFeedback, reshuffleShare as screeningReshuffle, scoreOf as scoreWith, weightsProblem as screeningWeightsProblem } from '@/features/recruitment/screening';
+import type { Factor, Weights } from '@/features/recruitment/screening';
 import { INTAKE_SURGE_PER_DAY, INTAKE_WINDOW, RECRUIT_CHANNELS, demandOf as rcDemandOf, interestProblem as rcInterestProblem, normalisePhone as rcPhone } from '@/features/recruitment/interest';
 import { ARRANGE_DUE as WT_ARRANGE_DUE, DOCS as WT_DOCS, FOLLOWUP_DUE as WT_FOLLOWUP_DUE, SIGNOFF_DUE_PRESENT as WT_SIGNOFF_PRESENT, SIGNOFF_DUE_REMOTE as WT_SIGNOFF_REMOTE, amcProblem as wtAmcProblem, arrangeProblem as wtArrangeProblem, conductProblem as wtConductProblem, isNegative as wtIsNegative, questionProblem as wtQuestionProblem, scoreProblem as wtScoreProblem, scriptFor as wtScriptFor, signoffProblem as wtSignoffProblem } from '@/features/qc/walkthrough';
 import { CORRECTION_MIN as HO_CORRECTION_MIN, DOC_KINDS as HO_DOC_KINDS, REVIEW_NOTE_MIN as HO_REVIEW_NOTE_MIN, REVIEW_REASON_MIN as HO_REVIEW_REASON_MIN, blockOf as hoBlockOf, correctionProblem as hoCorrectionProblem, docStateOf as hoDocState, issueProblem as hoIssueProblem, readinessOf as hoReadiness } from '@/features/qc/handover';
@@ -7531,7 +7542,9 @@ function stepFinisherName(job: Job, st: Job['steps'][number]): string | null {
 
 /* ============================== Recruitment: the applicant's full details (142) */
 
-const partnerApplications: PartnerApplication[] = seedPartnerApplications.map((a) => ({ ...a, form: JSON.parse(JSON.stringify(a.form)) as ApplicationForm, events: a.events.map((e) => ({ ...e })) }));
+const partnerApplications: PartnerApplication[] = seedPartnerApplications.map((a) => ({ ...a, form: JSON.parse(JSON.stringify(a.form)) as ApplicationForm, events: a.events.map((e) => ({ ...e })), messages: a.messages.map((m) => ({ ...m, params: { ...m.params } })), ...(a.screening ? { screening: JSON.parse(JSON.stringify(a.screening)) as ApplicationScreening } : {}) }));
+/** A form can be changed by its applicant until screening has decided it; an asked-for correction reopens it. */
+const apLocked = (status: PartnerApplication['status']): boolean => status === 'approved' || status === 'rejected' || status === 'withdrawn';
 let applicationCounter = 100;
 let applicationEventCounter = 0;
 let applicationRefCounter = 0;
@@ -7568,7 +7581,7 @@ function applicationViewOf(app: PartnerApplication, viewer: 'applicant' | 'admin
     role: app.role,
     status: app.status,
     viewer,
-    locked: app.status === 'in_screening' || app.status === 'withdrawn',
+    locked: apLocked(app.status),
     form,
     sections: sections.map((s) => ({ ...s, missing: [...s.missing] })),
     progress: apProgress(sections),
@@ -7581,7 +7594,140 @@ function applicationViewOf(app: PartnerApplication, viewer: 'applicant' | 'admin
     submittedAt: app.submittedAt ?? null,
     updatedAt: app.updatedAt,
     events: app.events.map((e) => ({ ...e })),
+    messages: app.messages.map((m) => ({ ...m, params: { ...m.params } })),
+    infoRequest: app.status === 'info_requested' && app.screening?.infoRequest ? { sections: [...app.screening.infoRequest.sections], note: app.screening.infoRequest.note, at: app.screening.infoRequest.at } : null,
   };
+}
+
+/* ============================== Recruitment: applicant screening and scoring (143) */
+
+const scoringConfig: { weights: Weights; updatedAt: string | null; updatedByName: string | null } = { weights: { ...SCREEN_DEFAULT_WEIGHTS }, updatedAt: null, updatedByName: null };
+let screeningMessageCounter = 0;
+
+function screeningAdmin(userId: string): User {
+  const u = byId(users, userId);
+  if (!u || u.role !== 'admin') throw new RepositoryError('not_admin');
+  return u;
+}
+
+/** How much AIEC needs what this person offers where they offer it: read from the coverage that exists now, never typed in. */
+function screeningNeedOf(app: PartnerApplication): { need: number; detail: Record<string, number | string> } {
+  if (app.role === 'supplier') {
+    const cats = app.form.experience.skills;
+    if (cats.length === 0) return { need: 0, detail: { basis: 'supplier', categories: 0 } };
+    const supply = (c: string) => suppliers.filter((x) => x.status === 'active' && x.categories.includes(c)).length;
+    const needOf = (n: number) => (n === 0 ? 100 : n === 1 ? 70 : n === 2 ? 40 : 15);
+    const best = cats.map((c) => ({ c, n: supply(c) })).sort((a, b) => a.n - b.n)[0];
+    return { need: needOf(best.n), detail: { basis: 'supplier', category: best.c, suppliers: best.n } };
+  }
+  const active = zones.filter((z) => z.status === 'active');
+  const raw = (z: GeoZone) => z.leadCount / Math.max(0.5, z.assignedUserIds.length);
+  const top = Math.max(0, ...active.map(raw));
+  const chosen = active.filter((z) => app.form.territory.zoneIds.includes(z.id)).sort((a, b) => raw(b) - raw(a));
+  if (chosen.length === 0) return { need: 0, detail: { basis: 'zone', zones: 0 } };
+  const best = chosen[0];
+  return { need: top === 0 ? 50 : Math.round((100 * raw(best)) / top), detail: { basis: 'zone', zone: best.name, leads: best.leadCount, people: best.assignedUserIds.length } };
+}
+
+/** The score as it stands: live while the application is open, exactly as decided once it is not. */
+function screeningScoreOf(app: PartnerApplication, weights: Weights, now: Date): { rows: ScreeningFactorView[]; score: number; adjustment: number; effective: number; frozen: boolean } {
+  const decision = app.screening?.decision;
+  if (decision) {
+    return { rows: decision.rows.map((r) => ({ ...r, detail: {} })), score: decision.score, adjustment: decision.effective - decision.score, effective: decision.effective, frozen: true };
+  }
+  const { need, detail } = screeningNeedOf(app);
+  const sections = apSections(app.role, app.form, now);
+  const { score, rows } = scoreWith(factorValues({ role: app.role, form: app.form, sections, need, needDetail: detail, now }), weights);
+  const adjustment = app.screening?.adjustment?.points ?? 0;
+  return { rows, score, adjustment, effective: clampScreen(score + adjustment), frozen: false };
+}
+
+function screeningRowOf(app: PartnerApplication, weights: Weights, now: Date): ScreeningRowView {
+  const sc = screeningScoreOf(app, weights, now);
+  const interest = byId(recruitmentInterests, app.interestId);
+  const sinceIso = app.status === 'info_requested' ? app.screening?.infoRequest?.at : app.submittedAt;
+  const waitingDays = sinceIso ? Math.max(0, Math.floor((now.getTime() - new Date(sinceIso).getTime()) / 86_400_000)) : 0;
+  const byContribution = [...sc.rows].sort((a, b) => b.contribution - a.contribution);
+  const byValue = [...sc.rows].filter((r) => r.weight >= 10).sort((a, b) => a.value - b.value);
+  return {
+    id: app.id,
+    code: app.code,
+    name: app.form.personal.fullName,
+    role: app.role,
+    status: app.status,
+    channel: interest?.source.channel ?? 'website',
+    city: app.form.personal.city,
+    submittedAt: app.submittedAt ?? null,
+    waitingDays,
+    overdue: app.status === 'submitted' && !!app.submittedAt && now.getTime() - new Date(app.submittedAt).getTime() > SCREEN_DUE,
+    score: sc.score,
+    adjustment: sc.adjustment,
+    effective: sc.effective,
+    frozen: sc.frozen,
+    outstanding: apOutstanding(app.form).length,
+    topFactor: byContribution[0].key,
+    weakFactor: (byValue[0] ?? byContribution[byContribution.length - 1]).key,
+  };
+}
+
+const screeningOrder = (a: ScreeningRowView, b: ScreeningRowView): number => b.effective - a.effective || (a.submittedAt ?? '').localeCompare(b.submittedAt ?? '');
+
+/** The open queue, best first, under a given weighting. */
+function screeningQueueIds(weights: Weights, now: Date): string[] {
+  return partnerApplications
+    .filter((a) => a.status === 'submitted')
+    .map((a) => screeningRowOf(a, weights, now))
+    .sort(screeningOrder)
+    .map((r) => r.id);
+}
+
+function screeningDetailOf(app: PartnerApplication, now: Date): ScreeningDetailView {
+  const sc = screeningScoreOf(app, scoringConfig.weights, now);
+  const ids = screeningQueueIds(scoringConfig.weights, now);
+  const at = ids.indexOf(app.id);
+  return {
+    application: applicationViewOf(app, 'admin'),
+    rows: sc.rows,
+    score: sc.score,
+    adjustment: app.screening?.adjustment ? { ...app.screening.adjustment } : null,
+    effective: sc.effective,
+    frozen: sc.frozen,
+    decision: app.screening?.decision ? { ...app.screening.decision, rows: app.screening.decision.rows.map((r) => ({ ...r })) } : null,
+    infoRequest: app.screening?.infoRequest ? { ...app.screening.infoRequest, sections: [...app.screening.infoRequest.sections] } : null,
+    outcome: app.screening?.outcome ? { ...app.screening.outcome } : null,
+    place: at >= 0 ? at + 1 : null,
+    queueSize: ids.length,
+    canDecide: app.status === 'submitted' || app.status === 'info_requested',
+    nextId: at >= 0 ? (ids[at + 1] ?? ids.find((x) => x !== app.id) ?? null) : (ids[0] ?? null),
+  };
+}
+
+function screeningMessage(app: PartnerApplication, kind: PartnerApplication['messages'][number]['kind'], templateKey: string, byName: string, note?: string): void {
+  screeningMessageCounter += 1;
+  app.messages.push({ id: `apm-${screeningMessageCounter}`, at: new Date().toISOString(), kind, templateKey, params: { name: app.form.personal.fullName.split(' ')[0] ?? '' }, ...(note?.trim() ? { note: note.trim() } : {}), byName });
+}
+
+/** What a decision freezes: the score, its breakdown and any adjustment, so the reason can still be read when the weights have moved on. */
+function freezeDecision(app: PartnerApplication, status: 'approved' | 'rejected', byName: string, now: Date, extra: { reasonKey?: string; note?: string }): void {
+  const sc = screeningScoreOf(app, scoringConfig.weights, now);
+  const screening: ApplicationScreening = app.screening ?? {};
+  screening.decision = { status, at: now.toISOString(), byName, score: sc.score, effective: sc.effective, rows: sc.rows.map((r): ScreeningFactorRow => ({ key: r.key, weight: r.weight, value: r.value, contribution: r.contribution })), ...(extra.reasonKey ? { reasonKey: extra.reasonKey } : {}), ...(extra.note?.trim() ? { note: extra.note.trim() } : {}) };
+  app.screening = screening;
+  app.status = status;
+  app.updatedAt = now.toISOString();
+}
+
+function screeningApp(applicationId: string): PartnerApplication {
+  const app = byId(partnerApplications, applicationId);
+  if (!app) throw new RepositoryError('not_found');
+  return app;
+}
+
+function screeningFeedbackOf() {
+  const rated = partnerApplications
+    .filter((a) => a.status === 'approved' && a.screening?.outcome && a.screening.decision)
+    .map((a) => ({ rating: (a.screening as ApplicationScreening).outcome!.rating, values: Object.fromEntries((a.screening as ApplicationScreening).decision!.rows.map((r) => [r.key, r.value])) as Record<Factor, number> }));
+  return { rated: rated.length, ...screeningFeedback(rated) };
 }
 
 /* ============================== Recruitment: the public front door (141) */
@@ -14072,6 +14218,7 @@ export const memoryRepository: Repository = {
         updatedAt: at,
         form: { ...JSON.parse(JSON.stringify(APP_EMPTY)), personal: { ...APP_EMPTY.personal, fullName: interest.name, phone: interest.phone, languages: [interest.language] } },
         events: [applicationEvent('started', interest.name)],
+        messages: [],
         isDemo: true,
       };
       partnerApplications.push(app);
@@ -14088,7 +14235,7 @@ export const memoryRepository: Repository = {
   savePartnerApplication: (applicationId, key, patch) =>
     simulateWrite((): PartnerApplicationView => {
       const { app } = applicationFor(applicationId, { key });
-      if (app.status === 'in_screening' || app.status === 'withdrawn') throw new RepositoryError('locked');
+      if (apLocked(app.status)) throw new RepositoryError('locked');
       const f = app.form;
       // The phone is the applicant's identity on this record: it is set when the interest is made and not changed here.
       if (patch.personal) f.personal = { ...patch.personal, phone: f.personal.phone };
@@ -14113,13 +14260,15 @@ export const memoryRepository: Repository = {
   submitPartnerApplication: (applicationId, key) =>
     simulateWrite((): PartnerApplicationView => {
       const { app } = applicationFor(applicationId, { key });
-      if (app.status === 'in_screening' || app.status === 'withdrawn') throw new RepositoryError('locked');
+      if (apLocked(app.status)) throw new RepositoryError('locked');
       if (apSubmitProblem(app.role, app.form)) throw new RepositoryError('incomplete');
       const again = app.status === 'submitted';
+      const answering = app.status === 'info_requested';
       app.status = 'submitted';
       app.submittedAt = new Date().toISOString();
       app.updatedAt = app.submittedAt;
-      app.events.push(applicationEvent(again ? 'resubmitted' : 'submitted', app.form.personal.fullName));
+      app.events.push(applicationEvent(answering ? 'info_answered' : again ? 'resubmitted' : 'submitted', app.form.personal.fullName));
+      if (answering && app.screening?.infoRequest) app.screening.infoRequest.answeredAt = app.submittedAt;
       const interest = byId(recruitmentInterests, app.interestId);
       if (interest) patchInPlace(recruitmentInterests, interest.id, { status: 'submitted' as const });
       return applicationViewOf(app, 'applicant');
@@ -14147,6 +14296,155 @@ export const memoryRepository: Repository = {
       ref.outcome = { status: input.status, at: new Date().toISOString(), byName: (admin as User).name, ...(input.note?.trim() ? { note: input.note.trim() } : {}) };
       app.events.push(applicationEvent('reference_outcome', (admin as User).name, `${ref.name}: ${input.status}`));
       return applicationViewOf(app, 'admin');
+    }),
+
+  /* --------------------------------- Recruitment: applicant screening and scoring (143) */
+  getScreeningQueue: (userId) =>
+    simulateRead((): ScreeningQueueView => {
+      screeningAdmin(userId);
+      const now = new Date();
+      const rows = partnerApplications.filter((a) => a.status === 'submitted' || a.status === 'info_requested' || a.status === 'approved' || a.status === 'rejected').map((a) => screeningRowOf(a, scoringConfig.weights, now));
+      const queue = rows.filter((r) => r.status === 'submitted').sort(screeningOrder);
+      const waiting = rows.filter((r) => r.status === 'info_requested').sort((a, b) => b.waitingDays - a.waitingDays);
+      const decidedAt = (id: string) => byId(partnerApplications, id)?.screening?.decision?.at ?? '';
+      const decided = rows.filter((r) => r.status === 'approved' || r.status === 'rejected').sort((a, b) => decidedAt(b.id).localeCompare(decidedAt(a.id)));
+      const lastDay = recruitmentLastDay(now.getTime());
+      return {
+        queue,
+        waiting,
+        decided,
+        counts: { queue: queue.length, waiting: waiting.length, approved: decided.filter((r) => r.status === 'approved').length, rejected: decided.filter((r) => r.status === 'rejected').length, overdue: queue.filter((r) => r.overdue).length },
+        weights: { ...scoringConfig.weights },
+        demand: { level: rcDemandOf(lastDay).level, lastDay },
+      };
+    }),
+
+  getScreeningDetail: (applicationId, userId) =>
+    simulateRead((): ScreeningDetailView => {
+      screeningAdmin(userId);
+      return screeningDetailOf(screeningApp(applicationId), new Date());
+    }),
+
+  decideApplication: (applicationId, input, userId) =>
+    simulateWrite((): ScreeningDetailView => {
+      const admin = screeningAdmin(userId);
+      const app = screeningApp(applicationId);
+      const now = new Date();
+      if (input.decision === 'approve') {
+        if (app.status !== 'submitted') throw new RepositoryError('not_open');
+        freezeDecision(app, 'approved', admin.name, now, { note: input.note });
+        app.events.push(applicationEvent('approved', admin.name, input.note));
+        screeningMessage(app, 'approved', 'screening.message.approved', admin.name, input.note);
+      } else if (input.decision === 'reject') {
+        if (app.status !== 'submitted' && app.status !== 'info_requested') throw new RepositoryError('not_open');
+        if (!(DECLINE_REASONS as readonly string[]).includes(input.reason)) throw new RepositoryError('reason_required');
+        freezeDecision(app, 'rejected', admin.name, now, { reasonKey: `screening.decline.${input.reason}`, note: input.note });
+        app.events.push(applicationEvent('rejected', admin.name, input.reason));
+        screeningMessage(app, 'decline', `screening.message.decline.${input.reason}`, admin.name, input.note);
+      } else {
+        if (app.status !== 'submitted') throw new RepositoryError('not_open');
+        const sections = [...new Set(input.sections)].filter((x) => (APP_SECTIONS as readonly string[]).includes(x));
+        if (sections.length === 0) throw new RepositoryError('nothing_selected');
+        if (input.note.replace(/[^\p{L}\p{N}]/gu, '').length < 8) throw new RepositoryError('reason_required');
+        app.screening = { ...(app.screening ?? {}), infoRequest: { sections, note: input.note.trim(), at: now.toISOString(), byName: admin.name } };
+        app.status = 'info_requested';
+        app.updatedAt = now.toISOString();
+        app.events.push(applicationEvent('info_requested', admin.name, sections.join(', ')));
+        screeningMessage(app, 'info_request', 'screening.message.infoRequest', admin.name, input.note);
+      }
+      return screeningDetailOf(app, now);
+    }),
+
+  bulkRejectApplications: (applicationIds, input, userId) =>
+    simulateWrite(() => {
+      const admin = screeningAdmin(userId);
+      if (!(DECLINE_REASONS as readonly string[]).includes(input.reason)) throw new RepositoryError('reason_required');
+      const now = new Date();
+      let rejected = 0;
+      let skipped = 0;
+      for (const id of [...new Set(applicationIds)]) {
+        const app = byId(partnerApplications, id);
+        if (!app || (app.status !== 'submitted' && app.status !== 'info_requested')) {
+          skipped += 1;
+          continue;
+        }
+        freezeDecision(app, 'rejected', admin.name, now, { reasonKey: `screening.decline.${input.reason}`, note: input.note });
+        app.events.push(applicationEvent('rejected', admin.name, input.reason));
+        screeningMessage(app, 'decline', `screening.message.decline.${input.reason}`, admin.name, input.note);
+        rejected += 1;
+      }
+      return { rejected, skipped };
+    }),
+
+  setApplicationAdjustment: (applicationId, input, userId) =>
+    simulateWrite((): ScreeningDetailView => {
+      const admin = screeningAdmin(userId);
+      const app = screeningApp(applicationId);
+      if (app.status !== 'submitted' && app.status !== 'info_requested') throw new RepositoryError('not_open');
+      const now = new Date();
+      if (input === null) {
+        if (app.screening?.adjustment) {
+          delete app.screening.adjustment;
+          app.events.push(applicationEvent('adjusted', admin.name, '—'));
+        }
+      } else {
+        const problem = screeningAdjustProblem(input.points, input.reason);
+        if (problem) throw new RepositoryError(problem);
+        app.screening = { ...(app.screening ?? {}), adjustment: { points: input.points, reason: input.reason.trim(), byName: admin.name, at: now.toISOString() } };
+        app.events.push(applicationEvent('adjusted', admin.name, `${input.points > 0 ? '+' : ''}${input.points}`));
+      }
+      return screeningDetailOf(app, now);
+    }),
+
+  getScoringConfig: (userId) =>
+    simulateRead((): ScoringConfigView => {
+      screeningAdmin(userId);
+      const fb = screeningFeedbackOf();
+      const now = Date.now();
+      return {
+        weights: { ...scoringConfig.weights },
+        defaults: { ...SCREEN_DEFAULT_WEIGHTS },
+        updatedAt: scoringConfig.updatedAt,
+        updatedByName: scoringConfig.updatedByName,
+        feedback: { rated: fb.rated, enough: fb.enough, perFactor: fb.perFactor, suggest: fb.suggest },
+        toRate: partnerApplications
+          .filter((a) => a.status === 'approved' && !a.screening?.outcome && a.screening?.decision && now - new Date(a.screening.decision.at).getTime() >= SCREEN_RATE_AFTER)
+          .map((a) => ({ id: a.id, code: a.code, name: a.form.personal.fullName, role: a.role, decidedAt: (a.screening as ApplicationScreening).decision!.at }))
+          .sort((a, b) => a.decidedAt.localeCompare(b.decidedAt)),
+      };
+    }),
+
+  saveScoringConfig: (weights, confirm, userId) =>
+    simulateWrite((): ScoringSaveResult => {
+      const admin = screeningAdmin(userId);
+      const problem = screeningWeightsProblem(weights);
+      if (problem) throw new RepositoryError(problem);
+      const now = new Date();
+      const before = screeningQueueIds(scoringConfig.weights, now);
+      const trial: Weights = { ...weights };
+      const after = partnerApplications
+        .filter((a) => a.status === 'submitted')
+        .map((a) => screeningRowOf(a, trial, now))
+        .sort(screeningOrder)
+        .map((r) => r.id);
+      const reshuffle = screeningReshuffle(before, after);
+      // A change that would move a lot of the queue is said out loud first, so a weighting is never changed by accident.
+      if (reshuffle >= RESHUFFLE_SHARE && !confirm) return { saved: false, reshuffle, queueSize: before.length };
+      scoringConfig.weights = trial;
+      scoringConfig.updatedAt = now.toISOString();
+      scoringConfig.updatedByName = admin.name;
+      return { saved: true, reshuffle, queueSize: before.length };
+    }),
+
+  recordApplicantOutcome: (applicationId, input, userId) =>
+    simulateWrite((): ScreeningDetailView => {
+      const admin = screeningAdmin(userId);
+      const app = screeningApp(applicationId);
+      if (app.status !== 'approved' || !app.screening?.decision) throw new RepositoryError('not_approved');
+      const now = new Date();
+      app.screening.outcome = { rating: input.rating, at: now.toISOString(), byName: admin.name, ...(input.note?.trim() ? { note: input.note.trim() } : {}) };
+      app.events.push(applicationEvent('outcome', admin.name, input.rating));
+      return screeningDetailOf(app, now);
     }),
 
   /* --------------------------------- Recruitment: the public front door (141) */

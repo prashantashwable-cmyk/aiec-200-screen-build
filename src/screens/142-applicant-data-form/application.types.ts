@@ -8,6 +8,7 @@ export const SAVE_DELAY_MS = 1200;
 export const draftKey = (id: string) => `aiec.applyDraft.${id}`;
 export const keyKey = (id: string) => `aiec.application.${id}`;
 export const boardPath = '/applications';
+export const screeningPath = (id: string) => `/screening?app=${id}`;
 export const applyPath = (id: string) => `/apply/${id}`;
 export const detailPath = (id: string) => `/applications/${id}`;
 export { SUMMARY_MIN };
@@ -17,7 +18,8 @@ const MISSING = ['name', 'phone', 'city', 'languages', 'age', 'years', 'experien
 const PROBLEMS = ['incomplete', 'locked', 'invalid_link', 'forbidden', 'not_found', 'note_required', 'offline', 'generic'] as const;
 export const OUTCOMES = ['verified', 'unreachable', 'declined'] as const;
 const OUTSTANDING = ['reference_unchecked', 'reference_unreachable', 'reference_declined', 'no_references'] as const;
-export const STATUSES = ['draft', 'submitted', 'in_screening', 'withdrawn'] as const;
+export const STATUSES = ['draft', 'submitted', 'info_requested', 'approved', 'rejected', 'withdrawn'] as const;
+const EVENTS = ['started', 'saved', 'submitted', 'resubmitted', 'reference_outcome', 'info_requested', 'info_answered', 'approved', 'rejected', 'adjusted', 'outcome'] as const;
 
 export const APPLICATION_KEYS = {
   title: 'application.title',
@@ -106,6 +108,8 @@ export const APPLICATION_KEYS = {
     valid: 'application.identity.valid',
     later: 'application.identity.later',
   },
+  request: { heading: 'application.request.heading', body: 'application.request.body', go: 'application.request.go' },
+  messages: { heading: 'application.messages.heading' },
   submit: { button: 'application.submit.button', resubmit: 'application.submit.resubmit', waiting: 'application.submit.waiting' },
   done: { heading: 'application.done.heading', body: 'application.done.body', outstanding: 'application.done.outstanding', edit: 'application.done.edit', next: 'application.done.next' },
   problem: rec('application.problem', PROBLEMS),
@@ -128,7 +132,8 @@ export const APPLICATION_KEYS = {
       source: 'application.admin.detail.source',
       channel: { qr: 'application.admin.detail.channel.qr', social: 'application.admin.detail.channel.social', referral: 'application.admin.detail.channel.referral', whatsapp: 'application.admin.detail.channel.whatsapp', walk_in: 'application.admin.detail.channel.walk_in', event: 'application.admin.detail.channel.event', website: 'application.admin.detail.channel.website', other: 'application.admin.detail.channel.other' },
       timeline: 'application.admin.detail.timeline',
-      event: { started: 'application.admin.detail.event.started', saved: 'application.admin.detail.event.saved', submitted: 'application.admin.detail.event.submitted', resubmitted: 'application.admin.detail.event.resubmitted', reference_outcome: 'application.admin.detail.event.reference_outcome' },
+      event: rec('application.admin.detail.event', EVENTS),
+      screening: 'application.admin.detail.screening',
       outstanding: 'application.admin.detail.outstanding',
       nothingOutstanding: 'application.admin.detail.nothingOutstanding',
       notStarted: 'application.admin.detail.notStarted',

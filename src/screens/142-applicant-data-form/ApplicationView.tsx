@@ -11,12 +11,13 @@ import type { PartnerApplicationView } from '@/data/repository';
 import type { ApplicationForm, ApplicationReference } from '@/data/types';
 import { useApplication } from './useApplication';
 import type { ApplicationState } from './useApplication';
-import { APPLICATION_KEYS as K, OUTCOMES, STATUSES, detailPath, boardPath } from './application.types';
+import { APPLICATION_KEYS as K, OUTCOMES, STATUSES, detailPath, boardPath, screeningPath } from './application.types';
 
 type T = ReturnType<typeof useTranslation>['t'];
 const problemKey = (code?: string | null) => (code && code in K.problem ? K.problem[code as keyof typeof K.problem] : K.problem.generic);
 const LANG_LABEL: Record<(typeof LANGUAGES)[number], string> = { en: 'English', hi: 'हिन्दी', mr: 'मराठी' };
 const letters = (s: string) => s.replace(/[^\p{L}\p{N}]/gu, '').length;
+const statusTone = (st: PartnerApplicationView['status']) => (st === 'submitted' || st === 'approved' ? 'success' : st === 'info_requested' ? 'warning' : st === 'draft' ? 'accent' : 'neutral') as 'success' | 'warning' | 'accent' | 'neutral';
 const toggle = <X,>(list: X[], x: X): X[] => (list.includes(x) ? list.filter((y) => y !== x) : [...list, x]);
 
 /**
@@ -67,7 +68,8 @@ function Applicant({ s, v, t }: { s: ApplicationState; v: PartnerApplicationView
   return (
     <div className="ds-screen ds-screen--narrow pb-action-bar">
       <Header t={t} s={s} />
-      <ScreenHeader title={t(K.title)} subtitle={`${v.code} · ${t(K.admin.role[v.role])}`} action={<span data-status={v.status}><Badge tone={v.status === 'submitted' ? 'success' : 'accent'} dot>{t(K.status[v.status])}</Badge></span>} />
+      <ScreenHeader title={t(K.title)} subtitle={`${v.code} · ${t(K.admin.role[v.role])}`} action={<span data-status={v.status}><Badge tone={statusTone(v.status)} dot>{t(K.status[v.status])}</Badge></span>} />
+      <Notes t={t} v={v} lang={lang} go={go} />
 
       <Card className="mb-3">
         <div className="stack gap-2" data-progress>
@@ -97,7 +99,7 @@ function Applicant({ s, v, t }: { s: ApplicationState; v: PartnerApplicationView
           <div className="stack gap-1" style={{ width: '100%' }}>
             {error && <p className="t-xs t-error" role="alert" data-problem={error}>{t(problemKey(error))}</p>}
             {!canSubmit && <p className="t-xs t-muted">{t(K.submit.waiting)}</p>}
-            <Button style={{ width: '100%' }} disabled={!canSubmit || s.busy || (submitted && !s.dirty)} data-submit onClick={async () => { const r = await s.submit(); setError(r.ok ? null : (r.code ?? 'generic')); }}>{t(v.status === 'submitted' ? K.submit.resubmit : K.submit.button)}</Button>
+            <Button style={{ width: '100%' }} disabled={!canSubmit || s.busy || (submitted && !s.dirty)} data-submit onClick={async () => { const r = await s.submit(); setError(r.ok ? null : (r.code ?? 'generic')); }}>{t(v.status === 'submitted' || v.status === 'info_requested' ? K.submit.resubmit : K.submit.button)}</Button>
           </div>
         </ActionBar>
       )}
@@ -311,6 +313,41 @@ function Identity({ s, v, t, f, state }: SectionProps & { v: PartnerApplicationV
   );
 }
 
+/** What AIEC has said to this person, and, while it is open, what was asked for. Worded in the reader's language when it is read. */
+function Notes({ t, v, lang, go }: { t: T; v: PartnerApplicationView; lang: string; go: (id: SectionId) => void }) {
+  const messages = [...v.messages].reverse();
+  return (
+    <>
+      {v.infoRequest && (
+        <Card className="mb-3">
+          <div className="stack gap-2" data-info-request style={{ borderLeft: '3px solid var(--color-warning)', paddingLeft: 'var(--space-3)' }}>
+            <strong className="t-md">{t(K.request.heading)}</strong>
+            <p className="t-sm">{t(K.request.body)}</p>
+            <p className="t-sm" data-info-note>“{v.infoRequest.note}”</p>
+            <div className="row gap-2 wrap">
+              {v.infoRequest.sections.map((id) => <span key={id} data-ask={id}><Chip onClick={() => go(id as SectionId)}>{t(K.section.title[id as SectionId])}</Chip></span>)}
+            </div>
+          </div>
+        </Card>
+      )}
+      {messages.length > 0 && (
+        <Card className="mb-3">
+          <div className="stack gap-3" data-messages>
+            <strong className="t-md">{t(K.messages.heading)}</strong>
+            {messages.map((m) => (
+              <div key={m.id} className="stack gap-1" data-message={m.kind}>
+                <p className="t-sm">{t(m.templateKey, m.params)}</p>
+                {m.note && <p className="t-sm t-muted">“{m.note}”</p>}
+                <span className="t-xs t-muted">{formatDateTime(m.at, lang)}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+    </>
+  );
+}
+
 function Submitted({ s, v, t }: { s: ApplicationState; v: PartnerApplicationView; t: T }) {
   const open = v.outstanding.length;
   return (
@@ -364,7 +401,7 @@ function AdminBoard({ s, t }: { s: ApplicationState; t: T }) {
                   <span className="t-xs t-muted">{t(K.admin.role[r.role])} · {t(K.admin.detail.channel[r.channel])} · {formatDate(r.submittedAt ?? r.updatedAt, i18n.language)}</span>
                   <span className="t-xs">{t(K.admin.board.row, { percent: r.percent, open: r.outstanding })}</span>
                 </span>
-                <Badge tone={r.status === 'submitted' ? 'success' : 'neutral'} dot>{t(K.status[r.status])}</Badge>
+                <Badge tone={statusTone(r.status)} dot>{t(K.status[r.status])}</Badge>
               </button>
             ))}
           </div>
@@ -395,8 +432,11 @@ function AdminDetail({ s, v, t }: { s: ApplicationState; v: PartnerApplicationVi
   const sec = (id: SectionId) => v.sections.find((x) => x.id === id);
   return (
     <Screen width="narrow">
-      <ScreenHeader title={f.personal.fullName || t(K.admin.title)} subtitle={`${v.code} · ${t(K.admin.role[v.role])}`} action={<span data-status={v.status}><Badge tone={v.status === 'submitted' ? 'success' : 'neutral'} dot>{t(K.status[v.status])}</Badge></span>} />
-      <Button variant="ghost" style={{ width: 'fit-content' }} className="mb-3" data-back onClick={() => s.goto(boardPath)}>{t(K.admin.detail.back)}</Button>
+      <ScreenHeader title={f.personal.fullName || t(K.admin.title)} subtitle={`${v.code} · ${t(K.admin.role[v.role])}`} action={<span data-status={v.status}><Badge tone={statusTone(v.status)} dot>{t(K.status[v.status])}</Badge></span>} />
+      <div className="row gap-2 wrap mb-3">
+        <Button variant="ghost" style={{ width: 'fit-content' }} data-back onClick={() => s.goto(boardPath)}>{t(K.admin.detail.back)}</Button>
+        <Button variant="secondary" style={{ width: 'fit-content' }} data-open-screening onClick={() => s.goto(screeningPath(v.id))}>{t(K.admin.detail.screening)}</Button>
+      </div>
 
       <Card className="mb-3">
         <div className="stack gap-2" data-outstanding>
@@ -424,7 +464,7 @@ function AdminDetail({ s, v, t }: { s: ApplicationState; v: PartnerApplicationVi
       <Card className="mb-3">
         <div className="stack gap-3" data-references>
           <strong className="t-md">{t(K.section.title.references)}</strong>
-          {f.references.length === 0 ? <p className="t-sm">{f.noReferences ? t(K.references.noneNote) : t(K.admin.detail.empty)}</p> : f.references.map((r) => <Reference key={r.id} s={s} r={r} t={t} lang={lang} locked={v.status === 'withdrawn'} />)}
+          {f.references.length === 0 ? <p className="t-sm">{f.noReferences ? t(K.references.noneNote) : t(K.admin.detail.empty)}</p> : f.references.map((r) => <Reference key={r.id} s={s} r={r} t={t} lang={lang} locked={v.status === 'withdrawn' || v.status === 'rejected'} />)}
         </div>
       </Card>
 
