@@ -102,7 +102,6 @@ export default function App() {
 
         {/* Foundation-owned screens, not part of the numbered 200. */}
         <Route path="/settings" element={<SettingsScreen />} />
-        <Route path="/customer" element={<ModulePendingScreen role="customer" moduleNumber={18} />} />
         <Route path="/supplier" element={<ModulePendingScreen role="supplier" moduleNumber={10} />} />
       </Route>
 

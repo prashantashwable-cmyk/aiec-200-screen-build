@@ -172,6 +172,7 @@ import type {
   OptOutEvent,
   PackageTier,
   Payment,
+  PaymentStage,
   PaymentReminderConfig,
   PaymentReminderPause,
   PaymentSchedule,
@@ -6636,6 +6637,65 @@ export interface PayoutStatementView {
 }
 export type { PayoutQueryProblem };
 
+
+/* ------------------------------------------------------------------ Customer home (171) */
+
+export type CustomerStageKey = 'agreed' | 'contract' | 'materials' | 'installation' | 'quality' | 'handover';
+export type CustomerMode = 'starting' | 'project' | 'service';
+export interface CustomerProjectRow { key: string; jobId: string | null; dealId: string; siteName: string; code: string; mode: CustomerMode; stage: CustomerStageKey | null; percent: number | null; paused: boolean }
+export interface CustomerStageView { key: CustomerStageKey; status: 'done' | 'current' | 'upcoming'; doneAt: string | null }
+export interface CustomerConcern {
+  kind: 'delay' | 'paused' | 'payment_overdue' | 'payment_disputed';
+  /** For a delay: how many days later than first planned. For an overdue payment: how many days past. */
+  days: number | null;
+  amount: number | null;
+  /** One of 129's customer causes (`installTimeline.reason.customer.<code>`), never the report itself. */
+  reason: TimelineDelayReason | null;
+  paymentId: string | null;
+}
+export interface CustomerNext {
+  kind: 'payment' | 'milestone';
+  /** The stage a milestone belongs to, or `service` once the project is handed over. */
+  stage: CustomerStageKey | 'service' | null;
+  dueAt: string | null;
+  amount: number | null;
+  overdue: boolean;
+  paymentId: string | null;
+  paymentStage: PaymentStage | null;
+}
+export interface CustomerServiceView { warrantyEndsOn: string | null; amcStatus: 'active' | 'later' | 'declined' | null; amcEndsOn: string | null; registered: boolean; startsOn: string | null }
+export interface CustomerProjectHome {
+  key: string;
+  jobId: string | null;
+  dealId: string;
+  code: string;
+  siteName: string;
+  address: string | null;
+  mode: CustomerMode;
+  stages: CustomerStageView[];
+  stage: CustomerStageKey | null;
+  /** Installation progress, once there is a job and Admin has not turned its timeline off. */
+  percent: number | null;
+  expectedAt: string | null;
+  timelineHidden: boolean;
+  concerns: CustomerConcern[];
+  next: CustomerNext | null;
+  payments: { total: number; received: number; openCount: number };
+  service: CustomerServiceView | null;
+  /** True when there is little on record yet, so the screen shows what happens next. */
+  early: boolean;
+  lastUpdateAt: string | null;
+}
+export interface CustomerHomeView {
+  firstName: string;
+  companyName: string | null;
+  unread: number;
+  projects: CustomerProjectRow[];
+  current: CustomerProjectHome | null;
+  supportPhone: string | null;
+  at: string;
+}
+
 /* ------------------------------------------------------------------ Payout disputes (170) */
 
 export interface PayoutDisputeRow {
@@ -7952,6 +8012,9 @@ export interface Repository {
   getInstallationTimeline(jobId: string, userId: string): Promise<InstallTimelineView>;
   /** The installations this person may follow: a technician's own, a customer's, or every one for Admin. */
   listInstallationTimelines(userId: string): Promise<TimelineListItem[]>;
+
+  /* Customer home (171) — a summary read from the same records the detailed customer screens use */
+  getCustomerHome(projectKey: string | null, userId: string): Promise<CustomerHomeView>;
   /** Admin only: shows or hides the customer's view of a job's timeline. Hiding needs a reason. */
   setTimelineCustomerVisible(jobId: string, visible: boolean, note: string, adminId: string): Promise<InstallTimelineView>;
 

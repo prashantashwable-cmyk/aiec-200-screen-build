@@ -285,6 +285,14 @@ import type {
   PayoutHistoryView,
   PayoutQueryView,
   PayoutMessageView,
+  CustomerConcern,
+  CustomerHomeView,
+  CustomerNext,
+  CustomerProjectHome,
+  CustomerProjectRow,
+  CustomerServiceView,
+  CustomerStageKey,
+  CustomerStageView,
   PayoutDisputeBoard,
   PayoutDisputeEarlier,
   PayoutDisputeRow,
@@ -10339,6 +10347,111 @@ function syncPayoutDisputes(now: number): void {
   }
 }
 
+
+
+/* ------------------------------------------------------------------ Customer home (171) */
+
+const CH_STAGES: CustomerStageKey[] = ['agreed', 'contract', 'materials', 'installation', 'quality', 'handover'];
+/** How soon a payment is put in front of the customer as "next" (days); an overdue one always is. */
+const CH_PAY_SOON_DAYS = 14;
+const chJobRank = (j: Job): number => ({ in_progress: 0, qc_pending: 1, handover_pending: 2, on_hold: 3, scheduled: 4, materials_pending: 5, completed: 9 } as Record<string, number>)[j.status] ?? 6;
+
+/** Where a project is, in the customer's own six stages: the first one not yet done. A paused job stays at the stage it was paused in. */
+function chStageOf(deal: Deal, job: Job | null): { idx: number; doneAt: (string | null)[] } {
+  const terms = dealTermsRecords.find((t) => t.dealId === deal.id);
+  const eff = job ? (job.status === 'on_hold' ? (job.resumeStatus ?? 'in_progress') : job.status) : null;
+  const doneAt: (string | null)[] = [null, null, null, null, null, null];
+  let idx = 0;
+  if (deal.status === 'won') { idx = 1; doneAt[0] = deal.closedAt ?? deal.createdAt; }
+  if (idx >= 1 && (terms?.bothPartyConfirmedFlag || job)) { idx = 2; doneAt[1] = terms?.internalConfirmedAt ?? doneAt[0]; }
+  if (idx >= 2 && job && eff !== 'materials_pending') { idx = 3; doneAt[2] = materialsConfirmedAt(deal.id) ?? job.startedAt ?? null; }
+  if (idx >= 3 && job && (eff === 'qc_pending' || eff === 'handover_pending' || eff === 'completed')) { idx = 4; doneAt[3] = job.completedAt ?? null; }
+  if (idx >= 4 && job && (eff === 'handover_pending' || eff === 'completed')) idx = 5;
+  if (idx >= 5 && job && eff === 'completed') { idx = 6; doneAt[5] = job.completedAt ?? null; }
+  return { idx, doneAt };
+}
+
+function chProjectsOf(user: User): { key: string; deal: Deal; job: Job | null }[] {
+  const mine = deals.filter((d) => d.customerId === user.id && d.status !== 'lost');
+  const out: { key: string; deal: Deal; job: Job | null }[] = [];
+  for (const d of mine) {
+    const js = jobs.filter((j) => j.dealId === d.id);
+    if (js.length === 0) out.push({ key: `deal:${d.id}`, deal: d, job: null });
+    else for (const j of js) out.push({ key: `job:${j.id}`, deal: d, job: j });
+  }
+  return out.sort((a, b) => (a.job ? chJobRank(a.job) : 7) - (b.job ? chJobRank(b.job) : 7) || a.key.localeCompare(b.key));
+}
+
+function chRowOf(p: { key: string; deal: Deal; job: Job | null }, now: number): CustomerProjectRow {
+  const { idx } = chStageOf(p.deal, p.job);
+  const lead = byId(leads, p.deal.leadId);
+  const done = idx >= 6;
+  const hidden = !!p.job?.customerTimelineHidden;
+  const core = p.job && !done ? timelineCoreOf(p.job, now) : null;
+  return {
+    key: p.key, jobId: p.job?.id ?? null, dealId: p.deal.id, siteName: p.job?.siteName ?? lead?.siteName ?? p.deal.code, code: p.job?.code ?? p.deal.code,
+    mode: done ? 'service' : p.deal.status === 'won' && (idx >= 2 || p.job) ? 'project' : 'starting', stage: done ? null : CH_STAGES[Math.min(idx, 5)],
+    percent: core && !hidden && idx >= 3 && core.stepsTotal ? Math.round((core.stepsDone / core.stepsTotal) * 100) : null, paused: !!p.job && (p.job.status === 'on_hold' || (core?.stoppedNow ?? false)),
+  };
+}
+
+function chHomeOf(user: User, projectKey: string | null, now: number): CustomerHomeView {
+  const all = chProjectsOf(user);
+  const rows = all.map((p) => chRowOf(p, now));
+  const chosen = all.find((p) => p.key === projectKey) ?? all[0] ?? null;
+  const admin = users.find((u) => u.role === 'admin' && u.status === 'active');
+  const unread = workNotifications.filter((n) => n.userId === user.id && !n.readAt).length;
+  const base = { firstName: user.name.trim().split(/\s+/)[0] ?? user.name, companyName: user.companyName ?? null, unread, projects: rows, supportPhone: admin?.phone ?? null, at: new Date(now).toISOString() };
+  if (!chosen) return { ...base, current: null };
+
+  const { deal, job } = chosen;
+  const row = rows.find((r) => r.key === chosen.key) as CustomerProjectRow;
+  const { idx, doneAt } = chStageOf(deal, job);
+  const lead = byId(leads, deal.leadId);
+  const stages: CustomerStageView[] = CH_STAGES.map((key, i) => ({ key, status: i < idx ? 'done' : i === idx ? 'current' : 'upcoming', doneAt: doneAt[i] }));
+  const tl = job ? timelineViewOf(job, user, 'customer', now) : null;
+  const hidden = !!tl?.hiddenFromCustomer;
+  const service = (): CustomerServiceView | null => {
+    if (!job || row.mode !== 'service') return null;
+    const w = warrantyViewOf(job, 'customer', now);
+    const lastTerm = w.amc?.terms[w.amc.terms.length - 1];
+    return { warrantyEndsOn: w.terms?.service.endsOn ?? null, amcStatus: w.amc?.status ?? null, amcEndsOn: lastTerm?.endsOn ?? null, registered: !!w.registration, startsOn: w.startsOn };
+  };
+  const svc = service();
+
+  // Money: this deal's stages. What is owed is next only when it is near or late; a disputed stage is never chased.
+  const pays = payments.filter((p) => p.dealId === deal.id && p.status !== 'refunded');
+  const open = pays.filter((p) => isOutstanding(p) && p.status !== 'disputed').sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  const nextPay = open[0] ?? null;
+  const overdueDays = nextPay ? daysOverdue(nextPay, now) : 0;
+  const soon = nextPay ? Date.parse(nextPay.dueDate) - now <= CH_PAY_SOON_DAYS * 86_400_000 : false;
+  const concerns: CustomerConcern[] = [];
+  if (tl && !hidden && job && row.mode !== 'service') {
+    if (job.status === 'on_hold' || tl.freshness === 'blocked') concerns.push({ kind: 'paused', days: null, amount: null, reason: tl.reasons.find((r) => r.open)?.code ?? 'hold', paymentId: null });
+    else if (tl.estimate?.slipped) concerns.push({ kind: 'delay', days: tl.estimate.slipDays, amount: null, reason: tl.reasons.find((r) => r.open)?.code ?? tl.reasons[0]?.code ?? null, paymentId: null });
+  }
+  // Payments belong to the deal, which may carry other buildings still being installed: a lift already in service does not repeat them.
+  const moneyHere = row.mode !== 'service' || !jobs.some((j) => j.dealId === deal.id && j.status !== 'completed');
+  if (moneyHere && nextPay && overdueDays > 0) concerns.push({ kind: 'payment_overdue', days: overdueDays, amount: remainingBalance(nextPay), reason: null, paymentId: nextPay.id });
+  const disputed = moneyHere ? pays.find((p) => p.status === 'disputed') : undefined;
+  if (disputed) concerns.push({ kind: 'payment_disputed', days: null, amount: remainingBalance(disputed), reason: null, paymentId: disputed.id });
+
+  let next: CustomerNext | null = null;
+  if (moneyHere && nextPay && (overdueDays > 0 || soon)) next = { kind: 'payment', stage: null, dueAt: nextPay.dueDate, amount: remainingBalance(nextPay), overdue: overdueDays > 0, paymentId: nextPay.id, paymentStage: nextPay.stage };
+  else if (row.mode === 'service') next = { kind: 'milestone', stage: 'service', dueAt: svc?.amcStatus === 'active' ? svc.amcEndsOn : svc?.warrantyEndsOn ?? null, amount: null, overdue: false, paymentId: null, paymentStage: null };
+  else if (row.stage) next = { kind: 'milestone', stage: row.stage, dueAt: row.stage === 'installation' && job ? (hidden ? null : (tl?.estimate?.currentAt ?? job.scheduledFor)) : row.stage === 'materials' && job ? job.scheduledFor : null, amount: null, overdue: false, paymentId: null, paymentStage: null };
+  else if (moneyHere && nextPay) next = { kind: 'payment', stage: null, dueAt: nextPay.dueDate, amount: remainingBalance(nextPay), overdue: false, paymentId: nextPay.id, paymentStage: nextPay.stage };
+
+  return {
+    ...base,
+    current: {
+      key: chosen.key, jobId: job?.id ?? null, dealId: deal.id, code: job?.code ?? deal.code, siteName: row.siteName, address: job?.address ?? lead?.address ?? null, mode: row.mode, stages, stage: row.stage,
+      percent: hidden ? null : row.percent, expectedAt: hidden || !tl?.estimate || row.mode === 'service' ? null : tl.estimate.currentAt, timelineHidden: hidden, concerns, next,
+      payments: { total: pays.reduce((a, p) => a + p.amount, 0), received: pays.reduce((a, p) => a + receivedAmountOf(p), 0), openCount: open.length },
+      service: svc, early: row.mode === 'starting' || (!job && idx <= 2) || (!!job && !job.startedAt && row.stage !== 'materials'), lastUpdateAt: hidden ? null : tl?.lastUpdateAt ?? null,
+    },
+  };
+}
 
 /* ------------------------------------------------------------------ Badges & milestones (166) */
 
@@ -22825,6 +22938,15 @@ export const memoryRepository: Repository = {
       if (!visible && note.trim().length < 8) throw new RepositoryError('reason_required');
       const updated = patchInPlace(jobs, job.id, { customerTimelineHidden: visible ? undefined : { at: new Date().toISOString(), byName: user.name, ...(note.trim() ? { note: note.trim() } : {}) } });
       return timelineViewOf(updated, user, 'staff', Date.now());
+    }),
+
+
+  /* --------------------------------- Customer home (171) */
+  getCustomerHome: (projectKey, userId) =>
+    simulateRead((): CustomerHomeView => {
+      const user = byId(users, userId);
+      if (!user || user.role !== 'customer') throw new RepositoryError('forbidden');
+      return JSON.parse(JSON.stringify(chHomeOf(user, projectKey, Date.now()))) as CustomerHomeView;
     }),
 
   /* --------------------------------- As-installed material log (128) */
