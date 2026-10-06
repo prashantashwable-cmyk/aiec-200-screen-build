@@ -49,7 +49,7 @@ export function PayoutApprovalScreen() {
         <div className="stack gap-4">
           <Summary d={d} s={s} t={t} />
           <Queue d={d} s={s} t={t} />
-          <p className="t-xs t-muted" data-note-disbursement>{t(K.note.disbursement)}</p>
+          <div className="row gap-2 wrap" style={{ alignItems: 'center' }}><p className="t-xs t-muted" data-note-disbursement>{t(K.note.disbursement)}</p><Button size="sm" variant="secondary" data-open-disbursement onClick={() => s.goTo('/payout-disbursement')}>{t('payoutDisbursement.link.open')}</Button></div>
           <p className="t-xs t-muted" data-placeholder>{t(K.placeholder, { limit: formatINR(ROUTINE_LIMIT), due: Math.round(APPROVE_DUE / DAY), review: Math.round(HOLD_REVIEW / DAY), times: 3 })}</p>
         </div>
       </Screen>

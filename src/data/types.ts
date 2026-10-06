@@ -4587,7 +4587,93 @@ export interface CommissionEntry {
    * decision history, and the partner is shown a standard line for the kind.
    */
   payoutApproval?: { status: 'approved' | 'held'; at: string; byName: string; amount?: number; expedited?: boolean; holdKind?: string };
+  /** Where this payout is on its way to the partner's account (164): a pointer to the disbursement carrying it, kept in step with that record. A failed one stays here until it is retried or cancelled. */
+  disbursement?: { id: string; status: 'initiated' | 'processing' | 'completed' | 'failed' | 'cancelled'; failure?: string };
   isDemo: boolean;
+}
+
+/** Where a partner is paid (164). The full number never leaves the repository; views show the last four digits. `simulatedBank` stands in for what the bank itself would answer. */
+export interface PayoutAccount {
+  userId: string;
+  holderName: string;
+  upiId?: string;
+  accountNumber?: string;
+  ifsc?: string;
+  bankName?: string;
+  /** Verified by a penny-drop when the partner was onboarded, or when Admin last recorded corrected details. */
+  verifiedAt?: string;
+  updatedAt: string;
+  updatedByName: string;
+  simulatedBank?: 'ok' | 'closed' | 'rejected';
+  isDemo: boolean;
+}
+
+export type DisbursementEventKind = 'created' | 'processing' | 'completed' | 'failed' | 'retried' | 'cancelled' | 'contacted' | 'details_updated' | 'note';
+export interface DisbursementEvent {
+  at: string;
+  kind: DisbursementEventKind;
+  byName: string;
+  /** What happened, as a short fact or the reason code; the screen words it in the reader's language. */
+  detail?: string;
+}
+
+/**
+ * One transfer of cleared commission to one partner (164), carrying one or several of their entries. Append-only history: a failed transfer is never rewritten into a
+ * success; a retry is a new disbursement that points back at it (`retryOf`).
+ */
+export interface PayoutDisbursement {
+  id: string;
+  code: string;
+  partnerId: string;
+  entryIds: string[];
+  amount: number;
+  method: 'bank_transfer' | 'upi';
+  /** What it was sent to, as it read then (masked): later changes to the partner's details never rewrite it. */
+  destination: string;
+  status: 'initiated' | 'processing' | 'completed' | 'failed' | 'cancelled';
+  kind: 'scheduled' | 'urgent' | 'retry';
+  runId?: string;
+  retryOf?: string;
+  attempt: number;
+  createdAt: string;
+  sentAt?: string;
+  completedAt?: string;
+  failedAt?: string;
+  failure?: string;
+  bankReference?: string;
+  createdByName: string;
+  events: DisbursementEvent[];
+  isDemo: boolean;
+}
+
+/** A run of the payout engine (164): the weekly schedule or a run Admin started. It says exactly which transfers went and which did not, so a run stopped partway is never ambiguous. */
+export interface PayoutRun {
+  id: string;
+  code: string;
+  kind: 'weekly' | 'manual';
+  /** The schedule slot a weekly run answers, so it can never run twice for the same slot. */
+  slot?: string;
+  startedAt: string;
+  finishedAt?: string;
+  status: 'running' | 'completed' | 'interrupted';
+  interruptedReason?: string;
+  disbursementIds: string[];
+  skipped: { partnerId: string; reason: string; entryIds: string[] }[];
+  byName: string;
+  isDemo: boolean;
+}
+
+export interface PayoutSchedule {
+  enabled: boolean;
+  weekday: number;
+  hour: number;
+  consolidate: boolean;
+  /** Runs before this are never made up: a changed schedule starts from now. */
+  since: string;
+  /** The slot already answered (with a run, or because nothing was ready), so it is never answered twice. */
+  handledSlot?: string;
+  updatedAt: string;
+  updatedByName: string;
 }
 
 /** One decision at the payout checkpoint (163). Append-only: a hold, a release or a clearance is never edited, only followed by the next one. */
@@ -4744,7 +4830,7 @@ export type CommitmentKind =
   | 'exit_dispute_decide'
   | 'tier_review_due'
   | 'certification_renewal'
-  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review'
+  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'

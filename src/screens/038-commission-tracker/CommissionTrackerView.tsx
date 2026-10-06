@@ -143,6 +143,8 @@ export function CommissionTrackerView() {
                   <Badge tone="warning">{t('payoutApproval.partner.onHold', { date: formatDate(entry.payoutApproval.at, i18n.language) })}</Badge>
                   <p className="t-xs t-muted">{t(`payoutApproval.partner.hold.${entry.payoutApproval.holdKind ?? 'other'}`)}</p>
                 </div>
+              ) : entry.status === 'approved' && entry.disbursement && entry.disbursement.status !== 'cancelled' && entry.disbursement.status !== 'completed' ? (
+                <p className="t-xs t-muted mt-1" data-payout-disbursement={entry.disbursement.status}>{entry.disbursement.status === 'failed' ? t(['account_closed', 'invalid_account', 'bank_rejected', 'upi_invalid'].includes(entry.disbursement.failure ?? '') ? 'payoutDisbursement.partner.needsDetails' : 'payoutDisbursement.partner.retrying') : t('payoutDisbursement.partner.sending')}</p>
               ) : (
                 <p className="t-xs t-muted mt-1">{entry.status === 'approved' && entry.payoutApproval?.status === 'approved' && entry.payoutApproval.amount === entry.amount ? t('payoutApproval.partner.cleared') : t(K.statusExplain[entry.status])}</p>
               )}

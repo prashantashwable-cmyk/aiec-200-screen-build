@@ -15,7 +15,7 @@ export const KINDS: ReconExceptionKind[] = ['duplicate_debit', 'duplicate_credit
 export const REASONS: ReconReason[] = ['bank_fee', 'rounding', 'verified'];
 export const RUN_STATUSES: ReconRunStatus[] = ['passed', 'review', 'failed', 'could_not_run'];
 export const SEVERITIES: ReconSeverityView[] = ['critical', 'high', 'low'];
-export const LEDGER_KINDS = ['supplier_payment', 'customer_receipt', 'customer_refund'] as const;
+export const LEDGER_KINDS = ['supplier_payment', 'customer_receipt', 'customer_refund', 'worker_payout'] as const;
 
 export const NOTE_MIN = 8;
 export const SERIOUS_NOTE_MIN = 20;

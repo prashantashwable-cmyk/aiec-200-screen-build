@@ -11,6 +11,7 @@ import type { CompleteInput, DecisionSignal, Phase as InterviewPhase } from '@/f
 import type { Demand, GuideAnswers, InterestProblem, InterestRole, RecruitRole, RecruitSource } from '@/features/recruitment/interest';
 import type { Outstanding, SectionId } from '@/features/recruitment/application';
 import type { JudgementDecision, JudgementProblem, ShareBasis } from '@/features/commission/finalPayout';
+import type { DisbursementKind, DisbursementMethod, DisbursementStatus, FailureReason as DisbursementFailure, RetryProblem } from '@/features/commission/disbursement';
 import type { HoldKind as PayoutHoldKind, PayoutFlag, QueueState as PayoutQueueState, SkipReason as PayoutSkipReason } from '@/features/commission/payoutApproval';
 import type { AttentionKind as PayoutAttentionKind, PayoutCategory, PayoutStatus, Spike as PayoutSpike, Trend as PayoutTrend } from '@/features/commission/payoutTracker';
 import type { Check as CommissionCheck, CommissionParams, CommissionRuleId, ParamDef as CommissionParamDef, RuleGroup, RuleLedger, RuleTrigger, Scenario as CommissionScenario, SimInput as CommissionSimInput, SimResult as CommissionSimResult, StackGroup as CommissionStackGroup } from '@/features/commission/rules';
@@ -4167,7 +4168,7 @@ export interface ReportIssueInput {
 /* ---------------------------------- Auto-reconciliation (120) */
 
 export type ReconSeverityView = 'critical' | 'high' | 'low';
-export type LedgerKindView = 'supplier_payment' | 'customer_receipt' | 'customer_refund';
+export type LedgerKindView = 'supplier_payment' | 'customer_receipt' | 'customer_refund' | 'worker_payout';
 
 /** One line of the bank's statement, as shown next to the app's own record of it. */
 export interface BankSideView {
@@ -6212,7 +6213,149 @@ export interface PayoutBatchResult {
   skipped: { id: string; reason: PayoutSkipReason }[];
   amount: number;
 }
-export type PayoutApprovalProblem = 'not_found' | 'not_pending' | 'not_holdable' | 'not_held' | 'flags_unacknowledged' | 'reason_required' | 'kind_invalid' | 'not_admin';
+export type PayoutApprovalProblem = 'not_found' | 'not_pending' | 'not_holdable' | 'in_flight' | 'not_held' | 'flags_unacknowledged' | 'reason_required' | 'kind_invalid' | 'not_admin';
+
+/* ------------------------------------------------------------------ Automated payout disbursement (164) */
+
+export interface DisbursementFilter {
+  status?: DisbursementStatus | 'all' | 'attention';
+  q?: string;
+  offset?: number;
+  /** 0 returns everything (the export). */
+  limit?: number;
+}
+export interface DisbursementRowView {
+  id: string;
+  code: string;
+  partnerId: string;
+  partnerName: string;
+  partnerRole: 'surveyor' | 'technician' | 'supplier' | 'other';
+  amount: number;
+  entryCount: number;
+  entryIds: string[];
+  method: DisbursementMethod;
+  /** Where it went, masked. */
+  destination: string;
+  status: DisbursementStatus;
+  kind: DisbursementKind;
+  runCode: string | null;
+  createdAt: string;
+  sentAt: string | null;
+  completedAt: string | null;
+  failedAt: string | null;
+  failure: DisbursementFailure | null;
+  /** The partner's details have to be put right before it can be sent again. */
+  needsDetails: boolean;
+  attempt: number;
+  retryOfCode: string | null;
+  /** A later attempt continues this one. */
+  continuedBy: string | null;
+  bankReference: string | null;
+  /** Settles by itself within a minute or two: how long it has been out. */
+  minutesOut: number | null;
+}
+export interface DisbursementEntryView {
+  id: string;
+  reasonKey: string;
+  trigger: string;
+  amount: number;
+  dealCode: string | null;
+  jobCode: string | null;
+  earnedAt: string;
+  expedited: boolean;
+}
+export interface PayoutAccountView {
+  userId: string;
+  holderName: string;
+  upiId: string | null;
+  accountMasked: string | null;
+  ifsc: string | null;
+  bankName: string | null;
+  verifiedAt: string | null;
+  updatedAt: string;
+  updatedByName: string;
+}
+export interface DisbursementDetailView {
+  row: DisbursementRowView;
+  entries: DisbursementEntryView[];
+  events: { at: string; kind: string; byName: string; detail: string | null }[];
+  account: PayoutAccountView | null;
+  partnerPhone: string | null;
+  retryProblem: RetryProblem | null;
+  /** The partner's details were changed after this failed, so it can go again. */
+  detailsChangedSince: boolean;
+  reconciled: boolean;
+}
+export interface ReadyPartnerView {
+  partnerId: string;
+  name: string;
+  role: DisbursementRowView['partnerRole'];
+  amount: number;
+  entryCount: number;
+  entryIds: string[];
+  method: DisbursementMethod | null;
+  /** Why nothing can be sent yet: no usable details on file, or a failed transfer is still waiting to be put right. */
+  blocked: 'no_details' | 'failed_open' | null;
+  urgentCount: number;
+  oldestDays: number;
+}
+export interface PayoutRunView {
+  id: string;
+  code: string;
+  kind: 'weekly' | 'manual';
+  startedAt: string;
+  finishedAt: string | null;
+  status: 'running' | 'completed' | 'interrupted';
+  interruptedReason: string | null;
+  byName: string;
+  /** The exact split: what went out and what did not. */
+  sent: number;
+  completed: number;
+  processing: number;
+  failed: number;
+  amount: number;
+  completedAmount: number;
+  unfinishedIds: string[];
+  skipped: { partnerId: string; partnerName: string; reason: string; amount: number }[];
+}
+export interface PayoutMoneyView {
+  count: number;
+  amount: number;
+}
+export interface DisbursementBoardView {
+  at: string;
+  rail: { status: 'connected' | 'unavailable'; since: string; interruptAfter: number | null };
+  schedule: { enabled: boolean; weekday: number; hour: number; consolidate: boolean; nextRunAt: string | null; lastRunAt: string | null };
+  kpis: {
+    inFlight: PayoutMoneyView;
+    failed: PayoutMoneyView & { oldestDays: number | null };
+    completed: PayoutMoneyView;
+    ready: PayoutMoneyView & { partners: number; urgent: number };
+    needsDetails: { partners: number; amount: number };
+  };
+  ready: ReadyPartnerView[];
+  runs: PayoutRunView[];
+  statusCounts: Record<DisbursementStatus | 'all' | 'attention', number>;
+  rows: DisbursementRowView[];
+  total: number;
+}
+export interface DisbursementActionResult {
+  disbursements: DisbursementRowView[];
+  skipped: { partnerId: string; partnerName: string; reason: string }[];
+  run: PayoutRunView | null;
+}
+export type DisbursementProblem =
+  | 'not_found'
+  | 'not_failed'
+  | 'details_unchanged'
+  | 'in_flight'
+  | 'nothing_ready'
+  | 'no_details'
+  | 'blocked'
+  | 'reason_required'
+  | 'details_invalid'
+  | 'schedule_invalid'
+  | 'not_admin';
 
 export interface Repository {
   /* Users */
@@ -7061,6 +7204,23 @@ export interface Repository {
   handleTrainingFeedback(feedbackId: string, input: { status: FeedbackStatusName; note: string; addressedInVersion?: number }, adminId: string): Promise<FeedbackItemView>;
   /** Hides (or restores) a comment that is abusive or not constructive; its ratings keep counting. */
   moderateTrainingFeedback(feedbackId: string, input: { hide: boolean; reason: string }, adminId: string): Promise<FeedbackItemView>;
+  // Automated payout disbursement (164)
+  getPayoutDisbursements(filter: DisbursementFilter, adminId: string): Promise<DisbursementBoardView>;
+  getDisbursementDetail(disbursementId: string, adminId: string): Promise<DisbursementDetailView>;
+  /** Starts a run now (kind manual): every cleared payout that is not urgent-only, grouped by partner. */
+  startPayoutRun(adminId: string): Promise<DisbursementActionResult>;
+  /** Sends one partner's cleared payouts now, outside the run (an individual urgent disbursement). `entryIds` limits it to some of them. */
+  sendPayoutNow(partnerId: string, input: { entryIds?: string[] }, adminId: string): Promise<DisbursementActionResult>;
+  retryDisbursement(disbursementId: string, adminId: string): Promise<DisbursementRowView>;
+  /** Retries every transfer of a run that did not go, in one step. Anything needing the partner's details first is skipped with a reason. */
+  retryRunFailures(runId: string, adminId: string): Promise<DisbursementActionResult>;
+  /** Admin records corrected details on the partner's behalf (after speaking to them), optionally sending the failed payouts again. */
+  updatePayoutAccount(partnerId: string, input: { holderName?: string; upiId?: string; accountNumber?: string; ifsc?: string; bankName?: string; note: string; retry: boolean }, adminId: string): Promise<{ account: PayoutAccountView; retried: DisbursementRowView[] }>;
+  recordDisbursementContact(disbursementId: string, input: { channel: 'call' | 'whatsapp' | 'message'; note: string }, adminId: string): Promise<DisbursementDetailView>;
+  cancelDisbursement(disbursementId: string, input: { reason: string }, adminId: string): Promise<DisbursementRowView>;
+  savePayoutSchedule(input: { enabled: boolean; weekday: number; hour: number; consolidate: boolean }, adminId: string): Promise<DisbursementBoardView['schedule']>;
+  /** Demo control: stands in for the banking partner's own status. `interruptAfter` stops the next run after that many transfers. */
+  setPayoutRail(input: { status: 'connected' | 'unavailable'; interruptAfter: number | null }, adminId: string): Promise<DisbursementBoardView['rail']>;
   // Payout approval queue (163)
   getPayoutApprovalQueue(filter: PayoutApprovalFilter, adminId: string): Promise<PayoutQueueView>;
   getPayoutApprovalDetail(entryId: string, adminId: string): Promise<{ row: PayoutQueueRow; history: PayoutDecisionView[] }>;

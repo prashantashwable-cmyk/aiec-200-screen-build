@@ -2,6 +2,7 @@ import { ASSIGN_DUE, DISPUTE_DECIDE_DUE, REVERIFY_DUE } from '@/features/qc/snag
 import { ARRANGE_DUE, FOLLOWUP_DUE, SIGNOFF_DUE_PRESENT, SIGNOFF_DUE_REMOTE } from '@/features/qc/walkthrough';
 import { dueAtOf as sopDueAt } from '@/features/sop/rollout';
 import { dueAtOf as feedbackDueAt, REVIEW_DUE_DAYS as FEEDBACK_REVIEW_DAYS } from '@/features/training/feedback';
+import { ATTENTION_DUE as PAYOUT_ATTENTION_DUE } from '@/features/commission/disbursement';
 import { APPROVE_DUE as PAYOUT_APPROVE_DUE, HOLD_REVIEW as PAYOUT_HOLD_REVIEW } from '@/features/commission/payoutApproval';
 import type { SopRollout, TrainingFeedback, TrainingAssignment, PartnerApplication, PartnerExit, TierDispute, TierReview, WarrantyRegistration, HandoverWalkthrough, ReworkRequest,
   Alert,
@@ -149,6 +150,7 @@ export interface CommitmentSources {
   complianceReview: { dueAt: string; cycle: string; done: boolean };
   /** SOP rollouts: each affected partner's own acknowledgement, and Admin's look at what is still open (159). */
   /** Serious training feedback Admin has not dealt with, and the standing look at the routine kind (160). */
+  payoutDisbursements: { attention: { count: number; oldestAt: string | null } };
   payoutApprovals: { pending: { count: number; oldestAt: string | null }; held: { id: string; partnerName: string; since: string }[] };
   commissionNotices: { ruleId: string; version: number; userId: string; role: 'surveyor' | 'technician'; effectiveFrom: string; from: string; to: string; open: boolean }[];
   trainingFeedback: { urgent: { f: TrainingFeedback; code: string; safety: boolean }[]; routine: { open: number; oldestAt: string | null } };
@@ -2148,6 +2150,32 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
           paused: false,
           actionRoute: '/payout-approval',
           oversightRoute: '/payout-approval',
+        },
+      ];
+    },
+  },
+  {
+    // A cleared payout that did not reach the partner, or has nowhere to go, is somebody's money waiting (164). One standing line while anything needs attention.
+    kind: 'payout_disbursement_attention',
+    nudgeBefore: hours(4),
+    escalateAfter: days(2),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'payment',
+    collect(src) {
+      const w = src.payoutDisbursements.attention;
+      if (w.count === 0 || !w.oldestAt) return [];
+      return [
+        {
+          ...base('payout_disbursement_attention', 'application', 'standing'),
+          ownerUserId: adminId(src),
+          titleKey: 'work.title.payout_disbursement_attention',
+          titleParams: { count: String(w.count) },
+          dueAt: new Date(Date.parse(w.oldestAt) + PAYOUT_ATTENTION_DUE).toISOString(),
+          state: 'open' as const,
+          paused: false,
+          actionRoute: '/payout-disbursement?state=attention',
+          oversightRoute: '/payout-disbursement?state=attention',
         },
       ];
     },

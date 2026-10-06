@@ -201,6 +201,7 @@ const translations: ScreenTranslations = {
       problem: {
         not_found: 'That payout is no longer in the queue.',
         not_pending: 'It was already decided. The list has been refreshed.',
+        in_flight: 'It is already being sent to the partner, so it cannot be held.',
         not_holdable: 'It is already on hold.',
         not_held: 'It is not on hold.',
         flags_unacknowledged: 'Tick that you have seen each flag first.',
@@ -410,6 +411,7 @@ const translations: ScreenTranslations = {
       problem: {
         not_found: 'वह भुगतान अब कतार में नहीं है।',
         not_pending: 'यह पहले ही तय हो चुका है। सूची ताज़ा की गई।',
+        in_flight: 'यह पहले ही पार्टनर को भेजा जा रहा है, इसलिए रोका नहीं जा सकता।',
         not_holdable: 'यह पहले से रुका हुआ है।',
         not_held: 'यह रुका हुआ नहीं है।',
         flags_unacknowledged: 'पहले हर चिह्न पर निशान लगाएँ कि आपने देख लिया है।',
@@ -619,6 +621,7 @@ const translations: ScreenTranslations = {
       problem: {
         not_found: 'ते पेमेंट आता रांगेत नाही.',
         not_pending: 'ते आधीच ठरले आहे. यादी ताजी केली.',
+        in_flight: 'हे आधीच भागीदाराला पाठवले जात आहे, त्यामुळे थांबवता येत नाही.',
         not_holdable: 'ते आधीच रोखलेले आहे.',
         not_held: 'ते रोखलेले नाही.',
         flags_unacknowledged: 'आधी प्रत्येक चिन्ह पाहिल्याची खूण करा.',

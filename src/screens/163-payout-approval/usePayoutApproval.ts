@@ -9,7 +9,7 @@ import type { FlagFilter, QueueState } from './payout-approval.types';
 export type PayoutApprovalState = ReturnType<typeof usePayoutApproval>;
 export type ActionResult<T = PayoutQueueRow> = { ok: true; value: T } | { ok: false; problem: PayoutApprovalProblem | 'generic' };
 
-const PROBLEMS: string[] = ['not_found', 'not_pending', 'not_holdable', 'not_held', 'flags_unacknowledged', 'reason_required', 'kind_invalid', 'not_admin'];
+const PROBLEMS: string[] = ['not_found', 'not_pending', 'not_holdable', 'in_flight', 'not_held', 'flags_unacknowledged', 'reason_required', 'kind_invalid', 'not_admin'];
 const problemOf = (e: unknown): PayoutApprovalProblem | 'generic' => { const m = e instanceof Error ? e.message : ''; return PROBLEMS.includes(m) ? (m as PayoutApprovalProblem) : 'generic'; };
 
 /**

@@ -269,6 +269,14 @@ import type {
   PayoutDecisionView,
   PayoutQueueRow,
   PayoutQueueView,
+  DisbursementActionResult,
+  DisbursementBoardView,
+  DisbursementDetailView,
+  DisbursementEntryView,
+  DisbursementRowView,
+  PayoutAccountView,
+  PayoutRunView,
+  ReadyPartnerView,
   PayoutRelated,
   PayoutAttentionItem,
   PayoutCategoryView,
@@ -650,6 +658,11 @@ import type {
   CommissionRule,
   CommissionRuleVersion,
   PayoutDecision,
+  DisbursementEvent,
+  PayoutSchedule,
+  PayoutRun,
+  PayoutDisbursement,
+  PayoutAccount,
   CommMessage,
   CommSequence,
   CommTemplate,
@@ -835,6 +848,8 @@ import type { Metrics, TierEffects, TierRole } from '@/features/partners/tiers';
 import { DEFAULT_PARAMS as CR_DEFAULTS, NOTICE_DAYS as CR_NOTICE_DAYS, NOTICE_MAX as CR_NOTICE_MAX, REASON_MIN as CR_REASON_MIN, RULE_DEFS as CR_DEFS, RULE_IDS as CR_IDS, RULE_OF_REASON as CR_RULE_OF_REASON, SIGNIFICANT_CHANGE as CR_SIGNIFICANT, STACK_GROUPS as CR_STACK, amountOf as crAmountOf, changeSize as crChangeSize, crewRatesOf as crCrewRates, defOf as crDefOf, inForce as crInForce, isRuleId as crIsRuleId, normaliseParams as crNormalise, newChecks as crNewChecks, paramsProblem as crParamsProblem, resultChecks as crResultChecks, sameParams as crSameParams, scenariosFor as crScenarios, simulate as crSimulate, upcomingOf as crUpcoming } from '@/features/commission/rules';
 import { APPROVE_DUE as PA_APPROVE_DUE, HOLD_KINDS as PA_HOLD_KINDS, HOLD_REVIEW as PA_HOLD_REVIEW, ROUTINE_LIMIT as PA_ROUTINE_LIMIT, approveProblem as paApproveProblem, batchSkipReason as paBatchSkip, holdProblem as paHoldProblem, isRoutine as paIsRoutine, stateOf as paStateOf } from '@/features/commission/payoutApproval';
 import type { HoldKind as PaHoldKind, PayoutFlag as PaFlag } from '@/features/commission/payoutApproval';
+import { ATTENTION_DUE as DB_ATTENTION_DUE, NOTE_MIN as DB_NOTE_MIN, RUNS_SHOWN as DB_RUNS_SHOWN, SETTLE_MS as DB_SETTLE_MS, UPI_LIMIT as DB_UPI_LIMIT, detailsProblem as dbDetailsProblem, groupTransfers as dbGroupTransfers, hasBank as dbHasBank, hasUpi as dbHasUpi, lastSlot as dbLastSlot, maskAccount as dbMask, methodFor as dbMethodFor, needsDetails as dbNeedsDetails, nextSlot as dbNextSlot, railOutcome as dbRailOutcome, retryProblem as dbRetryProblem, scheduleProblem as dbScheduleProblem } from '@/features/commission/disbursement';
+import type { DisbursementMethod as DbMethod, FailureReason as DbFailure } from '@/features/commission/disbursement';
 import { APPROVED_WAIT as PT_APPROVED_WAIT, CATEGORIES as PT_CATEGORIES, PAGE as PT_PAGE, STATUSES as PT_STATUSES, byCurrency as ptByCurrency, categoryOf as ptCategoryOf, isStaleApproved as ptIsStale, outliersOf as ptOutliers, spikeOf as ptSpike, sum as ptSum, trendOf as ptTrend, triggerOf as ptTriggerOf } from '@/features/commission/payoutTracker';
 import type { AttentionKind as PtAttentionKind, PayoutCategory as PtCategory, PayoutStatus as PtStatus } from '@/features/commission/payoutTracker';
 import type { CommissionParams as CrParams, CommissionRuleId as CrRuleId, Rates as CrRates } from '@/features/commission/rules';
@@ -2544,6 +2559,7 @@ function commitmentSources(now: number): CommitmentSources {
     trainingFeedback: trainingFeedbackSignals(Date.now()),
     commissionNotices: commissionNoticeSignals(Date.now()),
     payoutApprovals: payoutApprovalSignals(Date.now()),
+    payoutDisbursements: payoutDisbursementSignals(),
     exits: exitSignals(),
     handoverReviews: handoverSignals().reviews,
     qcMechChecks,
@@ -2808,6 +2824,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   syncSopRollouts(now);
   syncTrainingFeedback(now);
   syncPayoutSpikes(now);
+  syncDisbursements(now);
   syncPartnerInterviews(now);
   syncVerification(now);
   syncOffers(now);
@@ -9158,6 +9175,324 @@ function payoutApprovalSignals(now: number): { pending: { count: number; oldestA
   };
 }
 
+
+/* ------------------------------------------------------------------ Automated payout disbursement (164) */
+
+const DB_FAILED_ALERT = 'payoutDisbursement.alert.failed';
+const DB_DETAILS_ALERT = 'payoutDisbursement.alert.noDetails';
+const dbIso = (ms: number): string => new Date(ms).toISOString();
+const dbAgo = (d: number, h = 0): number => Date.now() - d * 86_400_000 - h * 3_600_000;
+
+/** Where each field partner is paid. Seeded as onboarding would have left it; a real build reads the penny-drop result it stored. */
+const payoutAccounts: PayoutAccount[] = [
+  { userId: 'u-srv-1', holderName: 'Ganesh Pawar', upiId: 'ganesh.pawar@okaxis', verifiedAt: dbIso(dbAgo(120)), updatedAt: dbIso(dbAgo(120)), updatedByName: 'Onboarding', simulatedBank: 'ok', isDemo: true },
+  { userId: 'u-srv-2', holderName: 'Sunita Deshmukh', accountNumber: '50100234775521', ifsc: 'HDFC0001234', bankName: 'HDFC Bank', verifiedAt: dbIso(dbAgo(110)), updatedAt: dbIso(dbAgo(110)), updatedByName: 'Onboarding', simulatedBank: 'closed', isDemo: true },
+  { userId: 'u-tech-1', holderName: 'Santosh Kale', accountNumber: '31245678842', ifsc: 'SBIN0004321', bankName: 'State Bank of India', verifiedAt: dbIso(dbAgo(200)), updatedAt: dbIso(dbAgo(200)), updatedByName: 'Onboarding', simulatedBank: 'ok', isDemo: true },
+  { userId: 'u-tech-2', holderName: 'Vishal More', accountNumber: '00045678901234', ifsc: 'ICIC0000456', bankName: 'ICICI Bank', verifiedAt: dbIso(dbAgo(150)), updatedAt: dbIso(dbAgo(150)), updatedByName: 'Onboarding', simulatedBank: 'closed', isDemo: true },
+  { userId: 'u-tech-3', holderName: 'Ajay More', upiId: 'ajay.more@ybl', verifiedAt: dbIso(dbAgo(60)), updatedAt: dbIso(dbAgo(60)), updatedByName: 'Onboarding', simulatedBank: 'ok', isDemo: true },
+  { userId: 'u-tech-5', holderName: 'Anand Deshpande', accountNumber: '123456789012', ifsc: 'KKBK0000789', bankName: 'Kotak Mahindra Bank', verifiedAt: dbIso(dbAgo(90)), updatedAt: dbIso(dbAgo(90)), updatedByName: 'Onboarding', simulatedBank: 'ok', isDemo: true },
+];
+
+const dbDone = (id: number, entry: string, partner: string, amount: number, method: DbMethod, destination: string, ago: number, runId: string | undefined, kind: PayoutDisbursement['kind'], ref: string): PayoutDisbursement => ({
+  id: `db-${id}`, code: `AIEC-DB-${id}`, partnerId: partner, entryIds: [entry], amount, method, destination, status: 'completed', kind, ...(runId ? { runId } : {}), attempt: 1,
+  createdAt: dbIso(dbAgo(ago, 1)), sentAt: dbIso(dbAgo(ago, 1)), completedAt: dbIso(dbAgo(ago)), bankReference: ref, createdByName: kind === 'scheduled' ? 'AIEC Assistant' : 'Prashant Vasant Wable',
+  events: [{ at: dbIso(dbAgo(ago, 1)), kind: 'created', byName: kind === 'scheduled' ? 'AIEC Assistant' : 'Prashant Vasant Wable' }, { at: dbIso(dbAgo(ago)), kind: 'completed', byName: 'Banking partner', detail: ref }], isDemo: true,
+});
+const payoutDisbursements: PayoutDisbursement[] = [
+  dbDone(1001, 'c-2', 'u-srv-1', 500, 'upi', 'ganesh.pawar@okaxis', 63, 'pr-1001', 'scheduled', 'UPI2608020101'),
+  dbDone(1002, 'c-1', 'u-srv-1', 39_600, 'upi', 'ganesh.pawar@okaxis', 41, 'pr-1002', 'scheduled', 'UPI2608240207'),
+  dbDone(1003, 'c-t2', 'u-tech-1', 11_500, 'bank_transfer', '•••• 8842 · SBIN0004321', 38, 'pr-1003', 'scheduled', 'NEFT2608270312'),
+  dbDone(1004, 'c-t3', 'u-tech-2', 9_000, 'bank_transfer', '•••• 1234 · ICIC0000456', 31, 'pr-1004', 'scheduled', 'NEFT2609030409'),
+  dbDone(1005, 'c-3', 'u-srv-2', 28_200, 'bank_transfer', '•••• 5521 · HDFC0001234', 26, undefined, 'urgent', 'IMPS2609260311'),
+  {
+    id: 'db-1006', code: 'AIEC-DB-1006', partnerId: 'u-tech-2', entryIds: ['c-t4'], amount: 9_500, method: 'bank_transfer', destination: '•••• 1234 · ICIC0000456', status: 'failed', kind: 'scheduled', runId: 'pr-1005', attempt: 1,
+    createdAt: dbIso(dbAgo(4, 2)), sentAt: dbIso(dbAgo(4, 2)), failedAt: dbIso(dbAgo(4)), failure: 'account_closed', createdByName: 'AIEC Assistant',
+    events: [{ at: dbIso(dbAgo(4, 2)), kind: 'created', byName: 'AIEC Assistant' }, { at: dbIso(dbAgo(4)), kind: 'failed', byName: 'Banking partner', detail: 'account_closed' }], isDemo: true,
+  },
+];
+const payoutRuns: PayoutRun[] = [
+  { id: 'pr-1001', code: 'AIEC-PR-1001', kind: 'weekly', startedAt: dbIso(dbAgo(63, 1)), finishedAt: dbIso(dbAgo(63, 1)), status: 'completed', disbursementIds: ['db-1001'], skipped: [], byName: 'AIEC Assistant', isDemo: true },
+  { id: 'pr-1002', code: 'AIEC-PR-1002', kind: 'weekly', startedAt: dbIso(dbAgo(41, 1)), finishedAt: dbIso(dbAgo(41, 1)), status: 'completed', disbursementIds: ['db-1002'], skipped: [], byName: 'AIEC Assistant', isDemo: true },
+  { id: 'pr-1003', code: 'AIEC-PR-1003', kind: 'weekly', startedAt: dbIso(dbAgo(38, 1)), finishedAt: dbIso(dbAgo(38, 1)), status: 'completed', disbursementIds: ['db-1003'], skipped: [], byName: 'AIEC Assistant', isDemo: true },
+  { id: 'pr-1004', code: 'AIEC-PR-1004', kind: 'weekly', startedAt: dbIso(dbAgo(31, 1)), finishedAt: dbIso(dbAgo(31, 1)), status: 'completed', disbursementIds: ['db-1004'], skipped: [], byName: 'AIEC Assistant', isDemo: true },
+  { id: 'pr-1005', code: 'AIEC-PR-1005', kind: 'weekly', startedAt: dbIso(dbAgo(4, 2)), finishedAt: dbIso(dbAgo(4, 2)), status: 'completed', disbursementIds: ['db-1006'], skipped: [], byName: 'AIEC Assistant', isDemo: true },
+];
+let payoutSchedule: PayoutSchedule = { enabled: true, weekday: 5, hour: 11, consolidate: true, since: dbIso(Date.now()), updatedAt: dbIso(Date.now()), updatedByName: 'Prashant Vasant Wable' };
+let payoutRail: { status: 'connected' | 'unavailable'; since: string; interruptAfter: number | null } = { status: 'connected', since: dbIso(dbAgo(30)), interruptAfter: null };
+let disbursementCounter = 1006;
+let payoutRunCounter = 1005;
+
+const dbEvent = (d: PayoutDisbursement, kind: DisbursementEvent['kind'], byName: string, detail?: string, at?: number): void => { d.events.push({ at: dbIso(at ?? Date.now()), kind, byName, ...(detail ? { detail } : {}) }); };
+const dbAccountOf = (userId: string): PayoutAccount | null => payoutAccounts.find((a) => a.userId === userId) ?? null;
+const dbPartnerRole = (userId: string): DisbursementRowView['partnerRole'] => { const u = byId(users, userId); return u?.role === 'surveyor' || u?.role === 'technician' ? u.role : byId(suppliers, userId) ? 'supplier' : 'other'; };
+const dbIsActive = (d: PayoutDisbursement): boolean => d.status === 'initiated' || d.status === 'processing';
+/** A failed transfer nobody has yet continued (retried) or called off. */
+const dbIsUnresolved = (d: PayoutDisbursement): boolean => d.status === 'failed' && !payoutDisbursements.some((x) => x.retryOf === d.id);
+const dbInFlightEntry = (e: CommissionEntry): boolean => e.disbursement?.status === 'initiated' || e.disbursement?.status === 'processing';
+const dbDestination = (a: PayoutAccount, method: DbMethod): string => (method === 'upi' ? (a.upiId ?? '') : `${dbMask(a.accountNumber ?? '')} · ${(a.ifsc ?? '').toUpperCase()}`);
+const dbPointer = (entryIds: string[], d: PayoutDisbursement | null): void => {
+  for (const id of entryIds) patchInPlace(commissions, id, { disbursement: d ? { id: d.id, status: d.status, ...(d.failure ? { failure: d.failure } : {}) } : undefined });
+};
+
+/** Payouts Admin has cleared (163) that nothing is carrying yet, oldest first, in rupees only. */
+function dbClearedEntries(): CommissionEntry[] {
+  return commissions
+    .filter((e) => e.status === 'approved' && !e.disbursement && paStateOf({ status: e.status, amount: e.amount, approval: e.payoutApproval }) === 'cleared')
+    .sort((a, b) => (a.earnedAt < b.earnedAt ? -1 : 1));
+}
+const dbIsRupees = (e: CommissionEntry): boolean => !e.currency || e.currency === 'INR';
+const dbBlockedPartners = (): Set<string> => new Set(payoutDisbursements.filter(dbIsUnresolved).map((d) => d.partnerId));
+
+/** Creates the transfers for one partner's entries. Each starts out processing at once, or fails at once when the banking partner is down or nothing can carry it. */
+function dbSend(partnerId: string, entries: CommissionEntry[], kind: PayoutDisbursement['kind'], byName: string, now: number, opts: { runId?: string; retryOf?: PayoutDisbursement; forceInterrupt?: boolean } = {}): PayoutDisbursement[] {
+  const acct = dbAccountOf(partnerId);
+  const out: PayoutDisbursement[] = [];
+  const limit = acct && dbHasUpi(acct) && !dbHasBank(acct) ? DB_UPI_LIMIT : null;
+  for (const group of dbGroupTransfers(entries, { consolidate: payoutSchedule.consolidate || !!opts.retryOf, limit })) {
+    const amount = group.reduce((a, e) => a + e.amount, 0);
+    const pick = dbMethodFor(acct, amount);
+    disbursementCounter += 1;
+    const base: PayoutDisbursement = {
+      id: `db-${disbursementCounter}`, code: `AIEC-DB-${disbursementCounter}`, partnerId, entryIds: group.map((e) => e.id), amount, method: 'method' in pick ? pick.method : (acct && dbHasUpi(acct) ? 'upi' : 'bank_transfer'),
+      destination: acct && 'method' in pick ? dbDestination(acct, pick.method) : '', status: 'initiated', kind: opts.retryOf ? 'retry' : kind, ...(opts.runId ? { runId: opts.runId } : {}), ...(opts.retryOf ? { retryOf: opts.retryOf.id } : {}),
+      attempt: (opts.retryOf?.attempt ?? 0) + 1, createdAt: dbIso(now), createdByName: byName, events: [], isDemo: true,
+    };
+    dbEvent(base, 'created', byName, opts.retryOf ? `retry:${opts.retryOf.code}` : kind, now);
+    const fail = (reason: DbFailure): void => { base.status = 'failed'; base.failedAt = dbIso(now); base.failure = reason; dbEvent(base, 'failed', 'AIEC Assistant', reason, now); };
+    if (!('method' in pick)) fail(pick.problem === 'limit_exceeded' ? 'limit_exceeded' : 'invalid_account');
+    else if (opts.forceInterrupt) fail('interrupted');
+    else if (payoutRail.status === 'unavailable') fail('bank_unavailable');
+    else { base.status = 'processing'; base.sentAt = dbIso(now); dbEvent(base, 'processing', byName, undefined, now); }
+    payoutDisbursements.push(base);
+    dbPointer(base.entryIds, base);
+    if (base.status === 'failed') dbRaiseFailure(base);
+    out.push(base);
+  }
+  return out;
+}
+
+function dbRaiseFailure(d: PayoutDisbursement): void {
+  const needs = dbNeedsDetails(d.failure as DbFailure);
+  raiseAlert({
+    titleKey: DB_FAILED_ALERT, context: `${d.code} ${nameOf(d.partnerId)} ${d.amount}: ${d.failure}`, severity: needs || d.failure === 'limit_exceeded' ? 'high' : 'medium', category: 'payment', relatedId: `payout-disb:${d.id}`, sourceRoute: `/payout-disbursement?disbursement=${d.id}`,
+  });
+  logAutomatedAction({ sourceKey: 'payout_disbursement.failed', triggeringCondition: `A payout of ${d.amount} to ${nameOf(d.partnerId)} failed: ${d.failure}`, actionTaken: 'Put it in front of Admin as an alert with the reason, and held that partner back from the next run until it is dealt with', affectedRecordId: d.id, affectedRecordType: 'other', subjectLabel: d.code } as Parameters<typeof logAutomatedAction>[0]);
+}
+
+/** Settles whatever the banking partner has had long enough to answer. The time recorded is when it answered, not when anyone looked. */
+function dbSettle(now: number): void {
+  for (const d of payoutDisbursements) {
+    if (d.status !== 'processing' || !d.sentAt) continue;
+    const due = Date.parse(d.sentAt) + DB_SETTLE_MS[d.method];
+    if (due > now) continue;
+    const out = dbRailOutcome(dbAccountOf(d.partnerId), d.method);
+    if (out.ok) {
+      const ref = `${d.method === 'upi' ? 'UPI' : 'NEFT'}${new Date(due).toISOString().slice(2, 10).replace(/-/g, '')}${String(d.id.replace(/\D/g, '')).padStart(4, '0')}`;
+      d.status = 'completed'; d.completedAt = dbIso(due); d.bankReference = ref;
+      dbEvent(d, 'completed', 'Banking partner', ref, due);
+      for (const id of d.entryIds) patchInPlace(commissions, id, { status: 'paid' as const, paidAt: dbIso(due), disbursement: { id: d.id, status: 'completed' as const } });
+      bankTransactions.push({ id: `btx-w-${d.id}`, postedAt: dbIso(due), direction: 'debit', amount: d.amount, reference: ref, narration: `${d.method === 'upi' ? 'UPI' : 'NEFT'} DR ${ref} ${nameOf(d.partnerId).toUpperCase()}`, counterparty: nameOf(d.partnerId), isDemo: true });
+      logAutomatedAction({ sourceKey: 'payout_disbursement.completed', triggeringCondition: `The banking partner confirmed ${d.code}`, actionTaken: 'Marked the payout entries paid and recorded the transfer for reconciliation', affectedRecordId: d.id, affectedRecordType: 'other', subjectLabel: d.code } as Parameters<typeof logAutomatedAction>[0]);
+    } else {
+      d.status = 'failed'; d.failedAt = dbIso(due); d.failure = out.reason;
+      dbEvent(d, 'failed', 'Banking partner', out.reason, due);
+      dbPointer(d.entryIds, d);
+      dbRaiseFailure(d);
+    }
+  }
+}
+
+function dbReadyOf(): ReadyPartnerView[] {
+  const blocked = dbBlockedPartners();
+  const now = Date.now();
+  const by = new Map<string, CommissionEntry[]>();
+  for (const e of dbClearedEntries()) { if (!dbIsRupees(e)) continue; by.set(e.userId, [...(by.get(e.userId) ?? []), e]); }
+  return [...by.entries()].map(([partnerId, es]): ReadyPartnerView => {
+    const acct = dbAccountOf(partnerId);
+    const amount = es.reduce((a, e) => a + e.amount, 0);
+    const pick = dbMethodFor(acct, amount);
+    const usable = !!acct && (dbHasUpi(acct) || dbHasBank(acct));
+    return {
+      partnerId, name: nameOf(partnerId) === 'AIEC' ? (byId(suppliers, partnerId)?.name ?? partnerId) : nameOf(partnerId), role: dbPartnerRole(partnerId), amount, entryCount: es.length, entryIds: es.map((e) => e.id),
+      method: 'method' in pick ? pick.method : usable ? 'bank_transfer' : null, blocked: !usable ? 'no_details' : blocked.has(partnerId) ? 'failed_open' : null,
+      urgentCount: es.filter((e) => e.payoutApproval?.expedited).length, oldestDays: Math.max(0, Math.floor((now - Date.parse(es[0].payoutApproval?.at ?? es[0].earnedAt)) / 86_400_000)),
+    };
+  }).sort((a, b) => (a.blocked ? 1 : 0) - (b.blocked ? 1 : 0) || b.urgentCount - a.urgentCount || b.amount - a.amount);
+}
+
+function dbStartRun(kind: 'weekly' | 'manual', byName: string, now: number, slot?: number): { run: PayoutRun | null; made: PayoutDisbursement[] } {
+  const ready = dbReadyOf();
+  if (ready.length === 0) return { run: null, made: [] };
+  payoutRunCounter += 1;
+  const run: PayoutRun = { id: `pr-${payoutRunCounter}`, code: `AIEC-PR-${payoutRunCounter}`, kind, ...(slot ? { slot: dbIso(slot) } : {}), startedAt: dbIso(now), status: 'running', disbursementIds: [], skipped: [], byName, isDemo: true };
+  payoutRuns.push(run);
+  const made: PayoutDisbursement[] = [];
+  let sent = 0;
+  let interrupted: string | null = null;
+  const stopAfter = payoutRail.interruptAfter;
+  payoutRail = { ...payoutRail, interruptAfter: null };
+  for (const r of ready) {
+    const entries = dbClearedEntries().filter((e) => e.userId === r.partnerId && dbIsRupees(e));
+    if (r.blocked) { run.skipped.push({ partnerId: r.partnerId, reason: r.blocked, entryIds: entries.map((e) => e.id) }); continue; }
+    const stop = stopAfter !== null && sent >= stopAfter;
+    const ds = dbSend(r.partnerId, entries, 'scheduled', byName, now, { runId: run.id, forceInterrupt: stop });
+    for (const d of ds) { made.push(d); run.disbursementIds.push(d.id); if (d.failure === 'interrupted') interrupted = interrupted ?? 'rail'; else if (d.failure === 'bank_unavailable') interrupted = interrupted ?? 'bank_unavailable'; else sent += 1; }
+  }
+  run.finishedAt = dbIso(now);
+  run.status = interrupted ? 'interrupted' : 'completed';
+  if (interrupted) run.interruptedReason = interrupted;
+  if (kind === 'weekly') logAutomatedAction({ sourceKey: 'payout_disbursement.run', triggeringCondition: `The weekly payout run was due (${run.code})`, actionTaken: `Sent ${made.length} transfer(s) for cleared payouts and skipped ${run.skipped.length} partner(s) that cannot be paid yet`, affectedRecordId: run.id, affectedRecordType: 'other', subjectLabel: run.code } as Parameters<typeof logAutomatedAction>[0]);
+  return { run, made };
+}
+
+/** The heartbeat: settle what the bank has answered, send urgent payouts on their own, run the schedule when its day comes, and keep the alerts true. */
+function syncDisbursements(now: number): void {
+  dbSettle(now);
+  // An urgent clearance (163) is not held for the run.
+  const urgent = dbClearedEntries().filter((e) => e.payoutApproval?.expedited && dbIsRupees(e));
+  const blocked = dbBlockedPartners();
+  for (const partnerId of [...new Set(urgent.map((e) => e.userId))]) {
+    const acct = dbAccountOf(partnerId);
+    if (!acct || (!dbHasUpi(acct) && !dbHasBank(acct)) || blocked.has(partnerId)) continue;
+    const ds = dbSend(partnerId, urgent.filter((e) => e.userId === partnerId), 'urgent', 'AIEC Assistant', now);
+    for (const d of ds) logAutomatedAction({ sourceKey: 'payout_disbursement.urgent', triggeringCondition: `A payout was cleared as urgent (${d.code})`, actionTaken: 'Sent it on its own instead of waiting for the weekly run', affectedRecordId: d.id, affectedRecordType: 'other', subjectLabel: d.code } as Parameters<typeof logAutomatedAction>[0]);
+  }
+  if (payoutSchedule.enabled) {
+    const slot = dbLastSlot(payoutSchedule, now);
+    if (slot > Date.parse(payoutSchedule.since) && (!payoutSchedule.handledSlot || Date.parse(payoutSchedule.handledSlot) < slot)) {
+      payoutSchedule = { ...payoutSchedule, handledSlot: dbIso(slot) };
+      dbStartRun('weekly', 'AIEC Assistant', now, slot);
+    }
+  }
+  dbSettle(now);
+  // Alerts: one per failed transfer nobody has dealt with, one per partner who has cleared money but nowhere to send it.
+  for (const a of alerts) {
+    if (a.status === 'resolved' || !a.relatedId) continue;
+    if (a.titleKey === DB_FAILED_ALERT) {
+      const d = byId(payoutDisbursements, a.relatedId.replace('payout-disb:', ''));
+      if (!d || !dbIsUnresolved(d)) patchInPlace(alerts, a.id, { status: 'resolved', resolvedAt: dbIso(now), resolvedBy: 'system', resolutionNote: d?.status === 'completed' || (d && payoutDisbursements.some((x) => x.retryOf === d.id)) ? 'It was sent again.' : 'It was called off.' });
+    }
+    if (a.titleKey === DB_DETAILS_ALERT) {
+      const partnerId = a.relatedId.replace('payout-disb:nodetails:', '');
+      const still = dbReadyOf().some((r) => r.partnerId === partnerId && r.blocked === 'no_details');
+      if (!still) patchInPlace(alerts, a.id, { status: 'resolved', resolvedAt: dbIso(now), resolvedBy: 'system', resolutionNote: 'Payout details are on file.' });
+    }
+  }
+  for (const r of dbReadyOf().filter((x) => x.blocked === 'no_details')) {
+    raiseAlert({ titleKey: DB_DETAILS_ALERT, context: `${r.name} has ${r.amount} cleared and no bank or UPI details to send it to`, severity: 'medium', category: 'payment', relatedId: `payout-disb:nodetails:${r.partnerId}`, sourceRoute: `/payout-disbursement?partner=${r.partnerId}` });
+  }
+}
+
+function payoutDisbursementSignals(): { attention: { count: number; oldestAt: string | null } } {
+  const failed = payoutDisbursements.filter(dbIsUnresolved);
+  const noDetails = dbReadyOf().filter((r) => r.blocked === 'no_details');
+  const times = [...failed.map((d) => d.failedAt ?? d.createdAt), ...noDetails.map((r) => dbIso(Date.now() - r.oldestDays * 86_400_000))];
+  return { attention: { count: failed.length + noDetails.length, oldestAt: times.sort()[0] ?? null } };
+}
+
+/* ---- Reading */
+
+function dbRowOf(d: PayoutDisbursement, now: number): DisbursementRowView {
+  const next = payoutDisbursements.find((x) => x.retryOf === d.id) ?? null;
+  const from = d.retryOf ? byId(payoutDisbursements, d.retryOf) : null;
+  return {
+    id: d.id, code: d.code, partnerId: d.partnerId, partnerName: nameOf(d.partnerId) === 'AIEC' ? (byId(suppliers, d.partnerId)?.name ?? d.partnerId) : nameOf(d.partnerId), partnerRole: dbPartnerRole(d.partnerId),
+    amount: d.amount, entryCount: d.entryIds.length, entryIds: [...d.entryIds], method: d.method, destination: d.destination, status: d.status, kind: d.kind, runCode: d.runId ? (byId(payoutRuns, d.runId)?.code ?? null) : null,
+    createdAt: d.createdAt, sentAt: d.sentAt ?? null, completedAt: d.completedAt ?? null, failedAt: d.failedAt ?? null, failure: (d.failure as DbFailure | undefined) ?? null, needsDetails: dbNeedsDetails(d.failure as DbFailure | undefined),
+    attempt: d.attempt, retryOfCode: from?.code ?? null, continuedBy: next?.code ?? null, bankReference: d.bankReference ?? null, minutesOut: d.status === 'processing' && d.sentAt ? Math.max(0, Math.floor((now - Date.parse(d.sentAt)) / 60_000)) : null,
+  };
+}
+
+function dbRunView(r: PayoutRun): PayoutRunView {
+  const ds = r.disbursementIds.map((id) => byId(payoutDisbursements, id)).filter((d): d is PayoutDisbursement => !!d);
+  return {
+    id: r.id, code: r.code, kind: r.kind, startedAt: r.startedAt, finishedAt: r.finishedAt ?? null, status: r.status, interruptedReason: r.interruptedReason ?? null, byName: r.byName,
+    sent: ds.filter((d) => !!d.sentAt).length, completed: ds.filter((d) => d.status === 'completed').length, processing: ds.filter(dbIsActive).length, failed: ds.filter((d) => d.status === 'failed').length,
+    amount: ds.reduce((a, d) => a + d.amount, 0), completedAmount: ds.filter((d) => d.status === 'completed').reduce((a, d) => a + d.amount, 0), unfinishedIds: ds.filter(dbIsUnresolved).map((d) => d.id),
+    skipped: r.skipped.map((x) => ({ partnerId: x.partnerId, partnerName: nameOf(x.partnerId), reason: x.reason, amount: x.entryIds.reduce((a, id) => a + (byId(commissions, id)?.amount ?? 0), 0) })),
+  };
+}
+
+const dbAccountView = (a: PayoutAccount): PayoutAccountView => ({ userId: a.userId, holderName: a.holderName, upiId: a.upiId ?? null, accountMasked: a.accountNumber ? dbMask(a.accountNumber) : null, ifsc: a.ifsc ? a.ifsc.toUpperCase() : null, bankName: a.bankName ?? null, verifiedAt: a.verifiedAt ?? null, updatedAt: a.updatedAt, updatedByName: a.updatedByName });
+
+function dbBoardOf(filter: { status?: string; q?: string; offset?: number; limit?: number }, now: number): DisbursementBoardView {
+  dbSettle(now);
+  const money = (xs: PayoutDisbursement[]) => ({ count: xs.length, amount: xs.reduce((a, d) => a + d.amount, 0) });
+  const unresolved = payoutDisbursements.filter(dbIsUnresolved);
+  const monthAgo = now - 30 * 86_400_000;
+  const ready = dbReadyOf();
+  const sendable = ready.filter((r) => !r.blocked);
+  const counts = { all: payoutDisbursements.length, initiated: 0, processing: 0, completed: 0, failed: 0, cancelled: 0, attention: unresolved.length } as DisbursementBoardView['statusCounts'];
+  for (const d of payoutDisbursements) counts[d.status] += 1;
+  const q = (filter.q ?? '').trim().toLowerCase();
+  const rank = (d: PayoutDisbursement) => (dbIsUnresolved(d) ? 0 : dbIsActive(d) ? 1 : 2);
+  const filtered = payoutDisbursements
+    .filter((d) => (!filter.status || filter.status === 'all' ? true : filter.status === 'attention' ? dbIsUnresolved(d) : d.status === filter.status))
+    .filter((d) => !q || [d.code, nameOf(d.partnerId), d.bankReference ?? '', d.destination, d.runId ? (byId(payoutRuns, d.runId)?.code ?? '') : ''].some((x) => x.toLowerCase().includes(q)))
+    .sort((a, b) => rank(a) - rank(b) || (a.createdAt < b.createdAt ? 1 : -1));
+  const limit = filter.limit === 0 ? filtered.length : (filter.limit ?? 20);
+  const lastRun = payoutRuns.filter((r) => r.kind === 'weekly').sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1))[0] ?? null;
+  const oldest = unresolved.map((d) => d.failedAt ?? d.createdAt).sort()[0];
+  return JSON.parse(JSON.stringify({
+    at: dbIso(now),
+    rail: { status: payoutRail.status, since: payoutRail.since, interruptAfter: payoutRail.interruptAfter },
+    schedule: { enabled: payoutSchedule.enabled, weekday: payoutSchedule.weekday, hour: payoutSchedule.hour, consolidate: payoutSchedule.consolidate, nextRunAt: payoutSchedule.enabled ? dbIso(Math.max(dbNextSlot(payoutSchedule, now), Date.parse(payoutSchedule.since))) : null, lastRunAt: lastRun?.startedAt ?? null },
+    kpis: {
+      inFlight: money(payoutDisbursements.filter(dbIsActive)),
+      failed: { ...money(unresolved), oldestDays: oldest ? Math.floor((now - Date.parse(oldest)) / 86_400_000) : null },
+      completed: money(payoutDisbursements.filter((d) => d.status === 'completed' && Date.parse(d.completedAt ?? d.createdAt) >= monthAgo)),
+      ready: { count: sendable.reduce((a, r) => a + r.entryCount, 0), amount: sendable.reduce((a, r) => a + r.amount, 0), partners: sendable.length, urgent: sendable.reduce((a, r) => a + r.urgentCount, 0) },
+      needsDetails: { partners: ready.filter((r) => r.blocked === 'no_details').length, amount: ready.filter((r) => r.blocked === 'no_details').reduce((a, r) => a + r.amount, 0) },
+    },
+    ready,
+    runs: [...payoutRuns].sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1)).slice(0, DB_RUNS_SHOWN).map(dbRunView),
+    statusCounts: counts,
+    rows: filtered.slice(filter.offset ?? 0, (filter.offset ?? 0) + limit).map((d) => dbRowOf(d, now)),
+    total: filtered.length,
+  })) as DisbursementBoardView;
+}
+
+function dbDetailOf(id: string, now: number): DisbursementDetailView {
+  dbSettle(now);
+  const d = byId(payoutDisbursements, id);
+  if (!d) throw new RepositoryError('not_found');
+  const acct = dbAccountOf(d.partnerId);
+  const changed = !!acct && !!d.failedAt && Date.parse(acct.updatedAt) > Date.parse(d.failedAt) && acct.updatedByName !== 'Onboarding';
+  return JSON.parse(JSON.stringify({
+    row: dbRowOf(d, now),
+    entries: d.entryIds.map((eid): DisbursementEntryView => {
+      const e = byId(commissions, eid) as CommissionEntry;
+      const r = ptRowOf(e);
+      return { id: e.id, reasonKey: e.reasonKey, trigger: r.trigger, amount: e.amount, dealCode: r.dealCode, jobCode: r.jobCode, earnedAt: e.earnedAt, expedited: !!e.payoutApproval?.expedited };
+    }),
+    events: [...d.events].sort((a, b) => (a.at < b.at ? 1 : -1)).map((x) => ({ at: x.at, kind: x.kind, byName: x.byName, detail: x.detail ?? null })),
+    account: acct ? dbAccountView(acct) : null,
+    partnerPhone: byId(users, d.partnerId)?.phone ?? null,
+    retryProblem: dbRetryProblem({ status: d.status, failure: (d.failure as DbFailure | undefined) ?? null }, changed) ?? (payoutDisbursements.some((x) => x.retryOf === d.id) ? 'in_flight' : null),
+    detailsChangedSince: changed,
+    reconciled: d.status === 'completed' && bankTransactions.some((b) => b.reference === d.bankReference && b.amount === d.amount),
+  })) as DisbursementDetailView;
+}
+
+const dbActionResult = (made: PayoutDisbursement[], run: PayoutRun | null, skipped: DisbursementActionResult['skipped'] = [], now = Date.now()): DisbursementActionResult =>
+  JSON.parse(JSON.stringify({ disbursements: made.map((d) => dbRowOf(d, now)), skipped, run: run ? dbRunView(run) : null })) as DisbursementActionResult;
+
+/** Whether the entries of a failed transfer can still go: each is still cleared at the amount that was cleared. */
+const dbRetryEntries = (d: PayoutDisbursement): CommissionEntry[] => d.entryIds.map((id) => byId(commissions, id)).filter((e): e is CommissionEntry => !!e && e.status === 'approved' && paStateOf({ status: e.status, amount: e.amount, approval: e.payoutApproval }) === 'cleared');
+
+function dbRetry(d: PayoutDisbursement, adminName: string, now: number): PayoutDisbursement[] {
+  if (payoutDisbursements.some((x) => x.retryOf === d.id) || d.status !== 'failed') throw new RepositoryError('in_flight');
+  const acct = dbAccountOf(d.partnerId);
+  const changed = !!acct && !!d.failedAt && Date.parse(acct.updatedAt) > Date.parse(d.failedAt) && acct.updatedByName !== 'Onboarding';
+  const problem = dbRetryProblem({ status: d.status, failure: (d.failure as DbFailure | undefined) ?? null }, changed);
+  if (problem) throw new RepositoryError(problem);
+  if (!acct || (!dbHasUpi(acct) && !dbHasBank(acct))) throw new RepositoryError('no_details');
+  const entries = dbRetryEntries(d);
+  if (entries.length === 0) throw new RepositoryError('blocked');
+  dbEvent(d, 'retried', adminName, undefined, now);
+  return dbSend(d.partnerId, entries, 'retry', adminName, now, { retryOf: d });
+}
+
 const tcCanLead = (userId: string): boolean => (byId(users, userId)?.role === 'technician' ? tcEffectsOf('technician', tierNow(userId), Date.now()).canLead !== false : true);
 
 /** A newly activated field partner starts on the tier their record already earns: a technician with no installations is a trainee until the criteria say otherwise. */
@@ -11253,6 +11588,11 @@ function ledgerEntriesOf(): LedgerSideView[] {
   for (const p of supplierPayments) {
     if (p.status !== 'executed' || !p.executedAt) continue;
     out.push({ id: `supplier_payment:${p.id}`, kind: 'supplier_payment', codes: [p.code], direction: 'out', amount: p.amount, date: p.executedAt, reference: p.bankReference ?? null, counterparty: byId(suppliers, p.supplierId)?.name ?? '', route: `/supplier-payment-history?payment=${p.id}` });
+  }
+  // Money paid out to partners (164): each completed disbursement is one entry, compared with the statement like a supplier payment.
+  for (const d of payoutDisbursements) {
+    if (d.status !== 'completed' || !d.completedAt) continue;
+    out.push({ id: `worker_payout:${d.id}`, kind: 'worker_payout', codes: [d.code], direction: 'out', amount: d.amount, date: d.completedAt, reference: d.bankReference ?? null, counterparty: nameOf(d.partnerId), route: `/payout-disbursement?disbursement=${d.id}` });
   }
   const financing = new Map<string, LedgerSideView>();
   const who = (dealId: string) => {
@@ -18554,6 +18894,7 @@ export const memoryRepository: Repository = {
       if (!e || e.status !== 'approved') throw new RepositoryError('not_found');
       const now = Date.now();
       const row = paRowOf(e, now, paContext());
+      if (dbInFlightEntry(e)) throw new RepositoryError('in_flight');
       if (row.state === 'held') throw new RepositoryError('not_holdable');
       const problem = paHoldProblem({ kind: input.kind, reason: input.reason });
       if (problem) throw new RepositoryError(problem);
@@ -18576,6 +18917,149 @@ export const memoryRepository: Repository = {
       paDecide({ entryId: e.id, kind: 'released', at: new Date(now).toISOString(), byName: admin.name });
       syncCommitments(now);
       return JSON.parse(JSON.stringify(paRowOf(byId(commissions, e.id) as CommissionEntry, now, paContext()))) as PayoutQueueRow;
+    }),
+
+  /* --------------------------------- Automated payout disbursement (164) */
+  getPayoutDisbursements: (filter, adminId) =>
+    simulateRead((): DisbursementBoardView => {
+      ofAdmin(adminId);
+      const now = Date.now();
+      syncDisbursements(now);
+      return dbBoardOf(filter, now);
+    }),
+
+  getDisbursementDetail: (disbursementId, adminId) =>
+    simulateRead((): DisbursementDetailView => {
+      ofAdmin(adminId);
+      const now = Date.now();
+      syncDisbursements(now);
+      return dbDetailOf(disbursementId, now);
+    }),
+
+  startPayoutRun: (adminId) =>
+    simulateWrite((): DisbursementActionResult => {
+      const admin = ofAdmin(adminId);
+      const now = Date.now();
+      const { run, made } = dbStartRun('manual', admin.name, now);
+      if (!run) throw new RepositoryError('nothing_ready');
+      syncCommitments(now);
+      return dbActionResult(made, run, run.skipped.map((x) => ({ partnerId: x.partnerId, partnerName: nameOf(x.partnerId), reason: x.reason })), now);
+    }),
+
+  sendPayoutNow: (partnerId, input, adminId) =>
+    simulateWrite((): DisbursementActionResult => {
+      const admin = ofAdmin(adminId);
+      const now = Date.now();
+      const acct = dbAccountOf(partnerId);
+      const entries = dbClearedEntries().filter((e) => e.userId === partnerId && dbIsRupees(e) && (!input.entryIds || input.entryIds.includes(e.id)));
+      if (entries.length === 0) throw new RepositoryError('nothing_ready');
+      if (!acct || (!dbHasUpi(acct) && !dbHasBank(acct))) throw new RepositoryError('no_details');
+      if (dbBlockedPartners().has(partnerId)) throw new RepositoryError('blocked');
+      const made = dbSend(partnerId, entries, 'urgent', admin.name, now);
+      syncCommitments(now);
+      return dbActionResult(made, null, [], now);
+    }),
+
+  retryDisbursement: (disbursementId, adminId) =>
+    simulateWrite((): DisbursementRowView => {
+      const admin = ofAdmin(adminId);
+      const now = Date.now();
+      const d = byId(payoutDisbursements, disbursementId);
+      if (!d) throw new RepositoryError('not_found');
+      const made = dbRetry(d, admin.name, now);
+      syncDisbursements(now);
+      syncCommitments(now);
+      return JSON.parse(JSON.stringify(dbRowOf(made[0], now))) as DisbursementRowView;
+    }),
+
+  retryRunFailures: (runId, adminId) =>
+    simulateWrite((): DisbursementActionResult => {
+      const admin = ofAdmin(adminId);
+      const now = Date.now();
+      const run = byId(payoutRuns, runId);
+      if (!run) throw new RepositoryError('not_found');
+      const made: PayoutDisbursement[] = [];
+      const skipped: DisbursementActionResult['skipped'] = [];
+      for (const id of run.disbursementIds) {
+        const d = byId(payoutDisbursements, id);
+        if (!d || !dbIsUnresolved(d)) continue;
+        try { made.push(...dbRetry(d, admin.name, now)); } catch (e) { skipped.push({ partnerId: d.partnerId, partnerName: nameOf(d.partnerId), reason: e instanceof Error ? e.message : 'blocked' }); }
+      }
+      syncCommitments(now);
+      return dbActionResult(made, run, skipped, now);
+    }),
+
+  updatePayoutAccount: (partnerId, input, adminId) =>
+    simulateWrite((): { account: PayoutAccountView; retried: DisbursementRowView[] } => {
+      const admin = ofAdmin(adminId);
+      const now = Date.now();
+      if (!byId(users, partnerId)) throw new RepositoryError('not_found');
+      if (input.note.replace(/[^\p{L}\p{N}]/gu, '').length < DB_NOTE_MIN) throw new RepositoryError('reason_required');
+      const cur = dbAccountOf(partnerId);
+      const next = { upiId: (input.upiId ?? '').trim() || cur?.upiId || '', accountNumber: (input.accountNumber ?? '').replace(/\s/g, '') || cur?.accountNumber || '', ifsc: (input.ifsc ?? '').trim().toUpperCase() || cur?.ifsc || '' };
+      const typed = { upiId: input.upiId, accountNumber: input.accountNumber?.replace(/\s/g, ''), ifsc: input.ifsc?.trim().toUpperCase() };
+      const problem = dbDetailsProblem(typed.upiId || typed.accountNumber || typed.ifsc ? { upiId: next.upiId, accountNumber: next.accountNumber, ifsc: next.ifsc } : typed);
+      if (problem) throw new RepositoryError('details_invalid');
+      const at = dbIso(now);
+      const rec: PayoutAccount = {
+        userId: partnerId, holderName: (input.holderName ?? '').trim() || cur?.holderName || nameOf(partnerId), ...(next.upiId ? { upiId: next.upiId } : {}), ...(next.accountNumber ? { accountNumber: next.accountNumber, ifsc: next.ifsc } : {}),
+        ...((input.bankName ?? '').trim() || cur?.bankName ? { bankName: (input.bankName ?? '').trim() || (cur?.bankName as string) } : {}), verifiedAt: at, updatedAt: at, updatedByName: admin.name,
+        // The demo's stand-in for the bank: an account ending 0000 is one the bank turns out to have closed.
+        simulatedBank: /0000$/.test(next.accountNumber) ? 'closed' : 'ok', isDemo: true,
+      };
+      if (cur) Object.assign(cur, rec); else payoutAccounts.push(rec);
+      for (const d of payoutDisbursements.filter((x) => x.partnerId === partnerId && dbIsUnresolved(x))) dbEvent(d, 'details_updated', admin.name, input.note.trim(), now);
+      let retried: PayoutDisbursement[] = [];
+      if (input.retry) for (const d of payoutDisbursements.filter((x) => x.partnerId === partnerId && dbIsUnresolved(x))) { try { retried = [...retried, ...dbRetry(d, admin.name, now)]; } catch { /* left for Admin to see */ } }
+      syncDisbursements(now);
+      syncCommitments(now);
+      return JSON.parse(JSON.stringify({ account: dbAccountView(dbAccountOf(partnerId) as PayoutAccount), retried: retried.map((d) => dbRowOf(d, now)) }));
+    }),
+
+  recordDisbursementContact: (disbursementId, input, adminId) =>
+    simulateWrite((): DisbursementDetailView => {
+      const admin = ofAdmin(adminId);
+      const now = Date.now();
+      const d = byId(payoutDisbursements, disbursementId);
+      if (!d) throw new RepositoryError('not_found');
+      if (input.note.replace(/[^\p{L}\p{N}]/gu, '').length < DB_NOTE_MIN) throw new RepositoryError('reason_required');
+      dbEvent(d, 'contacted', admin.name, `${input.channel}: ${input.note.trim()}`, now);
+      return dbDetailOf(disbursementId, now);
+    }),
+
+  cancelDisbursement: (disbursementId, input, adminId) =>
+    simulateWrite((): DisbursementRowView => {
+      const admin = ofAdmin(adminId);
+      const now = Date.now();
+      const d = byId(payoutDisbursements, disbursementId);
+      if (!d) throw new RepositoryError('not_found');
+      if (!dbIsUnresolved(d)) throw new RepositoryError('not_failed');
+      if (input.reason.replace(/[^\p{L}\p{N}]/gu, '').length < DB_NOTE_MIN) throw new RepositoryError('reason_required');
+      d.status = 'cancelled';
+      dbEvent(d, 'cancelled', admin.name, input.reason.trim(), now);
+      // The entries go back to waiting for a run; they stay cleared, nothing is lost.
+      dbPointer(d.entryIds, null);
+      syncDisbursements(now);
+      syncCommitments(now);
+      return JSON.parse(JSON.stringify(dbRowOf(d, now))) as DisbursementRowView;
+    }),
+
+  savePayoutSchedule: (input, adminId) =>
+    simulateWrite((): DisbursementBoardView['schedule'] => {
+      const admin = ofAdmin(adminId);
+      const now = Date.now();
+      if (dbScheduleProblem(input)) throw new RepositoryError('schedule_invalid');
+      const timeMoved = input.weekday !== payoutSchedule.weekday || input.hour !== payoutSchedule.hour || (input.enabled && !payoutSchedule.enabled);
+      payoutSchedule = { ...payoutSchedule, ...input, since: timeMoved ? dbIso(now) : payoutSchedule.since, updatedAt: dbIso(now), updatedByName: admin.name };
+      return dbBoardOf({ limit: 1 }, now).schedule;
+    }),
+
+  setPayoutRail: (input, adminId) =>
+    simulateWrite((): DisbursementBoardView['rail'] => {
+      ofAdmin(adminId);
+      const now = Date.now();
+      payoutRail = { status: input.status, since: input.status === payoutRail.status ? payoutRail.since : dbIso(now), interruptAfter: input.interruptAfter !== null && input.interruptAfter >= 0 ? Math.floor(input.interruptAfter) : null };
+      return { ...payoutRail };
     }),
 
   /* --------------------------------- Workforce payout tracker (162) */
@@ -19261,7 +19745,7 @@ export const memoryRepository: Repository = {
       const at = new Date(now).toISOString();
       for (const l of s.lines.filter((x) => x.kind === 'commission_payable')) {
         const c = byId(commissions, l.ref);
-        if (c && c.status === 'approved') patchInPlace(commissions, c.id, { status: 'paid' as const, paidAt: at });
+        if (c && c.status === 'approved' && !dbInFlightEntry(c)) patchInPlace(commissions, c.id, { status: 'paid' as const, paidAt: at });
       }
       if (s.adjustment?.entryId) patchInPlace(commissions, s.adjustment.entryId, { status: 'paid' as const, paidAt: at });
       s.status = 'paid';
@@ -19638,7 +20122,8 @@ export const memoryRepository: Repository = {
         decision: input.decision,
         issue: input.issue,
         reason: input.reason,
-        targets: entries.map((e) => ({ status: e.status, held: !!e.heldBy, amount: e.amount, ...(input.amounts && input.amounts[e.id] !== undefined ? { newAmount: input.amounts[e.id] } : {}) })),
+        // Money already on its way (164) cannot be changed or taken back from here, exactly like money already paid.
+        targets: entries.map((e) => ({ status: dbInFlightEntry(e) ? ('paid' as const) : e.status, held: !!e.heldBy, amount: e.amount, ...(input.amounts && input.amounts[e.id] !== undefined ? { newAmount: input.amounts[e.id] } : {}) })),
       });
       if (problem) throw new RepositoryError(problem);
       judgementCounter += 1;

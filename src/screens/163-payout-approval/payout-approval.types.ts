@@ -201,6 +201,7 @@ export const APPROVAL_KEYS = {
   problem: {
     not_found: 'payoutApproval.problem.not_found',
     not_pending: 'payoutApproval.problem.not_pending',
+    in_flight: 'payoutApproval.problem.in_flight',
     not_holdable: 'payoutApproval.problem.not_holdable',
     not_held: 'payoutApproval.problem.not_held',
     flags_unacknowledged: 'payoutApproval.problem.flags_unacknowledged',

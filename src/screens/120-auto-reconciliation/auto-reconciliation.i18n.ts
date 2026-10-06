@@ -92,7 +92,7 @@ const translations: ScreenTranslations = {
         bank_charge: { title: 'Bank charge', why: 'A fee the bank took that the app has no record for. Small and expected, but explained here so it is on record.' },
       },
       direction: { in: 'Money in', out: 'Money out' },
-      ledgerKind: { supplier_payment: 'Supplier payment', customer_receipt: 'Customer receipt', customer_refund: 'Customer refund' },
+      ledgerKind: { supplier_payment: 'Supplier payment', customer_receipt: 'Customer receipt', customer_refund: 'Customer refund', worker_payout: 'Partner payout' },
       detail: {
         bankHeading: 'What the bank shows',
         appHeading: 'What the app recorded',
@@ -243,7 +243,7 @@ const translations: ScreenTranslations = {
         bank_charge: { title: 'बैंक शुल्क', why: 'बैंक ने शुल्क काटा जिसका ऐप में रिकॉर्ड नहीं। छोटा और अपेक्षित, पर यहाँ समझाया जाता है ताकि रिकॉर्ड में रहे।' },
       },
       direction: { in: 'आया पैसा', out: 'गया पैसा' },
-      ledgerKind: { supplier_payment: 'सप्लायर भुगतान', customer_receipt: 'ग्राहक से प्राप्ति', customer_refund: 'ग्राहक को रिफ़ंड' },
+      ledgerKind: { supplier_payment: 'सप्लायर भुगतान', customer_receipt: 'ग्राहक से प्राप्ति', customer_refund: 'ग्राहक को रिफ़ंड', worker_payout: 'पार्टनर को भुगतान' },
       detail: {
         bankHeading: 'बैंक क्या दिखाता है',
         appHeading: 'ऐप ने क्या दर्ज किया',
@@ -394,7 +394,7 @@ const translations: ScreenTranslations = {
         bank_charge: { title: 'बँक शुल्क', why: 'बँकेने कापलेलं शुल्क ज्याची अ‍ॅपमध्ये नोंद नाही. छोटं आणि अपेक्षित, पण नोंदीत राहावं म्हणून इथे समजावलं जातं.' },
       },
       direction: { in: 'आलेले पैसे', out: 'गेलेले पैसे' },
-      ledgerKind: { supplier_payment: 'पुरवठादार पेमेंट', customer_receipt: 'ग्राहकाकडून प्राप्ती', customer_refund: 'ग्राहकाला रिफंड' },
+      ledgerKind: { supplier_payment: 'पुरवठादार पेमेंट', customer_receipt: 'ग्राहकाकडून प्राप्ती', customer_refund: 'ग्राहकाला रिफंड', worker_payout: 'भागीदाराला पेमेंट' },
       detail: {
         bankHeading: 'बँक काय दाखवते',
         appHeading: 'अ‍ॅपमध्ये काय नोंदवलं',
