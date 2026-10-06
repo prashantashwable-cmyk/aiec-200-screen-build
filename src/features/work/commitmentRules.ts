@@ -153,6 +153,7 @@ export interface CommitmentSources {
   /** SOP rollouts: each affected partner's own acknowledgement, and Admin's look at what is still open (159). */
   /** Serious training feedback Admin has not dealt with, and the standing look at the routine kind (160). */
   tds: { deposits: { month: string; tds: number; due: string; done: boolean }[]; returns: { fy: string; quarter: number; due: string; done: boolean }[] };
+  feedback: { outreach: { id: string; code: string; customer: string; dueAt: string; weakOnly: boolean }[]; recognitions: { id: string; userId: string; from: string; at: string }[] };
   supportChats: { waiting: { id: string; name: string; since: string; urgent: boolean }[] };
   serviceTickets: { respond: { id: string; code: string; ownerUserId: string; dueAt: string; urgency: string; site: string }[]; visits: { id: string; code: string; technicianId: string; dueAt: string; site: string; date: string; state: 'open' | 'done' | 'cancelled' }[]; claims: { id: string; code: string; since: string }[]; followups: { id: string; code: string; since: string; unsafe: boolean }[] };
   payoutQueries: { open: { id: string; code: string; partnerName: string; entryId: string; since: string }[]; answered: { id: string; code: string; userId: string; entryId: string; at: string; route?: string }[]; disputes: { id: string; code: string; partnerName: string; entryId: string; dueAt: string }[]; reviews: { id: string; code: string; since: string }[] };
@@ -2249,6 +2250,50 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
         paused: false,
         actionRoute: `/rewards-leaderboard?contest=${x.contestId}`,
         oversightRoute: '/contest-setup',
+      }));
+    },
+  },
+  {
+    // A customer who was unhappy, or who rated one part of their experience poorly, is reached by a person rather than silently recorded (177).
+    kind: 'feedback_outreach',
+    nudgeBefore: hours(6),
+    escalateAfter: hours(24),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'quality',
+    collect(src) {
+      return src.feedback.outreach.map((x) => ({
+        ...base('feedback_outreach', 'service_ticket', x.id),
+        ownerUserId: adminId(src),
+        titleKey: x.weakOnly ? 'work.title.feedback_outreach_weak' : 'work.title.feedback_outreach',
+        titleParams: { name: x.customer, code: x.code },
+        dueAt: x.dueAt,
+        state: 'open' as const,
+        paused: false,
+        actionRoute: `/feedback/${x.id}`,
+        oversightRoute: `/feedback/${x.id}`,
+      }));
+    },
+  },
+  {
+    // A customer thanked a technician by name: they hear it, on their own list, for a week; it is never work (177).
+    kind: 'feedback_recognition',
+    nudgeBefore: days(30),
+    escalateAfter: days(365),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'staffing',
+    collect(src) {
+      return src.feedback.recognitions.map((x) => ({
+        ...base('feedback_recognition', 'service_ticket', x.id),
+        ownerUserId: x.userId,
+        titleKey: 'work.title.feedback_recognition',
+        titleParams: { name: x.from },
+        dueAt: new Date(Date.parse(x.at) + days(7)).toISOString(),
+        state: 'open' as const,
+        paused: false,
+        actionRoute: '/badges',
+        oversightRoute: '/feedback',
       }));
     },
   },

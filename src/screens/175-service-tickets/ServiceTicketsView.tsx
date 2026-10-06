@@ -411,7 +411,7 @@ function CustomerTicket({ v, s, t, lang }: { v: TicketView; s: ServiceTicketsSta
           </div>
         </Card>
       )}
-      {tk.canReopen && <Card><div className="stack gap-2"><Button variant="secondary" data-act="reopen" onClick={() => { setProblem(null); setSheet('reopen'); }}>{t(K.detail.reopen.open)}</Button></div></Card>}
+      {(tk.canReopen || (tk.status === 'resolved' && tk.visit?.status === 'done')) && <Card><div className="row gap-2" style={{ flexWrap: 'wrap' }}>{tk.canReopen && <Button variant="secondary" data-act="reopen" onClick={() => { setProblem(null); setSheet('reopen'); }}>{t(K.detail.reopen.open)}</Button>}{tk.status === 'resolved' && tk.visit?.status === 'done' && <Button variant="ghost" data-act="rate" onClick={() => s.goTo(`/feedback?request=visit:${tk.id}`)}>{t('feedback.link.open')}</Button>}</div></Card>}
       <Sheet open={sheet === 'withdraw'} onClose={() => setSheet(null)} title={t(K.detail.withdraw.title)} closeLabel={t(K.close)}>
         <div className="stack gap-3"><p className="t-sm">{t(K.detail.withdraw.body)}</p><Field label={t(K.detail.withdraw.reason)}>{(p) => <TextArea id={p.id} rows={3} value={reason} data-f="reason" onChange={(e) => setReason(e.target.value)} />}</Field><Problem code={problem} t={t} />
           <div className="row gap-2"><Button data-act="confirm-withdraw" disabled={lettersOf(reason) < 3} onClick={() => void run(() => s.withdraw(reason), () => { setSheet(null); setReason(''); })}>{t(K.detail.withdraw.confirm)}</Button><Button variant="ghost" onClick={() => setSheet(null)}>{t(K.detail.withdraw.keep)}</Button></div></div>

@@ -23,6 +23,8 @@ export function useCustomerHome() {
   });
   const [load, setLoad] = useState<'loading' | 'ready' | 'error'>(view ? 'ready' : 'loading');
   const [offline, setOffline] = useState(false);
+  // Something we would like to ask about, at the right moment (177): a quiet card, never a blocker.
+  const [feedbackDue, setFeedbackDue] = useState(0);
   const alive = useRef(true);
   const seq = useRef(0);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
@@ -34,6 +36,7 @@ export function useCustomerHome() {
       const v = await repository.getCustomerHome(project || null, user.id);
       if (!alive.current || mine !== seq.current) return;
       setView(v); setLoad('ready'); setOffline(false);
+      void repository.getFeedbackDesk(user.id).then((d) => { if (alive.current) setFeedbackDue(d.due.length); }).catch(() => undefined);
       try { localStorage.setItem(viewKey(user.id, project), JSON.stringify(v)); } catch { /* the phone may refuse; the screen still works */ }
     } catch {
       if (alive.current && mine === seq.current) { setOffline(true); setLoad((s) => (s === 'ready' ? s : 'error')); }
@@ -42,7 +45,7 @@ export function useCustomerHome() {
   useEffect(() => { void read(); const id = window.setInterval(() => void read(), POLL_MS); const onShow = () => { if (document.visibilityState === 'visible') void read(); }; document.addEventListener('visibilitychange', onShow); return () => { window.clearInterval(id); document.removeEventListener('visibilitychange', onShow); }; }, [read]);
 
   return {
-    load, view, offline,
+    load, view, offline, feedbackDue,
     project: view?.current?.key ?? project,
     refresh: read,
     pick: (key: string) => setParams((prev) => { const n = new URLSearchParams(prev); n.set('p', key); return n; }, { replace: true }),

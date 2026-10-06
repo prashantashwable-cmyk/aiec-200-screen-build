@@ -295,6 +295,14 @@ import type {
   VaultView,
   CustomerPayView,
   ServiceDeskView,
+  FeedbackAdminRow,
+  FeedbackBoard,
+  FeedbackBoardFilter,
+  FeedbackDeskView,
+  FeedbackDetail,
+  FeedbackRequestView,
+  FeedbackRowView,
+  FeedbackSubmitResult,
   SupportBoard,
   SupportChatView,
   SupportMessageView,
@@ -567,6 +575,7 @@ import type {
   TriggerRuleEvaluation,
 } from './repository';
 import type {
+  CustomerFeedback,
   SupportContext,
   SupportHandoffReason,
   ServiceTicket,
@@ -953,6 +962,7 @@ import { MAX_ATTACHMENTS as TICKET_MAX_ATTACHMENTS, MIN_NOTE as TICKET_MIN_NOTE,
 import type { Triage } from '@/features/service/tickets';
 import { HUMAN_HOLD as SUPPORT_HUMAN_HOLD, MAX_MESSAGE as SUPPORT_MAX_MESSAGE, QUEUE_BUSY as SUPPORT_QUEUE_BUSY, REPLY_TARGET_MIN as SUPPORT_REPLY_TARGET_MIN, decide as supportDecide, handlingOf as supportHandlingOf, intentOf as supportIntentOf, queueOf as supportQueueOf } from '@/features/support/chat';
 import type { Intent as SupportIntent, Parsed as SupportParsed } from '@/features/support/chat';
+import { DIMENSIONS_FOR as FEEDBACK_DIMENSIONS, MIN_SAMPLE as FEEDBACK_MIN_SAMPLE, NEGATIVE_AT as FEEDBACK_NEGATIVE_AT, OUTREACH_DUE as FEEDBACK_OUTREACH_DUE, OUTREACH_NOTE_MIN as FEEDBACK_OUTREACH_NOTE_MIN, WEAK_AT as FEEDBACK_WEAK_AT, WEAK_DUE as FEEDBACK_WEAK_DUE, availability as feedbackAvailability, blendedRating as feedbackBlendedRating, dueWindowOf as feedbackDueWindow, feedbackProblem as feedbackProblemOf, flagsOf as feedbackFlagsOf, parseRequestId as feedbackParse, requestIdOf as feedbackRequestIdOf, staffMentions as feedbackMentions } from '@/features/feedback/feedback';
 import { VAULT_KINDS, validityState } from '@/features/documents/vault';
 import type { VaultKind } from '@/features/documents/vault';
 import { MONTHS_OFFERED as PH_MONTHS, PAGE as PH_PAGE, QUERY_DUE as PH_QUERY_DUE, answerProblem as phAnswerProblem, countsAsEarned as phCountsAsEarned, filterOf as phFilterOf, fyOf as phFyOf, inPeriod as phInPeriod, monthIdOf as phMonthId, periodOf as phPeriodOf, queryProblem as phQueryProblem, stageOf as phStageOf } from '@/features/payout/history';
@@ -2679,6 +2689,7 @@ function commitmentSources(now: number): CommitmentSources {
     payoutQueries: payoutQuerySignals(),
     serviceTickets: serviceTicketSignals(now),
     supportChats: supportChatSignals(now),
+    feedback: feedbackSignals(),
     tds: tdsObligations(Date.now()),
     exits: exitSignals(),
     handoverReviews: handoverSignals().reviews,
@@ -5626,7 +5637,7 @@ function technicianScoreOf(u: User): TechnicianScore {
     onTimeRate: done.length ? 0.8 + (u.id.charCodeAt(u.id.length - 1) % 3) * 0.06 : 0,
     qcPassRate: 0.85 + (u.id.charCodeAt(u.id.length - 1) % 4) * 0.035,
     avgDaysPerJob: 16 + (u.id.charCodeAt(u.id.length - 1) % 5),
-    rating: u.rating ?? 0,
+    rating: ratingOf(u),
   };
 }
 
@@ -9857,11 +9868,11 @@ function cnRank(c: Contest): { ranked: Ranked[]; excluded: string[] } {
   const all = cnParticipants(c);
   const inRanking = all.filter((u) => !cnExcluded(u.id));
   if (c.final) {
-    const ranked = c.final.rows.map((r) => ({ userId: r.userId, value: r.value, rating: byId(users, r.userId)?.rating ?? 0, rank: r.rank }));
+    const ranked = c.final.rows.map((r) => ({ userId: r.userId, value: r.value, rating: ratingOf(byId(users, r.userId) as User), rank: r.rank }));
     return { ranked, excluded: all.filter((u) => cnExcluded(u.id)).map((u) => u.id) };
   }
   if (Date.now() < Date.parse(c.startsAt)) return { ranked: [], excluded: [] };
-  return { ranked: rankAll(inRanking.map((u) => ({ userId: u.id, value: cnValueOf(c, u.id), rating: u.rating ?? 0 }))), excluded: all.filter((u) => cnExcluded(u.id)).map((u) => u.id) };
+  return { ranked: rankAll(inRanking.map((u) => ({ userId: u.id, value: cnValueOf(c, u.id), rating: ratingOf(u) }))), excluded: all.filter((u) => cnExcluded(u.id)).map((u) => u.id) };
 }
 
 /** Freezes a finished contest's standings, and records every change in a live one so a standing never shifts without a visible reason. */
@@ -10030,7 +10041,7 @@ function cnPreviewOf(input: ContestInput, now: number, excludeId?: string): Cont
   const to = trailing ? now : Math.min(now, end);
   const probe = { id: 'preview', cohort: input.cohort, startsAt: new Date(start).toISOString(), minTenureDays: input.minTenureDays, allowLateJoiners: input.allowLateJoiners } as Contest;
   const people = cnParticipants(probe).filter((u) => !cnExcluded(u.id));
-  const ranked = rankAll(people.map((u) => ({ userId: u.id, value: cnMetricIn(input.metric, u.id, from, to), rating: u.rating ?? 0 })));
+  const ranked = rankAll(people.map((u) => ({ userId: u.id, value: cnMetricIn(input.metric, u.id, from, to), rating: ratingOf(u) })));
   const overlaps = contests.some((x) => x.id !== excludeId && x.cohort === input.cohort && x.metric === input.metric && (phaseOf(x, now) === 'active' || phaseOf(x, now) === 'scheduled') && Date.parse(x.startsAt) < end && Date.parse(x.endsAt) > start);
   return JSON.parse(JSON.stringify({
     window: { from: new Date(from).toISOString(), to: new Date(to).toISOString(), trailing }, participants: people.length,
@@ -11286,6 +11297,64 @@ function supportChatSignals(now: number): { waiting: { id: string; name: string;
   return { waiting: conversations.filter((c) => c.kind === 'support' && scOpenHandoff(c)).map((c) => ({ id: c.id, name: byId(users, c.support?.customerId ?? '')?.name ?? '', since: c.support?.handoff?.at ?? c.lastMessageAt, urgent: !!c.support?.handoff?.urgent })) };
 }
 
+
+/* ------------------------------------------------------------------ Customer feedback (177) */
+
+const customerFeedback: CustomerFeedback[] = [];
+const feedbackDismissals: { customerId: string; requestId: string; at: string }[] = [];
+let customerFeedbackCounter = 6000;
+const FB_ALERT_NEGATIVE = 'feedback.alert.negative';
+const FB_ALERT_STAFF = 'feedback.alert.staff';
+const fbFirst = (id: string): string => (byId(users, id)?.name ?? '').trim().split(/\s+/)[0] ?? '';
+
+/** A person's rating with customers' ratings blended in at a known weight (the same number the leaderboard and contests already read). */
+const ratingOf = (u: User): number => feedbackBlendedRating(u.rating ?? 0, customerFeedback.filter((f) => f.rated.includes(u.id)).map((f) => f.overall));
+
+/** What the customer is asked about, derived on read from the handover, the job and the resolved visits: never stored, so it cannot drift from them. */
+function fbRequestsOf(user: User, now: number): { due: FeedbackRequestView[]; upcoming: FeedbackRequestView[] } {
+  const due: FeedbackRequestView[] = [];
+  const upcoming: FeedbackRequestView[] = [];
+  const taken = (id: string) => customerFeedback.some((f) => f.customerId === user.id && feedbackRequestIdOf(f.moment, f.moment === 'visit' ? f.ticketId ?? '' : f.jobId ?? '') === id) || feedbackDismissals.some((d) => d.customerId === user.id && d.requestId === id);
+  const add = (r: FeedbackRequestView, aboutAt: number) => {
+    if (taken(r.id)) return;
+    const a = feedbackAvailability(r.moment, aboutAt, now);
+    if (a === 'due') due.push(r); else if (a === 'not_yet') upcoming.push(r);
+  };
+  for (const deal of vdDealsOf(user)) {
+    for (const job of jobs.filter((j) => j.dealId === deal.id && j.status === 'completed')) {
+      const hc = handoverCompletions.find((h) => h.jobId === job.id);
+      const about = Date.parse(hc?.issuedAt ?? job.completedAt ?? '');
+      if (Number.isNaN(about)) continue;
+      const team = [job.technicianId, ...(job.crew ?? []).map((c) => c.userId)].filter((x, i, a): x is string => !!x && a.indexOf(x) === i);
+      for (const moment of ['handover', 'ongoing'] as const) {
+        const w = feedbackDueWindow(moment, about);
+        add({ id: feedbackRequestIdOf(moment, job.id), moment, jobId: job.id, ticketId: null, siteName: job.siteName, code: job.code, aboutAt: new Date(about).toISOString(), dueAt: new Date(w.from).toISOString(), lapsesAt: new Date(w.until).toISOString(), people: moment === 'handover' ? team.map(fbFirst) : [], dimensions: FEEDBACK_DIMENSIONS[moment] }, about);
+      }
+    }
+  }
+  for (const t of serviceTickets.filter((x) => x.customerId === user.id && x.status === 'resolved' && x.visit?.status === 'done' && x.visit.doneAt)) {
+    const about = Date.parse(t.visit?.doneAt as string);
+    const w = feedbackDueWindow('visit', about);
+    add({ id: feedbackRequestIdOf('visit', t.id), moment: 'visit', jobId: t.jobId, ticketId: t.id, siteName: t.siteName, code: t.code, aboutAt: new Date(about).toISOString(), dueAt: new Date(w.from).toISOString(), lapsesAt: new Date(w.until).toISOString(), people: t.visit ? [tkFirst(t.visit.technicianName)] : [], dimensions: FEEDBACK_DIMENSIONS.visit }, about);
+  }
+  const byDue = (a: FeedbackRequestView, b: FeedbackRequestView) => a.dueAt.localeCompare(b.dueAt);
+  return { due: due.sort(byDue), upcoming: upcoming.sort(byDue) };
+}
+
+const fbRowOf = (f: CustomerFeedback): FeedbackRowView => ({ id: f.id, code: f.code, moment: f.moment, siteName: f.siteName, overall: f.overall, dimensions: f.dimensions, comment: f.comment, createdAt: f.createdAt, people: f.rated.map(fbFirst), followUp: f.flags.length === 0 ? 'none' : f.outreach ? 'done' : 'reaching_out' });
+const fbAdminRowOf = (f: CustomerFeedback): FeedbackAdminRow => ({ id: f.id, code: f.code, moment: f.moment, customerName: nameOf(f.customerId), siteName: f.siteName, overall: f.overall, weak: f.weak, flags: f.flags, sentiment: f.sentiment, outreachDone: !!f.outreach, createdAt: f.createdAt, people: f.rated.map((id) => byId(users, id)?.name ?? ''), mentioned: f.mentioned.map((id) => byId(users, id)?.name ?? '') });
+const fbNeedsOutreach = (f: CustomerFeedback): boolean => f.flags.length > 0 && !f.outreach;
+function fbDetailOf(f: CustomerFeedback): FeedbackDetail {
+  const customer = byId(users, f.customerId);
+  return JSON.parse(JSON.stringify({ ...fbAdminRowOf(f), dimensions: f.dimensions, comment: f.comment, outreach: f.outreach ?? null, ticketCode: f.ticketId ? byId(serviceTickets, f.ticketId)?.code ?? null : null, customerPhone: customer?.phone ?? null })) as FeedbackDetail;
+}
+
+/** What the commitment engine sees: an unhappy customer waits for a person, and a person thanked by name hears it. */
+function feedbackSignals(): { outreach: { id: string; code: string; customer: string; dueAt: string; weakOnly: boolean }[]; recognitions: { id: string; userId: string; from: string; at: string }[] } {
+  const outreach = customerFeedback.filter(fbNeedsOutreach).map((f) => ({ id: f.id, code: f.code, customer: nameOf(f.customerId), dueAt: new Date(Date.parse(f.createdAt) + (f.flags.includes('negative') || f.flags.includes('staff_concern') ? FEEDBACK_OUTREACH_DUE : FEEDBACK_WEAK_DUE)).toISOString(), weakOnly: !f.flags.includes('negative') && !f.flags.includes('staff_concern') }));
+  const recognitions = customerFeedback.filter((f) => f.sentiment === 'positive' && f.mentioned.length > 0).flatMap((f) => f.mentioned.filter((id) => byId(users, id)?.role === 'technician').map((id) => ({ id: `${f.id}:${id}`, userId: id, from: nameOf(f.customerId).trim().split(/\s+/)[0] ?? '', at: f.createdAt })));
+  return { outreach, recognitions };
+}
 
 /* ------------------------------------------------------------------ Badges & milestones (166) */
 
@@ -23808,6 +23877,100 @@ export const memoryRepository: Repository = {
     simulateRead((): VaultDocument[] => {
       const docs = vdDocsOf(vdCustomer(userId), Date.now());
       return JSON.parse(JSON.stringify(docs.map((d) => ({ row: d.row, sections: d.sections, versions: docs.filter((x) => x.row.chainId === d.row.chainId).map((x) => x.row), issuedBy: d.issuedBy })))) as VaultDocument[];
+    }),
+
+  /* --------------------------------- Customer feedback (177) */
+  getFeedbackDesk: (userId) =>
+    simulateRead((): FeedbackDeskView => {
+      const user = vdCustomer(userId);
+      const now = Date.now();
+      tkSeeds(now);
+      const { due, upcoming } = fbRequestsOf(user, now);
+      const given = customerFeedback.filter((f) => f.customerId === user.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(fbRowOf);
+      return JSON.parse(JSON.stringify({ due, upcoming, given, at: new Date(now).toISOString() })) as FeedbackDeskView;
+    }),
+
+  submitFeedback: (userId, input) =>
+    simulateWrite((): FeedbackSubmitResult => {
+      const user = vdCustomer(userId);
+      const now = Date.now();
+      tkSeeds(now);
+      const prior = customerFeedback.find((f) => f.customerId === user.id && f.clientId === input.clientId);
+      if (prior) return { feedback: fbRowOf(prior), reachOut: prior.flags.length > 0, thanked: prior.sentiment === 'positive' ? prior.mentioned.map(fbFirst) : [] };
+      const parsed = feedbackParse(input.requestId);
+      if (!parsed) throw new RepositoryError('not_found');
+      const request = fbRequestsOf(user, now).due.find((r) => r.id === input.requestId);
+      if (!request) throw new RepositoryError(customerFeedback.some((f) => f.customerId === user.id && feedbackRequestIdOf(f.moment, f.moment === 'visit' ? f.ticketId ?? '' : f.jobId ?? '') === input.requestId) ? 'already_given' : 'not_due');
+      const comment = input.comment.trim();
+      const problem = feedbackProblemOf({ moment: parsed.moment, overall: input.overall, dimensions: input.dimensions, comment });
+      if (problem) throw new RepositoryError(problem);
+      const dimensions = Object.fromEntries(Object.entries(input.dimensions).filter(([, v]) => typeof v === 'number')) as CustomerFeedback['dimensions'];
+      const ticket = request.ticketId ? byId(serviceTickets, request.ticketId) : null;
+      const job = request.jobId ? byId(jobs, request.jobId) : null;
+      const rated = parsed.moment === 'handover' && job ? [job.technicianId, ...(job.crew ?? []).map((c) => c.userId)].filter((x, i, a): x is string => !!x && a.indexOf(x) === i) : parsed.moment === 'visit' && ticket?.visit ? [ticket.visit.technicianId] : [];
+      const staff = users.filter((u) => (u.role === 'technician' || u.role === 'admin') && u.status === 'active').map((u) => ({ id: u.id, name: u.name }));
+      const mentioned = comment ? feedbackMentions(comment, staff) : [];
+      const fl = feedbackFlagsOf({ overall: input.overall, dimensions, mentioned: mentioned.length });
+      const dealId = job?.dealId ?? ticket?.dealId ?? '';
+      customerFeedbackCounter += 1;
+      const f: CustomerFeedback = {
+        id: `fb-${customerFeedbackCounter}`, code: `AIEC-FB-${customerFeedbackCounter}`, customerId: user.id, dealId, jobId: request.jobId, ticketId: request.ticketId, moment: parsed.moment, siteName: request.siteName, overall: input.overall, dimensions, comment, rated, mentioned,
+        flags: fl.flags, weak: fl.weak, sentiment: fl.sentiment, clientId: input.clientId, createdAt: new Date(now).toISOString(), isDemo: true,
+      };
+      // The lift and its parts: a poor installation score is context beside the supplier's own score, never a change to it.
+      const deal = byId(deals, dealId);
+      if (parsed.moment === 'handover' && deal?.supplierId && (dimensions.installation ?? 5) <= FEEDBACK_WEAK_AT) {
+        f.supplierId = deal.supplierId;
+        scoreContextNotes.push({ id: `scn-fb-${customerFeedbackCounter}`, supplierId: deal.supplierId, note: `A customer rated the installation ${dimensions.installation} of 5 (${f.code}). It explains the number and does not change it.`, addedBy: 'Customer feedback', addedAt: f.createdAt, isDemo: true });
+      }
+      customerFeedback.push(f);
+      if (fl.flags.includes('negative') || fl.flags.includes('staff_concern')) {
+        raiseAlert({ titleKey: fl.flags.includes('staff_concern') ? FB_ALERT_STAFF : FB_ALERT_NEGATIVE, context: `${f.code} · ${user.name} · ${request.siteName} · ${input.overall}/5`, severity: fl.flags.includes('staff_concern') ? 'high' : 'medium', category: 'quality', relatedId: `feedback:${f.id}`, sourceRoute: `/feedback/${f.id}` });
+      }
+      logAutomatedAction({ sourceKey: 'feedback.routed', triggeringCondition: `${f.code} scored ${input.overall} of 5${fl.weak.length ? ` with a weak ${fl.weak.join(', ')}` : ''}${mentioned.length ? ' and names a member of staff' : ''}`, actionTaken: fl.flags.length ? 'Asked Admin to reach out personally' : fl.sentiment === 'positive' && mentioned.length ? 'Passed the thanks on to the person named' : 'Counted toward the performance records', affectedRecordId: f.id, affectedRecordType: 'other', subjectLabel: f.code });
+      return { feedback: fbRowOf(f), reachOut: fl.flags.length > 0, thanked: fl.sentiment === 'positive' ? mentioned.map(fbFirst) : [] };
+    }),
+
+  dismissFeedbackRequest: (userId, requestId) =>
+    simulateWrite((): void => {
+      const user = vdCustomer(userId);
+      if (!feedbackParse(requestId)) throw new RepositoryError('not_found');
+      if (!feedbackDismissals.some((d) => d.customerId === user.id && d.requestId === requestId)) feedbackDismissals.push({ customerId: user.id, requestId, at: new Date().toISOString() });
+    }),
+
+  getFeedbackBoard: (filter, adminId) =>
+    simulateRead((): FeedbackBoard => {
+      tkAdminOf(adminId);
+      const now = Date.now();
+      const all = [...customerFeedback].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      const pick = (s: FeedbackBoardFilter['state']) => all.filter((f) => s === 'all' ? true : s === 'outreach' ? fbNeedsOutreach(f) : s === 'weak' ? f.weak.length > 0 : s === 'staff' ? f.flags.includes('staff_concern') || (f.mentioned.length > 0 && f.sentiment === 'positive') : f.overall <= FEEDBACK_NEGATIVE_AT);
+      const shown = pick(filter.state ?? 'outreach');
+      const avg = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+      const dims = (['installation', 'service', 'communication', 'timeliness', 'value'] as const).map((d) => ({ dimension: d, vals: all.map((f) => f.dimensions[d]).filter((v): v is number => typeof v === 'number') })).filter((d) => d.vals.length > 0).map((d) => ({ dimension: d.dimension, avg: avg(d.vals), n: d.vals.length }));
+      const people = [...new Set(all.flatMap((f) => f.rated))].map((id) => { const vals = all.filter((f) => f.rated.includes(id)).map((f) => f.overall); return { userId: id, name: nameOf(id), n: vals.length, avg: avg(vals), small: vals.length < FEEDBACK_MIN_SAMPLE }; }).sort((a, b) => b.n - a.n);
+      return JSON.parse(JSON.stringify({ rows: shown.map(fbAdminRowOf), counts: { outreach: pick('outreach').length, weak: pick('weak').length, staff: pick('staff').length, low: pick('low').length, all: all.length }, summary: { n: all.length, avgOverall: all.length ? avg(all.map((f) => f.overall)) : null, early: all.length < FEEDBACK_MIN_SAMPLE, byDimension: dims, byPerson: people }, at: new Date(now).toISOString() })) as FeedbackBoard;
+    }),
+
+  getFeedback: (feedbackId, adminId) =>
+    simulateRead((): FeedbackDetail => {
+      tkAdminOf(adminId);
+      const f = byId(customerFeedback, feedbackId);
+      if (!f) throw new RepositoryError('not_found');
+      return fbDetailOf(f);
+    }),
+
+  recordFeedbackOutreach: (feedbackId, adminId, note) =>
+    simulateWrite((): FeedbackDetail => {
+      const admin = tkAdminOf(adminId);
+      const f = byId(customerFeedback, feedbackId);
+      if (!f) throw new RepositoryError('not_found');
+      if (f.flags.length === 0) throw new RepositoryError('invalid_state');
+      if (f.outreach) throw new RepositoryError('already_done');
+      if (ticketLetters(note) < FEEDBACK_OUTREACH_NOTE_MIN) throw new RepositoryError('note_short');
+      const at = new Date().toISOString();
+      f.outreach = { byName: admin.name, at, note: note.trim() };
+      for (const a of alerts) if ((a.titleKey === FB_ALERT_NEGATIVE || a.titleKey === FB_ALERT_STAFF) && a.relatedId === `feedback:${f.id}` && a.status !== 'resolved') patchInPlace(alerts, a.id, { status: 'resolved', resolvedAt: at, resolvedBy: admin.name, resolutionNote: 'Admin reached out to the customer.' });
+      return fbDetailOf(f);
     }),
 
   /* --------------------------------- Support chat (176) */

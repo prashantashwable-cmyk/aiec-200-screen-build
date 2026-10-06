@@ -158,6 +158,9 @@ import type {
   Invoice,
   Job,
   GeoPoint,
+  CustomerFeedback,
+  FeedbackDimension,
+  FeedbackMoment,
   MessageStatus,
   SupportContext,
   SupportHandoffReason,
@@ -7003,6 +7006,68 @@ export interface SupportThread {
   handoff: { at: string; reason: SupportHandoffReason; urgent: boolean; waitingMinutes: number; slaBreached: boolean; snapshot: SupportContext } | null;
 }
 
+/* ------------------------------------------------------------------ Customer feedback (177) */
+
+export interface FeedbackRequestView {
+  /** `handover:<job>`, `ongoing:<job>` or `visit:<ticket>`. */
+  id: string;
+  moment: FeedbackMoment;
+  jobId: string | null;
+  ticketId: string | null;
+  siteName: string;
+  code: string;
+  aboutAt: string;
+  dueAt: string;
+  lapsesAt: string;
+  /** First names of the people the answer is about. */
+  people: string[];
+  dimensions: FeedbackDimension[];
+}
+export interface FeedbackRowView {
+  id: string;
+  code: string;
+  moment: FeedbackMoment;
+  siteName: string;
+  overall: number;
+  dimensions: Partial<Record<FeedbackDimension, number>>;
+  comment: string;
+  createdAt: string;
+  people: string[];
+  /** What the customer is told: nothing needed, a person reaching out, or a person having reached out. */
+  followUp: 'none' | 'reaching_out' | 'done';
+}
+export interface FeedbackDeskView { due: FeedbackRequestView[]; upcoming: FeedbackRequestView[]; given: FeedbackRowView[]; at: string }
+export interface FeedbackSubmitResult { feedback: FeedbackRowView; reachOut: boolean; thanked: string[] }
+export interface FeedbackAdminRow {
+  id: string;
+  code: string;
+  moment: FeedbackMoment;
+  customerName: string;
+  siteName: string;
+  overall: number;
+  weak: FeedbackDimension[];
+  flags: CustomerFeedback['flags'];
+  sentiment: CustomerFeedback['sentiment'];
+  outreachDone: boolean;
+  createdAt: string;
+  people: string[];
+  mentioned: string[];
+}
+export interface FeedbackBoardFilter { state?: 'outreach' | 'weak' | 'staff' | 'low' | 'all' }
+export interface FeedbackBoard {
+  rows: FeedbackAdminRow[];
+  counts: { outreach: number; weak: number; staff: number; low: number; all: number };
+  summary: { n: number; avgOverall: number | null; early: boolean; byDimension: { dimension: FeedbackDimension; avg: number; n: number }[]; byPerson: { userId: string; name: string; n: number; avg: number; small: boolean }[] };
+  at: string;
+}
+export interface FeedbackDetail extends FeedbackAdminRow {
+  dimensions: Partial<Record<FeedbackDimension, number>>;
+  comment: string;
+  outreach: { byName: string; at: string; note: string } | null;
+  ticketCode: string | null;
+  customerPhone: string | null;
+}
+
 /* ------------------------------------------------------------------ Payout disputes (170) */
 
 export interface PayoutDisputeRow {
@@ -8332,6 +8397,13 @@ export interface Repository {
   getVaultBundle(userId: string): Promise<VaultDocument[]>;
   /** 174: the customer's payment picture for one project (the first needing attention when none is named). */
   getCustomerPayments(dealId: string | null, userId: string): Promise<CustomerPayView>;
+  /* 177 — customer feedback: a short ask at the right moment, ratings that stay specific, and a person for anyone unhappy. */
+  getFeedbackDesk(userId: string): Promise<FeedbackDeskView>;
+  submitFeedback(userId: string, input: { clientId: string; requestId: string; overall: number; dimensions: Partial<Record<FeedbackDimension, number>>; comment: string }): Promise<FeedbackSubmitResult>;
+  dismissFeedbackRequest(userId: string, requestId: string): Promise<void>;
+  getFeedbackBoard(filter: FeedbackBoardFilter, adminId: string): Promise<FeedbackBoard>;
+  getFeedback(feedbackId: string, adminId: string): Promise<FeedbackDetail>;
+  recordFeedbackOutreach(feedbackId: string, adminId: string, note: string): Promise<FeedbackDetail>;
   /* 176 — support chat: the customer's assistant-then-person conversation, and the agent's board and thread with the customer's whole picture. */
   getSupportChat(userId: string): Promise<SupportChatView>;
   sendSupportMessage(userId: string, input: { clientId: string; text: string; intent?: 'payment_status' | 'progress' | 'amc' | 'troubleshoot' | 'human' }): Promise<SupportChatView>;

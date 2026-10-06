@@ -48,6 +48,7 @@ export function CustomerHomeScreen() {
           <Hero c={c} t={t} />
           {c.concerns.some((x) => x.kind !== 'payment_overdue') && <Concerns c={c} s={s} t={t} />}
           <Next c={c} s={s} t={t} />
+          {s.feedbackDue > 0 && <Card><div className="row gap-2" data-feedback-ask style={{ justifyContent: 'space-between', alignItems: 'center' }}><span className="t-sm">{t('feedback.ask.title')}</span><Button size="sm" variant="secondary" onClick={() => s.goTo('/feedback')}>{t('feedback.link.open')}</Button></div></Card>}
           {c.mode === 'service' && <Service c={c} s={s} t={t} />}
           {c.early && c.mode !== 'service' && <Road t={t} from={Math.max(0, STAGE_ORDER.indexOf((c.stage ?? 'agreed') as CustomerStageKey))} />}
         </div>
