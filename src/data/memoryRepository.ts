@@ -284,6 +284,11 @@ import type {
   PayoutHistoryFilter,
   PayoutHistoryView,
   PayoutQueryView,
+  PayoutMessageView,
+  PayoutDisputeBoard,
+  PayoutDisputeEarlier,
+  PayoutDisputeRow,
+  PayoutDisputeView,
   PayoutStatementLine,
   PayoutStatementPeriod,
   PayoutStatementView,
@@ -901,6 +906,8 @@ import { DEDUCTS_AT_PAYOUT as TDS_DEDUCTS, DEFAULT_RATES as DEFAULT_TDS_RATES, N
 import type { Quarter as TdsQuarter, TdsRole, TdsSection } from '@/features/tax/tds';
 import { MONTHS_OFFERED as PH_MONTHS, PAGE as PH_PAGE, QUERY_DUE as PH_QUERY_DUE, answerProblem as phAnswerProblem, countsAsEarned as phCountsAsEarned, filterOf as phFilterOf, fyOf as phFyOf, inPeriod as phInPeriod, monthIdOf as phMonthId, periodOf as phPeriodOf, queryProblem as phQueryProblem, stageOf as phStageOf } from '@/features/payout/history';
 import type { Stage as PayoutStage } from '@/features/payout/history';
+import { CORRECTION_MAX as PD_CORRECTION_MAX, ESCALATED_TARGET as PD_ESCALATED, OTHERS_SHOWN as PD_OTHERS_SHOWN, PAGE as PD_PAGE, PROGRESS_EVERY as PD_PROGRESS_EVERY, REVIEW_DUE as PD_REVIEW_DUE, RESULT_DAYS as PD_RESULT_DAYS, SYSTEMIC_MIN as PD_SYSTEMIC_MIN, correctionProblem as pdCorrectionProblem, dueAtOf as pdDueAtOf, explainProblem as pdExplainProblem, medianDays as pdMedianDays, patternsOf as pdPatternsOf, progressDue as pdProgressDue, raiseProblem as pdRaiseProblem, reasonProblem as pdReasonProblem, repeatOf as pdRepeatOf, slaOf as pdSlaOf, updateProblem as pdUpdateProblem } from '@/features/payout/dispute';
+import type { Kind as PdKind, Problem as PdProblem, State as PdState } from '@/features/payout/dispute';
 import { MAX_CASH as CF_MAX_CASH, MAX_DAYS as CF_MAX_DAYS, MAX_PLACES as CF_MAX_PLACES, MAX_TENURE_DAYS as CF_MAX_TENURE, MIN_DAYS as CF_MIN_DAYS, END_REASON_MIN as CF_END_REASON_MIN, PREVIEW_SHOWN as CF_PREVIEW_SHOWN, START_NOW_SLACK as CF_START_NOW_SLACK, contestProblem as cfContestProblem, earlyEndProblem as cfEarlyEndProblem, previewChecks as cfPreviewChecks } from '@/features/rewards/contestConfig';
 import type { ContestInput } from '@/features/rewards/contestConfig';
 import type { ContestPhase } from '@/features/rewards/standings';
@@ -2886,6 +2893,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   syncPayoutSpikes(now);
   syncDisbursements(now);
   syncTds(now);
+  syncPayoutDisputes(now);
   syncContests(now);
   syncBadges(now);
   syncPartnerInterviews(now);
@@ -10000,11 +10008,13 @@ const payoutQueries: PayoutQuery[] = [];
 let payoutQueryCounter = 0;
 const PH_ALERT = 'payoutHistory.alert.query';
 
-const phQueryStatus = (q: PayoutQuery): PayoutQueryView['status'] => (q.resolvedAt ? 'resolved' : q.messages[q.messages.length - 1].from === 'partner' ? 'open' : 'answered');
+const phHuman = (q: PayoutQuery) => q.messages.filter((m) => m.from !== 'system' && !m.progress);
+const phQueryStatus = (q: PayoutQuery): PayoutQueryView['status'] => (q.resolvedAt ? 'resolved' : phHuman(q)[phHuman(q).length - 1]?.from === 'admin' ? 'answered' : 'open');
+const phMessageView = (m: PayoutQuery['messages'][number]): PayoutMessageView => ({ at: m.at, from: m.from, byName: m.byName, text: m.text ?? null, key: m.key ?? null, params: m.params ?? {}, progress: !!m.progress });
 const phQueryView = (q: PayoutQuery): PayoutQueryView => {
   const status = phQueryStatus(q);
-  const last = q.messages[q.messages.length - 1];
-  return { id: q.id, code: q.code, messages: q.messages.map((m) => ({ ...m })), status, dueAt: status === 'open' ? new Date(Date.parse(last.at) + PH_QUERY_DUE).toISOString() : null };
+  const last = phHuman(q)[phHuman(q).length - 1] ?? q.messages[q.messages.length - 1];
+  return { id: q.id, code: q.code, messages: q.messages.map(phMessageView), status, dueAt: status === 'open' ? new Date(Date.parse(last.at) + PH_QUERY_DUE).toISOString() : null };
 };
 
 /** The judgement (140) changes that touched an entry, oldest first. */
@@ -10116,7 +10126,7 @@ function phEventsOf(e: CommissionEntry): PayoutEventView[] {
   if (e.status === 'paid' && e.paidAt && !payoutDisbursements.some((x) => x.entryIds.includes(e.id) && x.status === 'completed')) out.push({ at: e.paidAt, kind: 'paid', params: { method: '', destination: '', reference: '' } });
   if (e.reversal) out.push({ at: e.reversal.at, kind: 'reversed', params: { reason: e.reversal.reason } });
   else if (e.status === 'forfeited') out.push({ at: e.paidAt ?? e.earnedAt, kind: 'forfeited', params: {} });
-  for (const q of payoutQueries.filter((x) => x.entryId === e.id)) for (const m of q.messages) out.push({ at: m.at, kind: m.from === 'partner' ? 'asked' : 'answered', params: { code: q.code } });
+  for (const q of payoutQueries.filter((x) => x.entryId === e.id)) for (const m of q.messages.filter((x) => x.from !== 'system' && !x.progress)) out.push({ at: m.at, kind: m.from === 'partner' ? 'asked' : 'answered', params: { code: q.code } });
   return out.sort((a, b) => (a.at < b.at ? -1 : 1));
 }
 
@@ -10157,17 +10167,176 @@ function phDetailOf(entryId: string, userId: string, now: number): PayoutEntryDe
   return JSON.parse(JSON.stringify({ entry: phEntryOf(e), events: phEventsOf(e), queries: payoutQueries.filter((q) => q.entryId === e.id).map(phQueryView), canAsk: true })) as PayoutEntryDetail;
 }
 
-/** Questions waiting for Admin (to answer within the set time) and answers waiting for the partner to see. */
-function payoutQuerySignals(): { open: { id: string; code: string; partnerName: string; entryId: string; since: string }[]; answered: { id: string; code: string; userId: string; entryId: string; at: string }[] } {
+/** Questions waiting for Admin (to answer within the set time), answers waiting for the partner to see, and (170) disputes with their own longer clock. */
+function payoutQuerySignals(): { open: { id: string; code: string; partnerName: string; entryId: string; since: string }[]; answered: { id: string; code: string; userId: string; entryId: string; at: string; route?: string }[]; disputes: { id: string; code: string; partnerName: string; entryId: string; dueAt: string }[]; reviews: { id: string; code: string; since: string }[] } {
   const open: ReturnType<typeof payoutQuerySignals>['open'] = [];
   const answered: ReturnType<typeof payoutQuerySignals>['answered'] = [];
+  const disputes: ReturnType<typeof payoutQuerySignals>['disputes'] = [];
+  const reviews: ReturnType<typeof payoutQuerySignals>['reviews'] = [];
   for (const q of payoutQueries) {
+    const kind = pdKindOf(q);
+    if (kind === 'dispute') {
+      if (!q.resolvedAt) disputes.push({ id: q.id, code: q.code, partnerName: nameOf(q.partnerId), entryId: q.entryId, dueAt: pdClockOf(q).resolve });
+      else if (q.resolution) answered.push({ id: q.id, code: q.code, userId: q.partnerId, entryId: q.entryId, at: q.resolvedAt, route: `/payout-dispute?dispute=${q.id}` });
+      if (q.systemic && !q.systemic.review) reviews.push({ id: q.id, code: q.code, since: q.systemic.at });
+      continue;
+    }
     const st = phQueryStatus(q);
-    const last = q.messages[q.messages.length - 1];
+    const last = phHuman(q)[phHuman(q).length - 1];
     if (st === 'open') open.push({ id: q.id, code: q.code, partnerName: nameOf(q.partnerId), entryId: q.entryId, since: last.at });
-    else if (st === 'answered') answered.push({ id: q.id, code: q.code, userId: q.partnerId, entryId: q.entryId, at: last.at });
+    else if (st === 'answered') answered.push({ id: q.id, code: q.code, userId: q.partnerId, entryId: q.entryId, at: last.at, route: `/payout-dispute?dispute=${q.id}` });
   }
-  return { open, answered };
+  return { open, answered, disputes, reviews };
+}
+
+/* ------------------------------------------------------------------ Payout disputes (170) */
+
+const PD_ALERT_RAISED = 'payoutDispute.alert.raised';
+const PD_ALERT_ESCALATED = 'payoutDispute.alert.escalated';
+const PD_ALERT_SYSTEMIC = 'payoutDispute.alert.systemic';
+const PD_ALERT_PATTERN = 'payoutDispute.alert.pattern';
+const pdKindOf = (q: PayoutQuery): PdKind => q.kind ?? 'question';
+const pdIso = (ms: number): string => new Date(ms).toISOString();
+const pdRaisedAt = (q: PayoutQuery): string => q.messages[0].at;
+const pdLastPartnerAt = (q: PayoutQuery): string => [...q.messages].reverse().find((m) => m.from === 'partner')?.at ?? pdRaisedAt(q);
+const pdClockOf = (q: PayoutQuery): { first: string | null; resolve: string } => pdDueAtOf({ kind: pdKindOf(q), raisedAt: pdRaisedAt(q), lastPartnerAt: pdLastPartnerAt(q), firstReplyAt: q.firstReplyAt ?? null, escalatedAt: q.escalation?.at ?? null });
+const pdStateOf = (q: PayoutQuery): PdState => (q.resolvedAt ? 'resolved' : q.escalation ? 'escalated' : pdKindOf(q) === 'dispute' ? (q.firstReplyAt ? 'in_review' : 'open') : phQueryStatus(q) === 'answered' ? 'answered' : 'open');
+const pdLastToldAt = (q: PayoutQuery): string => [...q.messages].reverse().find((m) => m.from !== 'partner')?.at ?? pdRaisedAt(q);
+const pdWords = (q: PayoutQuery): string => [...q.messages].reverse().find((m) => m.from === 'partner')?.text ?? '';
+const pdResolveAlerts = (q: PayoutQuery, by: string, note: string, now: number, only?: string[]): void => {
+  for (const a of alerts) {
+    if (a.status === 'resolved' || !a.relatedId) continue;
+    const mine = a.relatedId === `payout-dispute:${q.id}` || a.relatedId === `pdesc:${q.id}` || a.relatedId.startsWith(`payout-query:${q.id}:`) || a.relatedId === `pdsys:${q.id}`;
+    if (mine && (!only || only.includes(a.titleKey))) patchInPlace(alerts, a.id, { status: 'resolved', resolvedAt: pdIso(now), resolvedBy: by, resolutionNote: note });
+  }
+};
+
+/** Other partners whose entries were earned under the same rule version in the last 90 days: who might be short by the same cause. */
+function pdOthersOf(ruleId: string | null, version: number | null, partnerId: string, exceptEntryId: string, now: number): { entryId: string; partnerName: string; amount: number; earnedAt: string }[] {
+  if (!ruleId) return [];
+  return commissions
+    .filter((x) => x.id !== exceptEntryId && x.userId !== partnerId && x.status !== 'forfeited' && !x.reversal && now - Date.parse(x.earnedAt) <= 90 * 86_400_000)
+    .filter((x) => { const t = crTraceOf(x); return t.ruleId === ruleId && t.version === version; })
+    .map((x) => ({ entryId: x.id, partnerName: nameOf(x.userId), amount: x.amount, earnedAt: x.earnedAt }))
+    .sort((a, b) => (a.earnedAt < b.earnedAt ? 1 : -1));
+}
+
+function pdFlagSystemic(q: PayoutQuery, e: CommissionEntry, note: string, byName: string, now: number): void {
+  const t = crTraceOf(e);
+  const others = pdOthersOf(t.ruleId, t.version, q.partnerId, e.id, now);
+  q.systemic = { ruleId: t.ruleId, version: t.version, note: note.trim(), at: pdIso(now), byName, others: others.length, othersAmount: others.reduce((a, x) => a + x.amount, 0) };
+  raiseAlert({ titleKey: PD_ALERT_SYSTEMIC, context: `${q.code}: ${note.trim().slice(0, 100)} (${others.length} other entr${others.length === 1 ? 'y' : 'ies'} under the same rule)`, severity: 'high', category: 'payment', relatedId: `pdsys:${q.id}`, sourceRoute: t.ruleId ? `/commission-rules?rule=${t.ruleId}` : `/payout-dispute?dispute=${q.id}` });
+}
+
+/** A correcting entry through the ledger: a new entry that adds what was missing, stamped with the same rule and version, waiting in 163's queue like any other. Nothing is edited. */
+function pdCorrect(q: PayoutQuery, e: CommissionEntry, to: number, now: number): CommissionEntry {
+  const t = crTraceOf(e);
+  let n = 1;
+  while (commissions.some((x) => x.id === `c-adj-${q.code.slice(-4)}-${n}`)) n += 1;
+  const entry: CommissionEntry = {
+    id: `c-adj-${q.code.slice(-4)}-${n}`, userId: e.userId, leadId: e.leadId, dealId: e.dealId, jobId: e.jobId, payoutRole: e.payoutRole, reasonKey: 'commission.reason.payoutCorrection', amount: to - e.amount, status: 'approved', earnedAt: pdIso(now),
+    correctsId: e.id, ...(t.ruleId ? { ruleId: t.ruleId, ruleVersion: t.version ?? undefined } : {}), ...(e.currency ? { currency: e.currency } : {}), isDemo: true,
+  };
+  commissions.push(entry);
+  return entry;
+}
+
+function pdRowOf(q: PayoutQuery, now: number): PayoutDisputeRow {
+  const e = byId(commissions, q.entryId) as CommissionEntry;
+  const u = byId(users, q.partnerId);
+  const state = pdStateOf(q);
+  const clock = pdClockOf(q);
+  const over = state === 'resolved' || state === 'answered';
+  const resolution = q.resolution ? q.resolution.type : q.resolvedAt ? ('withdrawn' as const) : null;
+  const started = q.escalation ? q.escalation.at : pdKindOf(q) === 'question' ? pdLastPartnerAt(q) : pdRaisedAt(q);
+  return {
+    id: q.id, code: q.code, entryId: q.entryId, partnerId: q.partnerId, partnerName: u?.name ?? q.partnerId, partnerRole: u?.role === 'technician' ? 'technician' : 'surveyor', kind: pdKindOf(q), topic: q.topic ?? null, state, round: q.round ?? 1,
+    repeat: q.repeatOf ? { ...q.repeatOf } : null, reasonKey: e.reasonKey, entryAmount: e.amount, claimedAmount: q.claimedAmount ?? null, raisedAt: pdRaisedAt(q), dueAt: over ? null : clock.resolve, firstDueAt: over ? null : clock.first,
+    sla: pdSlaOf(clock.resolve, started, now, over), resolution, systemic: q.systemic ? { ruleId: q.systemic.ruleId, reviewed: !!q.systemic.review } : null, lastWords: pdWords(q).slice(0, 160),
+  };
+}
+
+function pdViewOf(q: PayoutQuery, userId: string, now: number): PayoutDisputeView {
+  const admin = byId(users, userId)?.role === 'admin';
+  const e = byId(commissions, q.entryId) as CommissionEntry;
+  const row = pdRowOf(q, now);
+  const t = crTraceOf(e);
+  const ruleVersion = t.ruleId ? crVersionAt(t.ruleId, Date.parse(e.earnedAt)) : null;
+  const corr = q.resolution?.correctionEntryId ? byId(commissions, q.resolution.correctionEntryId) : null;
+  const resolution: PayoutDisputeView['row']['resolution'] = q.resolution
+    ? { type: q.resolution.type, notes: q.resolution.notes, at: q.resolution.at, byName: q.resolution.byName, correction: q.resolution.correction ?? null, correctionEntryId: q.resolution.correctionEntryId ?? null, correctionStage: corr ? phEntryOf(corr).stage : null }
+    : q.resolvedAt ? { type: 'withdrawn', notes: '', at: q.resolvedAt, byName: nameOf(q.partnerId), correction: null, correctionEntryId: null, correctionStage: null } : null;
+  const earlier = payoutQueries
+    .filter((x) => x.entryId === q.entryId && x.id !== q.id)
+    .map((x): PayoutDisputeEarlier => ({ id: x.id, code: x.code, round: x.round ?? 1, raisedAt: pdRaisedAt(x), text: x.messages.find((m) => m.from === 'partner')?.text ?? '', resolution: x.resolution ? x.resolution.type : x.resolvedAt ? 'withdrawn' : null, resolvedAt: x.resolvedAt ?? null, notes: x.resolution?.notes ?? null }))
+    .sort((a, b) => (a.raisedAt < b.raisedAt ? -1 : 1));
+  const state = row.state;
+  const toldAfter = pdKindOf(q) === 'dispute' && state !== 'resolved' ? pdIso(Date.parse(pdLastToldAt(q)) + PD_PROGRESS_EVERY) : null;
+  const next = toldAfter && Date.parse(toldAfter) > now ? toldAfter : toldAfter ? pdIso(now + 60_000) : null;
+  const payable = (e.status === 'approved' || e.status === 'paid') && !e.reversal;
+  const maxTo = q.claimedAmount ?? e.amount + PD_CORRECTION_MAX;
+  const sys = q.systemic;
+  return JSON.parse(JSON.stringify({
+    row: { ...row, resolution },
+    entry: phEntryOf(e),
+    events: phEventsOf(e),
+    trace: { ruleId: t.ruleId, version: t.version, inferred: t.inferred, effectiveFrom: ruleVersion ? ruleVersion.effectiveFrom : null },
+    messages: q.messages.map(phMessageView),
+    earlier,
+    escalation: admin && q.escalation ? { ...q.escalation } : q.escalation ? { at: q.escalation.at, byName: '', reason: '' } : null,
+    systemic: admin && sys ? { ruleId: sys.ruleId, version: sys.version, note: sys.note, at: sys.at, byName: sys.byName, others: sys.others, othersAmount: sys.othersAmount, othersList: pdOthersOf(sys.ruleId, sys.version, q.partnerId, e.id, now).slice(0, PD_OTHERS_SHOWN).map((o) => ({ entryId: o.entryId, partnerName: o.partnerName, amount: o.amount, earnedAt: o.earnedAt })), review: sys.review ?? null } : null,
+    nextUpdateBy: next,
+    adjust: admin && state !== 'resolved' && payable ? { current: e.amount, max: maxTo, claimed: q.claimedAmount ?? null } : null,
+    canAskAgain: !admin && state === 'resolved' && !payoutQueries.some((x) => x.entryId === q.entryId && !x.resolvedAt),
+    isOwner: q.partnerId === userId,
+  })) as PayoutDisputeView;
+}
+
+function pdSeeds(): void {
+  if (pdSeeded) return;
+  pdSeeded = true;
+  const ago = (d: number, h = 0): string => pdIso(Date.now() - d * 86_400_000 - h * 3_600_000);
+  const add = (q: Omit<PayoutQuery, 'id' | 'code' | 'isDemo'>): PayoutQuery => { payoutQueryCounter += 1; const x: PayoutQuery = { id: `pq-${payoutQueryCounter}`, code: `AIEC-PQ-${1000 + payoutQueryCounter}`, isDemo: true, ...q }; payoutQueries.push(x); return x; };
+  const received = (at: string): PayoutQuery['messages'][number] => ({ at, from: 'system', byName: 'AIEC', key: 'payoutDispute.msg.received', params: { date: pdIso(Date.parse(at) + 5 * 86_400_000) } });
+  add({ entryId: 'c-3', partnerId: 'u-srv-2', kind: 'dispute', topic: 'wrong_rule', round: 1, messages: [{ at: ago(1, 2), from: 'partner', byName: nameOf('u-srv-2'), text: 'My conversion commission looks lower than the rate I was told when I joined: I expected the extra half percent my tier carries on top of the standard rate.' }, received(ago(1, 2))] });
+  add({ entryId: 'c-4', partnerId: 'u-srv-1', kind: 'dispute', topic: 'held_long', round: 1, firstReplyAt: ago(4), messages: [{ at: ago(6), from: 'partner', byName: nameOf('u-srv-1'), text: 'This lead bonus has been held for more than a week and nobody has told me why. Can you tell me what is being checked?' }, received(ago(6)), { at: ago(4), from: 'admin', byName: 'Prashant Vasant Wable', progress: true, text: 'I have seen your question and asked the site team to confirm the visit on this lead. I will write to you as soon as I have their answer.' }] });
+  const first = add({ entryId: 'c-t2', partnerId: 'u-tech-1', kind: 'dispute', topic: 'amount_low', round: 1, claimedAmount: 13_000, firstReplyAt: ago(10), resolvedAt: ago(10), messages: [{ at: ago(14), from: 'partner', byName: nameOf('u-tech-1'), text: 'I worked the whole installation on this job and expected more than ₹11,500 from the crew pool.' }, received(ago(14)), { at: ago(10), from: 'admin', byName: 'Prashant Vasant Wable', text: 'The pool is shared by on-site minutes recorded at check-in. Yours came to 41% of the crew minutes on this job, which is the share paid. Nothing is missing from the figure.' }], resolution: { type: 'explanation', notes: 'The pool is shared by on-site minutes recorded at check-in. Yours came to 41% of the crew minutes on this job, which is the share paid. Nothing is missing from the figure.', at: ago(10), byName: 'Prashant Vasant Wable' } });
+  add({ entryId: 'c-t2', partnerId: 'u-tech-1', kind: 'dispute', topic: 'amount_low', round: 2, claimedAmount: 12_500, repeatOf: { code: first.code, same: false }, messages: [{ at: ago(2), from: 'partner', byName: nameOf('u-tech-1'), text: 'I checked my check-in records again and the visit on the final day shows six hours that I think were not counted in my share of the minutes.' }, received(ago(2))] });
+  const fixed = add({ entryId: 'c-t3', partnerId: 'u-tech-2', kind: 'dispute', topic: 'amount_low', round: 1, claimedAmount: 10_500, firstReplyAt: ago(10), resolvedAt: ago(9), messages: [{ at: ago(12), from: 'partner', byName: nameOf('u-tech-2'), text: 'My share of the crew pool does not include the second evening visit I did to finish the door tests.' }, received(ago(12)), { at: ago(9), from: 'admin', byName: 'Prashant Vasant Wable', text: 'You are right: the evening visit started after 6 pm and was not counted. A correcting entry for the difference has been added to your payouts.' }, { at: ago(9), from: 'system', byName: 'AIEC', key: 'payoutDispute.msg.adjusted', params: { amount: 1_500, to: 10_500 } }] });
+  const corr: CommissionEntry = { id: `c-adj-${fixed.code.slice(-4)}-1`, userId: 'u-tech-2', dealId: 'dl-1', reasonKey: 'commission.reason.payoutCorrection', amount: 1_500, status: 'approved', earnedAt: ago(9), correctsId: 'c-t3', ruleId: 'install_pool', ruleVersion: crVersionAt('install_pool', Date.parse(ago(9))).version, isDemo: true };
+  commissions.push(corr);
+  fixed.resolution = { type: 'adjustment', notes: 'You are right: the evening visit started after 6 pm and was not counted. A correcting entry for the difference has been added to your payouts.', at: ago(9), byName: 'Prashant Vasant Wable', correctionEntryId: corr.id, correction: 1_500 };
+  const e = byId(commissions, 'c-t3') as CommissionEntry;
+  pdFlagSystemic(fixed, e, 'Visits that start after 6 pm were left out of the crew minutes, which may have shorted others on this rule too.', 'Prashant Vasant Wable', Date.now() - 9 * 86_400_000);
+  if (fixed.systemic) fixed.systemic.at = ago(9);
+}
+let pdSeeded = false;
+
+/** Reports on long disputes, spots a pattern, and keeps the beacons honest. Idempotent: a partner is never told the same thing twice in the same period. */
+function syncPayoutDisputes(now: number): void {
+  pdSeeds();
+  for (const q of payoutQueries) {
+    const state = pdStateOf(q);
+    if (pdKindOf(q) !== 'dispute') continue;
+    const clock = pdClockOf(q);
+    if (pdProgressDue({ now, state, kind: 'dispute', resolveDueAt: clock.resolve, lastToldAt: pdLastToldAt(q) })) {
+      q.messages.push({ at: pdIso(now), from: 'system', byName: 'AIEC', key: q.escalation ? 'payoutDispute.msg.stillEscalated' : 'payoutDispute.msg.stillWorking', params: { code: q.code, days: Math.max(1, Math.round((now - Date.parse(pdRaisedAt(q))) / 86_400_000)) } });
+      logAutomatedAction({ sourceKey: 'payout_dispute.progress', triggeringCondition: `${q.code} is past its target and the partner had not heard for ${Math.round(PD_PROGRESS_EVERY / 86_400_000)} days`, actionTaken: 'Told the partner it is still being looked at', affectedRecordId: q.id, affectedRecordType: 'other', subjectLabel: q.code } as Parameters<typeof logAutomatedAction>[0]);
+    }
+    if (state !== 'resolved' && now > Date.parse(clock.resolve)) {
+      const late = alerts.find((a) => a.titleKey === PD_ALERT_RAISED && a.relatedId === `payout-dispute:${q.id}` && a.status !== 'resolved');
+      if (late && late.severity === 'medium') patchInPlace(alerts, late.id, { severity: 'high' });
+    }
+  }
+  const patterns = pdPatternsOf(payoutQueries.filter((q) => pdKindOf(q) === 'dispute' && q.repeatOf === undefined).map((q) => ({ ruleId: crTraceOf(byId(commissions, q.entryId) as CommissionEntry).ruleId, partnerId: q.partnerId, at: pdRaisedAt(q), flagged: !!q.systemic })), now);
+  const flaggedRules = new Set(payoutQueries.filter((q) => q.systemic && !q.systemic.review).map((q) => q.systemic?.ruleId));
+  for (const a of alerts) if (a.titleKey === PD_ALERT_PATTERN && a.status !== 'resolved' && !patterns.some((p) => `pdpattern:${p.ruleId}` === a.relatedId)) patchInPlace(alerts, a.id, { status: 'resolved', resolvedAt: pdIso(now), resolvedBy: 'system', resolutionNote: 'No longer a pattern.' });
+  for (const p of patterns) {
+    if (flaggedRules.has(p.ruleId)) continue;
+    const had = alerts.some((a) => a.titleKey === PD_ALERT_PATTERN && a.relatedId === `pdpattern:${p.ruleId}` && a.status !== 'resolved');
+    raiseAlert({ titleKey: PD_ALERT_PATTERN, context: `${p.count} disputes from ${p.people} partners point at the ${p.ruleId} rule`, severity: 'high', category: 'payment', relatedId: `pdpattern:${p.ruleId}`, sourceRoute: `/commission-rules?rule=${p.ruleId}` });
+    if (!had) logAutomatedAction({ sourceKey: 'payout_dispute.pattern', triggeringCondition: `${p.count} payout disputes from ${p.people} partners trace to the ${p.ruleId} rule`, actionTaken: 'Raised an alert asking for a review of the rule', affectedRecordId: p.ruleId, affectedRecordType: 'other', subjectLabel: p.ruleId } as Parameters<typeof logAutomatedAction>[0]);
+  }
 }
 
 
@@ -19780,6 +19949,7 @@ export const memoryRepository: Repository = {
 
   raisePayoutQuery: (entryId, text, userId) =>
     simulateWrite((): PayoutQueryView => {
+      pdSeeds();
       const w = phWho(userId);
       if (w.supplierId) throw new RepositoryError('forbidden');
       const e = byId(commissions, entryId);
@@ -19792,7 +19962,7 @@ export const memoryRepository: Repository = {
       if (q && phQueryStatus(q) === 'open') throw new RepositoryError('already_open');
       if (!q) { payoutQueryCounter += 1; q = { id: `pq-${payoutQueryCounter}`, code: `AIEC-PQ-${1000 + payoutQueryCounter}`, entryId, partnerId: userId, messages: [], isDemo: true }; payoutQueries.push(q); }
       q.messages.push({ at, from: 'partner', byName: w.name, text: text.trim() });
-      raiseAlert({ titleKey: PH_ALERT, context: `${q.code} ${w.name}: ${text.trim().slice(0, 80)}`, severity: 'medium', category: 'payment', relatedId: `payout-query:${q.id}:${q.messages.length}`, sourceRoute: `/payout-tracker?entry=${entryId}&days=all` });
+      raiseAlert({ titleKey: PH_ALERT, context: `${q.code} ${w.name}: ${text.trim().slice(0, 80)}`, severity: 'medium', category: 'payment', relatedId: `payout-query:${q.id}:${q.messages.length}`, sourceRoute: `/payout-dispute?dispute=${q.id}` });
       syncCommitments(now);
       return phQueryView(q);
     }),
@@ -19823,9 +19993,190 @@ export const memoryRepository: Repository = {
       if (problem) throw new RepositoryError(problem);
       const now = Date.now();
       q.messages.push({ at: new Date(now).toISOString(), from: 'admin', byName: admin.name, text: text.trim() });
+      q.firstReplyAt ??= new Date(now).toISOString();
       for (const a of alerts) if (a.status !== 'resolved' && a.titleKey === PH_ALERT && (a.relatedId ?? '').startsWith(`payout-query:${q.id}:`)) patchInPlace(alerts, a.id, { status: 'resolved', resolvedAt: new Date(now).toISOString(), resolvedBy: admin.name, resolutionNote: 'Answered.' });
       syncCommitments(now);
       return phQueryView(q);
+    }),
+
+  /* --------------------------------- Payout disputes (170) */
+  getPayoutDisputes: (filter, userId) =>
+    simulateRead((): PayoutDisputeBoard => {
+      const now = Date.now();
+      syncPayoutDisputes(now);
+      const u = byId(users, userId);
+      if (!u || (u.role !== 'admin' && u.role !== 'surveyor' && u.role !== 'technician' && u.role !== 'supplier')) throw new RepositoryError('forbidden');
+      const admin = u.role === 'admin';
+      const ownSupplier = u.role === 'supplier' ? phWho(userId).supplierId : null;
+      const mine = payoutQueries.filter((q) => !ownSupplier && (admin || q.partnerId === userId) && byId(commissions, q.entryId));
+      const rows = mine.map((q) => pdRowOf(q, now));
+      const term = (filter.q ?? '').trim().toLowerCase();
+      const state = filter.state ?? 'all';
+      const flag = filter.flag ?? 'all';
+      const shown = rows
+        .filter((r) => (state === 'all' ? true : state === 'active' ? r.state !== 'resolved' && r.state !== 'answered' : r.state === state))
+        .filter((r) => (flag === 'all' ? true : flag === 'systemic' ? !!r.systemic : flag === 'repeat' ? !!r.repeat : r.sla === 'overdue'))
+        .filter((r) => !filter.entryId || r.entryId === filter.entryId)
+        .filter((r) => !term || `${r.code} ${r.partnerName} ${r.lastWords}`.toLowerCase().includes(term))
+        .sort((a, b) => {
+          const aa = a.state === 'resolved' || a.state === 'answered';
+          const bb = b.state === 'resolved' || b.state === 'answered';
+          if (aa !== bb) return aa ? 1 : -1;
+          if (!aa) return Date.parse(a.dueAt ?? a.raisedAt) - Date.parse(b.dueAt ?? b.raisedAt);
+          return a.raisedAt < b.raisedAt ? 1 : -1;
+        });
+      const limit = filter.limit === 0 ? shown.length : filter.limit ?? PD_PAGE;
+      const offset = filter.offset ?? 0;
+      const spans = mine.filter((q) => q.resolution && pdKindOf(q) === 'dispute').map((q) => Date.parse((q.resolution as { at: string }).at) - Date.parse(pdRaisedAt(q)));
+      const supplierOpen = admin ? supplierDisputes.filter((d) => d.status === 'open').map((d) => disputeRowOf(d, now)) : [];
+      return JSON.parse(JSON.stringify({
+        rows: shown.slice(offset, offset + limit), total: shown.length,
+        totals: {
+          active: rows.filter((r) => r.state !== 'resolved' && r.state !== 'answered').length, open: rows.filter((r) => r.state === 'open').length, inReview: rows.filter((r) => r.state === 'in_review').length, escalated: rows.filter((r) => r.state === 'escalated').length,
+          late: rows.filter((r) => r.sla === 'overdue').length, systemic: rows.filter((r) => r.systemic && !r.systemic.reviewed).length, reviewDue: rows.filter((r) => r.systemic && !r.systemic.reviewed).length, resolved: rows.filter((r) => r.state === 'resolved').length, medianDays: pdMedianDays(spans),
+        },
+        supplier: { open: supplierOpen.length, overdue: supplierOpen.filter((d) => d.sla === 'overdue').length },
+        supplierRows: ownSupplier ? supplierDisputes.filter((d) => d.supplierId === ownSupplier).map((d) => disputeRowOf(d, now)).sort((a, b) => (a.raisedAt < b.raisedAt ? 1 : -1)) : [],
+        patterns: admin ? pdPatternsOf(payoutQueries.filter((q) => pdKindOf(q) === 'dispute' && q.repeatOf === undefined).map((q) => ({ ruleId: crTraceOf(byId(commissions, q.entryId) as CommissionEntry).ruleId, partnerId: q.partnerId, at: pdRaisedAt(q), flagged: !!q.systemic })), now) : [],
+        at: pdIso(now),
+      })) as PayoutDisputeBoard;
+    }),
+
+  getPayoutDispute: (disputeId, userId) =>
+    simulateRead((): PayoutDisputeView => {
+      const now = Date.now();
+      syncPayoutDisputes(now);
+      const q = byId(payoutQueries, disputeId);
+      const u = byId(users, userId);
+      if (!q || !u) throw new RepositoryError('not_found');
+      if (u.role !== 'admin' && q.partnerId !== userId) throw new RepositoryError('not_found');
+      return pdViewOf(q, userId, now);
+    }),
+
+  raisePayoutDispute: (input, userId) =>
+    simulateWrite((): PayoutDisputeView => {
+      pdSeeds();
+      const w = phWho(userId);
+      if (w.supplierId) throw new RepositoryError('forbidden');
+      const e = byId(commissions, input.entryId);
+      if (!e || e.userId !== userId) throw new RepositoryError('not_found');
+      const problem = pdRaiseProblem({ topic: input.topic, text: input.text, claimedAmount: input.claimedAmount ?? null, current: e.amount });
+      if (problem) throw new RepositoryError(problem);
+      if (payoutQueries.some((x) => x.entryId === e.id && !x.resolvedAt)) throw new RepositoryError('already_open');
+      const earlier = payoutQueries.filter((x) => x.entryId === e.id);
+      const rep = pdRepeatOf(earlier.flatMap((x) => x.messages.filter((m) => m.from === 'partner').map((m) => m.text ?? '')), input.text);
+      if (rep?.same) throw new RepositoryError('same_words');
+      const now = Date.now();
+      const at = pdIso(now);
+      payoutQueryCounter += 1;
+      const lastEarlier = [...earlier].sort((a, b) => (pdRaisedAt(a) < pdRaisedAt(b) ? 1 : -1))[0];
+      const q: PayoutQuery = {
+        id: `pq-${payoutQueryCounter}`, code: `AIEC-PQ-${1000 + payoutQueryCounter}`, entryId: e.id, partnerId: userId, kind: 'dispute', topic: input.topic, round: earlier.length + 1,
+        ...(input.claimedAmount ? { claimedAmount: Math.round(input.claimedAmount) } : {}), ...(lastEarlier ? { repeatOf: { code: lastEarlier.code, same: false } } : {}),
+        messages: [{ at, from: 'partner', byName: w.name, text: input.text.trim() }], isDemo: true,
+      };
+      q.messages.push({ at, from: 'system', byName: 'AIEC', key: 'payoutDispute.msg.received', params: { date: pdClockOf(q).resolve } });
+      payoutQueries.push(q);
+      raiseAlert({ titleKey: PD_ALERT_RAISED, context: `${q.code} ${w.name}: ${input.text.trim().slice(0, 80)}`, severity: 'medium', category: 'payment', relatedId: `payout-dispute:${q.id}`, sourceRoute: `/payout-dispute?dispute=${q.id}` });
+      syncCommitments(now);
+      return pdViewOf(q, userId, now);
+    }),
+
+  decidePayoutDispute: (disputeId, input, adminId) =>
+    simulateWrite((): PayoutDisputeView => {
+      pdSeeds();
+      const admin = ofAdmin(adminId);
+      const q = byId(payoutQueries, disputeId);
+      if (!q) throw new RepositoryError('not_found');
+      if (q.resolvedAt) throw new RepositoryError('already_resolved');
+      const e = byId(commissions, q.entryId) as CommissionEntry;
+      const now = Date.now();
+      const at = pdIso(now);
+      if (input.type === 'explanation') {
+        const problem = pdExplainProblem(input.text);
+        if (problem) throw new RepositoryError(problem);
+        q.messages.push({ at, from: 'admin', byName: admin.name, text: input.text.trim() });
+        q.firstReplyAt ??= at;
+        q.resolvedAt = at;
+        q.resolution = { type: 'explanation', notes: input.text.trim(), at, byName: admin.name };
+      } else if (input.type === 'adjustment') {
+        if ((e.status !== 'approved' && e.status !== 'paid') || e.reversal) throw new RepositoryError('entry_not_payable');
+        const problem = pdReasonProblem(input.reason) ?? pdCorrectionProblem({ current: e.amount, to: Math.round(input.to), claimed: q.claimedAmount ?? null });
+        if (problem) throw new RepositoryError(problem);
+        if (input.systemic && (input.systemic.note.match(/\p{L}/gu) ?? []).length < PD_SYSTEMIC_MIN) throw new RepositoryError('systemic_short');
+        const to = Math.round(input.to);
+        const corr = pdCorrect(q, e, to, now);
+        q.messages.push({ at, from: 'admin', byName: admin.name, text: input.reason.trim() });
+        q.messages.push({ at, from: 'system', byName: 'AIEC', key: 'payoutDispute.msg.adjusted', params: { amount: corr.amount, to } });
+        q.firstReplyAt ??= at;
+        q.resolvedAt = at;
+        q.resolution = { type: 'adjustment', notes: input.reason.trim(), at, byName: admin.name, correctionEntryId: corr.id, correction: corr.amount };
+        if (input.systemic) pdFlagSystemic(q, e, input.systemic.note, admin.name, now);
+      } else {
+        const problem = pdReasonProblem(input.reason);
+        if (problem) throw new RepositoryError(problem);
+        if (q.escalation) throw new RepositoryError('already_resolved');
+        q.escalation = { at, byName: admin.name, reason: input.reason.trim() };
+        q.firstReplyAt ??= at;
+        q.messages.push({ at, from: 'system', byName: 'AIEC', key: 'payoutDispute.msg.escalated', params: { date: pdIso(now + PD_ESCALATED) } });
+        raiseAlert({ titleKey: PD_ALERT_ESCALATED, context: `${q.code}: ${input.reason.trim().slice(0, 100)}`, severity: 'high', category: 'payment', relatedId: `pdesc:${q.id}`, sourceRoute: `/payout-dispute?dispute=${q.id}` });
+      }
+      if (q.resolvedAt) pdResolveAlerts(q, admin.name, input.type === 'adjustment' ? 'Corrected.' : 'Answered.', now, [PD_ALERT_RAISED, PD_ALERT_ESCALATED, PH_ALERT]);
+      else pdResolveAlerts(q, admin.name, 'Escalated.', now, [PD_ALERT_RAISED, PH_ALERT]);
+      syncCommitments(now);
+      return pdViewOf(q, adminId, now);
+    }),
+
+  sendPayoutDisputeUpdate: (disputeId, text, adminId) =>
+    simulateWrite((): PayoutDisputeView => {
+      pdSeeds();
+      const admin = ofAdmin(adminId);
+      const q = byId(payoutQueries, disputeId);
+      if (!q) throw new RepositoryError('not_found');
+      if (q.resolvedAt) throw new RepositoryError('already_resolved');
+      const problem = pdUpdateProblem(text);
+      if (problem) throw new RepositoryError(problem);
+      const now = Date.now();
+      q.messages.push({ at: pdIso(now), from: 'admin', byName: admin.name, text: text.trim(), progress: true });
+      q.firstReplyAt ??= pdIso(now);
+      syncCommitments(now);
+      return pdViewOf(q, adminId, now);
+    }),
+
+  flagPayoutDisputeSystemic: (disputeId, note, adminId) =>
+    simulateWrite((): PayoutDisputeView => {
+      pdSeeds();
+      const admin = ofAdmin(adminId);
+      const q = byId(payoutQueries, disputeId);
+      if (!q) throw new RepositoryError('not_found');
+      if (q.systemic) throw new RepositoryError('already_flagged');
+      if ((note.match(/\p{L}/gu) ?? []).length < PD_SYSTEMIC_MIN) throw new RepositoryError('systemic_short');
+      const now = Date.now();
+      pdFlagSystemic(q, byId(commissions, q.entryId) as CommissionEntry, note, admin.name, now);
+      syncCommitments(now);
+      return pdViewOf(q, adminId, now);
+    }),
+
+  recordSystemicReview: (disputeId, input, adminId) =>
+    simulateWrite((): PayoutDisputeView => {
+      pdSeeds();
+      const admin = ofAdmin(adminId);
+      const q = byId(payoutQueries, disputeId);
+      if (!q) throw new RepositoryError('not_found');
+      if (!q.systemic || q.systemic.review) throw new RepositoryError('no_review_needed');
+      if (input.outcome !== 'rule_changed' && input.outcome !== 'no_change') throw new RepositoryError('outcome_missing');
+      const problem = pdReasonProblem(input.note);
+      if (problem) throw new RepositoryError(problem);
+      const now = Date.now();
+      if (input.outcome === 'rule_changed') {
+        const rid = q.systemic.ruleId;
+        const changed = rid && crIsRuleId(rid) && crRule(rid).versions.some((v) => Date.parse(v.at) > Date.parse((q.systemic as { at: string }).at));
+        if (!changed) throw new RepositoryError('rule_unknown');
+      }
+      q.systemic.review = { outcome: input.outcome, note: input.note.trim(), at: pdIso(now), byName: admin.name };
+      pdResolveAlerts(q, admin.name, 'Reviewed.', now, [PD_ALERT_SYSTEMIC]);
+      syncCommitments(now);
+      return pdViewOf(q, adminId, now);
     }),
 
   /* --------------------------------- Contest configuration (167) */

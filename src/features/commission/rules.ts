@@ -103,6 +103,7 @@ export const RULE_OF_REASON: Record<string, CommissionRuleId | null> = {
   'commission.reason.monthlyBonus': null,
   'commission.reason.contestPrize': null,
   'commission.reason.exitSettlement': null,
+  'commission.reason.payoutCorrection': null,
 };
 
 /* ------------------------------------------------------------------ versions */

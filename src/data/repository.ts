@@ -12,6 +12,7 @@ import type { Demand, GuideAnswers, InterestProblem, InterestRole, RecruitRole, 
 import type { Outstanding, SectionId } from '@/features/recruitment/application';
 import type { JudgementDecision, JudgementProblem, ShareBasis } from '@/features/commission/finalPayout';
 import type { ChallanProblem as TdsChallanProblem, PanProblem as TdsPanProblem, Quarter as TdsQuarter, RateProblem as TdsRateProblem, TdsRole, TdsSection } from '@/features/tax/tds';
+import type { Kind as DisputeKind, Problem as DisputeProblem, Resolution as DisputeResolution, Sla as DisputeSla, State as DisputeState, Topic as DisputeTopic } from '@/features/payout/dispute';
 import type { QueryProblem as PayoutQueryProblem, Stage as PayoutStage, StatusFilter as PayoutStatusFilter } from '@/features/payout/history';
 import type { ContestInput, ContestProblem as ContestConfigProblem, EarlyEndProblem, PreviewCheck } from '@/features/rewards/contestConfig';
 import type { BadgeCategory, BadgeIcon, BadgeMetric, Progress as BadgeProgress, Rarity as BadgeRarity } from '@/features/rewards/badges';
@@ -6602,10 +6603,11 @@ export interface PayoutEventView {
   kind: 'earned' | 'cleared' | 'held' | 'released' | 'adjusted' | 'sent' | 'failed' | 'paid' | 'reversed' | 'forfeited' | 'asked' | 'answered';
   params: Record<string, string | number>;
 }
+export interface PayoutMessageView { at: string; from: 'partner' | 'admin' | 'system'; byName: string; text: string | null; key: string | null; params: Record<string, string | number>; progress: boolean }
 export interface PayoutQueryView {
   id: string;
   code: string;
-  messages: { at: string; from: 'partner' | 'admin'; byName: string; text: string }[];
+  messages: PayoutMessageView[];
   status: 'open' | 'answered' | 'resolved';
   dueAt: string | null;
 }
@@ -6633,6 +6635,70 @@ export interface PayoutStatementView {
   generatedAt: string;
 }
 export type { PayoutQueryProblem };
+
+/* ------------------------------------------------------------------ Payout disputes (170) */
+
+export interface PayoutDisputeRow {
+  id: string;
+  code: string;
+  entryId: string;
+  partnerId: string;
+  partnerName: string;
+  partnerRole: 'surveyor' | 'technician';
+  kind: DisputeKind;
+  topic: DisputeTopic | null;
+  state: DisputeState;
+  round: number;
+  repeat: { code: string; same: boolean } | null;
+  reasonKey: string;
+  entryAmount: number;
+  claimedAmount: number | null;
+  raisedAt: string;
+  /** When Admin has to have answered or resolved by (null once it is over). */
+  dueAt: string | null;
+  firstDueAt: string | null;
+  sla: DisputeSla;
+  resolution: DisputeResolution | null;
+  systemic: { ruleId: string | null; reviewed: boolean } | null;
+  lastWords: string;
+}
+export interface PayoutDisputeResolutionView { type: DisputeResolution; notes: string; at: string; byName: string; correction: number | null; correctionEntryId: string | null; correctionStage: string | null }
+export interface PayoutDisputeEarlier { id: string; code: string; round: number; raisedAt: string; text: string; resolution: DisputeResolution | null; resolvedAt: string | null; notes: string | null }
+export interface PayoutDisputeOther { entryId: string; partnerName: string; amount: number; earnedAt: string }
+export interface PayoutDisputeView {
+  row: Omit<PayoutDisputeRow, 'resolution'> & { resolution: PayoutDisputeResolutionView | null };
+  entry: PayoutHistoryEntry;
+  events: PayoutEventView[];
+  trace: { ruleId: string | null; version: number | null; inferred: boolean; effectiveFrom: string | null };
+  messages: PayoutMessageView[];
+  earlier: PayoutDisputeEarlier[];
+  escalation: { at: string; byName: string; reason: string } | null;
+  systemic: { ruleId: string | null; version: number | null; note: string; at: string; byName: string; others: number; othersAmount: number; othersList: PayoutDisputeOther[]; review: { outcome: 'rule_changed' | 'no_change'; note: string; at: string; byName: string } | null } | null;
+  /** When the partner will next hear (a long dispute is reported on, never left silent). */
+  nextUpdateBy: string | null;
+  /** The entry's current figure and the most a correction can take it to (what the partner said they expected, else the cap). */
+  adjust: { current: number; max: number; claimed: number | null } | null;
+  canAskAgain: boolean;
+  isOwner: boolean;
+}
+export interface PayoutDisputeFilter { state?: DisputeState | 'all' | 'active'; flag?: 'systemic' | 'repeat' | 'late' | 'all'; q?: string; entryId?: string; offset?: number; limit?: number }
+export interface PayoutDisputeBoard {
+  rows: PayoutDisputeRow[];
+  total: number;
+  totals: { active: number; open: number; inReview: number; escalated: number; late: number; systemic: number; reviewDue: number; resolved: number; medianDays: number | null };
+  /** Supplier payment disputes are decided in 117: counted here so the queue shows everything about pay. */
+  supplier: { open: number; overdue: number };
+  /** A supplier's own payment disputes (decided in 117), so the one screen shows a supplier everything they raised. Empty for everyone else. */
+  supplierRows: SupplierDisputeRow[];
+  patterns: { ruleId: string; count: number; people: number }[];
+  at: string;
+}
+export interface RaisePayoutDisputeInput { entryId: string; topic: DisputeTopic; text: string; claimedAmount?: number | null }
+export type PayoutDecisionInput =
+  | { type: 'explanation'; text: string }
+  | { type: 'adjustment'; to: number; reason: string; systemic?: { note: string } | null }
+  | { type: 'escalate'; reason: string };
+export type { DisputeProblem as PayoutDisputeProblem };
 
 /* ------------------------------------------------------------------ Contest configuration (167) */
 
@@ -7608,6 +7674,18 @@ export interface Repository {
   /** Admin: the questions asked about a payout, and the answer. */
   listPayoutQueries(entryId: string, adminId: string): Promise<PayoutQueryView[]>;
   answerPayoutQuery(queryId: string, text: string, adminId: string): Promise<PayoutQueryView>;
+
+  /* Payout disputes (170) — the partner's formal "something looks wrong" and Admin's queue, on the same record as 168's question */
+  getPayoutDisputes(filter: PayoutDisputeFilter, userId: string): Promise<PayoutDisputeBoard>;
+  getPayoutDispute(disputeId: string, userId: string): Promise<PayoutDisputeView>;
+  raisePayoutDispute(input: RaisePayoutDisputeInput, userId: string): Promise<PayoutDisputeView>;
+  /** Admin: explain, correct through the ledger, or escalate. */
+  decidePayoutDispute(disputeId: string, input: PayoutDecisionInput, adminId: string): Promise<PayoutDisputeView>;
+  /** Admin: a words-only "here is where it stands" for a long one. */
+  sendPayoutDisputeUpdate(disputeId: string, text: string, adminId: string): Promise<PayoutDisputeView>;
+  /** Admin: this points at the commission rules, not one partner. */
+  flagPayoutDisputeSystemic(disputeId: string, note: string, adminId: string): Promise<PayoutDisputeView>;
+  recordSystemicReview(disputeId: string, input: { outcome: 'rule_changed' | 'no_change'; note: string }, adminId: string): Promise<PayoutDisputeView>;
   // Contest configuration (167)
   getContestAdminBoard(adminId: string): Promise<ContestAdminBoard>;
   getContestAdminDetail(contestId: string, adminId: string): Promise<ContestAdminDetail>;

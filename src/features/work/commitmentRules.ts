@@ -2,6 +2,7 @@ import { ASSIGN_DUE, DISPUTE_DECIDE_DUE, REVERIFY_DUE } from '@/features/qc/snag
 import { ARRANGE_DUE, FOLLOWUP_DUE, SIGNOFF_DUE_PRESENT, SIGNOFF_DUE_REMOTE } from '@/features/qc/walkthrough';
 import { dueAtOf as sopDueAt } from '@/features/sop/rollout';
 import { dueAtOf as feedbackDueAt, REVIEW_DUE_DAYS as FEEDBACK_REVIEW_DAYS } from '@/features/training/feedback';
+import { REVIEW_DUE as PAYOUT_REVIEW_DUE } from '@/features/payout/dispute';
 import { QUERY_DUE as PAYOUT_QUERY_DUE, QUERY_REPLY_DAYS as PAYOUT_QUERY_REPLY_DAYS } from '@/features/payout/history';
 import { ATTENTION_DUE as PAYOUT_ATTENTION_DUE } from '@/features/commission/disbursement';
 import { APPROVE_DUE as PAYOUT_APPROVE_DUE, HOLD_REVIEW as PAYOUT_HOLD_REVIEW } from '@/features/commission/payoutApproval';
@@ -152,7 +153,7 @@ export interface CommitmentSources {
   /** SOP rollouts: each affected partner's own acknowledgement, and Admin's look at what is still open (159). */
   /** Serious training feedback Admin has not dealt with, and the standing look at the routine kind (160). */
   tds: { deposits: { month: string; tds: number; due: string; done: boolean }[]; returns: { fy: string; quarter: number; due: string; done: boolean }[] };
-  payoutQueries: { open: { id: string; code: string; partnerName: string; entryId: string; since: string }[]; answered: { id: string; code: string; userId: string; entryId: string; at: string }[] };
+  payoutQueries: { open: { id: string; code: string; partnerName: string; entryId: string; since: string }[]; answered: { id: string; code: string; userId: string; entryId: string; at: string; route?: string }[]; disputes: { id: string; code: string; partnerName: string; entryId: string; dueAt: string }[]; reviews: { id: string; code: string; since: string }[] };
   contests: { live: { contestId: string; name: string; endsAt: string; userId: string; closing: boolean }[]; results: { contestId: string; name: string; userId: string; rank: number; total: number; early: boolean; closedAt: string; open: boolean }[] };
   payoutDisbursements: { attention: { count: number; oldestAt: string | null } };
   payoutApprovals: { pending: { count: number; oldestAt: string | null }; held: { id: string; partnerName: string; since: string }[] };
@@ -2266,8 +2267,8 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
         dueAt: new Date(Date.parse(q.since) + PAYOUT_QUERY_DUE).toISOString(),
         state: 'open' as const,
         paused: false,
-        actionRoute: `/payout-tracker?entry=${q.entryId}&days=all`,
-        oversightRoute: `/payout-tracker?entry=${q.entryId}&days=all`,
+        actionRoute: `/payout-dispute?dispute=${q.id}`,
+        oversightRoute: `/payout-dispute?dispute=${q.id}`,
       }));
     },
   },
@@ -2288,8 +2289,52 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
         dueAt: new Date(Date.parse(q.at) + PAYOUT_QUERY_REPLY_DAYS * 86_400_000).toISOString(),
         state: Date.now() - Date.parse(q.at) < PAYOUT_QUERY_REPLY_DAYS * 86_400_000 ? ('open' as const) : ('cancelled' as const),
         paused: false,
-        actionRoute: `/payout-history?entry=${q.entryId}`,
-        oversightRoute: `/payout-tracker?entry=${q.entryId}&days=all`,
+        actionRoute: q.route ?? `/payout-history?entry=${q.entryId}`,
+        oversightRoute: `/payout-dispute?dispute=${q.id}`,
+      }));
+    },
+  },
+  {
+    // A partner said a payout looks wrong (170): Admin resolves it within the dispute target, or says it is escalated and keeps them told.
+    kind: 'payout_dispute_resolve',
+    nudgeBefore: days(1),
+    escalateAfter: days(1),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'payment',
+    collect(src) {
+      return src.payoutQueries.disputes.map((q) => ({
+        ...base('payout_dispute_resolve', 'application', q.id),
+        ownerUserId: adminId(src),
+        titleKey: 'work.title.payout_dispute_resolve',
+        titleParams: { partner: q.partnerName, code: q.code },
+        dueAt: q.dueAt,
+        state: 'open' as const,
+        paused: false,
+        actionRoute: `/payout-dispute?dispute=${q.id}`,
+        oversightRoute: `/payout-dispute?dispute=${q.id}`,
+      }));
+    },
+  },
+  {
+    // A dispute that pointed at the commission rules asks for a broader look, so other partners are not left short by the same cause (170).
+    kind: 'payout_rule_review',
+    nudgeBefore: days(2),
+    escalateAfter: days(3),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'payment',
+    collect(src) {
+      return src.payoutQueries.reviews.map((q) => ({
+        ...base('payout_rule_review', 'application', q.id),
+        ownerUserId: adminId(src),
+        titleKey: 'work.title.payout_rule_review',
+        titleParams: { code: q.code },
+        dueAt: new Date(Date.parse(q.since) + PAYOUT_REVIEW_DUE).toISOString(),
+        state: 'open' as const,
+        paused: false,
+        actionRoute: `/payout-dispute?dispute=${q.id}`,
+        oversightRoute: `/payout-dispute?dispute=${q.id}`,
       }));
     },
   },

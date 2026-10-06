@@ -4581,6 +4581,8 @@ export interface CommissionEntry {
   /** Set on a contest prize (167): which contest and the place that earned it. */
   contestId?: string;
   contestRank?: number;
+  /** Set on an entry that corrects another (170): the one it adds to, which is never edited. */
+  correctsId?: string;
   /** The commission rule (161) and the version of it that was in force when this was earned. Older entries carry none and are traced by their reason and date. */
   ruleId?: string;
   ruleVersion?: number;
@@ -4681,8 +4683,23 @@ export interface PayoutQuery {
   code: string;
   entryId: string;
   partnerId: string;
-  messages: { at: string; from: 'partner' | 'admin'; byName: string; text: string }[];
+  /** A message is the partner's words, Admin's, or the app's own (`system`: a translation key, never English). `progress` marks a "still working on it" that is not an answer. */
+  messages: { at: string; from: 'partner' | 'admin' | 'system'; byName: string; text?: string; key?: string; params?: Record<string, string | number>; progress?: boolean }[];
   resolvedAt?: string;
+  /** From 170. Absent means a plain question (168): the two-day answer and nothing more formal. */
+  kind?: 'question' | 'dispute';
+  topic?: 'amount_low' | 'missing' | 'wrong_rule' | 'held_long' | 'deduction' | 'other';
+  /** What the partner expected the entry to be. */
+  claimedAmount?: number;
+  /** 1 for a first ask; asking again after a resolution makes a new record with the next round and says which it follows. */
+  round?: number;
+  repeatOf?: { code: string; same: boolean };
+  firstReplyAt?: string;
+  escalation?: { at: string; byName: string; reason: string };
+  /** How it ended. No resolution on a resolved record means the partner withdrew it. */
+  resolution?: { type: 'adjustment' | 'explanation'; notes: string; at: string; byName: string; correctionEntryId?: string; correction?: number };
+  /** The dispute pointed at the commission rules, not one partner: Admin asked for a broader review (kept with the figures as they stood). */
+  systemic?: { ruleId: string | null; version: number | null; note: string; at: string; byName: string; others: number; othersAmount: number; review?: { outcome: 'rule_changed' | 'no_change'; note: string; at: string; byName: string } };
   isDemo: boolean;
 }
 
@@ -5006,7 +5023,7 @@ export type CommitmentKind =
   | 'exit_dispute_decide'
   | 'tier_review_due'
   | 'certification_renewal'
-  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return'
+  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'

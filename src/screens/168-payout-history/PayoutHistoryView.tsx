@@ -315,7 +315,7 @@ function Thread({ q, t }: { q: PayoutQueryView; t: T }) {
   return (
     <div className="stack gap-1" data-query={q.id} data-query-status={q.status}>
       <span className="row gap-2" style={{ alignItems: 'center' }}><span className="t-xs t-muted">{q.code}</span><Badge tone={q.status === 'answered' ? 'success' : q.status === 'resolved' ? 'neutral' : 'accent'}>{t(K.ask.status[q.status])}</Badge></span>
-      {q.messages.map((m, i) => <p key={`${m.at}:${i}`} className="t-sm" data-message={m.from}><strong>{m.from === 'partner' ? t(K.ask.from.partner) : t(K.ask.from.admin)}</strong> <span className="t-xs t-muted">{formatDate(m.at, i18n.language)}</span><br />{m.text}</p>)}
+      {q.messages.map((m, i) => <p key={`${m.at}:${i}`} className="t-sm" data-message={m.from}><strong>{m.from === 'partner' ? t(K.ask.from.partner) : m.from === 'system' ? t('payoutDispute.from.system') : t(K.ask.from.admin)}</strong> <span className="t-xs t-muted">{formatDate(m.at, i18n.language)}</span><br />{m.text ?? t(m.key ?? '', { ...m.params, date: m.params.date ? formatDate(String(m.params.date), i18n.language) : '', amount: typeof m.params.amount === 'number' ? formatINR(m.params.amount) : '', to: typeof m.params.to === 'number' ? formatINR(m.params.to) : '' })}</p>)}
     </div>
   );
 }
@@ -341,6 +341,7 @@ function Ask({ v, s, t }: { v: PayoutEntryDetail; s: PayoutHistoryState; t: T })
   return (
     <section className="stack gap-2" data-ask ref={ref}>
       {v.queries.length > 0 && <div className="stack gap-2" data-threads><h3 className="t-sm t-semibold">{t(K.ask.thread)}</h3>{v.queries.map((q) => <Thread key={q.id} q={q} t={t} />)}</div>}
+      {v.canAsk && <div><Button size="sm" variant="ghost" data-open-dispute onClick={() => s.goTo(`/payout-dispute?entry=${v.entry.id}`)}>{t('payoutDispute.link.open')}</Button></div>}
       {answered && <div><Button size="sm" variant="secondary" data-resolve onClick={() => void resolve(last.id)}>{t(K.ask.resolve)}</Button></div>}
       {!open && v.canAsk && (
         <div className="stack gap-2" data-ask-form>

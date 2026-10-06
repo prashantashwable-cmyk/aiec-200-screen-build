@@ -156,7 +156,7 @@ export function CommissionTrackerView() {
                 className="tappable t-xs t-accent row gap-1 mt-1"
                 style={{ minHeight: 32 }}
                 data-ask-about={entry.id}
-                onClick={() => navigate(`/payout-history?entry=${entry.id}&ask=1`)}
+                onClick={() => navigate(`/payout-dispute?entry=${entry.id}`)}
               >
                 <ChatCircleText size={13} />
                 {t(K.raiseQuery)}

@@ -330,7 +330,8 @@ function Questions({ s, t, lang }: { s: PayoutTrackerState; t: T; lang: string }
       {s.queries.map((q) => (
         <div key={q.id} className="stack gap-1" data-query={q.id} data-query-status={q.status}>
           <span className="row gap-2" style={{ alignItems: 'center' }}><span className="t-xs t-muted">{q.code}</span><Badge tone={q.status === 'open' ? 'accent' : q.status === 'answered' ? 'success' : 'neutral'}>{t(K.detail.query.status[q.status])}</Badge></span>
-          {q.messages.map((m, i) => <p key={`${m.at}:${i}`} className="t-sm"><strong>{m.from === 'partner' ? t(K.detail.query.from.partner) : t(K.detail.query.from.admin)}</strong> <span className="t-xs t-muted">{formatDate(m.at, lang)}</span><br />{m.text}</p>)}
+          {q.messages.map((m, i) => <p key={`${m.at}:${i}`} className="t-sm"><strong>{m.from === 'partner' ? t(K.detail.query.from.partner) : m.from === 'system' ? t('payoutDispute.from.system') : t(K.detail.query.from.admin)}</strong> <span className="t-xs t-muted">{formatDate(m.at, lang)}</span><br />{m.text ?? t(m.key ?? '', { ...m.params, date: m.params.date ? formatDate(String(m.params.date), lang) : '', amount: typeof m.params.amount === 'number' ? formatINR(m.params.amount) : '', to: typeof m.params.to === 'number' ? formatINR(m.params.to) : '' })}</p>)}
+          <div><Button size="sm" variant="ghost" data-open-dispute={q.id} onClick={() => s.goTo(`/payout-dispute?dispute=${q.id}`)}>{t('payoutDispute.link.open')}</Button></div>
         </div>
       ))}
       {open && (
