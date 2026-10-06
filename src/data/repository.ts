@@ -11,6 +11,7 @@ import type { CompleteInput, DecisionSignal, Phase as InterviewPhase } from '@/f
 import type { Demand, GuideAnswers, InterestProblem, InterestRole, RecruitRole, RecruitSource } from '@/features/recruitment/interest';
 import type { Outstanding, SectionId } from '@/features/recruitment/application';
 import type { JudgementDecision, JudgementProblem, ShareBasis } from '@/features/commission/finalPayout';
+import type { QueryProblem as PayoutQueryProblem, Stage as PayoutStage, StatusFilter as PayoutStatusFilter } from '@/features/payout/history';
 import type { ContestInput, ContestProblem as ContestConfigProblem, EarlyEndProblem, PreviewCheck } from '@/features/rewards/contestConfig';
 import type { BadgeCategory, BadgeIcon, BadgeMetric, Progress as BadgeProgress, Rarity as BadgeRarity } from '@/features/rewards/badges';
 import type { ContestMetric, ContestPhase } from '@/features/rewards/standings';
@@ -6424,6 +6425,106 @@ export interface ContestLeaderboardView {
 }
 export type ContestProblem = 'not_found' | 'forbidden';
 
+/* ------------------------------------------------------------------ Payout history & statements (168) */
+
+export interface PayoutHistoryFilter {
+  q?: string;
+  /** yyyy-mm-dd, on the day it was earned. */
+  from?: string;
+  to?: string;
+  category?: PayoutCategory | 'all';
+  status?: PayoutStatusFilter;
+  offset?: number;
+  limit?: number;
+}
+export interface PayoutHistoryEntry {
+  id: string;
+  source: 'commission' | 'supplier';
+  reasonKey: string;
+  category: PayoutCategory | 'supply';
+  amount: number;
+  stage: PayoutStage;
+  earnedAt: string;
+  paidAt: string | null;
+  dealCode: string | null;
+  jobCode: string | null;
+  holdKind: PayoutHoldKind | null;
+  /** The transfer failed because the partner's details need putting right. */
+  needsDetails: boolean;
+  /** The amount was changed after it was recorded: what it was and what it is. */
+  adjusted: { from: number; to: number } | null;
+  reversal: { at: string; reason: string; wasPaid: boolean } | null;
+  payment: { code: string; method: 'bank_transfer' | 'upi'; destination: string; completedAt: string; bankReference: string } | null;
+  openQuery: boolean;
+  /** Where a question about it is asked: this screen for a commission entry, the supplier payment screen for a supplier's. */
+  route: string | null;
+}
+export interface PayoutHistoryTotals {
+  /** What is final: paid, plus what is cleared and on its way. */
+  earned: PayoutMoney;
+  paid: PayoutMoney;
+  inProgress: PayoutMoney;
+  /** A forecast, not yet final. */
+  notFinal: PayoutMoney;
+  /** Taken back or forfeited: never silently removed from a total. */
+  reversed: PayoutMoney;
+  firstEarnedAt: string | null;
+}
+export interface PayoutStatementPeriod {
+  id: string;
+  kind: 'month' | 'fy' | 'all';
+  from: string;
+  to: string;
+  earned: number;
+  paid: number;
+  count: number;
+}
+export interface PayoutHistoryView {
+  person: { name: string; role: 'surveyor' | 'technician' | 'supplier' };
+  totals: PayoutHistoryTotals;
+  periods: PayoutStatementPeriod[];
+  rows: PayoutHistoryEntry[];
+  total: number;
+  filteredAmount: number;
+  at: string;
+}
+export interface PayoutEventView {
+  at: string;
+  kind: 'earned' | 'cleared' | 'held' | 'released' | 'adjusted' | 'sent' | 'failed' | 'paid' | 'reversed' | 'forfeited' | 'asked' | 'answered';
+  params: Record<string, string | number>;
+}
+export interface PayoutQueryView {
+  id: string;
+  code: string;
+  messages: { at: string; from: 'partner' | 'admin'; byName: string; text: string }[];
+  status: 'open' | 'answered' | 'resolved';
+  dueAt: string | null;
+}
+export interface PayoutEntryDetail {
+  entry: PayoutHistoryEntry;
+  events: PayoutEventView[];
+  queries: PayoutQueryView[];
+  canAsk: boolean;
+}
+export interface PayoutStatementLine {
+  entryId: string;
+  date: string;
+  reasonKey: string;
+  type: 'earned' | 'paid' | 'reversed';
+  amount: number;
+  stage: PayoutStage;
+  reference: string | null;
+}
+export interface PayoutStatementView {
+  period: PayoutStatementPeriod;
+  person: { name: string; role: 'surveyor' | 'technician' | 'supplier'; id: string };
+  number: string;
+  lines: PayoutStatementLine[];
+  totals: { earned: number; paid: number; reversed: number; outstanding: number };
+  generatedAt: string;
+}
+export type { PayoutQueryProblem };
+
 /* ------------------------------------------------------------------ Contest configuration (167) */
 
 export interface ContestEventView { at: string; kind: string; byName: string; detail: string | null }
@@ -7378,6 +7479,16 @@ export interface Repository {
   handleTrainingFeedback(feedbackId: string, input: { status: FeedbackStatusName; note: string; addressedInVersion?: number }, adminId: string): Promise<FeedbackItemView>;
   /** Hides (or restores) a comment that is abusive or not constructive; its ratings keep counting. */
   moderateTrainingFeedback(feedbackId: string, input: { hide: boolean; reason: string }, adminId: string): Promise<FeedbackItemView>;
+  // Payout history & statements (168)
+  getPayoutHistory(filter: PayoutHistoryFilter, userId: string): Promise<PayoutHistoryView>;
+  getPayoutEntryDetail(entryId: string, userId: string): Promise<PayoutEntryDetail>;
+  getPayoutStatement(periodId: string, userId: string): Promise<PayoutStatementView>;
+  /** A partner's question about one of their own payouts; a follow-up when an answer has been given. */
+  raisePayoutQuery(entryId: string, text: string, userId: string): Promise<PayoutQueryView>;
+  resolvePayoutQuery(queryId: string, userId: string): Promise<PayoutQueryView>;
+  /** Admin: the questions asked about a payout, and the answer. */
+  listPayoutQueries(entryId: string, adminId: string): Promise<PayoutQueryView[]>;
+  answerPayoutQuery(queryId: string, text: string, adminId: string): Promise<PayoutQueryView>;
   // Contest configuration (167)
   getContestAdminBoard(adminId: string): Promise<ContestAdminBoard>;
   getContestAdminDetail(contestId: string, adminId: string): Promise<ContestAdminDetail>;

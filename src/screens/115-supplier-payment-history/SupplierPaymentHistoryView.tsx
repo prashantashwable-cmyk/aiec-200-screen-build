@@ -52,6 +52,7 @@ const cell = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
  */
 export function SupplierPaymentHistoryView() {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
   const toast = useToast();
   const s = useSupplierPaymentHistory();
   const lang = i18n.language;
@@ -121,9 +122,12 @@ export function SupplierPaymentHistoryView() {
         title={t(K.title)}
         subtitle={t(s.isAdmin ? K.subtitle : K.subtitleSupplier)}
         action={
-          <Button size="sm" variant="secondary" disabled={s.exporting || pg.matched === 0} onClick={() => void exportCsv()}>
-            <DownloadSimple size={14} aria-hidden="true" /> {t(K.exportAction.label)}
-          </Button>
+          <span className="row gap-2">
+            {!s.isAdmin && <Button size="sm" variant="ghost" data-open-statements onClick={() => navigate('/payout-history')}>{t('payoutHistory.link.open')}</Button>}
+            <Button size="sm" variant="secondary" disabled={s.exporting || pg.matched === 0} onClick={() => void exportCsv()}>
+              <DownloadSimple size={14} aria-hidden="true" /> {t(K.exportAction.label)}
+            </Button>
+          </span>
         }
       />
 

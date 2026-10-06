@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useData } from '@/data/DataProvider';
 import { useSession } from '@/session/SessionProvider';
-import type { PayoutRowView, PayoutTrackerFilter, PayoutTrackerView } from '@/data/repository';
+import type { PayoutQueryView, PayoutRowView, PayoutTrackerFilter, PayoutTrackerView } from '@/data/repository';
 import { csvCell } from '@/features/commission/payoutTracker';
 import { CATEGORIES, PAGE, PERIODS, SORTS, STATUSES } from './payout-tracker.types';
 import type { PayoutCategory, PayoutStatus, PeriodId, Sort } from './payout-tracker.types';
@@ -39,6 +39,7 @@ export function usePayoutTracker() {
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [refreshing, setRefreshing] = useState(false);
   const [fetched, setFetched] = useState<PayoutRowView | null>(null);
+  const [queries, setQueries] = useState<PayoutQueryView[]>([]);
   const alive = useRef(true);
   const seq = useRef(0);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
@@ -69,8 +70,15 @@ export function usePayoutTracker() {
     void repository.getPayoutTracker({ q: entry, limit: 5, from: undefined }, user.id).then((v) => { if (live) setFetched(v.rows.find((r) => r.id === entry) ?? null); }).catch(() => undefined);
     return () => { live = false; };
   }, [repository, user, entry, inPage]);
+  // A partner's questions about the open payout (168), so Admin can answer them from here.
+  const loadQueries = useCallback(async () => {
+    if (!entry || !user) { setQueries([]); return; }
+    try { const v = await repository.listPayoutQueries(entry, user.id); if (alive.current) setQueries(v); } catch { if (alive.current) setQueries([]); }
+  }, [repository, user, entry]);
+  useEffect(() => { void loadQueries(); }, [loadQueries]);
   const patch = (fn: (n: URLSearchParams) => void) => setParams((prev) => { const n = new URLSearchParams(prev); fn(n); return n; }, { replace: true });
   return {
+    queries, answerQuery: async (id: string, text: string): Promise<boolean> => { if (!user) return false; try { await repository.answerPayoutQuery(id, text, user.id); await loadQueries(); return true; } catch { await loadQueries(); return false; } },
     state, data, entryRow: inPage ?? fetched, filter, status, category, partnerId, sort, period, custom, from, to, entry, qInput, refreshing, pages,
     setQInput,
     setStatus: (s: PayoutStatus | null) => patch((n) => { if (s) n.set('status', s); else n.delete('status'); }),

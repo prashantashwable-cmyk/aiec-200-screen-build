@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArrowDown, ArrowUp, ArrowsClockwise, DownloadSimple, Minus, ShieldWarning } from '@phosphor-icons/react';
-import { Badge, Button, Card, Chip, EmptyState, ErrorState, Field, Input, LoadingState, ProgressBar, Screen, ScreenHeader, Select, Sheet, formatDate, formatINR, formatINRCompact, useToast } from '@/design-system';
+import { Badge, Button, TextArea, Card, Chip, EmptyState, ErrorState, Field, Input, LoadingState, ProgressBar, Screen, ScreenHeader, Select, Sheet, formatDate, formatINR, formatINRCompact, useToast } from '@/design-system';
 import type { BadgeTone } from '@/design-system';
 import type { PayoutAttentionItem, PayoutCategoryView, PayoutRowView, PayoutTrackerView } from '@/data/repository';
 import type { Trend } from '@/features/commission/payoutTracker';
@@ -291,6 +291,7 @@ function Detail({ row, s, t }: { row: PayoutRowView | null; s: PayoutTrackerStat
               {row.rule.inferred && <span className="t-xs t-muted">{t(K.detail.ruleInferred)}</span>}
             </div>
           ) : <p className="t-xs t-muted" data-no-rule>{t(K.detail.noRule)}</p>}
+          <Questions s={s} t={t} lang={lang} />
           {row.held && <p className="t-sm" data-held style={{ borderLeft: '3px solid var(--color-warning)', paddingLeft: 'var(--space-3)' }}>{t(K.detail.heldBody)}</p>}
           <Footer>
             {row.rule && <Button size="sm" variant="secondary" data-open-rule onClick={() => s.goTo(`/commission-rules?rule=${(row.rule as { id: string }).id}`)}>{t(K.detail.openRule)}</Button>}
@@ -305,4 +306,40 @@ function Detail({ row, s, t }: { row: PayoutRowView | null; s: PayoutTrackerStat
 
 function Fact({ label, value }: { label: string; value: string }) {
   return <div className="row between" style={{ gap: 'var(--space-3)' }}><dt className="t-xs t-muted">{label}</dt><dd className="t-sm" style={{ margin: 0, textAlign: 'right', overflowWrap: 'anywhere' }}>{value}</dd></div>;
+}
+
+/** A partner's questions about this payout (168): Admin answers here, and the partner reads it on their own history. */
+function Questions({ s, t, lang }: { s: PayoutTrackerState; t: T; lang: string }) {
+  const toast = useToast();
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(false);
+  if (s.queries.length === 0) return null;
+  const open = s.queries.find((q) => q.status === 'open');
+  const send = async () => {
+    if (!open) return;
+    setBusy(true); setError(false);
+    const ok = await s.answerQuery(open.id, text);
+    setBusy(false);
+    if (!ok) { setError(true); return; }
+    setText(''); toast.push(t(K.detail.query.sent));
+  };
+  return (
+    <section className="stack gap-2" data-queries>
+      <h3 className="t-sm t-semibold">{t(K.detail.query.heading)}</h3>
+      {s.queries.map((q) => (
+        <div key={q.id} className="stack gap-1" data-query={q.id} data-query-status={q.status}>
+          <span className="row gap-2" style={{ alignItems: 'center' }}><span className="t-xs t-muted">{q.code}</span><Badge tone={q.status === 'open' ? 'accent' : q.status === 'answered' ? 'success' : 'neutral'}>{t(K.detail.query.status[q.status])}</Badge></span>
+          {q.messages.map((m, i) => <p key={`${m.at}:${i}`} className="t-sm"><strong>{m.from === 'partner' ? t(K.detail.query.from.partner) : t(K.detail.query.from.admin)}</strong> <span className="t-xs t-muted">{formatDate(m.at, lang)}</span><br />{m.text}</p>)}
+        </div>
+      ))}
+      {open && (
+        <div className="stack gap-2" data-answer-form>
+          <Field label={t(K.detail.query.answer)} hint={t(K.detail.query.hint, { min: 15 })}>{(p) => <TextArea id={p.id} rows={3} value={text} onChange={(e) => setText(e.target.value)} data-f="answer" />}</Field>
+          {error && <p className="t-sm" role="alert" data-error style={{ color: 'var(--color-error)' }}>{t(K.detail.query.problem, { min: 15 })}</p>}
+          <div><Button size="sm" data-answer-send disabled={busy || text.replace(/[^\p{L}\p{N}]/gu, '').length < 15} onClick={() => void send()}>{t(K.detail.query.send)}</Button></div>
+        </div>
+      )}
+    </section>
+  );
 }

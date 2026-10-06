@@ -2893,7 +2893,7 @@ export const seedCommissions: CommissionEntry[] = [
   { id: 'c-10', userId: 'u-srv-2', leadId: 'l-17', reasonKey: 'commission.reason.siteVisitVerified', amount: 500, status: 'approved', earnedAt: daysAgo(1), isDemo: true },
   { id: 'c-11', userId: 'u-srv-3', leadId: 'l-3', dealId: 'dl-3', reasonKey: 'commission.reason.leadConverted', amount: 61_800, status: 'projected', earnedAt: daysAgo(18), isDemo: true },
   { id: 'c-12', userId: 'u-srv-3', leadId: 'l-16', reasonKey: 'commission.reason.leadQualified', amount: 2_000, status: 'approved', earnedAt: daysAgo(5), isDemo: true },
-  { id: 'c-13', userId: 'u-srv-4', leadId: 'l-13', reasonKey: 'commission.reason.leadConverted', amount: 23_100, status: 'forfeited', earnedAt: daysAgo(32), isDemo: true },
+  { id: 'c-13', userId: 'u-srv-4', leadId: 'l-13', reasonKey: 'commission.reason.leadConverted', amount: 23_100, status: 'forfeited', earnedAt: daysAgo(32), reversal: { at: daysAgo(18), reason: 'The deal fell through after the stage was recorded, so the amount was taken back.', wasPaid: false }, isDemo: true },
   { id: 'c-14', userId: 'u-srv-4', leadId: 'l-9', reasonKey: 'commission.reason.leadQualified', amount: 2_000, status: 'projected', earnedAt: daysAgo(6), isDemo: true },
 ];
 

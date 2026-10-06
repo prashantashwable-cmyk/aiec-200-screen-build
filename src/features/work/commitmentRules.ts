@@ -2,6 +2,7 @@ import { ASSIGN_DUE, DISPUTE_DECIDE_DUE, REVERIFY_DUE } from '@/features/qc/snag
 import { ARRANGE_DUE, FOLLOWUP_DUE, SIGNOFF_DUE_PRESENT, SIGNOFF_DUE_REMOTE } from '@/features/qc/walkthrough';
 import { dueAtOf as sopDueAt } from '@/features/sop/rollout';
 import { dueAtOf as feedbackDueAt, REVIEW_DUE_DAYS as FEEDBACK_REVIEW_DAYS } from '@/features/training/feedback';
+import { QUERY_DUE as PAYOUT_QUERY_DUE, QUERY_REPLY_DAYS as PAYOUT_QUERY_REPLY_DAYS } from '@/features/payout/history';
 import { ATTENTION_DUE as PAYOUT_ATTENTION_DUE } from '@/features/commission/disbursement';
 import { APPROVE_DUE as PAYOUT_APPROVE_DUE, HOLD_REVIEW as PAYOUT_HOLD_REVIEW } from '@/features/commission/payoutApproval';
 import type { SopRollout, TrainingFeedback, TrainingAssignment, PartnerApplication, PartnerExit, TierDispute, TierReview, WarrantyRegistration, HandoverWalkthrough, ReworkRequest,
@@ -150,6 +151,7 @@ export interface CommitmentSources {
   complianceReview: { dueAt: string; cycle: string; done: boolean };
   /** SOP rollouts: each affected partner's own acknowledgement, and Admin's look at what is still open (159). */
   /** Serious training feedback Admin has not dealt with, and the standing look at the routine kind (160). */
+  payoutQueries: { open: { id: string; code: string; partnerName: string; entryId: string; since: string }[]; answered: { id: string; code: string; userId: string; entryId: string; at: string }[] };
   contests: { live: { contestId: string; name: string; endsAt: string; userId: string; closing: boolean }[]; results: { contestId: string; name: string; userId: string; rank: number; total: number; early: boolean; closedAt: string; open: boolean }[] };
   payoutDisbursements: { attention: { count: number; oldestAt: string | null } };
   payoutApprovals: { pending: { count: number; oldestAt: string | null }; held: { id: string; partnerName: string; since: string }[] };
@@ -2243,6 +2245,50 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
         paused: false,
         actionRoute: `/rewards-leaderboard?contest=${x.contestId}`,
         oversightRoute: '/contest-setup',
+      }));
+    },
+  },
+  {
+    // A partner asked about one of their own payouts: Admin answers within the set time (168).
+    kind: 'payout_query_answer',
+    nudgeBefore: days(1),
+    escalateAfter: days(2),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'payment',
+    collect(src) {
+      return src.payoutQueries.open.map((q) => ({
+        ...base('payout_query_answer', 'application', q.id),
+        ownerUserId: adminId(src),
+        titleKey: 'work.title.payout_query_answer',
+        titleParams: { partner: q.partnerName, code: q.code },
+        dueAt: new Date(Date.parse(q.since) + PAYOUT_QUERY_DUE).toISOString(),
+        state: 'open' as const,
+        paused: false,
+        actionRoute: `/payout-tracker?entry=${q.entryId}&days=all`,
+        oversightRoute: `/payout-tracker?entry=${q.entryId}&days=all`,
+      }));
+    },
+  },
+  {
+    // The answer waits on the partner's own list for a week: a heads-up, never work (168).
+    kind: 'payout_query_reply',
+    nudgeBefore: days(30),
+    escalateAfter: days(365),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'payment',
+    collect(src) {
+      return src.payoutQueries.answered.map((q) => ({
+        ...base('payout_query_reply', 'application', `${q.id}:${q.at}`),
+        ownerUserId: q.userId,
+        titleKey: 'work.title.payout_query_reply',
+        titleParams: { code: q.code },
+        dueAt: new Date(Date.parse(q.at) + PAYOUT_QUERY_REPLY_DAYS * 86_400_000).toISOString(),
+        state: Date.now() - Date.parse(q.at) < PAYOUT_QUERY_REPLY_DAYS * 86_400_000 ? ('open' as const) : ('cancelled' as const),
+        paused: false,
+        actionRoute: `/payout-history?entry=${q.entryId}`,
+        oversightRoute: `/payout-tracker?entry=${q.entryId}&days=all`,
       }));
     },
   },

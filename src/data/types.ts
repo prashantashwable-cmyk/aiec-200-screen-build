@@ -4576,6 +4576,8 @@ export interface CommissionEntry {
   payoutRole?: 'surveyor' | 'sales' | 'technician_lead' | 'technician' | 'qc_inspector';
   /** The judgement (140) that is holding this entry back: it stays `projected` until Admin releases it. */
   heldBy?: string;
+  /** An entry that was taken back after it was recorded (a deal fell through): never deleted, so every figure that moved can say why. */
+  reversal?: { at: string; reason: string; wasPaid: boolean };
   /** Set on a contest prize (167): which contest and the place that earned it. */
   contestId?: string;
   contestRank?: number;
@@ -4667,6 +4669,20 @@ export interface EarnedBadge {
   /** The criteria version in force when it was earned. */
   version: number;
   earnedAt: string;
+  isDemo: boolean;
+}
+
+/**
+ * A partner's question about one of their own payouts (168). A thread of short messages (theirs and Admin's), read by both; Admin is asked to answer within a set time, and the
+ * partner says when it is settled. Nothing is deleted.
+ */
+export interface PayoutQuery {
+  id: string;
+  code: string;
+  entryId: string;
+  partnerId: string;
+  messages: { at: string; from: 'partner' | 'admin'; byName: string; text: string }[];
+  resolvedAt?: string;
   isDemo: boolean;
 }
 
@@ -4908,7 +4924,7 @@ export type CommitmentKind =
   | 'exit_dispute_decide'
   | 'tier_review_due'
   | 'certification_renewal'
-  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result'
+  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'

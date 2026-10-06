@@ -159,6 +159,23 @@ export const PAYOUT_KEYS = {
     heldBody: 'payoutTracker.detail.heldBody',
     openRule: 'payoutTracker.detail.openRule',
     openCertificate: 'payoutTracker.detail.openCertificate',
+    query: {
+      heading: 'payoutTracker.detail.query.heading',
+      from: {
+        partner: 'payoutTracker.detail.query.from.partner',
+        admin: 'payoutTracker.detail.query.from.admin',
+      },
+      status: {
+        open: 'payoutTracker.detail.query.status.open',
+        answered: 'payoutTracker.detail.query.status.answered',
+        resolved: 'payoutTracker.detail.query.status.resolved',
+      },
+      answer: 'payoutTracker.detail.query.answer',
+      hint: 'payoutTracker.detail.query.hint',
+      send: 'payoutTracker.detail.query.send',
+      sent: 'payoutTracker.detail.query.sent',
+      problem: 'payoutTracker.detail.query.problem',
+    },
     openPartner: 'payoutTracker.detail.openPartner',
   },
   placeholder: 'payoutTracker.placeholder',

@@ -268,6 +268,16 @@ import type {
   PayoutBatchResult,
   PayoutDecisionView,
   PayoutQueueRow,
+  PayoutMoney,
+  PayoutEntryDetail,
+  PayoutEventView,
+  PayoutHistoryEntry,
+  PayoutHistoryFilter,
+  PayoutHistoryView,
+  PayoutQueryView,
+  PayoutStatementLine,
+  PayoutStatementPeriod,
+  PayoutStatementView,
   ContestAdminBoard,
   ContestAdminDetail,
   ContestAdminRow,
@@ -674,6 +684,7 @@ import type {
   CommissionRule,
   CommissionRuleVersion,
   PayoutDecision,
+  PayoutQuery,
   EarnedBadge,
   LeaderboardExclusion,
   ContestMovement,
@@ -872,6 +883,8 @@ import type { HoldKind as PaHoldKind, PayoutFlag as PaFlag } from '@/features/co
 import { ATTENTION_DUE as DB_ATTENTION_DUE, NOTE_MIN as DB_NOTE_MIN, RUNS_SHOWN as DB_RUNS_SHOWN, SETTLE_MS as DB_SETTLE_MS, UPI_LIMIT as DB_UPI_LIMIT, detailsProblem as dbDetailsProblem, groupTransfers as dbGroupTransfers, hasBank as dbHasBank, hasUpi as dbHasUpi, lastSlot as dbLastSlot, maskAccount as dbMask, methodFor as dbMethodFor, needsDetails as dbNeedsDetails, nextSlot as dbNextSlot, railOutcome as dbRailOutcome, retryProblem as dbRetryProblem, scheduleProblem as dbScheduleProblem } from '@/features/commission/disbursement';
 import { CORRECTION_NOTE_MS, MOVEMENTS_SHOWN, closingSoon, gapToAbove, phaseOf, rankAll, shortName, tiedOnNumber, toReachRank } from '@/features/rewards/standings';
 import type { Ranked } from '@/features/rewards/standings';
+import { MONTHS_OFFERED as PH_MONTHS, PAGE as PH_PAGE, QUERY_DUE as PH_QUERY_DUE, answerProblem as phAnswerProblem, countsAsEarned as phCountsAsEarned, filterOf as phFilterOf, fyOf as phFyOf, inPeriod as phInPeriod, monthIdOf as phMonthId, periodOf as phPeriodOf, queryProblem as phQueryProblem, stageOf as phStageOf } from '@/features/payout/history';
+import type { Stage as PayoutStage } from '@/features/payout/history';
 import { MAX_CASH as CF_MAX_CASH, MAX_DAYS as CF_MAX_DAYS, MAX_PLACES as CF_MAX_PLACES, MAX_TENURE_DAYS as CF_MAX_TENURE, MIN_DAYS as CF_MIN_DAYS, END_REASON_MIN as CF_END_REASON_MIN, PREVIEW_SHOWN as CF_PREVIEW_SHOWN, START_NOW_SLACK as CF_START_NOW_SLACK, contestProblem as cfContestProblem, earlyEndProblem as cfEarlyEndProblem, previewChecks as cfPreviewChecks } from '@/features/rewards/contestConfig';
 import type { ContestInput } from '@/features/rewards/contestConfig';
 import type { ContestPhase } from '@/features/rewards/standings';
@@ -2589,6 +2602,7 @@ function commitmentSources(now: number): CommitmentSources {
     payoutApprovals: payoutApprovalSignals(Date.now()),
     payoutDisbursements: payoutDisbursementSignals(),
     contests: contestSignals(Date.now()),
+    payoutQueries: payoutQuerySignals(),
     exits: exitSignals(),
     handoverReviews: handoverSignals().reviews,
     qcMechChecks,
@@ -9765,6 +9779,183 @@ function contestSignals(now: number): { live: { contestId: string; name: string;
     }
   }
   return { live, results };
+}
+
+
+/* ------------------------------------------------------------------ Payout history & statements (168) */
+
+const payoutQueries: PayoutQuery[] = [];
+let payoutQueryCounter = 0;
+const PH_ALERT = 'payoutHistory.alert.query';
+
+const phQueryStatus = (q: PayoutQuery): PayoutQueryView['status'] => (q.resolvedAt ? 'resolved' : q.messages[q.messages.length - 1].from === 'partner' ? 'open' : 'answered');
+const phQueryView = (q: PayoutQuery): PayoutQueryView => {
+  const status = phQueryStatus(q);
+  const last = q.messages[q.messages.length - 1];
+  return { id: q.id, code: q.code, messages: q.messages.map((m) => ({ ...m })), status, dueAt: status === 'open' ? new Date(Date.parse(last.at) + PH_QUERY_DUE).toISOString() : null };
+};
+
+/** The judgement (140) changes that touched an entry, oldest first. */
+const phJudgementsOf = (entryId: string): { at: string; decision: PayoutJudgement['decision']; issue: string; before: number; after: number }[] =>
+  handoverCompletions.flatMap((c) => c.judgements).flatMap((j) => j.changes.filter((x) => x.commissionId === entryId).map((x) => ({ at: j.at, decision: j.decision, issue: j.issue, before: x.before.amount, after: x.after.amount }))).sort((a, b) => (a.at < b.at ? -1 : 1));
+
+function phEntryOf(e: CommissionEntry): PayoutHistoryEntry {
+  const disb = e.disbursement ? byId(payoutDisbursements, e.disbursement.id) : null;
+  const approvalHeld = e.status === 'approved' && e.payoutApproval?.status === 'held';
+  const stage = phStageOf({ status: e.status, reversed: !!e.reversal, held: approvalHeld || !!e.heldBy, cleared: paStateOf({ status: e.status, amount: e.amount, approval: e.payoutApproval }) === 'cleared', disbursement: (e.disbursement?.status ?? null) as 'initiated' | 'processing' | 'completed' | 'failed' | 'cancelled' | null });
+  const adj = phJudgementsOf(e.id).filter((j) => j.decision === 'adjust' && j.before !== j.after).pop();
+  const done = disb && disb.status === 'completed' ? disb : null;
+  const r = ptRowOf(e);
+  return {
+    id: e.id, source: 'commission', reasonKey: e.reasonKey, category: r.category, amount: e.amount, stage, earnedAt: e.earnedAt, paidAt: e.paidAt ?? null, dealCode: r.dealCode, jobCode: r.jobCode,
+    holdKind: approvalHeld ? ((e.payoutApproval?.holdKind ?? 'other') as PaHoldKind) : null,
+    needsDetails: !!disb && disb.status === 'failed' && dbNeedsDetails(disb.failure as DbFailure | undefined), adjusted: adj ? { from: adj.before, to: adj.after } : null,
+    reversal: e.reversal ? { ...e.reversal } : null,
+    payment: done ? { code: done.code, method: done.method, destination: done.destination, completedAt: done.completedAt as string, bankReference: done.bankReference ?? '' } : null,
+    openQuery: payoutQueries.some((q) => q.entryId === e.id && phQueryStatus(q) === 'open'), route: null,
+  };
+}
+
+/** A supplier's own payments, in the same shape (their history proper stays on 115). */
+function phSupplierEntries(supplierId: string): PayoutHistoryEntry[] {
+  return supplierPayments.filter((p) => p.supplierId === supplierId).map((p): PayoutHistoryEntry => {
+    const adj = supplierPaymentAdjustments.filter((a) => a.paymentId === p.id).reduce((n, a) => n + adjustmentDelta(a), 0);
+    const stage: PayoutStage = p.status === 'executed' ? 'paid' : p.status === 'held' ? 'held' : p.status === 'approved' ? 'cleared' : 'approved';
+    const po = byId(supplierPurchaseOrders, p.poId);
+    return {
+      id: p.id, source: 'supplier', reasonKey: `supplierPayment.part.${p.part}`, category: 'supply', amount: p.amount + adj, stage, earnedAt: p.triggeredAt, paidAt: p.executedAt ?? null, dealCode: po ? (byId(deals, po.dealId)?.code ?? null) : null, jobCode: null, holdKind: null, needsDetails: false,
+      adjusted: adj !== 0 ? { from: p.amount, to: p.amount + adj } : null, reversal: null,
+      payment: p.executedAt ? { code: p.code, method: 'bank_transfer', destination: '', completedAt: p.executedAt, bankReference: p.bankReference ?? '' } : null, openQuery: supplierPaymentQueries.some((q) => q.paymentId === p.id), route: `/supplier-payment-history?payment=${p.id}`,
+    };
+  });
+}
+
+function phWho(userId: string): { name: string; role: 'surveyor' | 'technician' | 'supplier'; supplierId: string | null } {
+  const u = byId(users, userId);
+  if (!u || (u.role !== 'surveyor' && u.role !== 'technician' && u.role !== 'supplier')) throw new RepositoryError('forbidden');
+  if (u.role === 'supplier') {
+    const own = suppliers.find((sp) => supplierUserFor(sp)?.id === u.id);
+    if (!own) throw new RepositoryError('forbidden');
+    return { name: own.name, role: 'supplier', supplierId: own.id };
+  }
+  return { name: u.name, role: u.role, supplierId: null };
+}
+const phAllOf = (userId: string): PayoutHistoryEntry[] => {
+  const w = phWho(userId);
+  return w.supplierId ? phSupplierEntries(w.supplierId) : commissions.filter((e) => e.userId === userId).map(phEntryOf);
+};
+
+const phMoney = (xs: PayoutHistoryEntry[]): PayoutMoney => ({ count: xs.length, amount: xs.reduce((a, e) => a + e.amount, 0) });
+const phDay = (iso: string): string => { const d = new Date(iso); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+
+function phHistoryOf(filter: PayoutHistoryFilter, userId: string, now: number): PayoutHistoryView {
+  const w = phWho(userId);
+  syncDisbursements(now);
+  const all = phAllOf(userId);
+  const q = (filter.q ?? '').trim().toLowerCase();
+  const rows = all
+    .filter((e) => !filter.category || filter.category === 'all' || e.category === filter.category)
+    .filter((e) => !filter.status || filter.status === 'all' || phFilterOf(e.stage) === filter.status)
+    .filter((e) => (!filter.from || phDay(e.earnedAt) >= filter.from) && (!filter.to || phDay(e.earnedAt) <= filter.to))
+    .filter((e) => !q || [e.id, e.dealCode ?? '', e.jobCode ?? '', e.payment?.bankReference ?? '', e.payment?.code ?? '', String(e.amount)].some((x) => x.toLowerCase().includes(q)))
+    .sort((a, b) => (a.earnedAt < b.earnedAt ? 1 : a.earnedAt > b.earnedAt ? -1 : a.id < b.id ? 1 : -1));
+  const offset = Math.max(0, filter.offset ?? 0);
+  const limit = filter.limit === 0 ? rows.length : (filter.limit ?? PH_PAGE);
+  const earned = all.filter((e) => phCountsAsEarned(e.stage));
+  const first = all.map((e) => e.earnedAt).sort()[0] ?? null;
+  // Statement periods: the months with something in them (most recent first), the financial years touched, and everything.
+  const byMonth = new Map<string, { earned: number; paid: number; count: number }>();
+  const byFy = new Map<string, { earned: number; paid: number; count: number }>();
+  const bump = (m: Map<string, { earned: number; paid: number; count: number }>, id: string, k: 'earned' | 'paid', n: number) => { const c = m.get(id) ?? { earned: 0, paid: 0, count: 0 }; c[k] += n; m.set(id, c); };
+  for (const e of all) {
+    if (phCountsAsEarned(e.stage)) { bump(byMonth, phMonthId(e.earnedAt), 'earned', e.amount); bump(byFy, phFyOf(e.earnedAt), 'earned', e.amount); byMonth.get(phMonthId(e.earnedAt))!.count += 1; byFy.get(phFyOf(e.earnedAt))!.count += 1; }
+    if (e.paidAt && e.stage === 'paid') { bump(byMonth, phMonthId(e.paidAt), 'paid', e.amount); bump(byFy, phFyOf(e.paidAt), 'paid', e.amount); }
+  }
+  const mk = (id: string, c: { earned: number; paid: number; count: number }): PayoutStatementPeriod => { const p = phPeriodOf(id) as ReturnType<typeof phPeriodOf> & {}; return { id, kind: p.kind, from: p.from, to: p.to, earned: c.earned, paid: c.paid, count: c.count }; };
+  const periods: PayoutStatementPeriod[] = [
+    ...[...byMonth.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1)).slice(0, PH_MONTHS).map(([id, c]) => mk(id, c)),
+    ...[...byFy.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1)).map(([id, c]) => mk(id, c)),
+    mk('all', { earned: earned.reduce((a, e) => a + e.amount, 0), paid: all.filter((e) => e.stage === 'paid').reduce((a, e) => a + e.amount, 0), count: earned.length }),
+  ];
+  return JSON.parse(JSON.stringify({
+    person: { name: w.name, role: w.role },
+    totals: { earned: phMoney(earned), paid: phMoney(all.filter((e) => e.stage === 'paid')), inProgress: phMoney(all.filter((e) => phFilterOf(e.stage) === 'inProgress')), notFinal: phMoney(all.filter((e) => e.stage === 'projected')), reversed: phMoney(all.filter((e) => phFilterOf(e.stage) === 'reversed')), firstEarnedAt: first },
+    periods, rows: rows.slice(offset, offset + limit), total: rows.length, filteredAmount: rows.reduce((a, e) => a + e.amount, 0), at: new Date(now).toISOString(),
+  })) as PayoutHistoryView;
+}
+
+function phEventsOf(e: CommissionEntry): PayoutEventView[] {
+  const out: PayoutEventView[] = [{ at: e.earnedAt, kind: 'earned', params: { amount: e.amount } }];
+  for (const d of payoutDecisions.filter((x) => x.entryId === e.id)) {
+    if (d.kind === 'approved') out.push({ at: d.at, kind: 'cleared', params: {} });
+    else if (d.kind === 'held') out.push({ at: d.at, kind: 'held', params: { kind: d.holdKind ?? 'other' } });
+    else out.push({ at: d.at, kind: 'released', params: {} });
+  }
+  for (const j of phJudgementsOf(e.id)) {
+    if (j.decision === 'adjust' && j.before !== j.after) out.push({ at: j.at, kind: 'adjusted', params: { from: j.before, to: j.after, issue: j.issue } });
+    else if (j.decision === 'hold') out.push({ at: j.at, kind: 'held', params: { kind: 'quality', issue: j.issue } });
+    else if (j.decision === 'release') out.push({ at: j.at, kind: 'released', params: {} });
+  }
+  for (const d of payoutDisbursements.filter((x) => x.entryIds.includes(e.id))) {
+    if (d.sentAt) out.push({ at: d.sentAt, kind: 'sent', params: { method: d.method, code: d.code } });
+    if (d.status === 'failed' && d.failedAt) out.push({ at: d.failedAt, kind: 'failed', params: { needsDetails: dbNeedsDetails(d.failure as DbFailure | undefined) ? 1 : 0 } });
+    if (d.status === 'completed' && d.completedAt) out.push({ at: d.completedAt, kind: 'paid', params: { method: d.method, destination: d.destination, reference: d.bankReference ?? '' } });
+  }
+  if (e.status === 'paid' && e.paidAt && !payoutDisbursements.some((x) => x.entryIds.includes(e.id) && x.status === 'completed')) out.push({ at: e.paidAt, kind: 'paid', params: { method: '', destination: '', reference: '' } });
+  if (e.reversal) out.push({ at: e.reversal.at, kind: 'reversed', params: { reason: e.reversal.reason } });
+  else if (e.status === 'forfeited') out.push({ at: e.paidAt ?? e.earnedAt, kind: 'forfeited', params: {} });
+  for (const q of payoutQueries.filter((x) => x.entryId === e.id)) for (const m of q.messages) out.push({ at: m.at, kind: m.from === 'partner' ? 'asked' : 'answered', params: { code: q.code } });
+  return out.sort((a, b) => (a.at < b.at ? -1 : 1));
+}
+
+function phStatementOf(periodId: string, userId: string, now: number): PayoutStatementView {
+  const w = phWho(userId);
+  const p = phPeriodOf(periodId);
+  if (!p) throw new RepositoryError('not_found');
+  const all = phAllOf(userId);
+  const lines: PayoutStatementLine[] = [];
+  for (const e of all) {
+    const ref = e.payment?.bankReference || null;
+    if (phCountsAsEarned(e.stage) && phInPeriod(e.earnedAt, p)) lines.push({ entryId: e.id, date: e.earnedAt, reasonKey: e.reasonKey, type: 'earned', amount: e.amount, stage: e.stage, reference: null });
+    if (e.stage === 'paid' && e.paidAt && phInPeriod(e.paidAt, p)) lines.push({ entryId: e.id, date: e.paidAt, reasonKey: e.reasonKey, type: 'paid', amount: e.amount, stage: e.stage, reference: ref });
+    if (e.reversal && phInPeriod(e.reversal.at, p)) lines.push({ entryId: e.id, date: e.reversal.at, reasonKey: e.reasonKey, type: 'reversed', amount: e.amount, stage: e.stage, reference: null });
+  }
+  lines.sort((a, b) => (a.date < b.date ? -1 : 1));
+  const sum = (t: PayoutStatementLine['type']) => lines.filter((l) => l.type === t).reduce((a, l) => a + l.amount, 0);
+  const end = Date.parse(p.to);
+  const outstanding = all.filter((e) => phCountsAsEarned(e.stage) && Date.parse(e.earnedAt) < end && !(e.stage === 'paid' && e.paidAt && Date.parse(e.paidAt) < end)).reduce((a, e) => a + e.amount, 0);
+  const short = (w.supplierId ?? userId).replace(/[^A-Za-z0-9]/g, '').slice(-6).toUpperCase();
+  return JSON.parse(JSON.stringify({
+    period: { id: p.id, kind: p.kind, from: p.from, to: p.to, earned: sum('earned'), paid: sum('paid'), count: lines.filter((l) => l.type === 'earned').length },
+    person: { name: w.name, role: w.role, id: userId }, number: `AIEC-ST-${short}-${p.id.toUpperCase()}`, lines, totals: { earned: sum('earned'), paid: sum('paid'), reversed: sum('reversed'), outstanding }, generatedAt: new Date(now).toISOString(),
+  })) as PayoutStatementView;
+}
+
+/** Everything about one payout the partner can see: where it stands, what happened to it in order, and the questions asked about it. */
+function phDetailOf(entryId: string, userId: string, now: number): PayoutEntryDetail {
+  const w = phWho(userId);
+  syncDisbursements(now);
+  if (w.supplierId) {
+    const e = phSupplierEntries(w.supplierId).find((x) => x.id === entryId);
+    if (!e) throw new RepositoryError('not_found');
+    return { entry: JSON.parse(JSON.stringify(e)), events: [], queries: [], canAsk: false };
+  }
+  const e = byId(commissions, entryId);
+  if (!e || e.userId !== userId) throw new RepositoryError('not_found');
+  return JSON.parse(JSON.stringify({ entry: phEntryOf(e), events: phEventsOf(e), queries: payoutQueries.filter((q) => q.entryId === e.id).map(phQueryView), canAsk: true })) as PayoutEntryDetail;
+}
+
+/** Questions waiting for Admin (to answer within the set time) and answers waiting for the partner to see. */
+function payoutQuerySignals(): { open: { id: string; code: string; partnerName: string; entryId: string; since: string }[]; answered: { id: string; code: string; userId: string; entryId: string; at: string }[] } {
+  const open: ReturnType<typeof payoutQuerySignals>['open'] = [];
+  const answered: ReturnType<typeof payoutQuerySignals>['answered'] = [];
+  for (const q of payoutQueries) {
+    const st = phQueryStatus(q);
+    const last = q.messages[q.messages.length - 1];
+    if (st === 'open') open.push({ id: q.id, code: q.code, partnerName: nameOf(q.partnerId), entryId: q.entryId, since: last.at });
+    else if (st === 'answered') answered.push({ id: q.id, code: q.code, userId: q.partnerId, entryId: q.entryId, at: last.at });
+  }
+  return { open, answered };
 }
 
 
@@ -19298,6 +19489,63 @@ export const memoryRepository: Repository = {
       paDecide({ entryId: e.id, kind: 'released', at: new Date(now).toISOString(), byName: admin.name });
       syncCommitments(now);
       return JSON.parse(JSON.stringify(paRowOf(byId(commissions, e.id) as CommissionEntry, now, paContext()))) as PayoutQueueRow;
+    }),
+
+  /* --------------------------------- Payout history & statements (168) */
+  getPayoutHistory: (filter, userId) => simulateRead((): PayoutHistoryView => phHistoryOf(filter, userId, Date.now())),
+
+  getPayoutEntryDetail: (entryId, userId) => simulateRead((): PayoutEntryDetail => phDetailOf(entryId, userId, Date.now())),
+
+  getPayoutStatement: (periodId, userId) => simulateRead((): PayoutStatementView => phStatementOf(periodId, userId, Date.now())),
+
+  raisePayoutQuery: (entryId, text, userId) =>
+    simulateWrite((): PayoutQueryView => {
+      const w = phWho(userId);
+      if (w.supplierId) throw new RepositoryError('forbidden');
+      const e = byId(commissions, entryId);
+      if (!e || e.userId !== userId) throw new RepositoryError('not_found');
+      const problem = phQueryProblem(text);
+      if (problem) throw new RepositoryError(problem);
+      const now = Date.now();
+      const at = new Date(now).toISOString();
+      let q = payoutQueries.find((x) => x.entryId === entryId && !x.resolvedAt);
+      if (q && phQueryStatus(q) === 'open') throw new RepositoryError('already_open');
+      if (!q) { payoutQueryCounter += 1; q = { id: `pq-${payoutQueryCounter}`, code: `AIEC-PQ-${1000 + payoutQueryCounter}`, entryId, partnerId: userId, messages: [], isDemo: true }; payoutQueries.push(q); }
+      q.messages.push({ at, from: 'partner', byName: w.name, text: text.trim() });
+      raiseAlert({ titleKey: PH_ALERT, context: `${q.code} ${w.name}: ${text.trim().slice(0, 80)}`, severity: 'medium', category: 'payment', relatedId: `payout-query:${q.id}:${q.messages.length}`, sourceRoute: `/payout-tracker?entry=${entryId}&days=all` });
+      syncCommitments(now);
+      return phQueryView(q);
+    }),
+
+  resolvePayoutQuery: (queryId, userId) =>
+    simulateWrite((): PayoutQueryView => {
+      const q = byId(payoutQueries, queryId);
+      if (!q) throw new RepositoryError('not_found');
+      if (q.partnerId !== userId) throw new RepositoryError('not_yours');
+      q.resolvedAt = new Date().toISOString();
+      syncCommitments(Date.now());
+      return phQueryView(q);
+    }),
+
+  listPayoutQueries: (entryId, adminId) =>
+    simulateRead((): PayoutQueryView[] => {
+      ofAdmin(adminId);
+      return payoutQueries.filter((q) => q.entryId === entryId).map(phQueryView);
+    }),
+
+  answerPayoutQuery: (queryId, text, adminId) =>
+    simulateWrite((): PayoutQueryView => {
+      const admin = ofAdmin(adminId);
+      const q = byId(payoutQueries, queryId);
+      if (!q) throw new RepositoryError('not_found');
+      if (phQueryStatus(q) !== 'open') throw new RepositoryError('not_open');
+      const problem = phAnswerProblem(text);
+      if (problem) throw new RepositoryError(problem);
+      const now = Date.now();
+      q.messages.push({ at: new Date(now).toISOString(), from: 'admin', byName: admin.name, text: text.trim() });
+      for (const a of alerts) if (a.status !== 'resolved' && a.titleKey === PH_ALERT && (a.relatedId ?? '').startsWith(`payout-query:${q.id}:`)) patchInPlace(alerts, a.id, { status: 'resolved', resolvedAt: new Date(now).toISOString(), resolvedBy: admin.name, resolutionNote: 'Answered.' });
+      syncCommitments(now);
+      return phQueryView(q);
     }),
 
   /* --------------------------------- Contest configuration (167) */

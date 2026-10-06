@@ -74,7 +74,7 @@ export function CommissionTrackerView() {
 
   return (
     <Screen>
-      <ScreenHeader title={t(K.title)} subtitle={t(K.subtitle)} action={<span className="row gap-2"><Button size="sm" variant="secondary" data-open-rewards onClick={() => navigate('/rewards-leaderboard')}>{t('rewardsLeaderboard.link.open')}</Button><Button size="sm" variant="secondary" data-open-badges onClick={() => navigate('/badges')}>{t('badges.link.open')}</Button></span>} />
+      <ScreenHeader title={t(K.title)} subtitle={t(K.subtitle)} action={<span className="row gap-2"><Button size="sm" variant="secondary" data-open-rewards onClick={() => navigate('/rewards-leaderboard')}>{t('rewardsLeaderboard.link.open')}</Button><Button size="sm" variant="secondary" data-open-badges onClick={() => navigate('/badges')}>{t('badges.link.open')}</Button><Button size="sm" variant="secondary" data-open-history onClick={() => navigate('/payout-history')}>{t('payoutHistory.link.open')}</Button></span>} />
 
       <SegBar
         label={t(K.period.thisMonth)}
@@ -151,24 +151,16 @@ export function CommissionTrackerView() {
               ) : (
                 <p className="t-xs t-muted mt-1">{entry.status === 'approved' && entry.payoutApproval?.status === 'approved' && entry.payoutApproval.amount === entry.amount ? t('payoutApproval.partner.cleared') : t(K.statusExplain[entry.status])}</p>
               )}
-              {entry.status !== 'paid' && entry.status !== 'forfeited' && (
-                <button
-                  type="button"
-                  className="tappable t-xs t-accent row gap-1 mt-1"
-                  style={{ minHeight: 32 }}
-                  onClick={() => {
-                    const result = s.raiseQuery(entry);
-                    if (result === 'blocked') {
-                      toast.push(t('state.demoBlocked.body'), 'warning');
-                    } else {
-                      toast.push(t(K.queryNote), 'success');
-                    }
-                  }}
-                >
-                  <ChatCircleText size={13} />
-                  {t(K.raiseQuery)}
-                </button>
-              )}
+              <button
+                type="button"
+                className="tappable t-xs t-accent row gap-1 mt-1"
+                style={{ minHeight: 32 }}
+                data-ask-about={entry.id}
+                onClick={() => navigate(`/payout-history?entry=${entry.id}&ask=1`)}
+              >
+                <ChatCircleText size={13} />
+                {t(K.raiseQuery)}
+              </button>
             </div>
           );
         })}
