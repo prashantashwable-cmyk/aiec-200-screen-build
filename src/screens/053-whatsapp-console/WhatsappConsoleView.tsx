@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { Camera, Check, Checks, Microphone, WarningCircle } from '@phosphor-icons/react';
 import { Badge, Button, Card, EmptyState, ErrorState, LoadingState, Screen, ScreenHeader, Select, Sheet, TextArea, formatTime, useToast } from '@/design-system';
 import { renderTemplateBody } from '@/features/communication/templateRender';
+import { botParams } from '@/features/support/render';
 import { useWhatsappConsole } from './useWhatsappConsole';
 import { WHATSAPP_CONSOLE_KEYS as K } from './whatsapp-console.types';
 
@@ -123,7 +124,7 @@ export function WhatsappConsoleView() {
                           {t(msg.mediaKind === 'photo' ? K.bubble.photo : K.bubble.voice)}
                         </span>
                       ) : (
-                        <span className="t-sm">{msg.body}</span>
+                        <span className="t-sm">{msg.body || (msg.botKey ? t(msg.botKey.key, botParams(msg.botKey.params, i18n.language)) : '')}</span>
                       )}
                       <span className="row gap-1 items-center t-xs" style={{ opacity: 0.7, alignSelf: 'flex-end' }}>
                         <span title={t(K.bubble.status[msg.status])}>{formatTime(msg.at, i18n.language)}</span>

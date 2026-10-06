@@ -295,6 +295,11 @@ import type {
   VaultView,
   CustomerPayView,
   ServiceDeskView,
+  SupportBoard,
+  SupportChatView,
+  SupportMessageView,
+  SupportRow,
+  SupportThread,
   TicketBoard,
   TicketBoardFilter,
   TicketCreateInput,
@@ -562,6 +567,8 @@ import type {
   TriggerRuleEvaluation,
 } from './repository';
 import type {
+  SupportContext,
+  SupportHandoffReason,
   ServiceTicket,
   TicketAttachment,
   TicketCoverage,
@@ -944,6 +951,8 @@ import type { Quarter as TdsQuarter, TdsRole, TdsSection } from '@/features/tax/
 import { bankEvidenceFor, heroOf, loanStateOf, remindersOf, stageStateOf } from '@/features/payments/customerSchedule';
 import { MAX_ATTACHMENTS as TICKET_MAX_ATTACHMENTS, MIN_NOTE as TICKET_MIN_NOTE, REOPEN_WINDOW as TK_REOPEN_WINDOW, chargeableOf as ticketChargeable, claimProblem as ticketClaimProblem, closesTicket as ticketClosesTicket, completeProblem as ticketCompleteProblem, coverageOf, filingProblem as ticketFilingProblem, isOpen as ticketIsOpen, lettersOf as ticketLetters, responseTargetOf, summaryOf, triageOf, visitEndOf, visitProblem as ticketVisitProblem } from '@/features/service/tickets';
 import type { Triage } from '@/features/service/tickets';
+import { HUMAN_HOLD as SUPPORT_HUMAN_HOLD, MAX_MESSAGE as SUPPORT_MAX_MESSAGE, QUEUE_BUSY as SUPPORT_QUEUE_BUSY, REPLY_TARGET_MIN as SUPPORT_REPLY_TARGET_MIN, decide as supportDecide, handlingOf as supportHandlingOf, intentOf as supportIntentOf, queueOf as supportQueueOf } from '@/features/support/chat';
+import type { Intent as SupportIntent, Parsed as SupportParsed } from '@/features/support/chat';
 import { VAULT_KINDS, validityState } from '@/features/documents/vault';
 import type { VaultKind } from '@/features/documents/vault';
 import { MONTHS_OFFERED as PH_MONTHS, PAGE as PH_PAGE, QUERY_DUE as PH_QUERY_DUE, answerProblem as phAnswerProblem, countsAsEarned as phCountsAsEarned, filterOf as phFilterOf, fyOf as phFyOf, inPeriod as phInPeriod, monthIdOf as phMonthId, periodOf as phPeriodOf, queryProblem as phQueryProblem, stageOf as phStageOf } from '@/features/payout/history';
@@ -1741,7 +1750,7 @@ function sendReminderMessage(payment: Payment, lead: Lead, byName: string, chann
   const body = template
     ? renderTemplateBody(template.body, { customerName: lead.contactName, buildingName: lead.siteName, quoteAmount: formatINRCompact(remainingBalance(payment)) })
     : `Reminder: payment of ${formatINRCompact(remainingBalance(payment))} is due for ${lead.siteName}.`;
-  let conversation = conversations.find((c) => c.leadId === lead.id) ?? null;
+  let conversation = conversations.find((c) => c.leadId === lead.id && c.kind !== 'support') ?? null;
   const now = new Date().toISOString();
   if (!conversation) {
     conversationCounter += 1;
@@ -2669,6 +2678,7 @@ function commitmentSources(now: number): CommitmentSources {
     contests: contestSignals(Date.now()),
     payoutQueries: payoutQuerySignals(),
     serviceTickets: serviceTicketSignals(now),
+    supportChats: supportChatSignals(now),
     tds: tdsObligations(Date.now()),
     exits: exitSignals(),
     handoverReviews: handoverSignals().reviews,
@@ -2938,6 +2948,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   syncTds(now);
   syncPayoutDisputes(now);
   syncServiceTickets(now);
+  syncSupportChats(now);
   syncContests(now);
   syncBadges(now);
   syncPartnerInterviews(now);
@@ -3542,7 +3553,7 @@ function notifyCustomerOfMilestone(legId: string, milestone: ShipmentMilestone):
     shipmentLabel: shipmentLabelOf(leg),
     etaTime: formatTime(roundToQuarter(leg.etaAt).toISOString(), language),
   });
-  let conversation = conversations.find((c) => c.leadId === lead.id) ?? null;
+  let conversation = conversations.find((c) => c.leadId === lead.id && c.kind !== 'support') ?? null;
   if (!conversation) {
     conversationCounter += 1;
     conversation = { id: `conv-new-${conversationCounter}`, leadId: lead.id, lastMessageAt: now, isDemo: true };
@@ -7874,7 +7885,7 @@ function syncWarrantyReminders(now: number): void {
       }
       const endDate = r.kind === 'amc_renewal' ? (reg.amc?.terms[reg.amc.terms.length - 1]?.endsOn ?? '') : reg.terms.service.endsOn;
       const body = renderTemplateBody(template.body, { customerName: lead.contactName, buildingName: lead.siteName, endDate: endDate ? formatDate(`${endDate}T12:00:00Z`, language) : '' });
-      let conversation = conversations.find((c) => c.leadId === lead.id) ?? null;
+      let conversation = conversations.find((c) => c.leadId === lead.id && c.kind !== 'support') ?? null;
       if (!conversation) {
         conversationCounter += 1;
         conversation = { id: `conv-new-${conversationCounter}`, leadId: lead.id, lastMessageAt: at, isDemo: true };
@@ -10953,7 +10964,7 @@ function tkMessageCustomer(t: ServiceTicket, groupId: string, params: Record<str
   const at = new Date().toISOString();
   const filled = Object.fromEntries(Object.entries(params).map(([k, v]) => [k, typeof v === 'function' ? v(template.language) : v]));
   const body = renderTemplateBody(template.body, { customerName: lead.contactName, buildingName: t.siteName, ticketCode: t.code, ...filled });
-  let conversation = conversations.find((c) => c.leadId === lead.id) ?? null;
+  let conversation = conversations.find((c) => c.leadId === lead.id && c.kind !== 'support') ?? null;
   if (!conversation) {
     conversationCounter += 1;
     conversation = { id: `conv-new-${conversationCounter}`, leadId: lead.id, lastMessageAt: at, isDemo: true };
@@ -11072,6 +11083,209 @@ function tkRaise(t: ServiceTicket, tr: Triage, now: number): void {
   else if (tr.reason === 'safety_words') raiseAlert({ titleKey: TK_ALERT_SAFETY, context: `${t.code} · ${t.siteName} · ${tr.words.slice(0, 3).join(', ')}`, severity: 'high', category: 'safety', relatedId: `ticket:${t.id}`, sourceRoute: `/service-requests/${t.id}`, location: at ?? byId(jobs, t.jobId ?? '')?.location });
   void now;
 }
+
+/* ------------------------------------------------------------------ Support chat (176) */
+
+/**
+ * The customer's post-sale conversation, on the same `Conversation` / `CommMessage` records the Communication Engine already uses (so the reply inbox and the console see it too). The assistant answers
+ * what it can from the customer's own records and is not guessing: below its configured confidence (plus a margin) it hands over to a person with the customer's whole picture, and says so warmly.
+ */
+const SC_ALERT_SAFETY = 'supportChat.alert.safety';
+const SC_ALERT_WAITING = 'supportChat.alert.waiting';
+const scFirst = (name: string): string => name.trim().split(/\s+/)[0] ?? name;
+const scConvOf = (user: User): Conversation | undefined => conversations.find((c) => c.kind === 'support' && c.support?.customerId === user.id);
+const scMsgs = (c: Conversation): CommMessage[] => commMessages.filter((m) => m.conversationId === c.id).sort((a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id));
+const scLastAgent = (c: Conversation): CommMessage | undefined => scMsgs(c).filter((m) => m.sender === 'agent').pop();
+const scOpenHandoff = (c: Conversation): boolean => !!c.support?.handoff && commMessages.some((m) => m.conversationId === c.id && m.sender === 'customer' && m.requiresHumanReview && !m.handled);
+const scHandling = (c: Conversation, now: number) => supportHandlingOf({ openHandoff: scOpenHandoff(c), lastAgentAt: scLastAgent(c)?.at ?? null, botResumedAt: c.support?.botResumedAt ?? null, now });
+const scWaiting = (): { id: string; since: number }[] => conversations.filter((c) => c.kind === 'support' && scOpenHandoff(c)).map((c) => ({ id: c.id, since: Date.parse(c.support?.handoff?.at ?? c.lastMessageAt) }));
+
+function scEnsure(user: User, now: number): Conversation {
+  const have = scConvOf(user);
+  if (have) return have;
+  const deal = vdDealsOf(user)[0];
+  const lead = deal ? byId(leads, deal.leadId) : undefined;
+  if (!lead) throw new RepositoryError('not_found');
+  conversationCounter += 1;
+  const c: Conversation = { id: `conv-new-${conversationCounter}`, leadId: lead.id, kind: 'support', support: { customerId: user.id }, lastMessageAt: new Date(now).toISOString(), isDemo: true };
+  conversations.push(c);
+  return c;
+}
+
+function scContextOf(user: User, lastIntent: string | null, now: number): SupportContext {
+  const deals0 = vdDealsOf(user);
+  const projects = chProjectsOf(user).map(({ deal, job }) => {
+    const row = chRowOf({ key: job ? `job:${job.id}` : `deal:${deal.id}`, deal, job }, now);
+    const pay = cpViewOf(user, deal.id, now).project?.hero;
+    return { dealId: deal.id, siteName: row.siteName, code: row.code, stage: row.stage, mode: row.mode, percent: row.percent, payment: { kind: pay?.kind ?? 'empty', amount: pay?.amount ?? 0, dueAt: pay?.dueAt ?? null } };
+  });
+  void deals0;
+  const lifts = tkLiftsOf(user, now).filter((l) => l.handedOver);
+  return {
+    customerName: user.name, phone: user.phone ?? '', language: user.preferredLanguage ?? 'en', projects,
+    tickets: serviceTickets.filter((t) => t.customerId === user.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 5).map((t) => ({ id: t.id, code: t.code, status: t.status, urgency: t.urgency, summary: t.summary })),
+    coverage: lifts.map((l) => ({ siteName: l.siteName, state: l.coverage.state, endsOn: l.coverage.state === 'on_amc' ? l.coverage.amcEndsOn : l.coverage.warrantyEndsOn })),
+    documents: vdDocsOf(user, now).length, lastIntent,
+  };
+}
+
+/** What the assistant can say, read from this customer's own records. Keys and numbers only: the screen turns them into words in the customer's language. */
+function scAnswer(user: User, p: SupportParsed, now: number): { key: string; params: Record<string, string | number>; links: { labelKey: string; route: string }[]; needsPerson: boolean } {
+  const first = scFirst(user.name);
+  const none = { params: { name: first } as Record<string, string | number>, links: [] as { labelKey: string; route: string }[], needsPerson: false };
+  switch (p.intent) {
+    case 'greeting': return { key: 'supportChat.bot.greeting', ...none };
+    case 'thanks': return { key: 'supportChat.bot.thanks', ...none };
+    case 'out_of_scope': return { key: 'supportChat.bot.outOfScope', ...none };
+    case 'documents': return { key: 'supportChat.bot.documents', ...none, links: [{ labelKey: 'supportChat.link.documents', route: '/documents' }] };
+    case 'payment_status': {
+      const v = cpViewOf(user, null, now);
+      const attention = v.project;
+      if (!attention || attention.hero.kind === 'empty') return { key: 'supportChat.bot.payment.none', ...none };
+      const h = attention.hero;
+      const params = { name: first, amount: h.amount, date: h.dueAt ?? '', days: h.days, site: attention.siteName };
+      const links = [{ labelKey: 'supportChat.link.payments', route: `/my-payments?p=${attention.dealId}` }];
+      const key = h.kind === 'overdue' ? 'overdue' : h.kind === 'due' ? 'due' : h.kind === 'confirming' ? 'confirming' : h.kind === 'disputed' ? 'disputed' : h.kind === 'upcoming' ? 'upcoming' : 'complete';
+      return { key: `supportChat.bot.payment.${key}`, params, links, needsPerson: false };
+    }
+    case 'progress': {
+      const home = chHomeOf(user, null, now).current;
+      if (!home) return { key: 'supportChat.bot.progress.none', ...none };
+      const links = [{ labelKey: 'supportChat.link.status', route: `/project-status?p=${home.key}` }];
+      const params = { name: first, site: home.siteName, percent: Math.round(home.percent ?? 0), date: home.expectedAt ?? '' };
+      const stage = home.mode === 'service' ? 'service' : home.stage === 'installation' ? (home.expectedAt ? 'installation' : 'installation_noeta') : home.stage ?? 'agreed';
+      return { key: `supportChat.bot.progress.${stage}`, params, links, needsPerson: false };
+    }
+    case 'amc': {
+      const lift = tkLiftsOf(user, now).find((l) => l.handedOver);
+      if (!lift) return { key: 'supportChat.bot.amc.notYet', ...none };
+      const c = lift.coverage;
+      if (c.state === 'on_amc') return { key: 'supportChat.bot.amc.active', ...none, params: { name: first, date: c.amcEndsOn ?? '', site: lift.siteName } };
+      if (c.state === 'in_warranty') return { key: 'supportChat.bot.amc.warranty', ...none, params: { name: first, date: c.warrantyEndsOn ?? '', site: lift.siteName } };
+      return { key: 'supportChat.bot.amc.offer', ...none, params: { name: first, site: lift.siteName }, needsPerson: true };
+    }
+    case 'troubleshoot': return { key: `supportChat.bot.tip.${p.tip ?? 'general'}`, ...none, links: [{ labelKey: 'supportChat.link.request', route: '/service-requests?tab=new' }] };
+    default: return { key: 'supportChat.bot.handoff.unsure', ...none };
+  }
+}
+
+function scPush(c: Conversation, m: Omit<CommMessage, 'id' | 'conversationId' | 'channel'>): CommMessage {
+  messageCounter += 1;
+  const msg: CommMessage = { id: `cm-new-${messageCounter}`, conversationId: c.id, channel: 'in_app', ...m };
+  commMessages.push(msg);
+  c.lastMessageAt = m.at;
+  return msg;
+}
+
+/** One customer message in, and the assistant's answer (or the handover) out. `nowMs` is explicit so the seeds can place history in the past. */
+function scProcess(user: User, text: string, clientId: string, hint: SupportIntent | null, nowMs: number): Conversation {
+  const c = scEnsure(user, nowMs);
+  if (commMessages.some((m) => m.conversationId === c.id && m.clientId === clientId)) return c;
+  const at = new Date(nowMs).toISOString();
+  const after = new Date(nowMs + 1000).toISOString();
+  const state = scHandling(c, nowMs);
+  const parsed = supportIntentOf(text, hint);
+  const mine = scPush(c, { sender: 'customer', body: text, status: 'delivered', at, clientId, handled: false });
+  c.support = { ...(c.support as NonNullable<Conversation['support']>), lastIntent: parsed.intent };
+  const handOver = (reason: SupportHandoffReason, urgent: boolean) => {
+    patchInPlace(commMessages, mine.id, { requiresHumanReview: true, handled: false });
+    const had = c.support?.handoff && scOpenHandoff(c);
+    // Asking again while already waiting does not move you back in the queue.
+    if (!had) c.support = { ...(c.support as NonNullable<Conversation['support']>), handoff: { at, reason, intent: parsed.intent, snapshot: scContextOf(user, parsed.intent, nowMs), urgent } };
+  };
+  if (state !== 'bot') { handOver('requested', false); return c; }
+
+  const d = supportDecide(parsed, botConfig.escalationConfidenceThreshold);
+  if (d.answer) {
+    const a = scAnswer(user, parsed, nowMs);
+    scPush(c, { sender: 'bot', body: '', botKey: { key: a.key, params: a.params }, links: a.links, status: 'sent', at: after, handled: true });
+    logAutomatedAction({ sourceKey: 'support_chat.bot_reply', triggeringCondition: `${user.name} asked about ${parsed.intent.replace('_', ' ')}`, actionTaken: 'The assistant answered from the customer’s own records', affectedRecordId: c.id, affectedRecordType: 'other', subjectLabel: user.name });
+    if (a.needsPerson) { handOver('needs_person', false); scPush(c, { sender: 'bot', body: '', botKey: { key: 'supportChat.bot.handoff.needsPerson', params: { name: scFirst(user.name) } }, status: 'sent', at: new Date(nowMs + 2000).toISOString(), handled: true }); }
+    return c;
+  }
+  const reason = d.reason as SupportHandoffReason;
+  handOver(reason, reason === 'safety');
+  const key = reason === 'safety' ? 'supportChat.bot.safety' : reason === 'requested' ? 'supportChat.bot.handoff.requested' : 'supportChat.bot.handoff.unsure';
+  scPush(c, { sender: 'bot', body: '', botKey: { key, params: { name: scFirst(user.name) } }, links: reason === 'safety' ? [{ labelKey: 'supportChat.link.emergency', route: '/service-requests' }] : [], status: 'sent', at: after, handled: true });
+  const q = supportQueueOf(scWaiting(), c.id);
+  if (q?.busy) scPush(c, { sender: 'bot', body: '', botKey: { key: 'supportChat.bot.busy', params: { minutes: q.expectedMin } }, links: [{ labelKey: 'supportChat.link.request', route: '/service-requests?tab=new' }], status: 'sent', at: new Date(nowMs + 2000).toISOString(), handled: true });
+  logAutomatedAction({ sourceKey: 'support_chat.handoff', triggeringCondition: `${user.name}'s message ${reason === 'requested' ? 'asked for a person' : reason === 'safety' ? 'may be a safety issue' : 'was not one the assistant was sure of'}`, actionTaken: 'Handed the conversation to a person with the customer’s whole picture', affectedRecordId: c.id, affectedRecordType: 'other', subjectLabel: user.name });
+  if (reason === 'safety') raiseAlert({ titleKey: SC_ALERT_SAFETY, context: `${user.name} · ${user.phone ?? ''}`, severity: 'high', category: 'safety', relatedId: `support:${c.id}`, sourceRoute: `/support-chat/${c.id}` });
+  return c;
+}
+
+function scViewOf(c: Conversation | undefined, user: User, now: number): SupportChatView {
+  const base = { emergencyPhone: tkAdmin()?.phone ?? null, firstName: scFirst(user.name), at: new Date(now).toISOString() };
+  if (!c) return { ...base, conversationId: null, handling: 'bot', agentName: null, queue: null, messages: [] };
+  const handling = scHandling(c, now);
+  const messages: SupportMessageView[] = scMsgs(c).map((m) => ({ id: m.id, from: m.sender, senderName: m.sender === 'agent' ? m.senderName ?? 'AIEC' : null, text: m.botKey ? null : m.body, key: m.botKey?.key ?? null, params: m.botKey?.params ?? null, links: m.links ?? [], at: m.at, status: m.status }));
+  return JSON.parse(JSON.stringify({ ...base, conversationId: c.id, handling, agentName: handling === 'human' ? scLastAgent(c)?.senderName ?? null : null, queue: handling === 'waiting' ? supportQueueOf(scWaiting(), c.id) : null, messages })) as SupportChatView;
+}
+
+function scRowOf(c: Conversation, now: number): SupportRow {
+  const user = byId(users, c.support?.customerId ?? '') as User;
+  const handling = scHandling(c, now);
+  const since = c.support?.handoff?.at;
+  const waitingMinutes = handling === 'waiting' && since ? businessMinutesSince(since, now) : 0;
+  const lastCustomer = scMsgs(c).filter((m) => m.sender === 'customer').pop();
+  const lead = byId(leads, c.leadId);
+  return { conversationId: c.id, customerName: user?.name ?? lead?.contactName ?? '', siteName: lead?.siteName ?? '', handling, waitingMinutes, slaBreached: handling === 'waiting' && waitingMinutes > SUPPORT_REPLY_TARGET_MIN, urgent: !!c.support?.handoff?.urgent && handling === 'waiting', reason: handling === 'waiting' ? c.support?.handoff?.reason ?? null : null, preview: lastCustomer?.body ?? null, lastAt: c.lastMessageAt };
+}
+
+function scThreadOf(c: Conversation, now: number): SupportThread {
+  const user = byId(users, c.support?.customerId ?? '') as User;
+  const row = scRowOf(c, now);
+  const h = c.support?.handoff;
+  return JSON.parse(JSON.stringify({ chat: scViewOf(c, user, now), context: scContextOf(user, c.support?.lastIntent ?? null, now), handoff: h && row.handling === 'waiting' ? { at: h.at, reason: h.reason, urgent: h.urgent, waitingMinutes: row.waitingMinutes, slaBreached: row.slaBreached, snapshot: h.snapshot } : null })) as SupportThread;
+}
+
+/** A person has replied: everything the customer asked is answered, and the assistant stays out for a while. */
+function scAgentReplied(c: Conversation): void {
+  for (const m of commMessages) if (m.conversationId === c.id && m.sender === 'customer' && !m.handled) patchInPlace(commMessages, m.id, { handled: true, requiresHumanReview: false });
+  const open = alerts.find((a) => a.titleKey === SC_ALERT_WAITING && a.relatedId === `support:${c.id}` && a.status !== 'resolved');
+  if (open) patchInPlace(alerts, open.id, { status: 'resolved', resolvedAt: new Date().toISOString(), resolvedBy: 'system', resolutionNote: 'A person replied.' });
+}
+
+let scSeeded = false;
+function scSeeds(now: number): void {
+  if (scSeeded) return;
+  scSeeded = true;
+  const rajesh = byId(users, 'u-cust-1');
+  const meera = byId(users, 'u-cust-2');
+  const t = (ms: number) => now - ms;
+  if (rajesh) {
+    scProcess(rajesh, 'What do I owe right now?', 'seed-r1', null, t(3 * 3_600_000));
+    scProcess(rajesh, 'Can someone call me about the overdue amount?', 'seed-r2', null, t(40 * 60_000));
+  }
+  if (meera) {
+    scProcess(meera, 'Is my service plan active?', 'seed-m1', null, t(5 * 3_600_000));
+    scProcess(meera, 'I would like to speak to someone about the extra charge on my invoice', 'seed-m2', null, t(4 * 3_600_000));
+    const c = scConvOf(meera);
+    const admin = tkAdmin();
+    if (c && admin) { scPush(c, { sender: 'agent', senderName: admin.name, body: 'Hello, this is Prashant. I have looked at your invoice and the change order. I will send you a corrected copy today.', status: 'delivered', at: new Date(t(3 * 3_600_000)).toISOString(), handled: true }); scAgentReplied(c); }
+  }
+}
+
+function syncSupportChats(now: number): void {
+  scSeeds(now);
+  for (const c of conversations.filter((x) => x.kind === 'support')) {
+    const row = scRowOf(c, now);
+    const open = alerts.find((a) => a.titleKey === SC_ALERT_WAITING && a.relatedId === `support:${c.id}` && a.status !== 'resolved');
+    if (row.slaBreached) {
+      const severity = row.urgent ? 'critical' : severityForRatio(row.waitingMinutes / SUPPORT_REPLY_TARGET_MIN);
+      if (!open) {
+        raiseAlert({ titleKey: SC_ALERT_WAITING, context: `${row.customerName} · ${row.waitingMinutes} min`, severity, category: 'sla_breach', relatedId: `support:${c.id}`, sourceRoute: `/support-chat/${c.id}` });
+        logAutomatedAction({ sourceKey: 'support_chat.waiting', triggeringCondition: `${row.customerName} has waited for a person past the reply target`, actionTaken: 'Raised an alert so a person picks the conversation up', affectedRecordId: c.id, affectedRecordType: 'other', subjectLabel: row.customerName });
+      }
+    } else if (open) patchInPlace(alerts, open.id, { status: 'resolved', resolvedAt: new Date(now).toISOString(), resolvedBy: 'system', resolutionNote: 'The conversation was answered.' });
+  }
+}
+
+function supportChatSignals(now: number): { waiting: { id: string; name: string; since: string; urgent: boolean }[] } {
+  scSeeds(now);
+  return { waiting: conversations.filter((c) => c.kind === 'support' && scOpenHandoff(c)).map((c) => ({ id: c.id, name: byId(users, c.support?.customerId ?? '')?.name ?? '', since: c.support?.handoff?.at ?? c.lastMessageAt, urgent: !!c.support?.handoff?.urgent })) };
+}
+
 
 /* ------------------------------------------------------------------ Badges & milestones (166) */
 
@@ -13011,7 +13225,7 @@ function messageLeadFromTemplate(lead: Lead, groupId: string, fields: Record<str
   const language = lead.preferredLanguage ?? 'en';
   const template = templateInGroup(groupId, language) ?? templateInGroup(groupId, 'en');
   if (!template || isOptedOutSync(lead.contactPhone, template.channel)) return null;
-  let conversation = conversations.find((c) => c.leadId === lead.id) ?? null;
+  let conversation = conversations.find((c) => c.leadId === lead.id && c.kind !== 'support') ?? null;
   if (!conversation) {
     conversationCounter += 1;
     conversation = { id: `conv-new-${conversationCounter}`, leadId: lead.id, lastMessageAt: at, isDemo: true };
@@ -16548,7 +16762,7 @@ export const memoryRepository: Repository = {
       const deal = byId(deals, negotiation.dealId);
       const lead = resolveLead(negotiation.leadId);
       if (!deal || !lead) return null;
-      const conversation = conversations.find((c) => c.leadId === negotiation.leadId) ?? null;
+      const conversation = conversations.find((c) => c.leadId === negotiation.leadId && c.kind !== 'support') ?? null;
       const messages = conversation
         ? commMessages.filter((m) => m.conversationId === conversation.id).sort((a, b) => a.at.localeCompare(b.at))
         : [];
@@ -16560,7 +16774,7 @@ export const memoryRepository: Repository = {
       const negotiation = byId(negotiations, negotiationId);
       if (!negotiation) throw new RepositoryError('not_found');
       if (negotiation.status !== 'human_takeover') throw new RepositoryError('must_take_over_first');
-      let conversation = conversations.find((c) => c.leadId === negotiation.leadId) ?? null;
+      let conversation = conversations.find((c) => c.leadId === negotiation.leadId && c.kind !== 'support') ?? null;
       const now = new Date().toISOString();
       if (!conversation) {
         conversation = { id: `conv-new-${(conversationCounter += 1)}`, leadId: negotiation.leadId, lastMessageAt: now, isDemo: true };
@@ -16657,7 +16871,7 @@ export const memoryRepository: Repository = {
         // conversation — once a human has taken over (or it's closed), the
         // record updates silently and whoever is talking reads it live.
         if (negotiation.status === 'bot_active' || negotiation.status === 'escalated') {
-          const conversation = conversations.find((c) => c.leadId === negotiation.leadId);
+          const conversation = conversations.find((c) => c.leadId === negotiation.leadId && c.kind !== 'support');
           if (conversation) {
             const bodyText =
               decision.status === 'approved'
@@ -17965,7 +18179,7 @@ export const memoryRepository: Repository = {
       if (r.customerNotifiedAt) return { notified: false, skipped: 'already_told' as const };
       if (view.customerOptedOut) return { notified: false, skipped: 'opted_out' as const };
       const at = new Date().toISOString();
-      let conversation = conversations.find((cv) => cv.leadId === lead.id) ?? null;
+      let conversation = conversations.find((cv) => cv.leadId === lead.id && cv.kind !== 'support') ?? null;
       if (!conversation) {
         conversationCounter += 1;
         conversation = { id: `conv-new-${conversationCounter}`, leadId: lead.id, lastMessageAt: at, isDemo: true };
@@ -23596,6 +23810,74 @@ export const memoryRepository: Repository = {
       return JSON.parse(JSON.stringify(docs.map((d) => ({ row: d.row, sections: d.sections, versions: docs.filter((x) => x.row.chainId === d.row.chainId).map((x) => x.row), issuedBy: d.issuedBy })))) as VaultDocument[];
     }),
 
+  /* --------------------------------- Support chat (176) */
+  getSupportChat: (userId) =>
+    simulateRead((): SupportChatView => {
+      const user = vdCustomer(userId);
+      const now = Date.now();
+      scSeeds(now);
+      return scViewOf(scConvOf(user), user, now);
+    }),
+
+  sendSupportMessage: (userId, input) =>
+    simulateWrite((): SupportChatView => {
+      const user = vdCustomer(userId);
+      const now = Date.now();
+      scSeeds(now);
+      const text = input.text.trim();
+      if (text.length === 0 || text.length > SUPPORT_MAX_MESSAGE) throw new RepositoryError('note_short');
+      const c = scProcess(user, text, input.clientId, input.intent ?? null, now);
+      return scViewOf(c, user, now);
+    }),
+
+  getSupportBoard: (adminId) =>
+    simulateRead((): SupportBoard => {
+      tkAdminOf(adminId);
+      const now = Date.now();
+      scSeeds(now);
+      const rows = conversations.filter((c) => c.kind === 'support').map((c) => scRowOf(c, now));
+      const rank = (r: SupportRow) => (r.handling === 'waiting' ? (r.urgent ? 0 : 1) : r.handling === 'human' ? 2 : 3);
+      rows.sort((a, b) => rank(a) - rank(b) || (a.handling === 'waiting' ? b.waitingMinutes - a.waitingMinutes : b.lastAt.localeCompare(a.lastAt)));
+      const count = (h: SupportRow['handling']) => rows.filter((r) => r.handling === h).length;
+      return JSON.parse(JSON.stringify({ rows, counts: { waiting: count('waiting'), human: count('human'), bot: count('bot'), all: rows.length }, busy: count('waiting') >= SUPPORT_QUEUE_BUSY, at: new Date(now).toISOString() })) as SupportBoard;
+    }),
+
+  getSupportThread: (conversationId, adminId) =>
+    simulateRead((): SupportThread => {
+      tkAdminOf(adminId);
+      const now = Date.now();
+      scSeeds(now);
+      const c = byId(conversations, conversationId);
+      if (!c || c.kind !== 'support') throw new RepositoryError('not_found');
+      return scThreadOf(c, now);
+    }),
+
+  sendSupportAgentMessage: (conversationId, adminId, text) =>
+    simulateWrite((): SupportThread => {
+      const admin = tkAdminOf(adminId);
+      const now = Date.now();
+      scSeeds(now);
+      const c = byId(conversations, conversationId);
+      if (!c || c.kind !== 'support') throw new RepositoryError('not_found');
+      const body = text.trim();
+      if (body.length === 0 || body.length > SUPPORT_MAX_MESSAGE) throw new RepositoryError('note_short');
+      scPush(c, { sender: 'agent', senderName: admin.name, body, status: 'sent', at: new Date(now).toISOString(), handled: true });
+      c.assignedAgentId = admin.id;
+      scAgentReplied(c);
+      return scThreadOf(c, now);
+    }),
+
+  handBackSupportChat: (conversationId, adminId) =>
+    simulateWrite((): SupportThread => {
+      tkAdminOf(adminId);
+      const now = Date.now();
+      const c = byId(conversations, conversationId);
+      if (!c || c.kind !== 'support') throw new RepositoryError('not_found');
+      scAgentReplied(c);
+      c.support = { ...(c.support as NonNullable<Conversation['support']>), botResumedAt: new Date(now).toISOString() };
+      return scThreadOf(c, now);
+    }),
+
   /* --------------------------------- Service tickets (175) */
   getServiceDesk: (userId) =>
     simulateRead((): ServiceDeskView => {
@@ -25068,7 +25350,7 @@ export const memoryRepository: Repository = {
           continue;
         }
         if (!told.has(message.lead.id)) {
-          let conversation = conversations.find((cv) => cv.leadId === message.lead!.id) ?? null;
+          let conversation = conversations.find((cv) => cv.leadId === message.lead!.id && cv.kind !== 'support') ?? null;
           if (!conversation) {
             conversationCounter += 1;
             conversation = { id: `conv-new-${conversationCounter}`, leadId: message.lead.id, lastMessageAt: at, isDemo: true };
@@ -26321,7 +26603,7 @@ export const memoryRepository: Repository = {
       const message: CommMessage = {
         id: `cm-new-${(messageCounter += 1)}`,
         conversationId,
-        channel: 'whatsapp',
+        channel: conv.kind === 'support' ? 'in_app' : 'whatsapp',
         sender: 'agent',
         senderName: agentName,
         body,
@@ -26334,6 +26616,7 @@ export const memoryRepository: Repository = {
       // a bot nudge never lands right after a person just personally replied.
       const cooldownUntil = new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString();
       patchInPlace(conversations, conversationId, { lastMessageAt: now, sequencePausedUntil: cooldownUntil });
+      if (conv.kind === 'support') scAgentReplied(conv);
       return message;
     }),
 

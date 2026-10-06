@@ -153,6 +153,7 @@ export interface CommitmentSources {
   /** SOP rollouts: each affected partner's own acknowledgement, and Admin's look at what is still open (159). */
   /** Serious training feedback Admin has not dealt with, and the standing look at the routine kind (160). */
   tds: { deposits: { month: string; tds: number; due: string; done: boolean }[]; returns: { fy: string; quarter: number; due: string; done: boolean }[] };
+  supportChats: { waiting: { id: string; name: string; since: string; urgent: boolean }[] };
   serviceTickets: { respond: { id: string; code: string; ownerUserId: string; dueAt: string; urgency: string; site: string }[]; visits: { id: string; code: string; technicianId: string; dueAt: string; site: string; date: string; state: 'open' | 'done' | 'cancelled' }[]; claims: { id: string; code: string; since: string }[]; followups: { id: string; code: string; since: string; unsafe: boolean }[] };
   payoutQueries: { open: { id: string; code: string; partnerName: string; entryId: string; since: string }[]; answered: { id: string; code: string; userId: string; entryId: string; at: string; route?: string }[]; disputes: { id: string; code: string; partnerName: string; entryId: string; dueAt: string }[]; reviews: { id: string; code: string; since: string }[] };
   contests: { live: { contestId: string; name: string; endsAt: string; userId: string; closing: boolean }[]; results: { contestId: string; name: string; userId: string; rank: number; total: number; early: boolean; closedAt: string; open: boolean }[] };
@@ -2248,6 +2249,28 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
         paused: false,
         actionRoute: `/rewards-leaderboard?contest=${x.contestId}`,
         oversightRoute: '/contest-setup',
+      }));
+    },
+  },
+  {
+    // A customer waiting for a person in the support chat (176): answered within the reply target, sooner when the assistant flagged a safety concern.
+    kind: 'support_chat_reply',
+    nudgeBefore: minutes(15),
+    escalateAfter: minutes(60),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'sla_breach',
+    collect(src) {
+      return src.supportChats.waiting.map((x) => ({
+        ...base('support_chat_reply', 'service_ticket', x.id),
+        ownerUserId: adminId(src),
+        titleKey: x.urgent ? 'work.title.support_chat_reply_urgent' : 'work.title.support_chat_reply',
+        titleParams: { name: x.name },
+        dueAt: new Date(Date.parse(x.since) + (x.urgent ? minutes(15) : minutes(60))).toISOString(),
+        state: 'open' as const,
+        paused: false,
+        actionRoute: `/support-chat/${x.id}`,
+        oversightRoute: `/support-chat/${x.id}`,
       }));
     },
   },

@@ -5023,7 +5023,7 @@ export type CommitmentKind =
   | 'exit_dispute_decide'
   | 'tier_review_due'
   | 'certification_renewal'
-  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup'
+  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup' | 'support_chat_reply'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'
@@ -5166,7 +5166,7 @@ export interface SiteVisitVerification {
 
 /* ============================================== Communication engine (M6) */
 
-export type CommChannel = 'sms' | 'whatsapp' | 'call';
+export type CommChannel = 'sms' | 'whatsapp' | 'call' | 'in_app';
 
 /** One saved edit of a template's body — the version history the spec
  *  requires so a change can be reviewed or reverted. */
@@ -5233,6 +5233,12 @@ export interface CommMessage {
   /** Set when sender is 'agent' — whose name shows on the bubble. */
   senderName?: string;
   body: string;
+  /** A support-chat assistant reply is a translation key (the customer reads it in their own language); `body` stays empty for it. */
+  botKey?: { key: string; params?: Record<string, string | number> };
+  /** Buttons that go with an assistant reply. */
+  links?: { labelKey: string; route: string }[];
+  /** Makes a message sent twice from a phone with poor signal one message. */
+  clientId?: string;
   mediaKind?: 'photo' | 'voice';
   /** Set on bot/automated sends — which logical template produced this
    *  message, so Communication Analytics can compute real per-template
@@ -5249,6 +5255,9 @@ export interface CommMessage {
 export interface Conversation {
   id: string;
   leadId: string;
+  /** A post-sale support conversation with a customer (176), apart from the sales thread on the same lead. */
+  kind?: 'sales' | 'support';
+  support?: SupportChatMeta;
   assignedAgentId?: string;
   lastMessageAt: string;
   /** A human's live reply pauses the automated sequence until this instant. */
@@ -5461,4 +5470,28 @@ export interface ServiceTicket {
   customerSeenAt?: string;
   events: TicketEvent[];
   isDemo: boolean;
+}
+
+
+/* ------------------------------------------------------------------ Support chat (176) */
+
+export type SupportHandoffReason = 'requested' | 'low_confidence' | 'borderline' | 'safety' | 'needs_person';
+/** What a person picking up a support conversation needs to know, so the customer never has to explain it again: read from the records, and frozen as it stood when the assistant handed over. */
+export interface SupportContext {
+  customerName: string;
+  phone: string;
+  language: string;
+  projects: { dealId: string; siteName: string; code: string; stage: string | null; mode: 'starting' | 'project' | 'service'; percent: number | null; payment: { kind: string; amount: number; dueAt: string | null } }[];
+  tickets: { id: string; code: string; status: string; urgency: string; summary: string }[];
+  coverage: { siteName: string; state: string; endsOn: string | null }[];
+  documents: number;
+  lastIntent: string | null;
+}
+export interface SupportChatMeta {
+  customerId: string;
+  /** An open request for a person: set when the assistant hands over, cleared once a person has replied. */
+  handoff?: { at: string; reason: SupportHandoffReason; intent: string; snapshot: SupportContext; urgent: boolean };
+  /** A person handed it back to the assistant at this time. */
+  botResumedAt?: string;
+  lastIntent?: string;
 }

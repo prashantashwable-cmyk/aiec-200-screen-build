@@ -112,7 +112,7 @@ const translations: ScreenTranslations = {
         },
         support: {
           title: 'Support',
-          hint: 'Call your AIEC team',
+          hint: 'Chat with your AIEC team',
         },
         service: {
           title: 'Book a service',
@@ -256,7 +256,7 @@ const translations: ScreenTranslations = {
         },
         support: {
           title: 'सहायता',
-          hint: 'अपनी AIEC टीम को कॉल करें',
+          hint: 'अपनी AIEC टीम से चैट करें',
         },
         service: {
           title: 'सर्विस बुक करें',
@@ -400,7 +400,7 @@ const translations: ScreenTranslations = {
         },
         support: {
           title: 'मदत',
-          hint: 'तुमच्या AIEC टीमला कॉल करा',
+          hint: 'तुमच्या AIEC टीमशी चॅट करा',
         },
         service: {
           title: 'सेवा बुक करा',

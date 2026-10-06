@@ -184,7 +184,7 @@ function Tiles({ c, s, t, supportPhone }: { c: CustomerProjectHome; s: CustomerH
       <Tile id="status" icon={<Lifebuoy size={22} />} title={t(K.tile.status.title)} hint={t(K.tile.status.hint)} onClick={() => s.goTo(statusPath(c.key))} />
       <Tile id="payments" icon={<CreditCard size={22} />} title={t(K.tile.payments.title)} hint={c.payments.total > 0 ? t(K.tile.payments.hint, { received: formatINR(c.payments.received), total: formatINR(c.payments.total) }) : ''} onClick={() => s.goTo(paymentsPath(c.dealId))} />
       <Tile id="documents" icon={<FileText size={22} />} title={t(K.tile.documents.title)} hint={t(K.tile.documents.hint)} onClick={() => s.goTo(documentsPath)} />
-      <Tile id="support" icon={<Headset size={22} />} title={t(K.tile.support.title)} hint={t(K.tile.support.hint)} href={supportPhone ? `tel:${supportPhone}` : undefined} disabled={!supportPhone} />
+      <Tile id="support" icon={<Headset size={22} />} title={t(K.tile.support.title)} hint={t(K.tile.support.hint)} onClick={() => s.goTo('/support-chat')} />
       {handed && c.jobId && <Tile id="service" icon={<Wrench size={22} />} title={t(K.tile.service.title)} hint={t(K.tile.service.hint)} onClick={() => s.goTo(servicePath(c.jobId as string))} />}
     </div>
   );

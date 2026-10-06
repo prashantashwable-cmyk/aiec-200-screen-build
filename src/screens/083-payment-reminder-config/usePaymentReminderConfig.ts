@@ -15,7 +15,7 @@ const DEFAULT_TEMPLATE_FOR_TIER: Record<ReminderEscalationTier, string> = {
   firm: 'tpl-payment-reminder-firm',
   call_task: '',
 };
-const DEFAULT_CHANNEL_FOR_TIER: Record<ReminderEscalationTier, CommChannel> = {
+const DEFAULT_CHANNEL_FOR_TIER: Record<ReminderEscalationTier, Exclude<CommChannel, 'in_app'>> = {
   friendly: 'sms',
   firm: 'whatsapp',
   call_task: 'call',

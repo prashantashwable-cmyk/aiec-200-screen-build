@@ -158,6 +158,9 @@ import type {
   Invoice,
   Job,
   GeoPoint,
+  MessageStatus,
+  SupportContext,
+  SupportHandoffReason,
   TicketAttachment,
   TicketCategory,
   TicketCoverage,
@@ -6950,6 +6953,56 @@ export interface TicketCreateInput {
 }
 export type TicketProblemCode = 'category_required' | 'lift_required' | 'description_short' | 'description_long' | 'too_many_attachments' | 'impact_required' | 'date_past' | 'window_passed' | 'too_far' | 'date_invalid' | 'outcome_required' | 'notes_short' | 'parts_note_required' | 'responsibility_required' | 'note_short' | 'evidence_unreviewed';
 
+/* ------------------------------------------------------------------ Support chat (176) */
+
+export interface SupportMessageView {
+  id: string;
+  from: 'customer' | 'bot' | 'agent';
+  senderName: string | null;
+  /** The words, for a customer or a person; null for an assistant reply, which is a key. */
+  text: string | null;
+  key: string | null;
+  params: Record<string, string | number> | null;
+  links: { labelKey: string; route: string }[];
+  at: string;
+  status: MessageStatus;
+}
+export interface SupportChatView {
+  conversationId: string | null;
+  handling: 'bot' | 'waiting' | 'human';
+  /** The person who last replied, while a person is handling it. */
+  agentName: string | null;
+  queue: { position: number; expectedMin: number; busy: boolean } | null;
+  messages: SupportMessageView[];
+  emergencyPhone: string | null;
+  firstName: string;
+  at: string;
+}
+export interface SupportRow {
+  conversationId: string;
+  customerName: string;
+  siteName: string;
+  handling: 'bot' | 'waiting' | 'human';
+  waitingMinutes: number;
+  slaBreached: boolean;
+  urgent: boolean;
+  reason: SupportHandoffReason | null;
+  preview: string | null;
+  lastAt: string;
+}
+export interface SupportBoard {
+  rows: SupportRow[];
+  counts: { waiting: number; human: number; bot: number; all: number };
+  busy: boolean;
+  at: string;
+}
+export interface SupportThread {
+  chat: SupportChatView;
+  context: SupportContext;
+  /** The picture as it stood when the assistant handed over (frozen), if it did. */
+  handoff: { at: string; reason: SupportHandoffReason; urgent: boolean; waitingMinutes: number; slaBreached: boolean; snapshot: SupportContext } | null;
+}
+
 /* ------------------------------------------------------------------ Payout disputes (170) */
 
 export interface PayoutDisputeRow {
@@ -8279,6 +8332,13 @@ export interface Repository {
   getVaultBundle(userId: string): Promise<VaultDocument[]>;
   /** 174: the customer's payment picture for one project (the first needing attention when none is named). */
   getCustomerPayments(dealId: string | null, userId: string): Promise<CustomerPayView>;
+  /* 176 — support chat: the customer's assistant-then-person conversation, and the agent's board and thread with the customer's whole picture. */
+  getSupportChat(userId: string): Promise<SupportChatView>;
+  sendSupportMessage(userId: string, input: { clientId: string; text: string; intent?: 'payment_status' | 'progress' | 'amc' | 'troubleshoot' | 'human' }): Promise<SupportChatView>;
+  getSupportBoard(adminId: string): Promise<SupportBoard>;
+  getSupportThread(conversationId: string, adminId: string): Promise<SupportThread>;
+  sendSupportAgentMessage(conversationId: string, adminId: string, text: string): Promise<SupportThread>;
+  handBackSupportChat(conversationId: string, adminId: string): Promise<SupportThread>;
   /* 175 — service tickets: the customer's desk, the Admin board and the technician's visits, over one record. */
   getServiceDesk(userId: string): Promise<ServiceDeskView>;
   createServiceTicket(input: TicketCreateInput, userId: string): Promise<TicketView>;

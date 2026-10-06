@@ -10,6 +10,7 @@ const translations: ScreenTranslations = {
       whatsapp: 'WhatsApp',
       sms: 'SMS',
       call: 'Call',
+      in_app: 'In app',
     },
     commTemplates: {
       title: 'Templates',
@@ -72,6 +73,7 @@ const translations: ScreenTranslations = {
       whatsapp: 'व्हाट्सऐप',
       sms: 'एसएमएस',
       call: 'कॉल',
+      in_app: 'ऐप में',
     },
     commTemplates: {
       title: 'टेम्पलेट',
@@ -134,6 +136,7 @@ const translations: ScreenTranslations = {
       whatsapp: 'व्हॉट्सअ‍ॅप',
       sms: 'एसएमएस',
       call: 'कॉल',
+      in_app: 'ॲपमध्ये',
     },
     commTemplates: {
       title: 'टेम्पलेट्स',

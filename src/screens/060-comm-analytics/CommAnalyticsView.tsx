@@ -20,6 +20,7 @@ const CHANNEL_ICON: Record<CommChannel, React.ReactNode> = {
   whatsapp: <ChatCircleText size={18} className="t-emerald" />,
   sms: <ChatDots size={18} className="t-emerald" />,
   call: <Phone size={18} className="t-emerald" />,
+  in_app: <ChatDots size={18} className="t-emerald" />,
 };
 
 export function CommAnalyticsView() {
