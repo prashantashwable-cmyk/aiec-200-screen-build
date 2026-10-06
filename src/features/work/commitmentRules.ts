@@ -2,6 +2,7 @@ import { ASSIGN_DUE, DISPUTE_DECIDE_DUE, REVERIFY_DUE } from '@/features/qc/snag
 import { ARRANGE_DUE, FOLLOWUP_DUE, SIGNOFF_DUE_PRESENT, SIGNOFF_DUE_REMOTE } from '@/features/qc/walkthrough';
 import { dueAtOf as sopDueAt } from '@/features/sop/rollout';
 import { dueAtOf as feedbackDueAt, REVIEW_DUE_DAYS as FEEDBACK_REVIEW_DAYS } from '@/features/training/feedback';
+import { APPROVE_DUE as PAYOUT_APPROVE_DUE, HOLD_REVIEW as PAYOUT_HOLD_REVIEW } from '@/features/commission/payoutApproval';
 import type { SopRollout, TrainingFeedback, TrainingAssignment, PartnerApplication, PartnerExit, TierDispute, TierReview, WarrantyRegistration, HandoverWalkthrough, ReworkRequest,
   Alert,
   AlertSeverity,
@@ -148,6 +149,7 @@ export interface CommitmentSources {
   complianceReview: { dueAt: string; cycle: string; done: boolean };
   /** SOP rollouts: each affected partner's own acknowledgement, and Admin's look at what is still open (159). */
   /** Serious training feedback Admin has not dealt with, and the standing look at the routine kind (160). */
+  payoutApprovals: { pending: { count: number; oldestAt: string | null }; held: { id: string; partnerName: string; since: string }[] };
   commissionNotices: { ruleId: string; version: number; userId: string; role: 'surveyor' | 'technician'; effectiveFrom: string; from: string; to: string; open: boolean }[];
   trainingFeedback: { urgent: { f: TrainingFeedback; code: string; safety: boolean }[]; routine: { open: number; oldestAt: string | null } };
   sopRollouts: { acks: { r: SopRollout; userId: string; done: boolean; away: boolean }[]; closes: { r: SopRollout; pending: number }[] };
@@ -2122,6 +2124,54 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
           oversightRoute: '/training-feedback',
         },
       ];
+    },
+  },
+  {
+    // Payouts are looked at before they are released, and the routine ones cleared together (163). One standing line while anything waits, so a busy week is one task, not sixty.
+    kind: 'payout_approval',
+    nudgeBefore: days(1),
+    escalateAfter: days(3),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'payment',
+    collect(src) {
+      const w = src.payoutApprovals.pending;
+      if (w.count === 0 || !w.oldestAt) return [];
+      return [
+        {
+          ...base('payout_approval', 'application', 'standing'),
+          ownerUserId: adminId(src),
+          titleKey: 'work.title.payout_approval',
+          titleParams: { count: String(w.count) },
+          dueAt: new Date(Date.parse(w.oldestAt) + PAYOUT_APPROVE_DUE).toISOString(),
+          state: 'open' as const,
+          paused: false,
+          actionRoute: '/payout-approval',
+          oversightRoute: '/payout-approval',
+        },
+      ];
+    },
+  },
+  {
+    // A payout on hold comes back for a second look so a partner is never left waiting without anyone deciding (163).
+    kind: 'payout_hold_review',
+    nudgeBefore: days(1),
+    escalateAfter: days(3),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'payment',
+    collect(src) {
+      return src.payoutApprovals.held.map((h) => ({
+        ...base('payout_hold_review', 'application', h.id),
+        ownerUserId: adminId(src),
+        titleKey: 'work.title.payout_hold_review',
+        titleParams: { partner: h.partnerName },
+        dueAt: new Date(Date.parse(h.since) + PAYOUT_HOLD_REVIEW).toISOString(),
+        state: 'open' as const,
+        paused: false,
+        actionRoute: `/payout-approval?state=held&entry=${h.id}`,
+        oversightRoute: `/payout-approval?state=held&entry=${h.id}`,
+      }));
     },
   },
   {

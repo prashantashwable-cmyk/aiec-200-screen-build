@@ -11,6 +11,7 @@ import type { CompleteInput, DecisionSignal, Phase as InterviewPhase } from '@/f
 import type { Demand, GuideAnswers, InterestProblem, InterestRole, RecruitRole, RecruitSource } from '@/features/recruitment/interest';
 import type { Outstanding, SectionId } from '@/features/recruitment/application';
 import type { JudgementDecision, JudgementProblem, ShareBasis } from '@/features/commission/finalPayout';
+import type { HoldKind as PayoutHoldKind, PayoutFlag, QueueState as PayoutQueueState, SkipReason as PayoutSkipReason } from '@/features/commission/payoutApproval';
 import type { AttentionKind as PayoutAttentionKind, PayoutCategory, PayoutStatus, Spike as PayoutSpike, Trend as PayoutTrend } from '@/features/commission/payoutTracker';
 import type { Check as CommissionCheck, CommissionParams, CommissionRuleId, ParamDef as CommissionParamDef, RuleGroup, RuleLedger, RuleTrigger, Scenario as CommissionScenario, SimInput as CommissionSimInput, SimResult as CommissionSimResult, StackGroup as CommissionStackGroup } from '@/features/commission/rules';
 import type { ScriptGroup, WalkthroughMode, WalkthroughProblem } from '@/features/qc/walkthrough';
@@ -6139,6 +6140,80 @@ export interface WorkforcePayoutTotals {
   paidLast30: number;
 }
 
+/* ------------------------------------------------------------------ Payout approval queue (163) */
+
+export interface PayoutApprovalFilter {
+  state?: PayoutQueueState | 'all';
+  flagged?: 'all' | 'flagged' | 'routine';
+  q?: string;
+  offset?: number;
+  /** 0 returns everything. */
+  limit?: number;
+}
+export interface PayoutRelated {
+  kind: 'snag' | 'issue' | 'dispute' | 'damaged_parts';
+  id: string;
+  code: string;
+  route: string;
+}
+export interface PayoutDecisionView {
+  id: string;
+  kind: 'approved' | 'held' | 'released';
+  at: string;
+  byName: string;
+  reason: string | null;
+  holdKind: PayoutHoldKind | null;
+  expedited: boolean;
+  acknowledged: string[];
+  batch: boolean;
+}
+export interface PayoutQueueRow {
+  id: string;
+  partnerId: string;
+  partnerName: string;
+  partnerRole: PayoutRowView['partnerRole'];
+  amount: number;
+  reasonKey: string;
+  trigger: string;
+  category: PayoutCategory;
+  dealCode: string | null;
+  dealValue: number | null;
+  jobCode: string | null;
+  jobId: string | null;
+  earnedAt: string;
+  ageDays: number;
+  state: PayoutQueueState;
+  flags: PayoutFlag[];
+  routine: boolean;
+  related: PayoutRelated[];
+  /** What the rule in force the day it was earned says: its numbers, so Admin can check the amount against them. */
+  rule: { id: string; version: number; effectiveFrom: string; params: CommissionParams; inferred: boolean } | null;
+  /** The amount the rule gives for this deal, as a range (the tier can add to it), when it is a straight share. */
+  expected: { low: number; high: number } | null;
+  /** The usual amount of this kind, when the flag is about being out of line with it. */
+  typical: number | null;
+  tierPlusPct: number | null;
+  expedited: boolean;
+  cleared: { at: string; byName: string } | null;
+  hold: { kind: PayoutHoldKind; since: string; days: number; byName: string; reason: string | null } | null;
+}
+export interface PayoutQueueView {
+  counts: Record<PayoutQueueState | 'all', number>;
+  totals: Record<PayoutQueueState, PayoutMoney>;
+  routine: { count: number; amount: number; ids: string[] };
+  limits: { routineLimit: number };
+  oldestPendingDays: number | null;
+  rows: PayoutQueueRow[];
+  total: number;
+  at: string;
+}
+export interface PayoutBatchResult {
+  approved: string[];
+  skipped: { id: string; reason: PayoutSkipReason }[];
+  amount: number;
+}
+export type PayoutApprovalProblem = 'not_found' | 'not_pending' | 'not_holdable' | 'not_held' | 'flags_unacknowledged' | 'reason_required' | 'kind_invalid' | 'not_admin';
+
 export interface Repository {
   /* Users */
   listUsers(filter?: { role?: Role; status?: User['status'] }): Promise<User[]>;
@@ -6986,6 +7061,13 @@ export interface Repository {
   handleTrainingFeedback(feedbackId: string, input: { status: FeedbackStatusName; note: string; addressedInVersion?: number }, adminId: string): Promise<FeedbackItemView>;
   /** Hides (or restores) a comment that is abusive or not constructive; its ratings keep counting. */
   moderateTrainingFeedback(feedbackId: string, input: { hide: boolean; reason: string }, adminId: string): Promise<FeedbackItemView>;
+  // Payout approval queue (163)
+  getPayoutApprovalQueue(filter: PayoutApprovalFilter, adminId: string): Promise<PayoutQueueView>;
+  getPayoutApprovalDetail(entryId: string, adminId: string): Promise<{ row: PayoutQueueRow; history: PayoutDecisionView[] }>;
+  approvePayout(entryId: string, input: { acknowledged: string[]; expedited?: boolean; reason?: string }, adminId: string): Promise<PayoutQueueRow>;
+  approvePayoutsBatch(entryIds: string[], adminId: string): Promise<PayoutBatchResult>;
+  holdPayout(entryId: string, input: { kind: string; reason: string }, adminId: string): Promise<PayoutQueueRow>;
+  releasePayoutHold(entryId: string, adminId: string): Promise<PayoutQueueRow>;
   // Workforce payout tracker (162)
   getPayoutTracker(filter: PayoutTrackerFilter, adminId: string): Promise<PayoutTrackerView>;
   getWorkforcePayoutTotals(adminId: string): Promise<WorkforcePayoutTotals>;

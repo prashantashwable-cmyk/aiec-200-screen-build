@@ -2875,13 +2875,13 @@ export const seedRoutePlans: RoutePlan[] = [
 
 export const seedCommissions: CommissionEntry[] = [
   // A technician's payout for a finished installation (121): Santosh's last job was handed over five days ago and waits for the next run.
-  { id: 'c-t1', userId: 'u-tech-1', dealId: 'dl-h2', reasonKey: 'commission.reason.installationCompleted', amount: 14_000, status: 'approved', earnedAt: daysAgo(5), isDemo: true },
+  { id: 'c-t1', userId: 'u-tech-1', dealId: 'dl-h2', reasonKey: 'commission.reason.installationCompleted', amount: 14_000, status: 'approved', earnedAt: daysAgo(5), payoutApproval: { status: 'approved', at: daysAgo(3), byName: 'Prashant Vasant Wable', amount: 14_000 }, isDemo: true },
   { id: 'c-t2', userId: 'u-tech-1', dealId: 'dl-h1', reasonKey: 'commission.reason.installationCompleted', amount: 11_500, status: 'paid', earnedAt: daysAgo(45), paidAt: daysAgo(38), isDemo: true },
   { id: 'c-t3', userId: 'u-tech-2', dealId: 'dl-1', reasonKey: 'commission.reason.installationCompleted', amount: 9_000, status: 'paid', earnedAt: daysAgo(38), paidAt: daysAgo(31), isDemo: true },
   { id: 'c-1', userId: 'u-srv-1', leadId: 'l-1', dealId: 'dl-1', reasonKey: 'commission.reason.leadConverted', amount: 39_600, status: 'paid', earnedAt: daysAgo(48), paidAt: daysAgo(41), isDemo: true },
   { id: 'c-2', userId: 'u-srv-1', leadId: 'l-1', reasonKey: 'commission.reason.siteVisitVerified', amount: 500, status: 'paid', earnedAt: daysAgo(70), paidAt: daysAgo(63), isDemo: true },
   { id: 'c-3', userId: 'u-srv-2', leadId: 'l-2', dealId: 'dl-2', reasonKey: 'commission.reason.leadConverted', amount: 28_200, status: 'paid', earnedAt: daysAgo(33), paidAt: daysAgo(26), isDemo: true },
-  { id: 'c-4', userId: 'u-srv-1', leadId: 'l-15', reasonKey: 'commission.reason.leadQualified', amount: 2_000, status: 'approved', earnedAt: daysAgo(20), isDemo: true },
+  { id: 'c-4', userId: 'u-srv-1', leadId: 'l-15', reasonKey: 'commission.reason.leadQualified', amount: 2_000, status: 'approved', earnedAt: daysAgo(20), payoutApproval: { status: 'held', at: daysAgo(9), byName: 'Prashant Vasant Wable', holdKind: 'information' }, isDemo: true },
   { id: 'c-5', userId: 'u-srv-1', leadId: 'l-4', reasonKey: 'commission.reason.leadQualified', amount: 2_000, status: 'approved', earnedAt: daysAgo(15), isDemo: true },
   { id: 'c-6', userId: 'u-srv-1', leadId: 'l-15', dealId: 'dl-6', reasonKey: 'commission.reason.leadConverted', amount: 126_000, status: 'projected', earnedAt: daysAgo(15), isDemo: true },
   { id: 'c-7', userId: 'u-srv-1', leadId: 'l-6', reasonKey: 'commission.reason.siteVisitVerified', amount: 500, status: 'approved', earnedAt: minutesAgo(41), isDemo: true },

@@ -138,7 +138,14 @@ export function CommissionTrackerView() {
                   </span>
                 }
               />
-              <p className="t-xs t-muted mt-1">{t(K.statusExplain[entry.status])}</p>
+              {entry.status === 'approved' && entry.payoutApproval?.status === 'held' ? (
+                <div className="stack gap-1 mt-1" data-payout-hold>
+                  <Badge tone="warning">{t('payoutApproval.partner.onHold', { date: formatDate(entry.payoutApproval.at, i18n.language) })}</Badge>
+                  <p className="t-xs t-muted">{t(`payoutApproval.partner.hold.${entry.payoutApproval.holdKind ?? 'other'}`)}</p>
+                </div>
+              ) : (
+                <p className="t-xs t-muted mt-1">{entry.status === 'approved' && entry.payoutApproval?.status === 'approved' && entry.payoutApproval.amount === entry.amount ? t('payoutApproval.partner.cleared') : t(K.statusExplain[entry.status])}</p>
+              )}
               {entry.status !== 'paid' && entry.status !== 'forfeited' && (
                 <button
                   type="button"

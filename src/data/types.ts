@@ -4581,6 +4581,30 @@ export interface CommissionEntry {
   ruleVersion?: number;
   /** Absent means rupees. The workforce view (162) never adds amounts of different currencies together. */
   currency?: string;
+  /**
+   * Admin's checkpoint before this payout is released (163). Only an entry the ledger calls `approved` is in front of the checkpoint; with no record here it is
+   * waiting. The amount cleared is kept so an amount changed afterwards puts it back in the queue. A hold carries only a kind: the reason Admin wrote is in the
+   * decision history, and the partner is shown a standard line for the kind.
+   */
+  payoutApproval?: { status: 'approved' | 'held'; at: string; byName: string; amount?: number; expedited?: boolean; holdKind?: string };
+  isDemo: boolean;
+}
+
+/** One decision at the payout checkpoint (163). Append-only: a hold, a release or a clearance is never edited, only followed by the next one. */
+export interface PayoutDecision {
+  id: string;
+  entryId: string;
+  kind: 'approved' | 'held' | 'released';
+  at: string;
+  byName: string;
+  /** What Admin wrote: for a hold, why; for an urgent clearance, why it could not wait. Never shown to the partner. */
+  reason?: string;
+  holdKind?: string;
+  expedited?: boolean;
+  /** The flags Admin had seen and accepted when clearing. */
+  acknowledged?: string[];
+  /** Cleared together with others in one batch. */
+  batchId?: string;
   isDemo: boolean;
 }
 
@@ -4720,7 +4744,7 @@ export type CommitmentKind =
   | 'exit_dispute_decide'
   | 'tier_review_due'
   | 'certification_renewal'
-  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice'
+  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'

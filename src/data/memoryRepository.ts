@@ -264,6 +264,12 @@ import type {
   TrainingFeedbackOverview,
   TrainingFeedbackRow,
   CommissionChangePreview,
+  PayoutApprovalFilter,
+  PayoutBatchResult,
+  PayoutDecisionView,
+  PayoutQueueRow,
+  PayoutQueueView,
+  PayoutRelated,
   PayoutAttentionItem,
   PayoutCategoryView,
   PayoutTrackerFilter,
@@ -643,6 +649,7 @@ import type {
   CommissionEntry,
   CommissionRule,
   CommissionRuleVersion,
+  PayoutDecision,
   CommMessage,
   CommSequence,
   CommTemplate,
@@ -826,6 +833,8 @@ import type { Stage as ExitStage, Blocker as ExitBlocker } from '@/features/part
 import { DEFAULT_CRITERIA as TIER_DEFAULT_CRITERIA, DEFER_MAX_DAYS as TIER_DEFER_MAX_DAYS, DISPUTE_DECIDE_DUE as TIER_DISPUTE_DUE, EFFECTIVE_MAX_DAYS as TIER_EFFECTIVE_MAX_DAYS, INCIDENT_WINDOW as TIER_INCIDENT_WINDOW, REASON_MIN as TIER_REASON_MIN, REVIEW_WITHIN as TIER_REVIEW_WITHIN, TIER_IDS as TIER_IDS_OF, criteriaProblem as tierCriteriaProblem, directionOf as tierDirection, eligibleIndex as tierEligible, evaluate as tierEvaluate, indexOf as tierIndexOf, supplierCriteria as tierSupplierCriteria } from '@/features/partners/tiers';
 import type { Metrics, TierEffects, TierRole } from '@/features/partners/tiers';
 import { DEFAULT_PARAMS as CR_DEFAULTS, NOTICE_DAYS as CR_NOTICE_DAYS, NOTICE_MAX as CR_NOTICE_MAX, REASON_MIN as CR_REASON_MIN, RULE_DEFS as CR_DEFS, RULE_IDS as CR_IDS, RULE_OF_REASON as CR_RULE_OF_REASON, SIGNIFICANT_CHANGE as CR_SIGNIFICANT, STACK_GROUPS as CR_STACK, amountOf as crAmountOf, changeSize as crChangeSize, crewRatesOf as crCrewRates, defOf as crDefOf, inForce as crInForce, isRuleId as crIsRuleId, normaliseParams as crNormalise, newChecks as crNewChecks, paramsProblem as crParamsProblem, resultChecks as crResultChecks, sameParams as crSameParams, scenariosFor as crScenarios, simulate as crSimulate, upcomingOf as crUpcoming } from '@/features/commission/rules';
+import { APPROVE_DUE as PA_APPROVE_DUE, HOLD_KINDS as PA_HOLD_KINDS, HOLD_REVIEW as PA_HOLD_REVIEW, ROUTINE_LIMIT as PA_ROUTINE_LIMIT, approveProblem as paApproveProblem, batchSkipReason as paBatchSkip, holdProblem as paHoldProblem, isRoutine as paIsRoutine, stateOf as paStateOf } from '@/features/commission/payoutApproval';
+import type { HoldKind as PaHoldKind, PayoutFlag as PaFlag } from '@/features/commission/payoutApproval';
 import { APPROVED_WAIT as PT_APPROVED_WAIT, CATEGORIES as PT_CATEGORIES, PAGE as PT_PAGE, STATUSES as PT_STATUSES, byCurrency as ptByCurrency, categoryOf as ptCategoryOf, isStaleApproved as ptIsStale, outliersOf as ptOutliers, spikeOf as ptSpike, sum as ptSum, trendOf as ptTrend, triggerOf as ptTriggerOf } from '@/features/commission/payoutTracker';
 import type { AttentionKind as PtAttentionKind, PayoutCategory as PtCategory, PayoutStatus as PtStatus } from '@/features/commission/payoutTracker';
 import type { CommissionParams as CrParams, CommissionRuleId as CrRuleId, Rates as CrRates } from '@/features/commission/rules';
@@ -2534,6 +2543,7 @@ function commitmentSources(now: number): CommitmentSources {
     sopRollouts: sopRolloutSignals(Date.now()),
     trainingFeedback: trainingFeedbackSignals(Date.now()),
     commissionNotices: commissionNoticeSignals(Date.now()),
+    payoutApprovals: payoutApprovalSignals(Date.now()),
     exits: exitSignals(),
     handoverReviews: handoverSignals().reviews,
     qcMechChecks,
@@ -8981,6 +8991,171 @@ function syncPayoutSpikes(now: number): void {
       patchInPlace(alerts, existing.id, { status: 'resolved', resolvedAt: new Date(now).toISOString(), resolvedBy: 'system', resolutionNote: 'Spend is back in line with the period before.' });
     }
   }
+}
+
+/* ------------------------------------------------------------------ Payout approval queue (163) */
+
+/** The checkpoint's history: seeded for the two entries that start with a decision, then appended to by every decision. */
+const payoutDecisions: PayoutDecision[] = [
+  { id: 'pd-1', entryId: 'c-t1', kind: 'approved', at: new Date(Date.now() - 3 * 86_400_000).toISOString(), byName: 'Prashant Vasant Wable', acknowledged: [], isDemo: true },
+  { id: 'pd-2', entryId: 'c-4', kind: 'held', at: new Date(Date.now() - 9 * 86_400_000).toISOString(), byName: 'Prashant Vasant Wable', reason: 'Waiting for the surveyor to confirm the bank account for this payout.', holdKind: 'information', isDemo: true },
+];
+let payoutDecisionCounter = 2;
+let payoutBatchCounter = 0;
+const paDecide = (d: Omit<PayoutDecision, 'id' | 'isDemo'>): void => {
+  payoutDecisionCounter += 1;
+  payoutDecisions.push({ id: `pd-${payoutDecisionCounter}`, isDemo: true, ...d });
+};
+const paHoldNow = (e: CommissionEntry): { kind: PaHoldKind; since: string; byName: string } | null => (e.payoutApproval?.status === 'held' ? { kind: (e.payoutApproval.holdKind ?? 'other') as PaHoldKind, since: e.payoutApproval.at, byName: e.payoutApproval.byName } : null);
+
+interface PaContext {
+  snagsByJob: Map<string, { id: string; code: string }[]>;
+  issuesByJob: Map<string, { id: string; code: string }[]>;
+  disputesByDeal: Map<string, { id: string; code: string }[]>;
+  damagedByDeal: Map<string, { id: string; code: string }[]>;
+  typical: Map<string, number>;
+}
+function paContext(): PaContext {
+  const group = <T,>(xs: T[], key: (x: T) => string | undefined, val: (x: T) => { id: string; code: string }) => {
+    const m = new Map<string, { id: string; code: string }[]>();
+    for (const x of xs) { const k = key(x); if (k) m.set(k, [...(m.get(k) ?? []), val(x)]); }
+    return m;
+  };
+  ensureSnagSeeds();
+  const rows = commissions.filter((c) => c.status !== 'forfeited').map(ptRowOf);
+  // The usual of a kind is only called usual with enough of it on record (the shares of an installation pool vary with time on site, so only a high one is noticed).
+  const med = new Map<string, number>();
+  for (const [trigger, list] of Object.entries(rows.reduce<Record<string, number[]>>((a, r) => ({ ...a, [r.trigger]: [...(a[r.trigger] ?? []), r.amount] }), {}))) {
+    if (list.length >= 4) { const sorted = [...list].sort((a, b) => a - b); const m = Math.floor(sorted.length / 2); med.set(trigger, sorted.length % 2 ? sorted[m] : (sorted[m - 1] + sorted[m]) / 2); }
+  }
+  return {
+    snagsByJob: group(reworkRequests.filter((r) => sgIsOpen(r.status)), (r) => r.jobId, (r) => ({ id: r.id, code: r.code })),
+    issuesByJob: group(jobIssues.filter((i) => i.status === 'open' && i.severity !== 'minor'), (i) => i.jobId, (i) => ({ id: i.id, code: i.code ?? i.id })),
+    disputesByDeal: group(payments.filter((p) => p.status === 'disputed'), (p) => p.dealId, (p) => ({ id: p.id, code: p.code })),
+    damagedByDeal: group(discrepancyReports.filter((r) => r.status === 'open'), (r) => r.dealId, (r) => ({ id: r.id, code: r.code })),
+    typical: med,
+  };
+}
+
+/** What the rule says this payout should be, as a range (the tier can add to a share), for the rules that are a straight function of the deal. */
+function paExpected(e: CommissionEntry, rule: { id: string; params: CrParams } | null): { low: number; high: number } | null {
+  if (!rule) return null;
+  const deal = e.dealId ? byId(deals, e.dealId) : undefined;
+  const value = deal ? deal.agreedPrice || deal.quotedPrice : 0;
+  const p = { ...rule.params };
+  if (rule.id === 'conversion') {
+    if (!value) return null;
+    const neg = crNegotiated(e.userId, 'conversionPct');
+    if (neg !== undefined) p.pct = neg;
+    const topTier = Math.max(0, ...tcInForce('surveyor', Date.now()).tiers.map((t) => t.effects.commissionPlusPct ?? 0));
+    return { low: crAmountOf('conversion', p, { dealValue: value }), high: crAmountOf('conversion', p, { dealValue: value, tierPlusPct: topTier }) };
+  }
+  if (rule.id === 'sales_close') { if (!value) return null; const neg = crNegotiated(e.userId, 'closePct'); if (neg !== undefined) p.pct = neg; const a = crAmountOf('sales_close', p, { dealValue: value }); return { low: a, high: a }; }
+  if (rule.id === 'site_visit' || rule.id === 'lead_qualified') { const a = crAmountOf(rule.id as CrRuleId, p); return { low: a, high: a }; }
+  return null;
+}
+
+function paRowOf(e: CommissionEntry, now: number, ctx: PaContext): PayoutQueueRow {
+  const base = ptRowOf(e);
+  const tr = crTraceOf(e);
+  const ruleId = tr.ruleId;
+  const ver = ruleId && tr.version ? crRule(ruleId).versions.find((v) => v.version === tr.version) : undefined;
+  const rule = ruleId && ver ? { id: ruleId, version: ver.version, effectiveFrom: ver.effectiveFrom, params: { ...ver.params }, inferred: tr.inferred } : null;
+  const deal = e.dealId ? byId(deals, e.dealId) : undefined;
+  const state = (paStateOf({ status: e.status, amount: e.amount, approval: e.payoutApproval }) ?? 'pending') as PayoutQueueRow['state'];
+  const flags: PaFlag[] = [];
+  const related: PayoutRelated[] = [];
+  const crew = e.payoutRole === 'technician_lead' || e.payoutRole === 'technician';
+  if (crew && e.jobId) {
+    for (const x of ctx.snagsByJob.get(e.jobId) ?? []) related.push({ kind: 'snag', id: x.id, code: x.code, route: `/snags/${e.jobId}?snag=${x.id}` });
+    for (const x of ctx.issuesByJob.get(e.jobId) ?? []) related.push({ kind: 'issue', id: x.id, code: x.code, route: `/job-issues/${e.jobId}?issue=${x.id}` });
+  }
+  if (e.dealId) {
+    for (const x of ctx.disputesByDeal.get(e.dealId) ?? []) related.push({ kind: 'dispute', id: x.id, code: x.code, route: '/admin/analytics/collections/disputes' });
+    if (crew) for (const x of ctx.damagedByDeal.get(e.dealId) ?? []) related.push({ kind: 'damaged_parts', id: x.id, code: x.code, route: `/damaged-parts?report=${x.id}` });
+  }
+  if (related.some((r) => r.kind === 'snag')) flags.push('open_snag');
+  if (related.some((r) => r.kind === 'issue')) flags.push('open_issue');
+  if (related.some((r) => r.kind === 'dispute')) flags.push('open_dispute');
+  if (related.some((r) => r.kind === 'damaged_parts')) flags.push('damaged_parts');
+  const expected = paExpected(e, rule);
+  const typical = ctx.typical.get(base.trigger) ?? null;
+  if (expected) {
+    if (e.amount > expected.high * 1.01) flags.push('amount_high');
+    else if (e.amount < expected.low * 0.99) flags.push('amount_low');
+  } else if (typical && e.amount >= typical * 3) flags.push('amount_high');
+  const offer = partnerApplications.find((a) => a.offer?.activation?.userId === e.userId)?.offer;
+  if (offer && offer.status === 'signed' && ofCapability(offer) !== 'full') flags.push('not_payable');
+  const hold = paHoldNow(e);
+  const heldDecision = [...payoutDecisions].reverse().find((d) => d.entryId === e.id && d.kind === 'held');
+  return {
+    id: e.id,
+    partnerId: base.partnerId,
+    partnerName: base.partnerName,
+    partnerRole: base.partnerRole,
+    amount: e.amount,
+    reasonKey: e.reasonKey,
+    trigger: base.trigger,
+    category: base.category,
+    dealCode: base.dealCode,
+    dealValue: deal ? deal.agreedPrice || deal.quotedPrice : null,
+    jobCode: base.jobCode,
+    jobId: base.jobId,
+    earnedAt: e.earnedAt,
+    ageDays: Math.max(0, Math.floor((now - Date.parse(e.earnedAt)) / 86_400_000)),
+    state,
+    flags,
+    routine: paIsRoutine(flags, e.amount),
+    related,
+    rule,
+    expected,
+    typical: typical ? Math.round(typical) : null,
+    tierPlusPct: byId(users, e.userId)?.role === 'surveyor' ? crSurveyorPlus(e.userId, now) : null,
+    expedited: !!e.payoutApproval?.expedited,
+    cleared: state === 'cleared' && e.payoutApproval ? { at: e.payoutApproval.at, byName: e.payoutApproval.byName } : null,
+    hold: hold ? { kind: hold.kind, since: hold.since, days: Math.max(0, Math.floor((now - Date.parse(hold.since)) / 86_400_000)), byName: hold.byName, reason: heldDecision?.reason ?? null } : null,
+  };
+}
+
+function paQueueOf(f: PayoutApprovalFilter, now: number): PayoutQueueView {
+  const ctx = paContext();
+  const all = commissions.filter((e) => e.status === 'approved').map((e) => paRowOf(e, now, ctx));
+  const q = (f.q ?? '').trim().toLowerCase();
+  const qOk = (r: PayoutQueueRow) => !q || [r.partnerName, r.dealCode ?? '', r.jobCode ?? '', r.id].some((x) => x.toLowerCase().includes(q));
+  const flagOk = (r: PayoutQueueRow) => !f.flagged || f.flagged === 'all' || (f.flagged === 'flagged' ? r.flags.length > 0 : r.routine);
+  const base = all.filter((r) => qOk(r) && flagOk(r));
+  const counts = { all: base.length, pending: 0, held: 0, cleared: 0 } as PayoutQueueView['counts'];
+  for (const r of base) counts[r.state] += 1;
+  const shown = base.filter((r) => !f.state || f.state === 'all' || r.state === f.state);
+  // Urgent first, then the flagged (they need a person), then the oldest waiting.
+  const rank = (r: PayoutQueueRow) => (r.expedited ? 0 : r.state === 'pending' ? (r.flags.length ? 1 : 2) : r.state === 'held' ? 3 : 4);
+  shown.sort((a, b) => rank(a) - rank(b) || (a.earnedAt < b.earnedAt ? -1 : a.earnedAt > b.earnedAt ? 1 : a.id < b.id ? -1 : 1));
+  const off = Math.max(0, f.offset ?? 0);
+  const lim = f.limit === 0 ? shown.length : Math.max(1, f.limit ?? 20);
+  const money = (xs: PayoutQueueRow[]) => ({ count: xs.length, amount: xs.reduce((a, x) => a + x.amount, 0) });
+  const pending = all.filter((r) => r.state === 'pending');
+  const routine = pending.filter((r) => r.routine);
+  return {
+    counts,
+    totals: { pending: money(pending), held: money(all.filter((r) => r.state === 'held')), cleared: money(all.filter((r) => r.state === 'cleared')) },
+    routine: { count: routine.length, amount: routine.reduce((a, x) => a + x.amount, 0), ids: routine.map((r) => r.id) },
+    limits: { routineLimit: PA_ROUTINE_LIMIT },
+    oldestPendingDays: pending.length ? Math.max(...pending.map((r) => r.ageDays)) : null,
+    rows: shown.slice(off, off + lim).map((r) => JSON.parse(JSON.stringify(r)) as PayoutQueueRow),
+    total: shown.length,
+    at: new Date(now).toISOString(),
+  };
+}
+
+/** What Admin hears about the checkpoint: one standing line while anything waits, and each hold comes back for a second look so nobody is left in silence. */
+function payoutApprovalSignals(now: number): { pending: { count: number; oldestAt: string | null }; held: { id: string; partnerName: string; since: string }[] } {
+  const waiting = commissions.filter((e) => paStateOf({ status: e.status, amount: e.amount, approval: e.payoutApproval }) === 'pending');
+  const oldest = waiting.map((e) => e.earnedAt).sort()[0] ?? null;
+  void now;
+  return {
+    pending: { count: waiting.length, oldestAt: oldest },
+    held: commissions.filter((e) => e.status === 'approved' && e.payoutApproval?.status === 'held').map((e) => ({ id: e.id, partnerName: nameOf(e.userId) === 'AIEC' ? (ptRowOf(e).partnerName) : nameOf(e.userId), since: (e.payoutApproval as { at: string }).at })),
+  };
 }
 
 const tcCanLead = (userId: string): boolean => (byId(users, userId)?.role === 'technician' ? tcEffectsOf('technician', tierNow(userId), Date.now()).canLead !== false : true);
@@ -18315,6 +18490,94 @@ export const memoryRepository: Repository = {
       return fbItemView(byId(trainingFeedback, f.id) as TrainingFeedback);
     }),
 
+  /* --------------------------------- Payout approval queue (163) */
+  getPayoutApprovalQueue: (filter, adminId) =>
+    simulateRead((): PayoutQueueView => {
+      ofAdmin(adminId);
+      return paQueueOf(filter, Date.now());
+    }),
+
+  getPayoutApprovalDetail: (entryId, adminId) =>
+    simulateRead(() => {
+      ofAdmin(adminId);
+      const e = byId(commissions, entryId);
+      if (!e || e.status !== 'approved') throw new RepositoryError('not_found');
+      const now = Date.now();
+      const history = payoutDecisions.filter((d) => d.entryId === entryId).sort((a, b) => (a.at < b.at ? 1 : -1)).map((d): PayoutDecisionView => ({ id: d.id, kind: d.kind, at: d.at, byName: d.byName, reason: d.reason ?? null, holdKind: (d.holdKind as PaHoldKind | undefined) ?? null, expedited: !!d.expedited, acknowledged: [...(d.acknowledged ?? [])], batch: !!d.batchId }));
+      return { row: JSON.parse(JSON.stringify(paRowOf(e, now, paContext()))) as PayoutQueueRow, history };
+    }),
+
+  approvePayout: (entryId, input, adminId) =>
+    simulateWrite((): PayoutQueueRow => {
+      const admin = ofAdmin(adminId);
+      const e = byId(commissions, entryId);
+      if (!e || e.status !== 'approved') throw new RepositoryError('not_found');
+      const now = Date.now();
+      const row = paRowOf(e, now, paContext());
+      if (row.state !== 'pending') throw new RepositoryError('not_pending');
+      const problem = paApproveProblem({ flags: row.flags, acknowledged: input.acknowledged ?? [], expedited: !!input.expedited, reason: input.reason ?? '' });
+      if (problem) throw new RepositoryError(problem);
+      const at = new Date(now).toISOString();
+      patchInPlace(commissions, e.id, { payoutApproval: { status: 'approved', at, byName: admin.name, amount: e.amount, ...(input.expedited ? { expedited: true } : {}) } });
+      paDecide({ entryId: e.id, kind: 'approved', at, byName: admin.name, ...(input.expedited ? { expedited: true, reason: (input.reason ?? '').trim() } : {}), acknowledged: row.flags.filter((f) => (input.acknowledged ?? []).includes(f)) });
+      syncCommitments(now);
+      return JSON.parse(JSON.stringify(paRowOf(byId(commissions, e.id) as CommissionEntry, now, paContext()))) as PayoutQueueRow;
+    }),
+
+  approvePayoutsBatch: (entryIds, adminId) =>
+    simulateWrite((): PayoutBatchResult => {
+      const admin = ofAdmin(adminId);
+      const now = Date.now();
+      const at = new Date(now).toISOString();
+      const ctx = paContext();
+      payoutBatchCounter += 1;
+      const out: PayoutBatchResult = { approved: [], skipped: [], amount: 0 };
+      for (const id of [...new Set(entryIds)]) {
+        const e = byId(commissions, id);
+        if (!e || e.status !== 'approved') { out.skipped.push({ id, reason: 'not_pending' }); continue; }
+        const row = paRowOf(e, now, ctx);
+        const skip = paBatchSkip(row.state, row.flags, row.amount);
+        if (skip) { out.skipped.push({ id, reason: skip }); continue; }
+        patchInPlace(commissions, id, { payoutApproval: { status: 'approved', at, byName: admin.name, amount: e.amount } });
+        paDecide({ entryId: id, kind: 'approved', at, byName: admin.name, acknowledged: [], batchId: `pb-${payoutBatchCounter}` });
+        out.approved.push(id);
+        out.amount += e.amount;
+      }
+      syncCommitments(now);
+      return out;
+    }),
+
+  holdPayout: (entryId, input, adminId) =>
+    simulateWrite((): PayoutQueueRow => {
+      const admin = ofAdmin(adminId);
+      const e = byId(commissions, entryId);
+      if (!e || e.status !== 'approved') throw new RepositoryError('not_found');
+      const now = Date.now();
+      const row = paRowOf(e, now, paContext());
+      if (row.state === 'held') throw new RepositoryError('not_holdable');
+      const problem = paHoldProblem({ kind: input.kind, reason: input.reason });
+      if (problem) throw new RepositoryError(problem);
+      const at = new Date(now).toISOString();
+      patchInPlace(commissions, e.id, { payoutApproval: { status: 'held', at, byName: admin.name, holdKind: input.kind } });
+      paDecide({ entryId: e.id, kind: 'held', at, byName: admin.name, reason: input.reason.trim(), holdKind: input.kind });
+      syncCommitments(now);
+      return JSON.parse(JSON.stringify(paRowOf(byId(commissions, e.id) as CommissionEntry, now, paContext()))) as PayoutQueueRow;
+    }),
+
+  releasePayoutHold: (entryId, adminId) =>
+    simulateWrite((): PayoutQueueRow => {
+      const admin = ofAdmin(adminId);
+      const e = byId(commissions, entryId);
+      if (!e || e.status !== 'approved') throw new RepositoryError('not_found');
+      const now = Date.now();
+      if (e.payoutApproval?.status !== 'held') throw new RepositoryError('not_held');
+      // Releasing a hold puts it back in front of Admin: it is looked at again, not cleared by the release itself.
+      patchInPlace(commissions, e.id, { payoutApproval: undefined });
+      paDecide({ entryId: e.id, kind: 'released', at: new Date(now).toISOString(), byName: admin.name });
+      syncCommitments(now);
+      return JSON.parse(JSON.stringify(paRowOf(byId(commissions, e.id) as CommissionEntry, now, paContext()))) as PayoutQueueRow;
+    }),
+
   /* --------------------------------- Workforce payout tracker (162) */
   getPayoutTracker: (filter, adminId) =>
     simulateRead((): PayoutTrackerView => {
@@ -19383,8 +19646,8 @@ export const memoryRepository: Repository = {
       const id = `pj-${judgementCounter}`;
       const changes: PayoutJudgement['changes'] = entries.map((e) => {
         const before = { status: e.status, amount: e.amount };
-        if (input.decision === 'hold') patchInPlace(commissions, e.id, { status: 'projected' as const, heldBy: id });
-        else if (input.decision === 'release') patchInPlace(commissions, e.id, { status: 'approved' as const, heldBy: undefined });
+        if (input.decision === 'hold') patchInPlace(commissions, e.id, { status: 'projected' as const, heldBy: id, payoutApproval: undefined });
+        else if (input.decision === 'release') patchInPlace(commissions, e.id, { status: 'approved' as const, heldBy: undefined, payoutApproval: undefined });
         else patchInPlace(commissions, e.id, { amount: (input.amounts as Record<string, number>)[e.id] });
         const now = byId(commissions, e.id) as CommissionEntry;
         return { commissionId: e.id, userId: e.userId, name: nameOf(e.userId), before, after: { status: now.status, amount: now.amount } };

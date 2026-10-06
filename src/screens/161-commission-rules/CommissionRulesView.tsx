@@ -8,6 +8,7 @@ import type { CommissionChangePreview, CommissionRuleView, CommissionRulesView, 
 import type { Check, CommissionParams, CommissionRuleId, ParamKey, SimInput, SimLine } from '@/features/commission/rules';
 import { conversionPctOf, mergeChecks, newChecks, resultChecks, sameParams } from '@/features/commission/rules';
 import { BURDEN_WARN_PCT, COMMISSION_KEYS as K, MAX_CREW, MAX_INSPECTORS, NOTICE_DAYS, NOTICE_MAX, PULL_DISTANCE, REASON_MIN, SIGNIFICANT_CHANGE, TIERS_PATH, TOP_PARTY_WARN_SHARE, VIEWS } from './commission-rules.types';
+import { ruleSummary } from '@/features/commission/ruleSummary';
 import { useCommissionRules } from './useCommissionRules';
 import type { CommissionRulesState } from './useCommissionRules';
 
@@ -18,16 +19,7 @@ const isoDay = (offset: number) => { const d = new Date(); d.setDate(d.getDate()
 const GROUPS = ['surveyor', 'technician', 'inspector'] as const;
 const LEDGER_TONE: Record<CommissionRuleView['ledger'], BadgeTone> = { ledger: 'success', cost_report: 'neutral', pending: 'accent' };
 
-/** The value of a rule as one plain sentence: the number the person would be paid, next to the rule's name. */
-export function summaryOf(t: T, id: CommissionRuleId, p: CommissionParams): string {
-  switch (id) {
-    case 'conversion': return t(K.summary.conversion, { pct: p.pct, floor: formatINR(p.floor ?? 0) });
-    case 'sales_close': return t(K.summary.share, { pct: p.pct });
-    case 'install_pool': return t(K.summary.pool, { pct: p.pct, lead: p.leadBonusPct, min: p.minCrewPct });
-    case 'qc_fee': return t(K.summary.fee, { amount: formatINR(p.amount ?? 0) });
-    default: return t(K.summary.fixed, { amount: formatINR(p.amount ?? 0) });
-  }
-}
+export const summaryOf = (t: T, id: CommissionRuleId, p: CommissionParams): string => ruleSummary(t, id, p);
 const ruleName = (t: T, id: string) => t(`commissionRules.rule.${id}.name`);
 
 function Footer({ children }: { children: ReactNode }) {
