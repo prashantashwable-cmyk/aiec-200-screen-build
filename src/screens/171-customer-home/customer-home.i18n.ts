@@ -101,7 +101,6 @@ const translations: ScreenTranslations = {
         status: {
           title: 'Project status',
           hint: 'Every stage, with dates and photos',
-          none: 'Appears once installation is scheduled',
         },
         payments: {
           title: 'Payments',
@@ -246,7 +245,6 @@ const translations: ScreenTranslations = {
         status: {
           title: 'प्रोजेक्ट स्टेटस',
           hint: 'हर चरण, तारीखों और तस्वीरों के साथ',
-          none: 'इंस्टॉलेशन तय होते ही दिखेगा',
         },
         payments: {
           title: 'भुगतान',
@@ -391,7 +389,6 @@ const translations: ScreenTranslations = {
         status: {
           title: 'प्रकल्प स्थिती',
           hint: 'प्रत्येक टप्पा, तारखा आणि फोटोंसह',
-          none: 'इन्स्टॉलेशन ठरताच दिसेल',
         },
         payments: {
           title: 'पेमेंट',

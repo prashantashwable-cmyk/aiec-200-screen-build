@@ -100,7 +100,7 @@ function Concerns({ c, s, t }: { c: CustomerProjectHome; s: CustomerHomeState; t
             <p className="t-sm">{concernText(t, x)}</p>
             {x.reason && <p className="t-sm t-muted">{t(`installTimeline.reason.customer.${x.reason}`)}</p>}
             <span className="row gap-2 wrap">
-              {(x.kind === 'delay' || x.kind === 'paused') && c.jobId && <Button size="sm" variant="ghost" onClick={() => s.goTo(statusPath(c.jobId as string))}>{t(K.openStatus)}</Button>}
+              {(x.kind === 'delay' || x.kind === 'paused') && <Button size="sm" variant="ghost" onClick={() => s.goTo(statusPath(c.key))}>{t(K.openStatus)}</Button>}
               {x.kind === 'payment_disputed' && <Button size="sm" variant="ghost" onClick={() => s.goTo(paymentsPath)}>{t(K.concern.viewPayments)}</Button>}
             </span>
           </div>
@@ -181,7 +181,7 @@ function Tiles({ c, s, t, supportPhone }: { c: CustomerProjectHome; s: CustomerH
   const handed = c.mode === 'service';
   return (
     <div className="stack gap-2" data-tiles>
-      <Tile id="status" icon={<Lifebuoy size={22} />} title={t(K.tile.status.title)} hint={c.jobId ? t(K.tile.status.hint) : t(K.tile.status.none)} disabled={!c.jobId} onClick={() => c.jobId && s.goTo(statusPath(c.jobId))} />
+      <Tile id="status" icon={<Lifebuoy size={22} />} title={t(K.tile.status.title)} hint={t(K.tile.status.hint)} onClick={() => s.goTo(statusPath(c.key))} />
       <Tile id="payments" icon={<CreditCard size={22} />} title={t(K.tile.payments.title)} hint={c.payments.total > 0 ? t(K.tile.payments.hint, { received: formatINR(c.payments.received), total: formatINR(c.payments.total) }) : ''} onClick={() => s.goTo(paymentsPath)} />
       <Tile id="documents" icon={<FileText size={22} />} title={t(K.tile.documents.title)} hint={t(K.tile.documents.hint)} onClick={() => s.goTo(documentsPath(c.jobId, handed))} />
       <Tile id="support" icon={<Headset size={22} />} title={t(K.tile.support.title)} hint={t(K.tile.support.hint)} href={supportPhone ? `tel:${supportPhone}` : undefined} disabled={!supportPhone} />

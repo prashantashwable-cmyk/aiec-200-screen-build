@@ -286,6 +286,12 @@ import type {
   PayoutQueryView,
   PayoutMessageView,
   CustomerConcern,
+  ProjectStatusView,
+  ProjectMilestone,
+  ProjectPhaseView,
+  ProjectUpcoming,
+  ProjectHighlight,
+  ProjectDocument,
   CustomerHomeView,
   CustomerNext,
   CustomerProjectHome,
@@ -10451,6 +10457,113 @@ function chHomeOf(user: User, projectKey: string | null, now: number): CustomerH
       service: svc, early: row.mode === 'starting' || (!job && idx <= 2) || (!!job && !job.startedAt && row.stage !== 'materials'), lastUpdateAt: hidden ? null : tl?.lastUpdateAt ?? null,
     },
   };
+}
+
+
+/* ------------------------------------------------------------------ Project status tracker (172) */
+
+/** The only pictures a customer is shown: the clean, understandable ones. A sensor test, a wiring panel or a safety trial is evidence for the inspector, not a keepsake. */
+const PS_HIGHLIGHT_SLOTS = ['s3.alignment', 's4.mount', 's5.frame', 's10.final'];
+const PS_MAX_HIGHLIGHTS = 8;
+const psPicture = (slot: string): string => {
+  const base = '<rect width="320" height="200" fill="#EFE9DC"/><rect x="95" y="10" width="130" height="180" fill="#D9D1BF" stroke="#8C8372" stroke-width="2"/>';
+  const art = slot === 's3.alignment' ? '<rect x="120" y="14" width="8" height="172" fill="#6E675A"/><rect x="192" y="14" width="8" height="172" fill="#6E675A"/><rect x="120" y="60" width="80" height="5" fill="#A89F8C"/><rect x="120" y="120" width="80" height="5" fill="#A89F8C"/>'
+    : slot === 's4.mount' ? '<rect x="105" y="40" width="110" height="10" fill="#6E675A"/><rect x="130" y="50" width="60" height="45" rx="6" fill="#B8873D"/><circle cx="160" cy="72" r="14" fill="#8C6A2C"/>'
+    : slot === 's5.frame' ? '<rect x="125" y="50" width="70" height="110" fill="none" stroke="#6E675A" stroke-width="6"/><path d="M125 50 L195 160 M195 50 L125 160" stroke="#A89F8C" stroke-width="3"/>'
+    : '<rect x="120" y="50" width="80" height="120" fill="#0E4B3D"/><rect x="124" y="54" width="35" height="112" fill="#CFC8B8"/><rect x="161" y="54" width="35" height="112" fill="#CFC8B8"/><circle cx="160" cy="36" r="6" fill="#B8873D"/>';
+  return `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200">${base}${art}</svg>`)}`;
+};
+let psSeeded = false;
+/** Demo pictures for the seeded jobs' clean steps, so the highlights have something real-looking to curate. Only steps that carry no photo yet; never an unfinished one. */
+function psSeeds(): void {
+  if (psSeeded) return;
+  psSeeded = true;
+  for (const job of jobs.filter((j) => ['j-1', 'j-2', 'j-5'].includes(j.id))) {
+    const version = sopVersionOf(job);
+    for (const step of job.steps) {
+      const def = version.steps.find((d) => d.id === step.id);
+      if (!def || !step.completedAt || (step.evidence ?? []).length > 0) continue;
+      const slots = def.slots.filter((sl) => PS_HIGHLIGHT_SLOTS.includes(sl.id));
+      if (slots.length === 0 || slots.length !== def.slots.length) continue;
+      step.evidence = slots.map((sl, i): JobEvidence => ({ id: `ev-demo-${job.id}-${sl.id}`, slotId: sl.id, kind: 'photo', fileName: `${sl.id}.svg`, previewUrl: psPicture(sl.id), mimeType: 'image/svg+xml', sizeBytes: 600 + i, capturedAt: step.completedAt as string, byUserId: job.technicianId ?? 'u-tech-1', byName: nameOf(job.technicianId ?? 'u-tech-1') }));
+    }
+  }
+}
+
+function psStatusOf(user: User, projectKey: string | null, now: number): ProjectStatusView {
+  psSeeds();
+  const home = chHomeOf(user, projectKey, now);
+  const cur = home.current;
+  const base = { projects: home.projects, project: cur, at: new Date(now).toISOString() };
+  if (!cur) return { ...base, hidden: false, milestones: [], upcoming: [], next: null, phases: [], highlights: [], documents: [], pausedFor: null, pausedPaymentId: null };
+  const deal = byId(deals, cur.dealId) as Deal;
+  const job = cur.jobId ? (byId(jobs, cur.jobId) ?? null) : null;
+  const tl = job ? timelineViewOf(job, user, 'customer', now) : null;
+  const hidden = !!tl?.hiddenFromCustomer;
+  const core = job ? timelineCoreOf(job, now) : null;
+  const events: ProjectMilestone[] = [];
+  const add = (kind: ProjectMilestone['kind'], at: string | null | undefined, phase: InstallSopPhase | null = null, code: string | null = null) => { if (at) events.push({ id: `${kind}:${phase ?? code ?? ''}`, kind, at, phase, code }); };
+  if (deal.status === 'won') add('order_confirmed', deal.closedAt ?? deal.createdAt, null, deal.code);
+  const quote = quotations.filter((q) => q.leadId === deal.leadId && q.acceptedAt).sort((a, b) => (b.acceptedAt as string).localeCompare(a.acceptedAt as string))[0];
+  if (quote) add('quotation_accepted', quote.acceptedAt, null, quote.code);
+  const terms = dealTermsRecords.find((t) => t.dealId === deal.id);
+  if (terms?.bothPartyConfirmedFlag) add('agreement_signed', terms.customerConfirmedAt ?? terms.internalConfirmedAt, null, null);
+  const firstPaid = payments.filter((p) => p.dealId === deal.id && p.paidAt).sort((a, b) => (a.paidAt as string).localeCompare(b.paidAt as string))[0];
+  if (firstPaid) add('first_payment', firstPaid.paidAt, null, firstPaid.code);
+  add('parts_delivered', materialsConfirmedAt(deal.id));
+  if (job && !hidden) {
+    add('installation_started', job.startedAt);
+    for (const m of tl?.milestones ?? []) if (m.status === 'done') add('phase_done', m.doneAt, m.phase);
+    const mech = qcMechChecks.find((c) => c.jobId === job.id)?.signedOff?.at;
+    const elec = qcElecChecks.find((c) => c.jobId === job.id)?.signedOff?.at;
+    if (mech && elec) add('quality_checked', mech > elec ? mech : elec);
+  }
+  const completion = job ? handoverCompletions.find((c) => c.jobId === job.id) : undefined;
+  if (job) add('handover', completion?.issuedAt ?? (job.status === 'completed' ? job.completedAt : undefined), null, completion?.certificateNo ?? null);
+  const reg = job ? registrationOf(job.id) : undefined;
+  if (reg) add('warranty_registered', reg.registeredAt);
+  const milestones = events.sort((a, b) => b.at.localeCompare(a.at));
+
+  const phases: ProjectPhaseView[] = hidden || !tl || !core ? [] : tl.milestones.map((m) => ({
+    phase: m.phase, status: m.status, blocked: m.blocked, doneAt: m.doneAt, expectedAt: m.expectedAt, slipDays: m.slipDays, stepsDone: m.stepsDone, stepsTotal: m.stepsTotal, photoCount: m.evidenceCount,
+    steps: core.steps.filter((x) => x.def.phase === m.phase).map((x) => ({ labelKey: x.step.labelKey, done: isDone(x.step), completedAt: x.step.completedAt ?? null })),
+  }));
+  const upcoming: ProjectUpcoming[] = [];
+  if (job && cur.mode !== 'service') {
+    const stageIdx = CH_STAGES.indexOf((cur.stage ?? 'handover') as CustomerStageKey);
+    if (stageIdx <= 2) {
+      const booked = deliverySchedules.filter((d) => d.dealId === deal.id && d.status === 'scheduled' && d.date).map((d) => d.date as string).sort().pop() ?? null;
+      upcoming.push({ id: 'stage:materials', stage: 'materials', phase: null, at: booked, basis: booked ? 'booked' : null, originalAt: null, slipDays: 0, blocked: false });
+      upcoming.push({ id: 'stage:installation', stage: 'installation', phase: null, at: job.scheduledFor, basis: 'booked', originalAt: null, slipDays: 0, blocked: false });
+    } else if (!hidden) for (const m of tl?.milestones ?? []) if (m.status !== 'done') upcoming.push({ id: `phase:${m.phase}`, stage: 'installation', phase: m.phase, at: m.expectedAt, basis: 'estimate', originalAt: m.originalAt, slipDays: m.slipDays, blocked: m.blocked });
+    if (stageIdx <= 3) upcoming.push({ id: 'stage:quality', stage: 'quality', phase: null, at: null, basis: null, originalAt: null, slipDays: 0, blocked: false });
+    if (stageIdx <= 4) upcoming.push({ id: 'stage:handover', stage: 'handover', phase: null, at: null, basis: null, originalAt: null, slipDays: 0, blocked: false });
+  }
+  const next = upcoming.find((u) => u.at) ?? upcoming[0] ?? null;
+
+  const highlights: ProjectHighlight[] = [];
+  if (job && !hidden) {
+    const version = sopVersionOf(job);
+    for (const step of job.steps) {
+      const def = version.steps.find((d) => d.id === step.id);
+      if (!def) continue;
+      for (const ev of step.evidence ?? []) if (ev.kind === 'photo' && !ev.finding && !ev.supersededAt && PS_HIGHLIGHT_SLOTS.includes(ev.slotId)) highlights.push({ id: ev.id, slot: ev.slotId, phase: def.phase, previewUrl: ev.previewUrl, capturedAt: ev.capturedAt });
+    }
+    highlights.sort((a, b) => b.capturedAt.localeCompare(a.capturedAt));
+    highlights.splice(PS_MAX_HIGHLIGHTS);
+  }
+
+  const documents: ProjectDocument[] = [];
+  if (quote) documents.push({ id: `quote:${quote.id}`, kind: 'quotation', code: quote.code, at: quote.acceptedAt ?? null, route: null });
+  if (terms?.bothPartyConfirmedFlag) documents.push({ id: `terms:${terms.id}`, kind: 'agreement', code: deal.code, at: terms.customerConfirmedAt ?? terms.internalConfirmedAt ?? null, route: null });
+  for (const dc of deliveryConfirmations.filter((c) => c.dealId === deal.id && c.status === 'signed')) documents.push({ id: `dc:${dc.id}`, kind: 'delivery', code: null, at: dc.signedAt ?? null, route: '/delivery-confirmation' });
+  if (job && completion) documents.push({ id: `cert:${job.id}`, kind: 'certificate', code: completion.certificateNo, at: completion.issuedAt, route: `/handover-certificate/${job.id}` });
+  if (job && reg) documents.push({ id: `warranty:${job.id}`, kind: 'warranty', code: null, at: reg.registeredAt, route: `/warranty/${job.id}` });
+
+  const held = !!job && job.status === 'on_hold';
+  const pausedFor: ProjectStatusView['pausedFor'] = held ? (job?.heldBy === ISSUE_HOLD ? 'issue' : 'payment') : null;
+  const pausedPaymentId = pausedFor === 'payment' ? (payments.filter((p) => p.dealId === deal.id && isOutstanding(p) && p.status !== 'disputed' && daysOverdue(p, now) > 0).sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0]?.id ?? null) : null;
+  return { ...base, hidden, milestones, upcoming, next, phases, highlights, documents, pausedFor, pausedPaymentId };
 }
 
 /* ------------------------------------------------------------------ Badges & milestones (166) */
@@ -22947,6 +23060,14 @@ export const memoryRepository: Repository = {
       const user = byId(users, userId);
       if (!user || user.role !== 'customer') throw new RepositoryError('forbidden');
       return JSON.parse(JSON.stringify(chHomeOf(user, projectKey, Date.now()))) as CustomerHomeView;
+    }),
+
+
+  getProjectStatus: (projectKey, userId) =>
+    simulateRead((): ProjectStatusView => {
+      const user = byId(users, userId);
+      if (!user || user.role !== 'customer') throw new RepositoryError('forbidden');
+      return JSON.parse(JSON.stringify(psStatusOf(user, projectKey, Date.now()))) as ProjectStatusView;
     }),
 
   /* --------------------------------- As-installed material log (128) */

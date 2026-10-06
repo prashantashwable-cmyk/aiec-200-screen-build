@@ -6696,6 +6696,50 @@ export interface CustomerHomeView {
   at: string;
 }
 
+
+/* ------------------------------------------------------------------ Project status tracker (172) */
+
+export interface ProjectMilestone {
+  id: string;
+  kind: 'order_confirmed' | 'quotation_accepted' | 'agreement_signed' | 'first_payment' | 'parts_delivered' | 'installation_started' | 'phase_done' | 'quality_checked' | 'handover' | 'warranty_registered';
+  at: string;
+  /** For a phase: which of the installation stages (`installTimeline.milestone.<phase>`). For a document: its code. */
+  phase: InstallSopPhase | null;
+  code: string | null;
+}
+export interface ProjectUpcoming { id: string; stage: CustomerStageKey; phase: InstallSopPhase | null; at: string | null; basis: 'estimate' | 'booked' | null; originalAt: string | null; slipDays: number; blocked: boolean }
+export interface ProjectPhaseView {
+  phase: InstallSopPhase;
+  status: 'done' | 'current' | 'upcoming';
+  blocked: boolean;
+  doneAt: string | null;
+  expectedAt: string | null;
+  slipDays: number;
+  stepsDone: number;
+  stepsTotal: number;
+  photoCount: number;
+  /** For "more detail": the procedure's own step names and whether each is done. No names of people, no reports. */
+  steps: { labelKey: string; done: boolean; completedAt: string | null }[];
+}
+export interface ProjectHighlight { id: string; slot: string; phase: InstallSopPhase; previewUrl: string; capturedAt: string }
+export interface ProjectDocument { id: string; kind: 'quotation' | 'agreement' | 'delivery' | 'certificate' | 'warranty'; code: string | null; at: string | null; route: string | null }
+export interface ProjectStatusView {
+  projects: CustomerProjectRow[];
+  project: CustomerProjectHome | null;
+  /** The customer's timeline was turned off by Admin: dates and photos are not shown, and they are told it is coming. */
+  hidden: boolean;
+  milestones: ProjectMilestone[];
+  upcoming: ProjectUpcoming[];
+  next: ProjectUpcoming | null;
+  phases: ProjectPhaseView[];
+  highlights: ProjectHighlight[];
+  documents: ProjectDocument[];
+  /** Why work is paused, in the customer's words: an issue being dealt with, or a payment matter. */
+  pausedFor: 'issue' | 'payment' | null;
+  pausedPaymentId: string | null;
+  at: string;
+}
+
 /* ------------------------------------------------------------------ Payout disputes (170) */
 
 export interface PayoutDisputeRow {
@@ -8015,6 +8059,8 @@ export interface Repository {
 
   /* Customer home (171) — a summary read from the same records the detailed customer screens use */
   getCustomerHome(projectKey: string | null, userId: string): Promise<CustomerHomeView>;
+  /** Customer's own view of a project's whole journey (172): the same data as the installation timeline, with curated photos and documents. */
+  getProjectStatus(projectKey: string | null, userId: string): Promise<ProjectStatusView>;
   /** Admin only: shows or hides the customer's view of a job's timeline. Hiding needs a reason. */
   setTimelineCustomerVisible(jobId: string, visible: boolean, note: string, adminId: string): Promise<InstallTimelineView>;
 

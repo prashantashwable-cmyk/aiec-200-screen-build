@@ -3,7 +3,7 @@ import type { CustomerStageKey } from '@/data/repository';
 export const POLL_MS = 30_000;
 export const STAGE_ORDER: CustomerStageKey[] = ['agreed', 'contract', 'materials', 'installation', 'quality', 'handover'];
 export const viewKey = (userId: string, project: string) => `aiec.customerHome.${userId}.${project || 'first'}`;
-export const statusPath = (jobId: string) => `/installation-timeline/${jobId}`;
+export const statusPath = (projectKey: string) => `/project-status?p=${encodeURIComponent(projectKey)}`;
 export const paymentsPath = '/payments/history';
 export const checkoutPath = (paymentId: string) => `/customer/payments/${paymentId}/checkout`;
 export const documentsPath = (jobId: string | null, handedOver: boolean) => (handedOver && jobId ? `/handover-certificate/${jobId}` : '/delivery-confirmation');
@@ -107,7 +107,6 @@ export const HOME_KEYS = {
     status: {
       title: 'customerHome.tile.status.title',
       hint: 'customerHome.tile.status.hint',
-      none: 'customerHome.tile.status.none',
     },
     payments: {
       title: 'customerHome.tile.payments.title',
