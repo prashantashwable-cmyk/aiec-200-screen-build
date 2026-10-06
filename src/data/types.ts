@@ -4579,6 +4579,8 @@ export interface CommissionEntry {
   /** The commission rule (161) and the version of it that was in force when this was earned. Older entries carry none and are traced by their reason and date. */
   ruleId?: string;
   ruleVersion?: number;
+  /** Absent means rupees. The workforce view (162) never adds amounts of different currencies together. */
+  currency?: string;
   isDemo: boolean;
 }
 

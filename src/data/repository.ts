@@ -11,6 +11,7 @@ import type { CompleteInput, DecisionSignal, Phase as InterviewPhase } from '@/f
 import type { Demand, GuideAnswers, InterestProblem, InterestRole, RecruitRole, RecruitSource } from '@/features/recruitment/interest';
 import type { Outstanding, SectionId } from '@/features/recruitment/application';
 import type { JudgementDecision, JudgementProblem, ShareBasis } from '@/features/commission/finalPayout';
+import type { AttentionKind as PayoutAttentionKind, PayoutCategory, PayoutStatus, Spike as PayoutSpike, Trend as PayoutTrend } from '@/features/commission/payoutTracker';
 import type { Check as CommissionCheck, CommissionParams, CommissionRuleId, ParamDef as CommissionParamDef, RuleGroup, RuleLedger, RuleTrigger, Scenario as CommissionScenario, SimInput as CommissionSimInput, SimResult as CommissionSimResult, StackGroup as CommissionStackGroup } from '@/features/commission/rules';
 import type { ScriptGroup, WalkthroughMode, WalkthroughProblem } from '@/features/qc/walkthrough';
 import type { DocBasis, DocBlock, DocState, HandoverDocKind, HandoverProblem, ReadinessProblem as HandoverReadinessProblem } from '@/features/qc/handover';
@@ -6053,6 +6054,91 @@ export interface CommissionTraceView {
   inferred: boolean;
 }
 
+/* ------------------------------------------------------------------ Workforce payout tracker (162) */
+
+export interface PayoutTrackerFilter {
+  status?: PayoutStatus | 'all';
+  partnerId?: string;
+  category?: PayoutCategory | 'all';
+  /** yyyy-mm-dd, on the day the entry was earned. */
+  from?: string;
+  to?: string;
+  q?: string;
+  sort?: 'recent' | 'amount';
+  offset?: number;
+  /** 0 returns everything (the export). */
+  limit?: number;
+}
+export interface PayoutRowView {
+  id: string;
+  partnerId: string;
+  partnerName: string;
+  partnerRole: 'surveyor' | 'technician' | 'supplier' | 'other';
+  category: PayoutCategory;
+  trigger: string;
+  reasonKey: string;
+  amount: number;
+  currency: string;
+  status: PayoutStatus;
+  earnedAt: string;
+  paidAt: string | null;
+  held: boolean;
+  dealCode: string | null;
+  jobCode: string | null;
+  jobId: string | null;
+  rule: { id: string; version: number; inferred: boolean } | null;
+  flags: PayoutAttentionKind[];
+}
+export interface PayoutMoney {
+  count: number;
+  amount: number;
+}
+export interface PayoutCategoryView {
+  id: PayoutCategory;
+  count: number;
+  amount: number;
+  share: number;
+  byStatus: Record<PayoutStatus, number>;
+  prevAmount: number | null;
+  trend: PayoutTrend;
+  spike: (PayoutSpike & { ruleChange: { ruleId: string; version: number; effectiveFrom: string } | null }) | null;
+}
+export interface PayoutAttentionItem {
+  kind: PayoutAttentionKind;
+  entryId: string | null;
+  category: PayoutCategory | null;
+  partnerName: string | null;
+  amount: number;
+  facts: Record<string, number | string>;
+}
+export interface PayoutTrackerView {
+  window: { from: string | null; to: string | null; days: number | null };
+  /** Totals per currency of every entry in scope: different currencies are never added together. */
+  currencies: { currency: string; count: number; amount: number }[];
+  stock: {
+    projected: PayoutMoney & { held: PayoutMoney };
+    approved: PayoutMoney & { oldestDays: number | null; stale: PayoutMoney };
+    forfeited: PayoutMoney;
+  };
+  flow: { earned: PayoutMoney & { trend: PayoutTrend }; paid: PayoutMoney & { trend: PayoutTrend } };
+  categories: PayoutCategoryView[];
+  attention: PayoutAttentionItem[];
+  partners: { id: string; name: string; role: PayoutRowView['partnerRole'] }[];
+  statusCounts: Record<PayoutStatus | 'all', number>;
+  rows: PayoutRowView[];
+  total: number;
+  filteredAmount: number;
+  at: string;
+}
+export interface WorkforcePayoutTotals {
+  /** Confirmed and waiting for the payout run: the near-term cash obligation. */
+  approvedNow: number;
+  approvedCount: number;
+  /** Earned but not final yet. */
+  projected: number;
+  paidLast30: number;
+}
+
 export interface Repository {
   /* Users */
   listUsers(filter?: { role?: Role; status?: User['status'] }): Promise<User[]>;
@@ -6900,6 +6986,9 @@ export interface Repository {
   handleTrainingFeedback(feedbackId: string, input: { status: FeedbackStatusName; note: string; addressedInVersion?: number }, adminId: string): Promise<FeedbackItemView>;
   /** Hides (or restores) a comment that is abusive or not constructive; its ratings keep counting. */
   moderateTrainingFeedback(feedbackId: string, input: { hide: boolean; reason: string }, adminId: string): Promise<FeedbackItemView>;
+  // Workforce payout tracker (162)
+  getPayoutTracker(filter: PayoutTrackerFilter, adminId: string): Promise<PayoutTrackerView>;
+  getWorkforcePayoutTotals(adminId: string): Promise<WorkforcePayoutTotals>;
   // Commission rules engine (161)
   getCommissionRules(adminId: string): Promise<CommissionRulesView>;
   simulateCommission(input: CommissionSimInput, proposal: { ruleId: CommissionRuleId; params: CommissionParams }[] | null, adminId: string): Promise<CommissionSimulationView>;

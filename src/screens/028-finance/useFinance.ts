@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useData } from '@/data/DataProvider';
 import { useSession } from '@/session/SessionProvider';
-import type { TransitTotals } from '@/data/repository';
+import type { TransitTotals, WorkforcePayoutTotals } from '@/data/repository';
 import type { OutflowTotals } from '@/features/suppliers/paymentSchedule';
 import type { Payment } from '@/data/types';
 import { bucketFor, computeCashIn, computeTotalReceivable, isOutstanding, OUTLIER_MULTIPLE, remainingBalance } from '@/features/payments/aging';
@@ -14,6 +14,7 @@ interface FinanceState {
   summary: FinanceSummary | null;
   /** Context only: money committed to suppliers for parts not yet delivered (106). */
   inTransit: TransitTotals | null;
+  payouts: WorkforcePayoutTotals | null;
   /** Context only: what is owed to suppliers and coming, read from 114's schedule. */
   supplierOutflows: OutflowTotals | null;
   agingGroups: AgingGroup[];
@@ -45,6 +46,7 @@ export function useFinance(): FinanceState {
   const [window, setWindow] = useState<WindowId>('30');
   const { user } = useSession();
   const [inTransit, setInTransit] = useState<TransitTotals | null>(null);
+  const [payouts, setPayouts] = useState<WorkforcePayoutTotals | null>(null);
   const [supplierOutflows, setSupplierOutflows] = useState<OutflowTotals | null>(null);
 
   const reload = useCallback(async () => {
@@ -54,6 +56,7 @@ export function useFinance(): FinanceState {
       setPayments(list);
       // Context, never a reason to fail the overview.
       if (user) setInTransit(await repository.getInTransitTotals(user.id).catch(() => null));
+      if (user) setPayouts(await repository.getWorkforcePayoutTotals(user.id).catch(() => null));
       if (user) setSupplierOutflows(await repository.getUpcomingSupplierOutflows(user.id).catch(() => null));
       setStatus('ready');
     } catch {
@@ -125,5 +128,5 @@ export function useFinance(): FinanceState {
     };
   }, [status, payments, outstanding]);
 
-  return { status, summary, inTransit, supplierOutflows, agingGroups, upcoming, window, setWindow, reload };
+  return { status, summary, inTransit, payouts, supplierOutflows, agingGroups, upcoming, window, setWindow, reload };
 }

@@ -92,6 +92,14 @@ export function FinanceView() {
             <StatTile label={t(K.card.inTransit)} value={<span className="num">{formatINRCompact(s.inTransit.value)}</span>} caption={t(K.card.inTransitNote)} large />
           </Card>
         )}
+        {s.payouts && (
+          <Card>
+            <StatTile label={t(K.card.payouts)} value={<span className="num">{formatINRCompact(s.payouts.approvedNow)}</span>} caption={t(K.card.payoutsNote, { count: s.payouts.approvedCount, pending: formatINRCompact(s.payouts.projected) })} large />
+            <Button size="sm" variant="ghost" onClick={() => navigate('/payout-tracker')}>
+              {t(K.card.seePayouts)}
+            </Button>
+          </Card>
+        )}
         {s.supplierOutflows && (
           <Card>
             <StatTile

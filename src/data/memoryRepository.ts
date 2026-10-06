@@ -264,6 +264,12 @@ import type {
   TrainingFeedbackOverview,
   TrainingFeedbackRow,
   CommissionChangePreview,
+  PayoutAttentionItem,
+  PayoutCategoryView,
+  PayoutTrackerFilter,
+  PayoutRowView,
+  PayoutTrackerView,
+  WorkforcePayoutTotals,
   CommissionRatesView,
   CommissionRuleView,
   CommissionRulesView,
@@ -820,6 +826,8 @@ import type { Stage as ExitStage, Blocker as ExitBlocker } from '@/features/part
 import { DEFAULT_CRITERIA as TIER_DEFAULT_CRITERIA, DEFER_MAX_DAYS as TIER_DEFER_MAX_DAYS, DISPUTE_DECIDE_DUE as TIER_DISPUTE_DUE, EFFECTIVE_MAX_DAYS as TIER_EFFECTIVE_MAX_DAYS, INCIDENT_WINDOW as TIER_INCIDENT_WINDOW, REASON_MIN as TIER_REASON_MIN, REVIEW_WITHIN as TIER_REVIEW_WITHIN, TIER_IDS as TIER_IDS_OF, criteriaProblem as tierCriteriaProblem, directionOf as tierDirection, eligibleIndex as tierEligible, evaluate as tierEvaluate, indexOf as tierIndexOf, supplierCriteria as tierSupplierCriteria } from '@/features/partners/tiers';
 import type { Metrics, TierEffects, TierRole } from '@/features/partners/tiers';
 import { DEFAULT_PARAMS as CR_DEFAULTS, NOTICE_DAYS as CR_NOTICE_DAYS, NOTICE_MAX as CR_NOTICE_MAX, REASON_MIN as CR_REASON_MIN, RULE_DEFS as CR_DEFS, RULE_IDS as CR_IDS, RULE_OF_REASON as CR_RULE_OF_REASON, SIGNIFICANT_CHANGE as CR_SIGNIFICANT, STACK_GROUPS as CR_STACK, amountOf as crAmountOf, changeSize as crChangeSize, crewRatesOf as crCrewRates, defOf as crDefOf, inForce as crInForce, isRuleId as crIsRuleId, normaliseParams as crNormalise, newChecks as crNewChecks, paramsProblem as crParamsProblem, resultChecks as crResultChecks, sameParams as crSameParams, scenariosFor as crScenarios, simulate as crSimulate, upcomingOf as crUpcoming } from '@/features/commission/rules';
+import { APPROVED_WAIT as PT_APPROVED_WAIT, CATEGORIES as PT_CATEGORIES, PAGE as PT_PAGE, STATUSES as PT_STATUSES, byCurrency as ptByCurrency, categoryOf as ptCategoryOf, isStaleApproved as ptIsStale, outliersOf as ptOutliers, spikeOf as ptSpike, sum as ptSum, trendOf as ptTrend, triggerOf as ptTriggerOf } from '@/features/commission/payoutTracker';
+import type { AttentionKind as PtAttentionKind, PayoutCategory as PtCategory, PayoutStatus as PtStatus } from '@/features/commission/payoutTracker';
 import type { CommissionParams as CrParams, CommissionRuleId as CrRuleId, Rates as CrRates } from '@/features/commission/rules';
 import { ACTIVATION_STEPS as ofSteps, REASON_MIN as OF_REASON_MIN, REQUEST_MIN as OF_REQUEST_MIN, SIGN_WAIT as OF_SIGN_WAIT, TERM_DEFS as ofTermDefs, addendumProblem as ofAddendumProblem, bindingTermsOf as ofBinding, capabilityOf as ofCapability, clausesOf as ofClauses, defaultTermsOf as ofDefaultTerms, signProblem as ofSignProblem } from '@/features/recruitment/agreement';
 import { conditionalProblem as vfConditionalProblem, gateOf as vfGate, itemStateOf as vfItemState, manualProblem as vfManualProblem, requiredItemsOf as vfRequired, serviceCheck as vfServiceCheck } from '@/features/recruitment/verification';
@@ -2789,6 +2797,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   syncCompliance(now);
   syncSopRollouts(now);
   syncTrainingFeedback(now);
+  syncPayoutSpikes(now);
   syncPartnerInterviews(now);
   syncVerification(now);
   syncOffers(now);
@@ -8824,6 +8833,154 @@ function crPreview(id: CrRuleId, params: CrParams, effectiveFrom: string, now: n
     newChecks: brought,
     noticeShort: significant && lead < CR_NOTICE_DAYS * 86_400_000,
   };
+}
+
+/* ------------------------------------------------------------------ Workforce payout tracker (162) */
+
+const PT_SPIKE_ALERT = 'payoutTracker.alert.spike';
+const ptDay = (ms: number) => tcToday(ms);
+
+function ptRowOf(e: CommissionEntry): PayoutRowView {
+  const u = byId(users, e.userId);
+  const sup = byId(suppliers, e.userId);
+  const t = crTraceOf(e);
+  return {
+    id: e.id,
+    partnerId: e.userId,
+    partnerName: u?.name ?? sup?.name ?? e.userId,
+    partnerRole: u?.role === 'surveyor' || u?.role === 'technician' ? u.role : sup ? 'supplier' : 'other',
+    category: ptCategoryOf(e.reasonKey),
+    trigger: ptTriggerOf(e.reasonKey),
+    reasonKey: e.reasonKey,
+    amount: e.amount,
+    currency: e.currency ?? 'INR',
+    status: e.status,
+    earnedAt: e.earnedAt,
+    paidAt: e.paidAt ?? null,
+    held: !!e.heldBy,
+    dealCode: e.dealId ? (byId(deals, e.dealId)?.code ?? null) : null,
+    jobCode: e.jobId ? (byId(jobs, e.jobId)?.code ?? null) : null,
+    jobId: e.jobId ?? null,
+    rule: t.ruleId && t.version ? { id: t.ruleId, version: t.version, inferred: t.inferred } : null,
+    flags: [],
+  };
+}
+
+/** A rule of this category that changed during the window: the first thing to check when a category's spend jumps. */
+function ptRuleChange(category: PtCategory, fromMs: number): { ruleId: string; version: number; effectiveFrom: string } | null {
+  const fromDay = ptDay(fromMs);
+  const today = ptDay(Date.now());
+  for (const r of commissionRules) {
+    const rid = r.id as CrRuleId;
+    const cat = ptCategoryOf(crDefOf(rid).reasonKey ?? '');
+    const match = crDefOf(rid).reasonKey ? cat === category : category === 'capture' && rid === 'referral_bonus';
+    if (!match) continue;
+    const v = [...r.versions].filter((x) => x.version > 1 && x.effectiveFrom >= fromDay && x.effectiveFrom <= today).sort((a, b) => b.version - a.version)[0];
+    if (v) return { ruleId: rid, version: v.version, effectiveFrom: v.effectiveFrom };
+  }
+  return null;
+}
+
+function ptCategories(inWin: PayoutRowView[], prev: PayoutRowView[] | null, fromMs: number | null): PayoutCategoryView[] {
+  const total = inWin.reduce((a, x) => a + x.amount, 0);
+  return PT_CATEGORIES.map((id): PayoutCategoryView => {
+    const mine = inWin.filter((x) => x.category === id);
+    const before = prev ? prev.filter((x) => x.category === id) : null;
+    const amount = mine.reduce((a, x) => a + x.amount, 0);
+    const byStatus = { projected: 0, approved: 0, paid: 0, forfeited: 0 } as Record<PtStatus, number>;
+    for (const x of mine) byStatus[x.status] += x.amount;
+    const prevAmount = before ? before.reduce((a, x) => a + x.amount, 0) : null;
+    const sp = before && prevAmount !== null ? ptSpike(amount, prevAmount, before.length, Math.max(0, ...mine.map((x) => x.amount))) : null;
+    return { id, count: mine.length, amount, share: total > 0 ? amount / total : 0, byStatus, prevAmount, trend: before && prevAmount !== null ? ptTrend(amount, prevAmount, before.length) : null, spike: sp ? { ...sp, ruleChange: fromMs !== null ? ptRuleChange(id, fromMs) : null } : null };
+  });
+}
+
+function ptTrackerOf(f: PayoutTrackerFilter, now: number): PayoutTrackerView {
+  const all = commissions.map(ptRowOf);
+  const partnerOk = (r: PayoutRowView) => !f.partnerId || r.partnerId === f.partnerId;
+  const scope = all.filter(partnerOk);
+  const fromMs = f.from && /^\d{4}-\d{2}-\d{2}$/.test(f.from) ? Date.parse(`${f.from}T00:00:00`) : null;
+  const toMs = f.to && /^\d{4}-\d{2}-\d{2}$/.test(f.to) ? Date.parse(`${f.to}T00:00:00`) + 86_400_000 : fromMs !== null ? now + 1 : null;
+  const earnedMs = (r: PayoutRowView) => Date.parse(r.earnedAt);
+  const inWindow = (r: PayoutRowView, a: number | null, b: number | null) => (a === null || earnedMs(r) >= a) && (b === null || earnedMs(r) < b);
+  const len = fromMs !== null && toMs !== null ? toMs - fromMs : null;
+  const prevFrom = fromMs !== null && len !== null ? fromMs - len : null;
+  const windowed = scope.filter((r) => inWindow(r, fromMs, toMs));
+  const previous = prevFrom !== null && fromMs !== null ? scope.filter((r) => inWindow(r, prevFrom, fromMs)) : null;
+  const paidIn = (r: PayoutRowView, a: number | null, b: number | null) => r.status === 'paid' && !!r.paidAt && (a === null || Date.parse(r.paidAt) >= a) && (b === null || Date.parse(r.paidAt) < b);
+  const paidNow = scope.filter((r) => paidIn(r, fromMs, toMs));
+  const paidBefore = prevFrom !== null && fromMs !== null ? scope.filter((r) => paidIn(r, prevFrom, fromMs)) : null;
+
+  // What needs a look: an entry out of line with its own kind, one held by a judgement, an approved entry that has waited, a category that jumped.
+  const outl = new Map(ptOutliers(all.filter((r) => r.status !== 'forfeited')).map((o) => [o.entry.id, o.typical]));
+  const approvedAll = scope.filter((r) => r.status === 'approved');
+  for (const r of scope) {
+    if (outl.has(r.id) && partnerOk(r)) r.flags.push('outlier');
+    if (r.held) r.flags.push('held');
+    if (r.status === 'approved' && ptIsStale(earnedMs(r), now)) r.flags.push('stale_approved');
+  }
+  const categories = ptCategories(windowed, previous, fromMs);
+  const attention: PayoutAttentionItem[] = [];
+  for (const c of categories) if (c.spike) attention.push({ kind: 'spike', entryId: null, category: c.id, partnerName: null, amount: c.amount, facts: { ratio: c.spike.ratio, rise: c.spike.rise, single: c.spike.singleLarge ? 1 : 0, ...(c.spike.ruleChange ? { rule: c.spike.ruleChange.ruleId, version: c.spike.ruleChange.version, on: c.spike.ruleChange.effectiveFrom } : {}) } });
+  for (const r of windowed.filter((x) => x.flags.includes('outlier'))) attention.push({ kind: 'outlier', entryId: r.id, category: r.category, partnerName: r.partnerName, amount: r.amount, facts: { typical: Math.round(outl.get(r.id) ?? 0) } });
+  const stale = approvedAll.filter((r) => r.flags.includes('stale_approved'));
+  if (stale.length > 0) attention.push({ kind: 'stale_approved', entryId: null, category: null, partnerName: null, amount: stale.reduce((a, x) => a + x.amount, 0), facts: { count: stale.length, days: Math.round(PT_APPROVED_WAIT / 86_400_000) } });
+  const held = scope.filter((r) => r.held);
+  if (held.length > 0) attention.push({ kind: 'held', entryId: null, category: null, partnerName: null, amount: held.reduce((a, x) => a + x.amount, 0), facts: { count: held.length } });
+
+  // The list: every filter applies. The counts beside each status chip ignore the status filter only.
+  const q = (f.q ?? '').trim().toLowerCase();
+  const catOk = (r: PayoutRowView) => !f.category || f.category === 'all' || r.category === f.category;
+  const qOk = (r: PayoutRowView) => !q || [r.partnerName, r.dealCode ?? '', r.jobCode ?? '', r.id].some((x) => x.toLowerCase().includes(q));
+  // A paid payout is dated by the day it was paid, any other by the day it was earned: the list agrees with the "paid in this period" figure.
+  const eventMs = (r: PayoutRowView) => (r.status === 'paid' && r.paidAt ? Date.parse(r.paidAt) : earnedMs(r));
+  const base = scope.filter((r) => (fromMs === null || eventMs(r) >= fromMs) && (toMs === null || eventMs(r) < toMs) && catOk(r) && qOk(r));
+  const statusCounts = { all: base.length, projected: 0, approved: 0, paid: 0, forfeited: 0 } as Record<PtStatus | 'all', number>;
+  for (const r of base) statusCounts[r.status] += 1;
+  const shown = base.filter((r) => !f.status || f.status === 'all' || r.status === f.status);
+  shown.sort(f.sort === 'amount' ? (a, b) => b.amount - a.amount || (a.id < b.id ? -1 : 1) : (a, b) => (a.earnedAt < b.earnedAt ? 1 : a.earnedAt > b.earnedAt ? -1 : a.id < b.id ? 1 : -1));
+  const off = Math.max(0, f.offset ?? 0);
+  const lim = f.limit === 0 ? shown.length : Math.max(1, f.limit ?? PT_PAGE);
+  const oldest = approvedAll.length ? Math.max(...approvedAll.map((r) => Math.floor((now - earnedMs(r)) / 86_400_000))) : null;
+  const mon = (xs: PayoutRowView[]) => ptSum(xs);
+  return {
+    window: { from: f.from ?? null, to: fromMs !== null ? (f.to ?? ptDay(now)) : null, days: len !== null ? Math.round(len / 86_400_000) : null },
+    currencies: ptByCurrency(scope.map((r) => ({ amount: r.amount, currency: r.currency }))),
+    stock: {
+      projected: { ...mon(scope.filter((r) => r.status === 'projected')), held: mon(scope.filter((r) => r.status === 'projected' && r.held)) },
+      approved: { ...mon(approvedAll), oldestDays: oldest, stale: mon(stale) },
+      forfeited: mon(scope.filter((r) => r.status === 'forfeited')),
+    },
+    flow: {
+      earned: { ...mon(windowed.filter((r) => r.status !== 'forfeited')), trend: previous ? ptTrend(windowed.filter((r) => r.status !== 'forfeited').reduce((a, x) => a + x.amount, 0), previous.filter((r) => r.status !== 'forfeited').reduce((a, x) => a + x.amount, 0), previous.length) : null },
+      paid: { ...mon(paidNow), trend: paidBefore ? ptTrend(paidNow.reduce((a, x) => a + x.amount, 0), paidBefore.reduce((a, x) => a + x.amount, 0), paidBefore.length) : null },
+    },
+    categories,
+    attention,
+    partners: [...new Map(all.map((r) => [r.partnerId, { id: r.partnerId, name: r.partnerName, role: r.partnerRole }])).values()].sort((a, b) => a.name.localeCompare(b.name)),
+    statusCounts,
+    rows: shown.slice(off, off + lim).map((r) => JSON.parse(JSON.stringify(r)) as PayoutRowView),
+    total: shown.length,
+    filteredAmount: shown.reduce((a, x) => a + x.amount, 0),
+    at: new Date(now).toISOString(),
+  };
+}
+
+/** One medium `payment` alert per category whose spend over the last 30 days jumped against the 30 before it; resolved when it stops being true. */
+function syncPayoutSpikes(now: number): void {
+  const from = ptDay(now - 30 * 86_400_000);
+  const v = ptTrackerOf({ from, to: ptDay(now), limit: 1 }, now);
+  const live = new Set(v.categories.filter((c) => c.spike).map((c) => c.id));
+  for (const c of v.categories) {
+    const rel = `payout-spike:${c.id}`;
+    const existing = alerts.find((x) => x.relatedId === rel && x.titleKey === PT_SPIKE_ALERT && x.status !== 'resolved');
+    if (c.spike && !existing) {
+      raiseAlert({ titleKey: PT_SPIKE_ALERT, context: `${c.id}: spend is ${c.spike.ratio} times the 30 days before`, severity: 'medium', category: 'payment', relatedId: rel, sourceRoute: `/payout-tracker?cat=${c.id}&days=30`, affectedRecordId: c.id, affectedRecordType: 'other' } as Parameters<typeof raiseAlert>[0]);
+      logAutomatedAction({ sourceKey: 'payout_tracker.spike', triggeringCondition: `Spend on ${c.id} payouts rose ${c.spike.ratio} times over the previous 30 days`, actionTaken: 'Put it in front of Admin as an alert, with the rule change (if any) to check first', affectedRecordId: c.id, affectedRecordType: 'other' } as Parameters<typeof logAutomatedAction>[0]);
+    } else if (existing && !live.has(c.id)) {
+      patchInPlace(alerts, existing.id, { status: 'resolved', resolvedAt: new Date(now).toISOString(), resolvedBy: 'system', resolutionNote: 'Spend is back in line with the period before.' });
+    }
+  }
 }
 
 const tcCanLead = (userId: string): boolean => (byId(users, userId)?.role === 'technician' ? tcEffectsOf('technician', tierNow(userId), Date.now()).canLead !== false : true);
@@ -18156,6 +18313,28 @@ export const memoryRepository: Repository = {
       syncCommitments(now);
       syncTrainingFeedback(now);
       return fbItemView(byId(trainingFeedback, f.id) as TrainingFeedback);
+    }),
+
+  /* --------------------------------- Workforce payout tracker (162) */
+  getPayoutTracker: (filter, adminId) =>
+    simulateRead((): PayoutTrackerView => {
+      ofAdmin(adminId);
+      const now = Date.now();
+      syncPayoutSpikes(now);
+      return ptTrackerOf(filter, now);
+    }),
+
+  getWorkforcePayoutTotals: (adminId) =>
+    simulateRead((): WorkforcePayoutTotals => {
+      ofAdmin(adminId);
+      const now = Date.now();
+      const rows = commissions.filter((c) => c.currency === undefined || c.currency === 'INR');
+      return {
+        approvedNow: rows.filter((c) => c.status === 'approved').reduce((a, c) => a + c.amount, 0),
+        approvedCount: rows.filter((c) => c.status === 'approved').length,
+        projected: rows.filter((c) => c.status === 'projected').reduce((a, c) => a + c.amount, 0),
+        paidLast30: rows.filter((c) => c.status === 'paid' && c.paidAt && now - Date.parse(c.paidAt) <= 30 * 86_400_000).reduce((a, c) => a + c.amount, 0),
+      };
     }),
 
   /* --------------------------------- Commission rules engine (161) */
