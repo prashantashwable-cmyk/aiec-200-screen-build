@@ -101,7 +101,7 @@ function Concerns({ c, s, t }: { c: CustomerProjectHome; s: CustomerHomeState; t
             {x.reason && <p className="t-sm t-muted">{t(`installTimeline.reason.customer.${x.reason}`)}</p>}
             <span className="row gap-2 wrap">
               {(x.kind === 'delay' || x.kind === 'paused') && <Button size="sm" variant="ghost" onClick={() => s.goTo(statusPath(c.key))}>{t(K.openStatus)}</Button>}
-              {x.kind === 'payment_disputed' && <Button size="sm" variant="ghost" onClick={() => s.goTo(paymentsPath)}>{t(K.concern.viewPayments)}</Button>}
+              {x.kind === 'payment_disputed' && <Button size="sm" variant="ghost" onClick={() => s.goTo(paymentsPath(c.dealId))}>{t(K.concern.viewPayments)}</Button>}
             </span>
           </div>
         ))}
@@ -182,7 +182,7 @@ function Tiles({ c, s, t, supportPhone }: { c: CustomerProjectHome; s: CustomerH
   return (
     <div className="stack gap-2" data-tiles>
       <Tile id="status" icon={<Lifebuoy size={22} />} title={t(K.tile.status.title)} hint={t(K.tile.status.hint)} onClick={() => s.goTo(statusPath(c.key))} />
-      <Tile id="payments" icon={<CreditCard size={22} />} title={t(K.tile.payments.title)} hint={c.payments.total > 0 ? t(K.tile.payments.hint, { received: formatINR(c.payments.received), total: formatINR(c.payments.total) }) : ''} onClick={() => s.goTo(paymentsPath)} />
+      <Tile id="payments" icon={<CreditCard size={22} />} title={t(K.tile.payments.title)} hint={c.payments.total > 0 ? t(K.tile.payments.hint, { received: formatINR(c.payments.received), total: formatINR(c.payments.total) }) : ''} onClick={() => s.goTo(paymentsPath(c.dealId))} />
       <Tile id="documents" icon={<FileText size={22} />} title={t(K.tile.documents.title)} hint={t(K.tile.documents.hint)} onClick={() => s.goTo(documentsPath)} />
       <Tile id="support" icon={<Headset size={22} />} title={t(K.tile.support.title)} hint={t(K.tile.support.hint)} href={supportPhone ? `tel:${supportPhone}` : undefined} disabled={!supportPhone} />
       {handed && c.jobId && <Tile id="service" icon={<Wrench size={22} />} title={t(K.tile.service.title)} hint={t(K.tile.service.hint)} onClick={() => s.goTo(servicePath(c.jobId as string))} />}
@@ -198,7 +198,7 @@ function PaySummary({ c, s, t }: { c: CustomerProjectHome; s: CustomerHomeState;
         <h2 className="t-md t-semibold">{t(K.pay.heading)}</h2>
         <ProgressBar value={pct / 100} label={t(K.pay.heading)} />
         <p className="t-sm num">{t(K.pay.line, { received: formatINR(c.payments.received), total: formatINR(c.payments.total) })}</p>
-        <div><Button size="sm" variant="ghost" onClick={() => s.goTo(paymentsPath)}>{t(K.pay.open)}</Button></div>
+        <div><Button size="sm" variant="ghost" onClick={() => s.goTo(paymentsPath(c.dealId))}>{t(K.pay.open)}</Button></div>
       </div>
     </Card>
   );

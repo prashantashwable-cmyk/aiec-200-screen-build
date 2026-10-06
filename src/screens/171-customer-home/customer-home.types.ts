@@ -4,7 +4,7 @@ export const POLL_MS = 30_000;
 export const STAGE_ORDER: CustomerStageKey[] = ['agreed', 'contract', 'materials', 'installation', 'quality', 'handover'];
 export const viewKey = (userId: string, project: string) => `aiec.customerHome.${userId}.${project || 'first'}`;
 export const statusPath = (projectKey: string) => `/project-status?p=${encodeURIComponent(projectKey)}`;
-export const paymentsPath = '/payments/history';
+export const paymentsPath = (dealId?: string | null) => (dealId ? `/my-payments?p=${dealId}` : '/my-payments');
 export const checkoutPath = (paymentId: string) => `/customer/payments/${paymentId}/checkout`;
 export const documentsPath = '/documents';
 export const servicePath = (jobId: string) => `/warranty/${jobId}`;

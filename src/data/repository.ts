@@ -131,6 +131,7 @@ import type {
   CallOutcome,
   ChannelStat,
   CommChannel,
+  LoanApplicationStatus,
   CommMessage,
   CommSequence,
   CommTemplate,
@@ -6786,6 +6787,63 @@ export interface VaultView {
   at: string;
 }
 
+/* ------------------------------------------------------------------ Customer payments (174) */
+
+export type CustomerPayState = 'paid' | 'confirming' | 'overdue' | 'due' | 'upcoming' | 'disputed' | 'refunded';
+export interface CustomerPayStage {
+  id: string;
+  code: string;
+  stage: PaymentStage;
+  amount: number;
+  received: number;
+  remaining: number;
+  dueDate: string;
+  state: CustomerPayState;
+  /** True when the customer can pay this stage now (it is due or late, and nothing is being confirmed or questioned on it). */
+  payable: boolean;
+  daysOverdue: number;
+  /** What is being confirmed: the customer's own online payment, or a credit seen on the bank statement that no record accounts for yet. */
+  confirming: { basis: 'gateway' | 'bank'; amount: number; at: string | null } | null;
+  paidAt: string | null;
+  lastReceivedAt: string | null;
+  method: Payment['method'] | null;
+  reference: string | null;
+  /** A question the customer raised: open, or decided (with a refund where one was agreed). */
+  dispute: { raisedAt: string | null; state: 'open' | 'decided'; outcome: 'full_refund' | 'partial_refund' | 'rejected' | null; refundAmount: number | null } | null;
+  receiptDocId: string | null;
+}
+export interface CustomerPayProject { dealId: string; code: string; siteName: string; state: CustomerPayState | 'complete'; outstanding: number }
+export interface CustomerPayLoan {
+  state: 'hidden' | 'available' | 'in_progress' | 'approved' | 'disbursed';
+  /** What is still to pay and not in question: what financing could cover. */
+  loanable: number;
+  applicationStatus: LoanApplicationStatus | null;
+}
+export interface CustomerPayView {
+  projects: CustomerPayProject[];
+  project: {
+    dealId: string;
+    code: string;
+    siteName: string;
+    agreedTotal: number;
+    received: number;
+    /** Everything still to pay on this project, whatever its date. */
+    remaining: number;
+    percentPaid: number;
+    /** What is still to pay and in question, kept apart from what is owed. */
+    inQuestion: number;
+    hero: { kind: 'overdue' | 'due' | 'confirming' | 'disputed' | 'upcoming' | 'complete' | 'empty'; amount: number; paymentId: string | null; dueAt: string | null; days: number };
+    stages: CustomerPayStage[];
+    loan: CustomerPayLoan;
+    reminders: { at: string; channel: CommChannel }[];
+    remindersPaused: boolean;
+    /** Installation is held until an overdue payment is settled (said calmly). */
+    workHeld: boolean;
+  } | null;
+  supportPhone: string | null;
+  at: string;
+}
+
 /* ------------------------------------------------------------------ Payout disputes (170) */
 
 export interface PayoutDisputeRow {
@@ -8113,6 +8171,8 @@ export interface Repository {
   getVaultDocument(docId: string, userId: string): Promise<VaultDocument>;
   /** Every document with its content, for the "download all" bundle. */
   getVaultBundle(userId: string): Promise<VaultDocument[]>;
+  /** 174: the customer's payment picture for one project (the first needing attention when none is named). */
+  getCustomerPayments(dealId: string | null, userId: string): Promise<CustomerPayView>;
   /** Admin only: shows or hides the customer's view of a job's timeline. Hiding needs a reason. */
   setTimelineCustomerVisible(jobId: string, visible: boolean, note: string, adminId: string): Promise<InstallTimelineView>;
 

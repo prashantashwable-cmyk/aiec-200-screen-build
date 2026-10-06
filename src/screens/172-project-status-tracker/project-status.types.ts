@@ -5,7 +5,7 @@ export const RECENT = 4;
 export const PHASE_IDS: InstallSopPhase[] = ['preparation', 'rails', 'machine', 'car', 'wiring', 'safety', 'final'];
 export const viewKey = (userId: string, project: string) => `aiec.projectStatus.${userId}.${project || 'first'}`;
 export const homePath = '/customer';
-export const paymentsPath = '/payments/history';
+export const paymentsPath = (dealId?: string | null) => (dealId ? `/my-payments?p=${dealId}` : '/my-payments');
 export const checkoutPath = (paymentId: string) => `/customer/payments/${paymentId}/checkout`;
 export const captionKey = (slot: string) => `projectStatus.highlights.caption.${slot.replace('.', '_')}`;
 

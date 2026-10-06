@@ -81,7 +81,7 @@ function Concerns({ v, s, t }: { v: ProjectStatusView; s: ProjectStatusState; t:
           <div className="stack gap-1" data-paused={v.pausedFor} style={{ borderLeft: '3px solid var(--color-warning)', paddingLeft: 'var(--space-3)' }}>
             <p className="t-sm">{v.pausedFor === 'payment' ? t(K.paused.payment) : t(K.paused.issue)}</p>
             {v.pausedFor === 'issue' && p.concerns.find((c) => c.kind === 'paused')?.reason && <p className="t-sm t-muted">{t(`installTimeline.reason.customer.${p.concerns.find((c) => c.kind === 'paused')?.reason}`)}</p>}
-            {v.pausedFor === 'payment' && <span className="row gap-2 wrap">{v.pausedPaymentId && <Button size="sm" data-pay={v.pausedPaymentId} onClick={() => s.goTo(checkoutPath(v.pausedPaymentId as string))}>{t(K.paused.payNow)}</Button>}<Button size="sm" variant="ghost" onClick={() => s.goTo(paymentsPath)}>{t(K.paused.payments)}</Button></span>}
+            {v.pausedFor === 'payment' && <span className="row gap-2 wrap">{v.pausedPaymentId && <Button size="sm" data-pay={v.pausedPaymentId} onClick={() => s.goTo(checkoutPath(v.pausedPaymentId as string))}>{t(K.paused.payNow)}</Button>}<Button size="sm" variant="ghost" onClick={() => s.goTo(paymentsPath(p.dealId))}>{t(K.paused.payments)}</Button></span>}
           </div>
         )}
         {items.map((c) => (

@@ -293,6 +293,9 @@ import type {
   VaultSection,
   VaultValue,
   VaultView,
+  CustomerPayView,
+  CustomerPayStage,
+  CustomerPayProject,
   ProjectMilestone,
   ProjectPhaseView,
   ProjectUpcoming,
@@ -924,6 +927,7 @@ import { CORRECTION_NOTE_MS, MOVEMENTS_SHOWN, closingSoon, gapToAbove, phaseOf, 
 import type { Ranked } from '@/features/rewards/standings';
 import { DEDUCTS_AT_PAYOUT as TDS_DEDUCTS, DEFAULT_RATES as DEFAULT_TDS_RATES, NO_PAN_RATE as TDS_NO_PAN_RATE, SECTIONS, SECTION_OF_ROLE as TDS_SECTION_OF, ackProblem as tdsAckProblem, challanProblem as tdsChallanProblem, deductionFor as tdsDeductionFor, depositDueOf as tdsDepositDueOf, fyIdOf as tdsFyIdOf, fyRange as tdsFyRange, inRange as tdsInRange, maskPan as tdsMaskPan, panProblem as tdsPanProblem, quarterOf as tdsQuarterOf, quarterRange as tdsQuarterRange, rateProblem as tdsRateProblem, returnDueOf as tdsReturnDueOf, versionAt as tdsVersionAt } from '@/features/tax/tds';
 import type { Quarter as TdsQuarter, TdsRole, TdsSection } from '@/features/tax/tds';
+import { bankEvidenceFor, heroOf, loanStateOf, remindersOf, stageStateOf } from '@/features/payments/customerSchedule';
 import { VAULT_KINDS, validityState } from '@/features/documents/vault';
 import type { VaultKind } from '@/features/documents/vault';
 import { MONTHS_OFFERED as PH_MONTHS, PAGE as PH_PAGE, QUERY_DUE as PH_QUERY_DUE, answerProblem as phAnswerProblem, countsAsEarned as phCountsAsEarned, filterOf as phFilterOf, fyOf as phFyOf, inPeriod as phInPeriod, monthIdOf as phMonthId, periodOf as phPeriodOf, queryProblem as phQueryProblem, stageOf as phStageOf } from '@/features/payout/history';
@@ -10711,6 +10715,76 @@ function vdViewOf(user: User, now: number): VaultView {
   const counts = Object.fromEntries(VAULT_KINDS.map((k) => [k, rows.filter((r) => r.kind === k && r.status === 'current').length])) as Record<VaultKind, number>;
   const projects = [...new Map(rows.map((r) => [r.dealId, { dealId: r.dealId, dealCode: r.dealCode, siteName: r.siteName }])).values()];
   return { rows, counts, projects, beforeAccount: rows.filter((r) => r.beforeAccount).length, at: new Date(now).toISOString() };
+}
+
+/* ------------------------------------------------------------------ Customer payments (174) */
+
+const PAYMENT_STAGE_ORDER: Payment['stage'][] = ['advance', 'material', 'installation', 'handover', 'retention'];
+/** The customer's payment picture for one deal: the same Payment rows every payments screen reads, in the order a customer thinks in. Nothing is stored. */
+function cpViewOf(user: User, dealId: string | null, now: number): CustomerPayView {
+  const mine = vdDealsOf(user).filter((d) => payments.some((p) => p.dealId === d.id));
+  const admin = users.find((u) => u.role === 'admin' && u.status === 'active');
+  const claimed = payments.filter((p) => receivedAmountOf(p) > 0).map((p) => ({ reference: p.gatewayTransactionRef ?? p.manualReferenceNumber ?? null, amount: receivedAmountOf(p), at: p.lastReceivedAt ?? p.paidAt ?? null }));
+  const rowsOf = (deal: Deal): CustomerPayStage[] => {
+    const lead = byId(leads, deal.leadId);
+    const names = [lead?.siteName ?? '', lead?.contactName ?? '', user.companyName ?? '', user.name];
+    const pays = payments.filter((p) => p.dealId === deal.id).sort((a, b) => PAYMENT_STAGE_ORDER.indexOf(a.stage) - PAYMENT_STAGE_ORDER.indexOf(b.stage) || a.dueDate.localeCompare(b.dueDate));
+    // A bank credit that matches belongs to the earliest stage still waiting; one credit is never shown on two stages.
+    const used = new Set<string>();
+    return pays.map((p): CustomerPayStage => {
+      const evidence = p.status === 'due' || p.status === 'overdue' || p.status === 'failed' ? bankEvidenceFor(bankTransactions.filter((b) => !used.has(b.id)), p, names, claimed, now) : null;
+      if (evidence) used.add(evidence.id);
+      const { state, payable } = stageStateOf(p, now, !!evidence);
+      const received = receivedAmountOf(p);
+      const decided = !!p.resolutionType;
+      return {
+        id: p.id, code: p.code, stage: p.stage, amount: p.amount, received, remaining: p.status === 'refunded' ? 0 : remainingBalance(p), dueDate: p.dueDate, state, payable,
+        daysOverdue: state === 'overdue' ? Math.max(0, daysOverdue(p, now)) : 0,
+        confirming: p.status === 'pending' ? { basis: 'gateway', amount: p.amount, at: p.lastReceivedAt ?? null } : evidence ? { basis: 'bank', amount: evidence.amount, at: evidence.postedAt } : null,
+        paidAt: p.paidAt ?? null, lastReceivedAt: p.lastReceivedAt ?? p.paidAt ?? null, method: p.method ?? null, reference: p.gatewayTransactionRef ?? p.manualReferenceNumber ?? null,
+        dispute: p.status === 'disputed' || decided ? { raisedAt: p.disputedAt ?? null, state: p.status === 'disputed' ? 'open' : 'decided', outcome: p.resolutionType ?? null, refundAmount: p.resolutionAmount ?? null } : null,
+        receiptDocId: received > 0 ? `receipt:${p.id}` : null,
+      };
+    });
+  };
+  const summaries = new Map<string, CustomerPayStage[]>(mine.map((d) => [d.id, rowsOf(d)]));
+  const projects: CustomerPayProject[] = mine.map((d) => {
+    const st = summaries.get(d.id) ?? [];
+    const hero = heroOf(st);
+    return { dealId: d.id, code: d.code, siteName: byId(leads, d.leadId)?.siteName ?? d.code, state: hero.kind === 'upcoming' || hero.kind === 'empty' ? (hero.kind === 'empty' ? 'complete' : 'upcoming') : hero.kind, outstanding: st.filter((x) => x.state !== 'paid' && x.state !== 'refunded').reduce((a, x) => a + x.remaining, 0) };
+  });
+  const attention = projects.find((x) => x.state === 'overdue') ?? projects.find((x) => x.state === 'due') ?? projects[0] ?? null;
+  const chosen = mine.find((d) => d.id === dealId) ?? mine.find((d) => d.id === attention?.dealId) ?? null;
+  const base = { projects, supportPhone: admin?.phone ?? null, at: new Date(now).toISOString() };
+  if (!chosen) return { ...base, project: null };
+
+  const stages = summaries.get(chosen.id) ?? [];
+  const live = stages.filter((x) => x.state !== 'refunded');
+  const agreedTotal = live.reduce((a, x) => a + x.amount, 0);
+  const received = live.reduce((a, x) => a + x.received, 0);
+  const remaining = live.filter((x) => x.state !== 'paid').reduce((a, x) => a + x.remaining, 0);
+  const inQuestion = live.filter((x) => x.state === 'disputed').reduce((a, x) => a + x.remaining, 0);
+  const heroCore = heroOf(live);
+  const first = live.filter((x) => x.payable).sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0] ?? null;
+  const nextUp = live.filter((x) => x.state === 'upcoming' || x.state === 'due').sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0] ?? null;
+  const lead = byId(leads, chosen.leadId);
+  const application = loanApplications.filter((a) => a.dealId === chosen.id && a.status !== 'cancelled').sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))[0] ?? null;
+  const loanable = live.filter((x) => x.state !== 'paid' && x.state !== 'disputed' && x.state !== 'confirming').reduce((a, x) => a + x.remaining, 0);
+  const paused = !!activeDealPause(chosen.id);
+  const stageForReminder = live.find((x) => x.payable) ?? live.find((x) => x.state === 'upcoming') ?? null;
+  const phone = lead?.contactPhone ?? '';
+  const reminders = paused || !stageForReminder ? [] : remindersOf(paymentReminderConfig.steps, stageForReminder.dueDate, now, (st) => !!phone && isOptedOutSync(phone, st.channel));
+  const job = jobs.find((j) => j.dealId === chosen.id && j.status === 'on_hold' && j.heldBy !== ISSUE_HOLD);
+  return {
+    ...base,
+    project: {
+      dealId: chosen.id, code: chosen.code, siteName: lead?.siteName ?? chosen.code, agreedTotal, received, remaining, percentPaid: agreedTotal > 0 ? Math.min(1, received / agreedTotal) : 0, inQuestion,
+      hero: { kind: heroCore.kind, amount: heroCore.amount, paymentId: first?.id ?? null, dueAt: (first ?? nextUp)?.dueDate ?? null, days: first?.daysOverdue ?? 0 },
+      stages,
+      loan: { state: loanStateOf(loanable, application), loanable, applicationStatus: application?.status ?? null },
+      reminders, remindersPaused: paused, workHeld: !!job,
+    },
+  };
 }
 
 /* ------------------------------------------------------------------ Badges & milestones (166) */
@@ -23234,6 +23308,12 @@ export const memoryRepository: Repository = {
     simulateRead((): VaultDocument[] => {
       const docs = vdDocsOf(vdCustomer(userId), Date.now());
       return JSON.parse(JSON.stringify(docs.map((d) => ({ row: d.row, sections: d.sections, versions: docs.filter((x) => x.row.chainId === d.row.chainId).map((x) => x.row), issuedBy: d.issuedBy })))) as VaultDocument[];
+    }),
+
+  getCustomerPayments: (dealId, userId) =>
+    simulateRead((): CustomerPayView => {
+      const user = vdCustomer(userId);
+      return JSON.parse(JSON.stringify(cpViewOf(user, dealId, Date.now()))) as CustomerPayView;
     }),
 
   /* --------------------------------- As-installed material log (128) */
