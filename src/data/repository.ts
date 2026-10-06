@@ -158,6 +158,17 @@ import type {
   Invoice,
   Job,
   GeoPoint,
+  TicketAttachment,
+  TicketCategory,
+  TicketCoverage,
+  TicketEvent,
+  TicketImpact,
+  TicketResponsibility,
+  TicketRoute,
+  TicketStatus,
+  TicketUrgency,
+  TicketVisit,
+  VisitOutcome,
   Language,
   Lead,
   LeadImportBatch,
@@ -6844,6 +6855,101 @@ export interface CustomerPayView {
   at: string;
 }
 
+/* ------------------------------------------------------------------ Service tickets (175) */
+
+export interface TicketLift {
+  key: string;
+  dealId: string;
+  /** The handed-over lift this is about, or null for a project not finished yet (a billing or general question only). */
+  jobId: string | null;
+  code: string;
+  siteName: string;
+  address: string | null;
+  handedOver: boolean;
+  coverage: TicketCoverage;
+}
+export interface TicketRow {
+  id: string;
+  code: string;
+  category: TicketCategory;
+  urgency: TicketUrgency;
+  route: TicketRoute;
+  status: TicketStatus;
+  summary: string;
+  siteName: string;
+  /** Admin and technician only. */
+  customerName: string | null;
+  createdAt: string;
+  updatedAt: string;
+  responseDueAt: string;
+  firstResponseAt: string | null;
+  /** The customer has something new to read. */
+  unread: boolean;
+  visit: { date: string; window: 'morning' | 'afternoon'; status: TicketVisit['status']; technicianName: string } | null;
+  needsTriage: boolean;
+  claimReview: boolean;
+  /** Past the time AIEC aimed to answer by, with no answer yet. */
+  late: boolean;
+}
+export interface ServiceDeskView {
+  lifts: TicketLift[];
+  tickets: TicketRow[];
+  /** The number to call when someone is trapped or it is unsafe right now. */
+  emergencyPhone: string | null;
+  supportPhone: string | null;
+  at: string;
+}
+export interface TicketEvidenceItem {
+  key: 'materials' | 'installation' | 'issues' | 'snags' | 'qc_mechanical' | 'qc_electrical' | 'safety' | 'compliance' | 'handover' | 'warranty';
+  /** A short fact in numbers (steps done, readings failed, parts recorded), or null when it is only a link. */
+  count: number | null;
+  total: number | null;
+  /** Something that stands out for a defect investigation (a fail, a substituted part, an open report). */
+  flag: boolean;
+  route: string;
+}
+export interface TicketView {
+  role: 'customer' | 'admin' | 'technician';
+  ticket: {
+    id: string; code: string; category: TicketCategory; urgency: TicketUrgency; route: TicketRoute; impact: TicketImpact | null; status: TicketStatus; summary: string; description: string;
+    attachments: TicketAttachment[]; siteName: string; address: string; jobId: string | null; dealId: string; createdAt: string; updatedAt: string; responseDueAt: string; firstResponseAt: string | null;
+    coverage: TicketCoverage;
+    claim: { raised: boolean; review: boolean; decided: { responsibility: TicketResponsibility; chargeable: boolean; at: string; note: string | null; byName: string | null } | null };
+    visit: (Omit<TicketVisit, 'technicianName'> & { technicianName: string }) | null;
+    resolution: { note: string; at: string; outcome: VisitOutcome | null } | null;
+    canWithdraw: boolean;
+    canReopen: boolean;
+    reopenUntil: string | null;
+    triage: { confidence: 'confident' | 'needs_human'; reason: 'vague' | 'safety_words' | 'general' | 'claim' | null; words: string[]; humanBy: string | null } | null;
+    late: boolean;
+  };
+  events: TicketEvent[];
+  customerName: string | null;
+  contactPhone: string | null;
+  location: GeoPoint | null;
+  /** Admin only: the installation's own record for a defect investigation, read from where each stage kept it. */
+  evidence: TicketEvidenceItem[] | null;
+}
+export interface TicketBoardFilter { state?: 'open' | 'triage' | 'safety' | 'claims' | 'late' | 'resolved' | 'all'; q?: string }
+export interface TicketBoard {
+  rows: TicketRow[];
+  counts: { open: number; triage: number; safety: number; claims: number; late: number; resolved: number; all: number };
+  at: string;
+}
+export interface TicketTechnician { id: string; name: string; visitsThatDay: number; jobsThatDay: number; eligible: boolean; reason: 'training_incomplete' | null }
+export interface TicketCreateInput {
+  clientId: string;
+  dealId: string;
+  jobId: string | null;
+  category: TicketCategory;
+  impact: TicketImpact | null;
+  description: string;
+  claim: boolean;
+  attachments: Omit<TicketAttachment, 'id' | 'capturedAt'>[];
+  location?: GeoPoint;
+}
+export type TicketProblemCode = 'category_required' | 'lift_required' | 'description_short' | 'description_long' | 'too_many_attachments' | 'impact_required' | 'date_past' | 'window_passed' | 'too_far' | 'date_invalid' | 'outcome_required' | 'notes_short' | 'parts_note_required' | 'responsibility_required' | 'note_short' | 'evidence_unreviewed';
+
 /* ------------------------------------------------------------------ Payout disputes (170) */
 
 export interface PayoutDisputeRow {
@@ -8173,6 +8279,24 @@ export interface Repository {
   getVaultBundle(userId: string): Promise<VaultDocument[]>;
   /** 174: the customer's payment picture for one project (the first needing attention when none is named). */
   getCustomerPayments(dealId: string | null, userId: string): Promise<CustomerPayView>;
+  /* 175 — service tickets: the customer's desk, the Admin board and the technician's visits, over one record. */
+  getServiceDesk(userId: string): Promise<ServiceDeskView>;
+  createServiceTicket(input: TicketCreateInput, userId: string): Promise<TicketView>;
+  getServiceTicket(ticketId: string, userId: string): Promise<TicketView>;
+  markServiceTicketSeen(ticketId: string, userId: string): Promise<void>;
+  addTicketNote(ticketId: string, userId: string, input: { note: string; internal?: boolean; attachments?: TicketCreateInput['attachments'] }): Promise<TicketView>;
+  withdrawServiceTicket(ticketId: string, userId: string, reason: string): Promise<TicketView>;
+  reopenServiceTicket(ticketId: string, userId: string, note: string): Promise<TicketView>;
+  getServiceBoard(filter: TicketBoardFilter, adminId: string): Promise<TicketBoard>;
+  triageServiceTicket(ticketId: string, adminId: string, input: { category: TicketCategory; urgency: TicketUrgency; note: string }): Promise<TicketView>;
+  listServiceTechnicians(date: string, adminId: string): Promise<TicketTechnician[]>;
+  assignServiceVisit(ticketId: string, adminId: string, input: { technicianId: string; date: string; window: 'morning' | 'afternoon'; note?: string }): Promise<TicketView>;
+  startServiceTicket(ticketId: string, adminId: string): Promise<TicketView>;
+  resolveServiceTicket(ticketId: string, adminId: string, note: string): Promise<TicketView>;
+  decideTicketClaim(ticketId: string, adminId: string, input: { responsibility: TicketResponsibility; note: string; reviewedEvidence: boolean }): Promise<TicketView>;
+  listMyServiceVisits(technicianId: string): Promise<TicketRow[]>;
+  startServiceVisit(ticketId: string, technicianId: string): Promise<TicketView>;
+  completeServiceVisit(ticketId: string, technicianId: string, input: { outcome: VisitOutcome; notes: string; partsNote?: string }): Promise<TicketView>;
   /** Admin only: shows or hides the customer's view of a job's timeline. Hiding needs a reason. */
   setTimelineCustomerVisible(jobId: string, visible: boolean, note: string, adminId: string): Promise<InstallTimelineView>;
 

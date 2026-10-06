@@ -5023,7 +5023,7 @@ export type CommitmentKind =
   | 'exit_dispute_decide'
   | 'tier_review_due'
   | 'certification_renewal'
-  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review'
+  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'
@@ -5049,6 +5049,7 @@ export type CommitmentKind =
 
 export type CommitmentSubjectType =
   | 'application'
+  | 'service_ticket'
   | 'snag'
   | 'material_log'
   | 'handoff'
@@ -5354,4 +5355,110 @@ export interface TemplateStat {
   conversionInfluenceScore: number;
   /** Too few sends yet for the rate to be statistically meaningful. */
   earlyData: boolean;
+}
+
+
+/* ------------------------------------------------------------------ Service tickets (175) */
+
+/** What the customer says it is about. `emergency` (someone trapped / unsafe right now) is its own path; `safety` is "looks or sounds unsafe"; `fault` is "not working properly". */
+export type TicketCategory = 'emergency' | 'safety' | 'fault' | 'billing' | 'general';
+export type TicketUrgency = 'emergency' | 'high' | 'normal' | 'low';
+/** For a fault: how bad it is, in the customer's own terms. */
+export type TicketImpact = 'out_of_service' | 'working_badly' | 'minor';
+export type TicketStatus = 'submitted' | 'assigned' | 'in_progress' | 'resolved' | 'withdrawn';
+/** Where the request goes: a person on call now, a technician's visit, the accounts side, or Admin to look at first. */
+export type TicketRoute = 'emergency' | 'site_visit' | 'accounts' | 'triage';
+/** Who a defect is down to, decided by a person from the installation's evidence trail, never automatically. */
+export type TicketResponsibility = 'aiec_installation' | 'manufacturer_defect' | 'customer_misuse' | 'normal_wear';
+export type VisitOutcome = 'fixed' | 'needs_parts' | 'needs_followup' | 'no_fault_found' | 'unsafe_shut_down';
+export type TicketCoverageState = 'in_warranty' | 'on_amc' | 'out_of_cover' | 'unknown';
+
+export interface TicketCoverage {
+  state: TicketCoverageState;
+  warrantyEndsOn: string | null;
+  amcEndsOn: string | null;
+  amcTier: string | null;
+  /** The AMC's promised response time, when the lift is on one. */
+  responseHours: number | null;
+}
+
+export interface TicketAttachment {
+  id: string;
+  kind: 'photo' | 'video';
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  durationS?: number;
+  /** A still, or a video's poster frame (the file itself is not stored: there is no storage backend in this build). */
+  previewUrl: string;
+  capturedAt: string;
+}
+
+export interface TicketEvent {
+  id: string;
+  at: string;
+  kind: 'filed' | 'triaged' | 'retriaged' | 'reply' | 'info' | 'assigned' | 'reassigned' | 'started' | 'visit_done' | 'resolved' | 'reopened' | 'withdrawn' | 'claim_decided' | 'internal_note' | 'urgency_changed';
+  /** What the customer may read. An internal event (Admin's own notes, the evidence review) never reaches them. */
+  audience: 'customer' | 'internal';
+  byRole: 'customer' | 'admin' | 'technician' | 'system';
+  byName: string;
+  note?: string;
+  params?: Record<string, string>;
+}
+
+export interface TicketVisit {
+  technicianId: string;
+  technicianName: string;
+  date: string;
+  window: 'morning' | 'afternoon';
+  status: 'planned' | 'in_progress' | 'done' | 'missed';
+  assignedAt: string;
+  assignedByName: string;
+  startedAt?: string;
+  doneAt?: string;
+  outcome?: VisitOutcome;
+  notes?: string;
+  partsNote?: string;
+}
+
+export interface ServiceTicket {
+  id: string;
+  /** `AIEC-TK-####`. */
+  code: string;
+  customerId: string;
+  dealId: string;
+  /** The lift this is about: a handed-over job, or none for a billing or general question. */
+  jobId: string | null;
+  siteName: string;
+  address: string;
+  contactName: string;
+  contactPhone: string;
+  category: TicketCategory;
+  urgency: TicketUrgency;
+  route: TicketRoute;
+  impact: TicketImpact | null;
+  summary: string;
+  description: string;
+  attachments: TicketAttachment[];
+  location?: GeoPoint;
+  /** The customer thinks this should be covered. `review` is whether responsibility is unclear enough that Admin must investigate; `decision` is Admin's documented answer. */
+  claim: { raised: boolean; review: boolean; decision?: { responsibility: TicketResponsibility; note: string; byName: string; at: string; reviewedEvidence: boolean } };
+  triage: { confidence: 'confident' | 'needs_human'; reason: 'vague' | 'safety_words' | 'general' | 'claim' | null; words: string[]; human?: { byName: string; at: string; note?: string } };
+  /** Frozen when filed: what cover the lift had that day. */
+  coverage: TicketCoverage;
+  status: TicketStatus;
+  /** When AIEC aims to have answered by (a placeholder target for the category and urgency; the customer is told it upfront). */
+  responseDueAt: string;
+  firstResponseAt?: string;
+  visit?: TicketVisit;
+  resolution?: { note: string; byName: string; at: string; outcome?: VisitOutcome };
+  reopenedCount: number;
+  /** Idempotence for a request sent twice from a phone with poor signal. */
+  clientId: string;
+  createdAt: string;
+  updatedAt: string;
+  /** When the customer last looked at it, so "new reply" can be said. */
+  customerSeenAt?: string;
+  events: TicketEvent[];
+  isDemo: boolean;
 }

@@ -294,6 +294,15 @@ import type {
   VaultValue,
   VaultView,
   CustomerPayView,
+  ServiceDeskView,
+  TicketBoard,
+  TicketBoardFilter,
+  TicketCreateInput,
+  TicketEvidenceItem,
+  TicketLift,
+  TicketRow,
+  TicketTechnician,
+  TicketView,
   CustomerPayStage,
   CustomerPayProject,
   ProjectMilestone,
@@ -553,6 +562,11 @@ import type {
   TriggerRuleEvaluation,
 } from './repository';
 import type {
+  ServiceTicket,
+  TicketAttachment,
+  TicketCoverage,
+  TicketEvent,
+  TicketRoute,
   Alert,
   AutomatedActionLogEntry,
   AutoPoRules,
@@ -831,7 +845,7 @@ import { canMoveTo, heldLineIds, impactLevel, isClosedResolution } from '@/featu
 import { checkSteps, MASTER_CATEGORY, resolveSopSteps, statusOf, versionInForce as sopVersionInForce } from '@/features/logistics/deliverySop';
 import { KNOWN_PART_CATEGORIES } from '@/features/suppliers/catalogRules';
 import type { AttentionAlertInput } from '@/features/attention/raiseAlert';
-import { businessMinutesSince, days, hours, isBreached } from '@/features/sla/clock';
+import { businessMinutesSince, days, hours, isBreached, severityForRatio } from '@/features/sla/clock';
 import { buildAutomatedActionEntry } from '@/features/audit/logAutomatedAction';
 import type { AutomatedActionInput } from '@/features/audit/logAutomatedAction';
 import { computeSupplierPerformanceScore, supplierScoreBreakdown } from '@/features/suppliers/performanceScore';
@@ -928,6 +942,8 @@ import type { Ranked } from '@/features/rewards/standings';
 import { DEDUCTS_AT_PAYOUT as TDS_DEDUCTS, DEFAULT_RATES as DEFAULT_TDS_RATES, NO_PAN_RATE as TDS_NO_PAN_RATE, SECTIONS, SECTION_OF_ROLE as TDS_SECTION_OF, ackProblem as tdsAckProblem, challanProblem as tdsChallanProblem, deductionFor as tdsDeductionFor, depositDueOf as tdsDepositDueOf, fyIdOf as tdsFyIdOf, fyRange as tdsFyRange, inRange as tdsInRange, maskPan as tdsMaskPan, panProblem as tdsPanProblem, quarterOf as tdsQuarterOf, quarterRange as tdsQuarterRange, rateProblem as tdsRateProblem, returnDueOf as tdsReturnDueOf, versionAt as tdsVersionAt } from '@/features/tax/tds';
 import type { Quarter as TdsQuarter, TdsRole, TdsSection } from '@/features/tax/tds';
 import { bankEvidenceFor, heroOf, loanStateOf, remindersOf, stageStateOf } from '@/features/payments/customerSchedule';
+import { MAX_ATTACHMENTS as TICKET_MAX_ATTACHMENTS, MIN_NOTE as TICKET_MIN_NOTE, REOPEN_WINDOW as TK_REOPEN_WINDOW, chargeableOf as ticketChargeable, claimProblem as ticketClaimProblem, closesTicket as ticketClosesTicket, completeProblem as ticketCompleteProblem, coverageOf, filingProblem as ticketFilingProblem, isOpen as ticketIsOpen, lettersOf as ticketLetters, responseTargetOf, summaryOf, triageOf, visitEndOf, visitProblem as ticketVisitProblem } from '@/features/service/tickets';
+import type { Triage } from '@/features/service/tickets';
 import { VAULT_KINDS, validityState } from '@/features/documents/vault';
 import type { VaultKind } from '@/features/documents/vault';
 import { MONTHS_OFFERED as PH_MONTHS, PAGE as PH_PAGE, QUERY_DUE as PH_QUERY_DUE, answerProblem as phAnswerProblem, countsAsEarned as phCountsAsEarned, filterOf as phFilterOf, fyOf as phFyOf, inPeriod as phInPeriod, monthIdOf as phMonthId, periodOf as phPeriodOf, queryProblem as phQueryProblem, stageOf as phStageOf } from '@/features/payout/history';
@@ -2652,6 +2668,7 @@ function commitmentSources(now: number): CommitmentSources {
     payoutDisbursements: payoutDisbursementSignals(),
     contests: contestSignals(Date.now()),
     payoutQueries: payoutQuerySignals(),
+    serviceTickets: serviceTicketSignals(now),
     tds: tdsObligations(Date.now()),
     exits: exitSignals(),
     handoverReviews: handoverSignals().reviews,
@@ -2920,6 +2937,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   syncDisbursements(now);
   syncTds(now);
   syncPayoutDisputes(now);
+  syncServiceTickets(now);
   syncContests(now);
   syncBadges(now);
   syncPartnerInterviews(now);
@@ -10785,6 +10803,274 @@ function cpViewOf(user: User, dealId: string | null, now: number): CustomerPayVi
       reminders, remindersPaused: paused, workHeld: !!job,
     },
   };
+}
+
+/* ------------------------------------------------------------------ Service tickets (175) */
+
+/**
+ * One record behind the customer's desk, Admin's board and the technician's visits. A request is triaged by rules at the moment it is filed (a person where it is unclear), the customer is told
+ * upfront how soon to expect an answer, and nothing about responsibility for a defect is decided automatically.
+ */
+const serviceTickets: ServiceTicket[] = [];
+let serviceTicketCounter = 5000;
+let ticketEventCounter = 0;
+let ticketAttachmentCounter = 0;
+const TK_ALERT_EMERGENCY = 'serviceTickets.alert.emergency';
+const TK_ALERT_SAFETY = 'serviceTickets.alert.safetyWords';
+const TK_ALERT_LATE = 'serviceTickets.alert.late';
+const TK_ALERT_UNSAFE = 'serviceTickets.alert.unsafe';
+const TK_ALERT_MISSED = 'serviceTickets.alert.visitMissed';
+const TK_ALERTS = [TK_ALERT_EMERGENCY, TK_ALERT_SAFETY, TK_ALERT_LATE, TK_ALERT_UNSAFE, TK_ALERT_MISSED];
+const tkAdmin = (): User | undefined => users.find((u) => u.role === 'admin' && u.status === 'active');
+const tkFirst = (name: string): string => name.trim().split(/\s+/)[0] ?? name;
+const tkAdminOf = (id: string): User => {
+  const u = byId(users, id);
+  if (!u || u.role !== 'admin') throw new RepositoryError('forbidden');
+  return u;
+};
+const tkTicket = (id: string): ServiceTicket => {
+  const t = byId(serviceTickets, id);
+  if (!t) throw new RepositoryError('not_found');
+  return t;
+};
+function tkEvent(t: ServiceTicket, e: Omit<TicketEvent, 'id' | 'at'> & { at?: string }): void {
+  ticketEventCounter += 1;
+  const at = e.at ?? new Date().toISOString();
+  t.events.push({ id: `te-${ticketEventCounter}`, ...e, at });
+  t.updatedAt = at;
+  // The first thing the customer can read from AIEC is the first response.
+  if (!t.firstResponseAt && e.audience === 'customer' && (e.byRole === 'admin' || e.byRole === 'technician')) t.firstResponseAt = at;
+}
+function tkCoverageOf(job: Job, now: number): TicketCoverage {
+  const w = warrantyViewOf(job, 'customer', now);
+  const last = w.amc?.terms[w.amc.terms.length - 1];
+  return coverageOf({ warrantyEndsOn: w.terms?.service.endsOn ?? null, amc: w.amc ? { status: w.amc.status, endsOn: last?.endsOn ?? null, tier: w.amc.tier ?? null, responseHours: w.amc.responseTimeHours ?? null } : null }, now);
+}
+const TK_NO_COVER: TicketCoverage = { state: 'unknown', warrantyEndsOn: null, amcEndsOn: null, amcTier: null, responseHours: null };
+
+/** The customer's lifts and projects a request can be about: a handed-over lift for anything physical, any project for a billing or general question. */
+function tkLiftsOf(user: User, now: number): TicketLift[] {
+  const out: TicketLift[] = [];
+  for (const deal of vdDealsOf(user)) {
+    const lead = byId(leads, deal.leadId);
+    const djs = jobs.filter((j) => j.dealId === deal.id).sort((a, b) => a.code.localeCompare(b.code));
+    if (djs.length === 0) { out.push({ key: `deal:${deal.id}`, dealId: deal.id, jobId: null, code: deal.code, siteName: lead?.siteName ?? deal.code, address: lead?.address ?? null, handedOver: false, coverage: TK_NO_COVER }); continue; }
+    for (const j of djs) {
+      const handed = j.status === 'completed';
+      out.push({ key: `job:${j.id}`, dealId: deal.id, jobId: j.id, code: j.code, siteName: j.siteName, address: j.address, handedOver: handed, coverage: handed ? tkCoverageOf(j, now) : TK_NO_COVER });
+    }
+  }
+  return out.sort((a, b) => Number(b.handedOver) - Number(a.handedOver) || a.siteName.localeCompare(b.siteName));
+}
+
+const tkLate = (t: ServiceTicket, now: number): boolean => ticketIsOpen(t.status) && !t.firstResponseAt && now > Date.parse(t.responseDueAt);
+const tkUnread = (t: ServiceTicket): boolean => {
+  const seen = t.customerSeenAt ?? t.createdAt;
+  return t.events.some((e) => e.audience === 'customer' && e.byRole !== 'customer' && e.at > seen);
+};
+function tkRowOf(t: ServiceTicket, role: 'customer' | 'admin' | 'technician', now: number): TicketRow {
+  return {
+    id: t.id, code: t.code, category: t.category, urgency: t.urgency, route: t.route, status: t.status, summary: t.summary, siteName: t.siteName,
+    customerName: role === 'customer' ? null : nameOf(t.customerId), createdAt: t.createdAt, updatedAt: t.updatedAt, responseDueAt: t.responseDueAt, firstResponseAt: t.firstResponseAt ?? null,
+    unread: role === 'customer' && tkUnread(t),
+    visit: t.visit ? { date: t.visit.date, window: t.visit.window, status: t.visit.status, technicianName: role === 'customer' ? tkFirst(t.visit.technicianName) : t.visit.technicianName } : null,
+    needsTriage: ticketIsOpen(t.status) && t.triage.confidence === 'needs_human' && !t.triage.human,
+    claimReview: t.claim.review && !t.claim.decision,
+    late: tkLate(t, now),
+  };
+}
+
+/** The installation's own record for a defect investigation, read from where each stage kept it (never copied). */
+function tkEvidenceOf(job: Job): TicketEvidenceItem[] {
+  ensureMaterialSeeds(); ensureQcSeeds(); ensureSnagSeeds();
+  const out: TicketEvidenceItem[] = [];
+  const done = job.steps.filter((s) => s.completedAt).length;
+  out.push({ key: 'installation', count: done, total: job.steps.length, flag: job.steps.some((s) => (s.evidence ?? []).some((e) => e.finding)), route: `/installation-timeline/${job.id}` });
+  const log = materialLogs.find((l) => l.jobId === job.id);
+  if (log) out.push({ key: 'materials', count: log.uses.length, total: null, flag: log.uses.some((u) => u.deviation && u.deviation.kind !== 'not_needed' && u.deviation.kind !== 'wastage') || log.uses.some((u) => u.source === 'local_purchase'), route: `/material-usage/${job.id}` });
+  const issues = jobIssues.filter((i) => i.jobId === job.id);
+  out.push({ key: 'issues', count: issues.length, total: null, flag: issues.some((i) => i.severity !== 'minor'), route: `/job-issues/${job.id}` });
+  const snags = reworkRequests.filter((r) => r.jobId === job.id);
+  out.push({ key: 'snags', count: snags.length, total: null, flag: snags.some((r) => r.status !== 'verified' && r.status !== 'waived' && r.status !== 'withdrawn'), route: `/snags/${job.id}` });
+  const mech = qcMechChecks.find((c) => c.jobId === job.id);
+  if (mech) { const all = Object.values(mech.attempts).flat().filter(Boolean) as { verdict: string }[]; out.push({ key: 'qc_mechanical', count: all.filter((a) => a.verdict === 'fail').length, total: all.length, flag: all.some((a) => a.verdict !== 'pass'), route: `/qc-mechanical/${job.id}` }); }
+  const elec = qcElecChecks.find((c) => c.jobId === job.id);
+  if (elec) { const all = Object.values(elec.attempts).flat().filter(Boolean) as { verdict: string }[]; out.push({ key: 'qc_electrical', count: all.filter((a) => a.verdict === 'fail').length, total: all.length, flag: all.some((a) => a.verdict !== 'pass'), route: `/qc-electrical/${job.id}` }); }
+  const tests = jobSafetyTests.filter((x) => x.jobId === job.id);
+  if (tests.length) out.push({ key: 'safety', count: tests.filter((x) => x.attempts.some((a) => a.result === 'fail')).length, total: tests.length, flag: tests.some((x) => !!x.override), route: `/safety-checklist/${job.id}` });
+  const certs = complianceCertificates.filter((c) => c.jobId === job.id);
+  if (certs.length) out.push({ key: 'compliance', count: certs.length, total: null, flag: certs.some((c) => !!c.supersededBy), route: `/compliance/${job.id}` });
+  if (handoverCompletions.some((h) => h.jobId === job.id)) out.push({ key: 'handover', count: null, total: null, flag: false, route: `/handover-certificate/${job.id}` });
+  if (registrationOf(job.id)) out.push({ key: 'warranty', count: null, total: null, flag: false, route: `/warranty/${job.id}` });
+  return out;
+}
+
+function tkViewOf(t: ServiceTicket, viewer: User, now: number): TicketView {
+  const role = viewer.role === 'admin' ? 'admin' : viewer.role === 'technician' ? 'technician' : 'customer';
+  const customerSide = role === 'customer';
+  const job = t.jobId ? byId(jobs, t.jobId) ?? null : null;
+  const d = t.claim.decision;
+  const reopenUntil = t.resolution ? new Date(Date.parse(t.resolution.at) + TK_REOPEN_WINDOW).toISOString() : null;
+  return JSON.parse(JSON.stringify({
+    role,
+    ticket: {
+      id: t.id, code: t.code, category: t.category, urgency: t.urgency, route: t.route, impact: t.impact, status: t.status, summary: t.summary, description: t.description,
+      attachments: t.attachments, siteName: t.siteName, address: t.address, jobId: t.jobId, dealId: t.dealId, createdAt: t.createdAt, updatedAt: t.updatedAt, responseDueAt: t.responseDueAt, firstResponseAt: t.firstResponseAt ?? null,
+      coverage: t.coverage,
+      claim: { raised: t.claim.raised, review: t.claim.review, decided: d && role !== 'technician' ? { responsibility: d.responsibility, chargeable: ticketChargeable(d.responsibility), at: d.at, note: role === 'admin' ? d.note : null, byName: role === 'admin' ? d.byName : null } : null },
+      visit: t.visit ? { ...t.visit, technicianName: customerSide ? tkFirst(t.visit.technicianName) : t.visit.technicianName, notes: customerSide ? undefined : t.visit.notes, partsNote: customerSide ? undefined : t.visit.partsNote } : null,
+      resolution: t.resolution ? { note: customerSide && t.resolution.outcome ? '' : t.resolution.note, at: t.resolution.at, outcome: t.resolution.outcome ?? null } : null,
+      canWithdraw: customerSide && (t.status === 'submitted' || t.status === 'assigned') && t.visit?.status !== 'in_progress',
+      canReopen: role !== 'technician' && t.status === 'resolved' && (role === 'admin' || (reopenUntil !== null && now <= Date.parse(reopenUntil))),
+      reopenUntil: customerSide ? reopenUntil : null,
+      triage: role === 'admin' ? { confidence: t.triage.confidence, reason: t.triage.reason, words: t.triage.words, humanBy: t.triage.human?.byName ?? null } : null,
+      late: tkLate(t, now),
+    },
+    events: t.events.filter((e) => e.audience === 'customer' || role === 'admin'),
+    customerName: customerSide ? null : nameOf(t.customerId),
+    contactPhone: customerSide ? null : t.contactPhone,
+    location: customerSide ? null : t.location ?? job?.location ?? null,
+    evidence: role === 'admin' && job ? tkEvidenceOf(job) : null,
+  })) as TicketView;
+}
+
+/** What a viewer may see: the customer their own, Admin everything, a technician the requests they hold a visit for. */
+function tkViewable(t: ServiceTicket, viewer: User): void {
+  if (viewer.role === 'admin') return;
+  if (viewer.role === 'technician') { if (t.visit?.technicianId !== viewer.id) throw new RepositoryError('forbidden'); return; }
+  if (viewer.role === 'customer' && vdDealsOf(viewer).some((d) => d.id === t.dealId) && t.customerId === viewer.id) return;
+  throw new RepositoryError('forbidden');
+}
+
+/** A message to the customer through the Communication Engine, once, in their language, never to someone who has opted out. */
+function tkMessageCustomer(t: ServiceTicket, groupId: string, params: Record<string, string | ((lang: string) => string)>): void {
+  const deal = byId(deals, t.dealId);
+  const lead = deal ? resolveLead(deal.leadId) : null;
+  if (!lead) return;
+  const language = lead.preferredLanguage ?? 'en';
+  const template = templateInGroup(groupId, language) ?? templateInGroup(groupId, 'en');
+  if (!template || isOptedOutSync(lead.contactPhone, template.channel)) return;
+  const at = new Date().toISOString();
+  const filled = Object.fromEntries(Object.entries(params).map(([k, v]) => [k, typeof v === 'function' ? v(template.language) : v]));
+  const body = renderTemplateBody(template.body, { customerName: lead.contactName, buildingName: t.siteName, ticketCode: t.code, ...filled });
+  let conversation = conversations.find((c) => c.leadId === lead.id) ?? null;
+  if (!conversation) {
+    conversationCounter += 1;
+    conversation = { id: `conv-new-${conversationCounter}`, leadId: lead.id, lastMessageAt: at, isDemo: true };
+    conversations.push(conversation);
+  }
+  messageCounter += 1;
+  commMessages.push({ id: `cm-new-${messageCounter}`, conversationId: conversation.id, channel: template.channel, sender: 'bot', body, templateGroupId: groupId, status: 'sent', at, handled: true });
+  patchInPlace(conversations, conversation.id, { lastMessageAt: at });
+  logAutomatedAction({ sourceKey: `service_ticket.${groupId.replace('tpl-ticket-', '')}`, triggeringCondition: `${t.code} ${groupId.replace('tpl-ticket-', '')}`, actionTaken: `Messaged ${lead.contactName} on ${template.channel}`, affectedRecordId: t.id, affectedRecordType: 'other', subjectLabel: t.code });
+}
+const tkWindowWord = (window: 'morning' | 'afternoon', lang: string): string => (lang === 'hi' ? (window === 'morning' ? 'सुबह' : 'दोपहर बाद') : lang === 'mr' ? (window === 'morning' ? 'सकाळी' : 'दुपारनंतर') : window);
+
+/** Seeds, built the first time they are needed: a resolved noise-free door fix, a grinding-noise report with a visit tomorrow, and a billing question not yet answered. */
+let tkSeeded = false;
+function tkSeeds(now: number): void {
+  if (tkSeeded) return;
+  tkSeeded = true;
+  const rajesh = byId(users, 'u-cust-1');
+  const meera = byId(users, 'u-cust-2');
+  const lift = byId(jobs, 'j-5');
+  if (!rajesh || !lift) return;
+  const iso = (ms: number) => new Date(ms).toISOString();
+  const day = 86_400_000;
+  const base = (over: Partial<ServiceTicket> & Pick<ServiceTicket, 'category' | 'urgency' | 'route' | 'description' | 'status' | 'createdAt'>): ServiceTicket => {
+    serviceTicketCounter += 1;
+    const created = Date.parse(over.createdAt);
+    return {
+      id: `tk-${serviceTicketCounter}`, code: `AIEC-TK-${serviceTicketCounter}`, customerId: rajesh.id, dealId: lift.dealId, jobId: lift.id, siteName: lift.siteName, address: lift.address, contactName: rajesh.name, contactPhone: rajesh.phone, impact: null,
+      summary: summaryOf(over.description), attachments: [], claim: { raised: false, review: false }, triage: { confidence: 'confident', reason: null, words: [] }, coverage: TK_NO_COVER,
+      responseDueAt: iso(created + responseTargetOf(over.urgency, over.route, null)), reopenedCount: 0, clientId: `seed-${serviceTicketCounter}`, updatedAt: over.createdAt, events: [], isDemo: true, ...over,
+    } as ServiceTicket;
+  };
+  const filed = (t: ServiceTicket) => tkEvent(t, { at: t.createdAt, kind: 'filed', audience: 'customer', byRole: 'customer', byName: t.contactName });
+
+  const t1 = base({ category: 'fault', urgency: 'low', route: 'site_visit', impact: 'minor', description: 'The cabin door sticks for a second before it closes, mostly on the ground floor.', status: 'resolved', createdAt: iso(now - 21 * day) });
+  filed(t1);
+  tkEvent(t1, { at: iso(now - 21 * day + 3_600_000), kind: 'assigned', audience: 'customer', byRole: 'admin', byName: nameOf('u-admin-1'), params: { name: 'Anil', date: iso(now - 19 * day).slice(0, 10), window: 'morning' } });
+  t1.visit = { technicianId: 'u-tech-2', technicianName: nameOf('u-tech-2'), date: iso(now - 19 * day).slice(0, 10), window: 'morning', status: 'done', assignedAt: iso(now - 21 * day + 3_600_000), assignedByName: nameOf('u-admin-1'), startedAt: iso(now - 19 * day + 4 * 3_600_000), doneAt: iso(now - 19 * day + 5 * 3_600_000), outcome: 'fixed', notes: 'Cleaned and re-aligned the door sill track; adjusted the door-operator limit. Tested twenty cycles on every floor.' };
+  tkEvent(t1, { at: iso(now - 19 * day + 5 * 3_600_000), kind: 'visit_done', audience: 'customer', byRole: 'technician', byName: nameOf('u-tech-2'), params: { outcome: 'fixed' } });
+  t1.resolution = { note: t1.visit.notes ?? '', byName: nameOf('u-tech-2'), at: iso(now - 19 * day + 5 * 3_600_000), outcome: 'fixed' };
+  tkEvent(t1, { at: t1.resolution.at, kind: 'resolved', audience: 'customer', byRole: 'technician', byName: nameOf('u-tech-2'), params: { outcome: 'fixed' } });
+  t1.customerSeenAt = iso(now - 18 * day);
+
+  const t2 = base({ category: 'safety', urgency: 'high', route: 'site_visit', description: 'A grinding noise comes from the machine room whenever the lift starts moving up. It started yesterday.', status: 'assigned', createdAt: iso(now - 5 * 3_600_000), triage: { confidence: 'needs_human', reason: 'safety_words', words: ['grinding'] } });
+  filed(t2);
+  tkEvent(t2, { at: iso(now - 5 * 3_600_000), kind: 'triaged', audience: 'internal', byRole: 'system', byName: 'AIEC', params: { route: 'site_visit', urgency: 'high', reason: 'safety_words' } });
+  const tomorrow = iso(now + day).slice(0, 10);
+  t2.visit = { technicianId: 'u-tech-2', technicianName: nameOf('u-tech-2'), date: tomorrow, window: 'morning', status: 'planned', assignedAt: iso(now - 4 * 3_600_000), assignedByName: nameOf('u-admin-1') };
+  tkEvent(t2, { at: iso(now - 4 * 3_600_000), kind: 'assigned', audience: 'customer', byRole: 'admin', byName: nameOf('u-admin-1'), params: { name: tkFirst(nameOf('u-tech-2')), date: tomorrow, window: 'morning' } });
+  t2.customerSeenAt = iso(now - 3 * 3_600_000);
+
+  if (meera) {
+    const dl = byId(deals, 'dl-2');
+    const lead = dl ? byId(leads, dl.leadId) : null;
+    if (dl && lead) {
+      const t3 = base({ category: 'billing', urgency: 'low', route: 'accounts', description: 'The installation-stage invoice has a charge for a change order I did not agree to. Please explain it.', status: 'submitted', createdAt: iso(now - 3 * 3_600_000), customerId: meera.id, dealId: dl.id, jobId: null, siteName: lead.siteName, address: lead.address ?? '', contactName: meera.name, contactPhone: meera.phone });
+      filed(t3);
+      tkEvent(t3, { at: t3.createdAt, kind: 'triaged', audience: 'internal', byRole: 'system', byName: 'AIEC', params: { route: 'accounts', urgency: 'low', reason: '' } });
+      serviceTickets.push(t3);
+    }
+  }
+  serviceTickets.push(t1, t2);
+}
+
+function syncServiceTickets(now: number): void {
+  tkSeeds(now);
+  for (const t of serviceTickets) {
+    const open = ticketIsOpen(t.status);
+    const late = tkLate(t, now);
+    const relatedBase = `ticket:${t.id}`;
+    const lateAlert = alerts.find((a) => a.titleKey === TK_ALERT_LATE && a.relatedId === relatedBase && a.status !== 'resolved');
+    if (late) {
+      const ratio = (now - Date.parse(t.createdAt)) / Math.max(1, Date.parse(t.responseDueAt) - Date.parse(t.createdAt));
+      const severity = t.urgency === 'emergency' ? 'critical' : severityForRatio(ratio);
+      if (!lateAlert) {
+        raiseAlert({ titleKey: TK_ALERT_LATE, context: `${t.code} · ${t.siteName}`, severity, category: 'sla_breach', relatedId: relatedBase, sourceRoute: `/service-requests/${t.id}` });
+        logAutomatedAction({ sourceKey: 'service_ticket.late', triggeringCondition: `${t.code} was not answered by the time the customer was told`, actionTaken: 'Raised an alert so a person answers it', affectedRecordId: t.id, affectedRecordType: 'other', subjectLabel: t.code });
+      } else if (lateAlert.severity !== severity && severity === 'critical') patchInPlace(alerts, lateAlert.id, { severity });
+    } else if (lateAlert) patchInPlace(alerts, lateAlert.id, { status: 'resolved', resolvedAt: new Date(now).toISOString(), resolvedBy: 'system', resolutionNote: open ? 'The customer has been answered.' : 'The request is closed.' });
+    if (t.visit?.status === 'planned' && open && visitEndOf(t.visit.date, t.visit.window) < now) {
+      t.visit.status = 'missed';
+      tkEvent(t, { kind: 'internal_note', audience: 'internal', byRole: 'system', byName: 'AIEC', note: 'The visit time passed without the technician starting it.' });
+      raiseAlert({ titleKey: TK_ALERT_MISSED, context: `${t.code} · ${t.visit.technicianName} · ${t.siteName}`, severity: t.urgency === 'high' || t.urgency === 'emergency' ? 'high' : 'medium', category: 'staffing', relatedId: relatedBase, sourceRoute: `/service-requests/${t.id}` });
+      logAutomatedAction({ sourceKey: 'service_visit.missed', triggeringCondition: `The visit for ${t.code} passed without being started`, actionTaken: 'Marked the visit missed and raised an alert', affectedRecordId: t.id, affectedRecordType: 'other', subjectLabel: t.code });
+    }
+    if (!open) for (const a of alerts) if (TK_ALERTS.includes(a.titleKey) && a.relatedId === relatedBase && a.status !== 'resolved' && a.titleKey !== TK_ALERT_UNSAFE) patchInPlace(alerts, a.id, { status: 'resolved', resolvedAt: new Date(now).toISOString(), resolvedBy: 'system', resolutionNote: 'The request is closed.' });
+  }
+}
+
+/** What the commitment engine sees of the service desk. */
+function serviceTicketSignals(now: number): { respond: { id: string; code: string; ownerUserId: string; dueAt: string; urgency: string; site: string }[]; visits: { id: string; code: string; technicianId: string; dueAt: string; site: string; date: string; state: 'open' | 'done' | 'cancelled' }[]; claims: { id: string; code: string; since: string }[]; followups: { id: string; code: string; since: string; unsafe: boolean }[] } {
+  tkSeeds(now);
+  const admin = tkAdmin();
+  const respond: ReturnType<typeof serviceTicketSignals>['respond'] = [];
+  const visits: ReturnType<typeof serviceTicketSignals>['visits'] = [];
+  const claims: ReturnType<typeof serviceTicketSignals>['claims'] = [];
+  const followups: ReturnType<typeof serviceTicketSignals>['followups'] = [];
+  for (const t of serviceTickets) {
+    const open = ticketIsOpen(t.status);
+    if (open && !t.firstResponseAt && admin) respond.push({ id: t.id, code: t.code, ownerUserId: admin.id, dueAt: t.responseDueAt, urgency: t.urgency, site: t.siteName });
+    if (t.visit && t.visit.status !== 'missed') visits.push({ id: t.id, code: t.code, technicianId: t.visit.technicianId, dueAt: new Date(visitEndOf(t.visit.date, t.visit.window)).toISOString(), site: t.siteName, date: t.visit.date, state: !open ? 'cancelled' : t.visit.status === 'planned' ? 'open' : 'done' });
+    if (t.claim.review && !t.claim.decision && t.status !== 'withdrawn') claims.push({ id: t.id, code: t.code, since: t.createdAt });
+    const v = t.visit;
+    if (open && v && v.status === 'done' && v.outcome && !ticketClosesTicket(v.outcome)) followups.push({ id: t.id, code: t.code, since: v.doneAt ?? t.updatedAt, unsafe: v.outcome === 'unsafe_shut_down' });
+    if (open && v?.status === 'missed') followups.push({ id: t.id, code: t.code, since: t.updatedAt, unsafe: false });
+  }
+  return { respond, visits, claims, followups };
+}
+
+function tkAttachments(input: TicketCreateInput['attachments'] | undefined, now: string): TicketAttachment[] {
+  return (input ?? []).map((a) => { ticketAttachmentCounter += 1; return { ...a, id: `ta-${ticketAttachmentCounter}`, capturedAt: now }; });
+}
+function tkRaise(t: ServiceTicket, tr: Triage, now: number): void {
+  const at = t.location;
+  if (tr.urgency === 'emergency') raiseAlert({ titleKey: TK_ALERT_EMERGENCY, context: `${t.code} · ${t.siteName} · ${t.contactName} ${t.contactPhone}`, severity: 'critical', category: 'safety', relatedId: `ticket:${t.id}`, sourceRoute: `/service-requests/${t.id}`, location: at ?? byId(jobs, t.jobId ?? '')?.location });
+  else if (tr.reason === 'safety_words') raiseAlert({ titleKey: TK_ALERT_SAFETY, context: `${t.code} · ${t.siteName} · ${tr.words.slice(0, 3).join(', ')}`, severity: 'high', category: 'safety', relatedId: `ticket:${t.id}`, sourceRoute: `/service-requests/${t.id}`, location: at ?? byId(jobs, t.jobId ?? '')?.location });
+  void now;
 }
 
 /* ------------------------------------------------------------------ Badges & milestones (166) */
@@ -23308,6 +23594,305 @@ export const memoryRepository: Repository = {
     simulateRead((): VaultDocument[] => {
       const docs = vdDocsOf(vdCustomer(userId), Date.now());
       return JSON.parse(JSON.stringify(docs.map((d) => ({ row: d.row, sections: d.sections, versions: docs.filter((x) => x.row.chainId === d.row.chainId).map((x) => x.row), issuedBy: d.issuedBy })))) as VaultDocument[];
+    }),
+
+  /* --------------------------------- Service tickets (175) */
+  getServiceDesk: (userId) =>
+    simulateRead((): ServiceDeskView => {
+      const user = vdCustomer(userId);
+      const now = Date.now();
+      tkSeeds(now);
+      const mine = serviceTickets.filter((t) => t.customerId === user.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      return JSON.parse(JSON.stringify({ lifts: tkLiftsOf(user, now), tickets: mine.map((t) => tkRowOf(t, 'customer', now)), emergencyPhone: tkAdmin()?.phone ?? null, supportPhone: tkAdmin()?.phone ?? null, at: new Date(now).toISOString() })) as ServiceDeskView;
+    }),
+
+  createServiceTicket: (input, userId) =>
+    simulateWrite((): TicketView => {
+      const user = vdCustomer(userId);
+      const now = Date.now();
+      tkSeeds(now);
+      const prior = serviceTickets.find((t) => t.customerId === user.id && t.clientId === input.clientId);
+      if (prior) return tkViewOf(prior, user, now);
+      const deal = vdDealsOf(user).find((d) => d.id === input.dealId);
+      if (!deal) throw new RepositoryError('forbidden');
+      const job = input.jobId ? byId(jobs, input.jobId) : null;
+      if (input.jobId && (!job || job.dealId !== deal.id)) throw new RepositoryError('not_found');
+      const physical = input.category === 'emergency' || input.category === 'safety' || input.category === 'fault';
+      if (physical && (!job || job.status !== 'completed')) throw new RepositoryError('not_handed_over');
+      const description = input.description.trim();
+      const problem = ticketFilingProblem({ category: input.category, jobId: input.jobId, description, impact: input.impact, attachments: input.attachments.length });
+      if (problem && !(input.category === 'emergency' && problem === 'description_short')) throw new RepositoryError(problem);
+      const at = new Date(now).toISOString();
+      const lead = byId(leads, deal.leadId);
+      const coverage = job ? tkCoverageOf(job, now) : TK_NO_COVER;
+      const tr = triageOf({ category: input.category, impact: input.impact, text: description, claim: input.claim, coverage: coverage.state });
+      serviceTicketCounter += 1;
+      const t: ServiceTicket = {
+        id: `tk-${serviceTicketCounter}`, code: `AIEC-TK-${serviceTicketCounter}`, customerId: user.id, dealId: deal.id, jobId: job?.id ?? null, siteName: job?.siteName ?? lead?.siteName ?? deal.code, address: job?.address ?? lead?.address ?? '',
+        contactName: user.name, contactPhone: user.phone ?? '', category: tr.category, urgency: tr.urgency, route: tr.route, impact: input.impact, summary: summaryOf(description), description, attachments: tkAttachments(input.attachments, at), location: input.location,
+        claim: { raised: input.claim, review: tr.claimReview }, triage: { confidence: tr.confidence, reason: tr.reason, words: tr.words }, coverage, status: 'submitted', responseDueAt: '', reopenedCount: 0, clientId: input.clientId, createdAt: at, updatedAt: at, events: [], isDemo: true,
+      };
+      t.responseDueAt = new Date(now + responseTargetOf(tr.urgency, tr.route, coverage)).toISOString();
+      tkEvent(t, { at, kind: 'filed', audience: 'customer', byRole: 'customer', byName: user.name });
+      tkEvent(t, { at, kind: 'triaged', audience: 'internal', byRole: 'system', byName: 'AIEC', params: { route: tr.route, urgency: tr.urgency, reason: tr.reason ?? '', confidence: tr.confidence } });
+      serviceTickets.push(t);
+      tkRaise(t, tr, now);
+      logAutomatedAction({ sourceKey: 'service_ticket.triaged', triggeringCondition: `${t.code} was filed as ${tr.category}${tr.words.length ? ` and mentions ${tr.words.slice(0, 3).join(', ')}` : ''}`, actionTaken: `Routed to ${tr.route} at ${tr.urgency} urgency${tr.confidence === 'needs_human' ? ', for a person to confirm' : ''}`, affectedRecordId: t.id, affectedRecordType: 'other', subjectLabel: t.code });
+      tkMessageCustomer(t, 'tpl-ticket-received', {});
+      return tkViewOf(t, user, now);
+    }),
+
+  getServiceTicket: (ticketId, userId) =>
+    simulateRead((): TicketView => {
+      const viewer = byId(users, userId);
+      if (!viewer) throw new RepositoryError('forbidden');
+      const now = Date.now();
+      tkSeeds(now);
+      const t = tkTicket(ticketId);
+      tkViewable(t, viewer);
+      return tkViewOf(t, viewer, now);
+    }),
+
+  markServiceTicketSeen: (ticketId, userId) =>
+    simulateWrite((): void => {
+      const viewer = byId(users, userId);
+      const t = tkTicket(ticketId);
+      if (!viewer || viewer.role !== 'customer' || t.customerId !== viewer.id) return;
+      t.customerSeenAt = new Date().toISOString();
+    }),
+
+  addTicketNote: (ticketId, userId, input) =>
+    simulateWrite((): TicketView => {
+      const viewer = byId(users, userId);
+      if (!viewer) throw new RepositoryError('forbidden');
+      const now = Date.now();
+      tkSeeds(now);
+      const t = tkTicket(ticketId);
+      tkViewable(t, viewer);
+      const note = input.note.trim();
+      if (ticketLetters(note) < 3) throw new RepositoryError('note_short');
+      if (viewer.role === 'technician') throw new RepositoryError('forbidden');
+      if (viewer.role === 'customer') {
+        if (!ticketIsOpen(t.status)) throw new RepositoryError('invalid_state');
+        const added = tkAttachments(input.attachments, new Date(now).toISOString());
+        if (t.attachments.length + added.length > TICKET_MAX_ATTACHMENTS * 2) throw new RepositoryError('too_many_attachments');
+        t.attachments.push(...added);
+        tkEvent(t, { kind: 'info', audience: 'customer', byRole: 'customer', byName: viewer.name, note });
+      } else {
+        tkEvent(t, { kind: input.internal ? 'internal_note' : 'reply', audience: input.internal ? 'internal' : 'customer', byRole: 'admin', byName: viewer.name, note });
+      }
+      return tkViewOf(t, viewer, now);
+    }),
+
+  withdrawServiceTicket: (ticketId, userId, reason) =>
+    simulateWrite((): TicketView => {
+      const viewer = vdCustomer(userId);
+      const now = Date.now();
+      tkSeeds(now);
+      const t = tkTicket(ticketId);
+      tkViewable(t, viewer);
+      if (t.status !== 'submitted' && t.status !== 'assigned') throw new RepositoryError('invalid_state');
+      if (t.visit?.status === 'in_progress') throw new RepositoryError('invalid_state');
+      if (ticketLetters(reason) < 3) throw new RepositoryError('note_short');
+      t.status = 'withdrawn';
+      if (t.visit?.status === 'planned') t.visit.status = 'missed';
+      tkEvent(t, { kind: 'withdrawn', audience: 'customer', byRole: 'customer', byName: viewer.name, note: reason.trim() });
+      return tkViewOf(t, viewer, now);
+    }),
+
+  reopenServiceTicket: (ticketId, userId, note) =>
+    simulateWrite((): TicketView => {
+      const viewer = byId(users, userId);
+      if (!viewer || (viewer.role !== 'customer' && viewer.role !== 'admin')) throw new RepositoryError('forbidden');
+      const now = Date.now();
+      tkSeeds(now);
+      const t = tkTicket(ticketId);
+      tkViewable(t, viewer);
+      if (t.status !== 'resolved' || !t.resolution) throw new RepositoryError('invalid_state');
+      if (viewer.role === 'customer' && now > Date.parse(t.resolution.at) + TK_REOPEN_WINDOW) throw new RepositoryError('window_closed');
+      if (ticketLetters(note) < 3) throw new RepositoryError('note_short');
+      t.status = 'in_progress';
+      t.reopenedCount += 1;
+      t.firstResponseAt = undefined;
+      t.responseDueAt = new Date(now + responseTargetOf(t.urgency === 'low' ? 'normal' : t.urgency, t.route, t.coverage)).toISOString();
+      tkEvent(t, { kind: 'reopened', audience: 'customer', byRole: viewer.role === 'admin' ? 'admin' : 'customer', byName: viewer.name, note: note.trim() });
+      // A fresh visit is needed: the earlier one is kept as it was.
+      if (t.visit?.status === 'done') t.visit = { ...t.visit };
+      return tkViewOf(t, viewer, now);
+    }),
+
+  getServiceBoard: (filter, adminId) =>
+    simulateRead((): TicketBoard => {
+      tkAdminOf(adminId);
+      const now = Date.now();
+      tkSeeds(now);
+      const rows = serviceTickets.map((t) => ({ t, r: tkRowOf(t, 'admin', now) }));
+      const pick = (state: TicketBoardFilter['state']) => rows.filter(({ t, r }) => {
+        if (state === 'all') return true;
+        if (state === 'resolved') return t.status === 'resolved' || t.status === 'withdrawn';
+        if (!ticketIsOpen(t.status)) return false;
+        if (state === 'triage') return r.needsTriage;
+        if (state === 'safety') return t.urgency === 'emergency' || t.urgency === 'high';
+        if (state === 'claims') return r.claimReview;
+        if (state === 'late') return r.late;
+        return true;
+      });
+      const q = (filter.q ?? '').trim().toLowerCase();
+      const shown = pick(filter.state ?? 'open').filter(({ t, r }) => !q || [t.code, t.siteName, t.summary, r.customerName ?? ''].some((x) => x.toLowerCase().includes(q)));
+      const urgencyRank: Record<string, number> = { emergency: 0, high: 1, normal: 2, low: 3 };
+      shown.sort((a, b) => (ticketIsOpen(a.t.status) === ticketIsOpen(b.t.status) ? 0 : ticketIsOpen(a.t.status) ? -1 : 1) || urgencyRank[a.t.urgency] - urgencyRank[b.t.urgency] || a.t.createdAt.localeCompare(b.t.createdAt));
+      const count = (s: TicketBoardFilter['state']) => pick(s).length;
+      return JSON.parse(JSON.stringify({ rows: shown.map((x) => x.r), counts: { open: count('open'), triage: count('triage'), safety: count('safety'), claims: count('claims'), late: count('late'), resolved: count('resolved'), all: count('all') }, at: new Date(now).toISOString() })) as TicketBoard;
+    }),
+
+  triageServiceTicket: (ticketId, adminId, input) =>
+    simulateWrite((): TicketView => {
+      const admin = tkAdminOf(adminId);
+      const now = Date.now();
+      tkSeeds(now);
+      const t = tkTicket(ticketId);
+      if (!ticketIsOpen(t.status)) throw new RepositoryError('invalid_state');
+      if (ticketLetters(input.note) < TICKET_MIN_NOTE) throw new RepositoryError('note_short');
+      const route: TicketRoute = input.category === 'emergency' ? 'emergency' : input.category === 'billing' ? 'accounts' : input.category === 'general' ? 'triage' : 'site_visit';
+      const before = `${t.category}/${t.urgency}`;
+      t.category = input.category; t.urgency = input.urgency; t.route = route;
+      t.triage = { ...t.triage, human: { byName: admin.name, at: new Date(now).toISOString(), note: input.note.trim() } };
+      // The customer was told when to expect an answer: raising urgency can only bring that sooner, never push it later.
+      const sooner = new Date(Date.parse(t.createdAt) + responseTargetOf(t.urgency, t.route, t.coverage)).toISOString();
+      if (sooner < t.responseDueAt) t.responseDueAt = sooner;
+      tkEvent(t, { kind: 'retriaged', audience: 'internal', byRole: 'admin', byName: admin.name, note: input.note.trim(), params: { from: before, to: `${t.category}/${t.urgency}` } });
+      if (t.urgency === 'emergency' || t.urgency === 'high') raiseAlert({ titleKey: t.urgency === 'emergency' ? TK_ALERT_EMERGENCY : TK_ALERT_SAFETY, context: `${t.code} · ${t.siteName}`, severity: t.urgency === 'emergency' ? 'critical' : 'high', category: 'safety', relatedId: `ticket:${t.id}`, sourceRoute: `/service-requests/${t.id}` });
+      return tkViewOf(t, admin, now);
+    }),
+
+  listServiceTechnicians: (date, adminId) =>
+    simulateRead((): TicketTechnician[] => {
+      tkAdminOf(adminId);
+      tkSeeds(Date.now());
+      return users.filter((u) => u.role === 'technician' && u.status === 'active').map((u) => ({
+        id: u.id, name: u.name,
+        visitsThatDay: serviceTickets.filter((t) => t.visit?.technicianId === u.id && t.visit.date === date && (t.visit.status === 'planned' || t.visit.status === 'in_progress')).length,
+        jobsThatDay: jobs.filter((j) => (j.technicianId === u.id || j.crew?.some((c) => c.userId === u.id)) && j.scheduledFor.slice(0, 10) === date && j.status !== 'completed').length,
+        eligible: trainingClear(u.id), reason: trainingClear(u.id) ? null : ('training_incomplete' as const),
+      })).sort((a, b) => Number(b.eligible) - Number(a.eligible) || a.visitsThatDay + a.jobsThatDay - (b.visitsThatDay + b.jobsThatDay) || a.name.localeCompare(b.name));
+    }),
+
+  assignServiceVisit: (ticketId, adminId, input) =>
+    simulateWrite((): TicketView => {
+      const admin = tkAdminOf(adminId);
+      const now = Date.now();
+      tkSeeds(now);
+      const t = tkTicket(ticketId);
+      if (!ticketIsOpen(t.status) || t.visit?.status === 'in_progress') throw new RepositoryError('invalid_state');
+      if (!t.jobId) throw new RepositoryError('no_lift');
+      const tech = byId(users, input.technicianId);
+      if (!tech || tech.role !== 'technician' || tech.status !== 'active') throw new RepositoryError('not_found');
+      if (!trainingClear(tech.id)) throw new RepositoryError('training_incomplete');
+      const problem = ticketVisitProblem(input.date, input.window, now);
+      if (problem) throw new RepositoryError(problem);
+      const again = !!t.visit;
+      t.visit = { technicianId: tech.id, technicianName: tech.name, date: input.date, window: input.window, status: 'planned', assignedAt: new Date(now).toISOString(), assignedByName: admin.name };
+      if (t.status === 'submitted') t.status = 'assigned';
+      tkEvent(t, { kind: again ? 'reassigned' : 'assigned', audience: 'customer', byRole: 'admin', byName: admin.name, params: { name: tkFirst(tech.name), date: input.date, window: input.window } });
+      if (input.note?.trim()) tkEvent(t, { kind: 'internal_note', audience: 'internal', byRole: 'admin', byName: admin.name, note: input.note.trim() });
+      tkMessageCustomer(t, 'tpl-ticket-visit', { technicianName: tkFirst(tech.name), visitWhen: (lang) => `${input.date}, ${tkWindowWord(input.window, lang)}` });
+      return tkViewOf(t, admin, now);
+    }),
+
+  startServiceTicket: (ticketId, adminId) =>
+    simulateWrite((): TicketView => {
+      const admin = tkAdminOf(adminId);
+      const now = Date.now();
+      tkSeeds(now);
+      const t = tkTicket(ticketId);
+      if (t.status !== 'submitted' && t.status !== 'assigned') throw new RepositoryError('invalid_state');
+      t.status = 'in_progress';
+      tkEvent(t, { kind: 'started', audience: 'customer', byRole: 'admin', byName: admin.name });
+      return tkViewOf(t, admin, now);
+    }),
+
+  resolveServiceTicket: (ticketId, adminId, note) =>
+    simulateWrite((): TicketView => {
+      const admin = tkAdminOf(adminId);
+      const now = Date.now();
+      tkSeeds(now);
+      const t = tkTicket(ticketId);
+      if (!ticketIsOpen(t.status)) throw new RepositoryError('invalid_state');
+      if (ticketLetters(note) < TICKET_MIN_NOTE) throw new RepositoryError('note_short');
+      if (t.visit?.status === 'in_progress') throw new RepositoryError('visit_in_progress');
+      const at = new Date(now).toISOString();
+      t.status = 'resolved';
+      t.resolution = { note: note.trim(), byName: admin.name, at };
+      tkEvent(t, { at, kind: 'resolved', audience: 'customer', byRole: 'admin', byName: admin.name, note: note.trim() });
+      return tkViewOf(t, admin, now);
+    }),
+
+  decideTicketClaim: (ticketId, adminId, input) =>
+    simulateWrite((): TicketView => {
+      const admin = tkAdminOf(adminId);
+      const now = Date.now();
+      tkSeeds(now);
+      const t = tkTicket(ticketId);
+      if (!t.claim.raised && !t.claim.review) throw new RepositoryError('invalid_state');
+      if (t.claim.decision) throw new RepositoryError('already_decided');
+      const problem = ticketClaimProblem({ responsibility: input.responsibility, note: input.note, reviewedEvidence: input.reviewedEvidence });
+      if (problem) throw new RepositoryError(problem);
+      const at = new Date(now).toISOString();
+      t.claim.decision = { responsibility: input.responsibility, note: input.note.trim(), byName: admin.name, at, reviewedEvidence: true };
+      tkEvent(t, { at, kind: 'claim_decided', audience: 'internal', byRole: 'admin', byName: admin.name, note: input.note.trim(), params: { responsibility: input.responsibility } });
+      tkEvent(t, { at, kind: 'claim_decided', audience: 'customer', byRole: 'admin', byName: admin.name, params: { responsibility: input.responsibility, chargeable: String(ticketChargeable(input.responsibility)) } });
+      return tkViewOf(t, admin, now);
+    }),
+
+  listMyServiceVisits: (technicianId) =>
+    simulateRead((): TicketRow[] => {
+      const tech = byId(users, technicianId);
+      if (!tech || tech.role !== 'technician') throw new RepositoryError('forbidden');
+      const now = Date.now();
+      tkSeeds(now);
+      return JSON.parse(JSON.stringify(serviceTickets.filter((t) => t.visit?.technicianId === technicianId && t.status !== 'withdrawn').sort((a, b) => (a.visit?.date ?? '').localeCompare(b.visit?.date ?? '')).map((t) => tkRowOf(t, 'technician', now)))) as TicketRow[];
+    }),
+
+  startServiceVisit: (ticketId, technicianId) =>
+    simulateWrite((): TicketView => {
+      const tech = byId(users, technicianId);
+      if (!tech || tech.role !== 'technician') throw new RepositoryError('forbidden');
+      const now = Date.now();
+      tkSeeds(now);
+      const t = tkTicket(ticketId);
+      tkViewable(t, tech);
+      if (!ticketIsOpen(t.status) || t.visit?.status !== 'planned') throw new RepositoryError('invalid_state');
+      const at = new Date(now).toISOString();
+      t.visit.status = 'in_progress'; t.visit.startedAt = at;
+      t.status = 'in_progress';
+      tkEvent(t, { at, kind: 'started', audience: 'customer', byRole: 'technician', byName: tech.name });
+      return tkViewOf(t, tech, now);
+    }),
+
+  completeServiceVisit: (ticketId, technicianId, input) =>
+    simulateWrite((): TicketView => {
+      const tech = byId(users, technicianId);
+      if (!tech || tech.role !== 'technician') throw new RepositoryError('forbidden');
+      const now = Date.now();
+      tkSeeds(now);
+      const t = tkTicket(ticketId);
+      tkViewable(t, tech);
+      if (!ticketIsOpen(t.status) || !t.visit || (t.visit.status !== 'in_progress' && t.visit.status !== 'planned')) throw new RepositoryError('invalid_state');
+      const problem = ticketCompleteProblem({ outcome: input.outcome, notes: input.notes, partsNote: input.partsNote ?? '' });
+      if (problem) throw new RepositoryError(problem);
+      const at = new Date(now).toISOString();
+      t.visit = { ...t.visit, status: 'done', startedAt: t.visit.startedAt ?? at, doneAt: at, outcome: input.outcome, notes: input.notes.trim(), partsNote: input.partsNote?.trim() || undefined };
+      tkEvent(t, { at, kind: 'visit_done', audience: 'customer', byRole: 'technician', byName: tech.name, params: { outcome: input.outcome } });
+      tkEvent(t, { at, kind: 'internal_note', audience: 'internal', byRole: 'technician', byName: tech.name, note: input.notes.trim() });
+      if (ticketClosesTicket(input.outcome)) {
+        t.status = 'resolved';
+        t.resolution = { note: input.notes.trim(), byName: tech.name, at, outcome: input.outcome };
+        tkEvent(t, { at, kind: 'resolved', audience: 'customer', byRole: 'technician', byName: tech.name, params: { outcome: input.outcome } });
+      } else if (input.outcome === 'unsafe_shut_down') {
+        if (t.urgency === 'low' || t.urgency === 'normal') t.urgency = 'high';
+        raiseAlert({ titleKey: TK_ALERT_UNSAFE, context: `${t.code} · ${t.siteName} · ${tech.name}`, severity: 'critical', category: 'safety', relatedId: `ticket:${t.id}`, sourceRoute: `/service-requests/${t.id}`, location: t.location ?? byId(jobs, t.jobId ?? '')?.location });
+      }
+      return tkViewOf(t, tech, now);
     }),
 
   getCustomerPayments: (dealId, userId) =>

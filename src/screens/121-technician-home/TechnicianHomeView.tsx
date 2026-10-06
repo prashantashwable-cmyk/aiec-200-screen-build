@@ -287,6 +287,17 @@ export function TechnicianHomeView() {
             </Card>
           )}
 
+          {s.serviceOpen > 0 && (
+            <Card flush className="mb-4">
+              <ListRow
+                title={t("serviceTickets.visits.mine")}
+                subtitle={t("serviceTickets.visits.mineBody")}
+                trailing={<Badge tone="accent">{s.serviceOpen}</Badge>}
+                onClick={() => navigate("/service-requests")}
+              />
+            </Card>
+          )}
+
           {s.reworkOpen > 0 && (
             <Card flush className="mb-4">
               <ListRow

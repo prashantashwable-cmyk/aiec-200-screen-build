@@ -30,6 +30,7 @@ export function useTechnicianHome() {
   const [busy, setBusy] = useState(false);
   const [qcOpen, setQcOpen] = useState(0);
   const [reworkOpen, setReworkOpen] = useState(0);
+  const [serviceOpen, setServiceOpen] = useState(0);
 
   useEffect(() => {
     const on = () => setIsOnline(true);
@@ -50,6 +51,8 @@ export function useTechnicianHome() {
       setQcOpen(await repository.getQcBoard(user.id).then((b) => b.rows.filter((r) => r.assignment && r.assignment.status !== 'completed').length).catch(() => 0));
       // Rework the person has been given to put right (136).
       setReworkOpen(await repository.getSnagBoard(user.id).then((b) => b.rows.filter((r) => r.ownerId === user.id && (r.status === 'assigned' || r.status === 'in_progress')).length).catch(() => 0));
+      // Service visits a customer's request has put in the person's day (175).
+      setServiceOpen(await repository.listMyServiceVisits(user.id).then((r) => r.filter((x) => x.visit && (x.visit.status === 'planned' || x.visit.status === 'in_progress') && (x.status === 'assigned' || x.status === 'in_progress')).length).catch(() => 0));
       const at = new Date().toISOString();
       localStorage.setItem(LAST_SYNC_KEY, at);
       setLastSyncedAt(at);
@@ -100,5 +103,5 @@ export function useTechnicianHome() {
       await repository.cancelFieldSos(sos.id, user.id);
     });
 
-  return { status, home, isOnline, lastSyncedAt, busy, qcOpen, reworkOpen, reload, refresh: load, beginSos, cancelSos };
+  return { status, home, isOnline, lastSyncedAt, busy, qcOpen, reworkOpen, serviceOpen, reload, refresh: load, beginSos, cancelSos };
 }

@@ -3323,6 +3323,30 @@ const templateSeeds: TemplateSeed[] = [
     },
   },
   {
+    groupId: 'tpl-ticket-received',
+    name: 'Service request received',
+    channel: 'whatsapp',
+    associatedStage: 'won',
+    mergeFields: ['customerName', 'buildingName', 'ticketCode'],
+    body: {
+      en: 'Hi {{customerName}}, we have received your request {{ticketCode}} for {{buildingName}}. You can follow it in your AIEC account, where we also tell you when to expect our answer. If anyone is trapped or it is unsafe right now, please call us straight away.',
+      hi: 'नमस्ते {{customerName}}, हमें {{buildingName}} के लिए आपका अनुरोध {{ticketCode}} मिल गया है। आप इसे अपने AIEC खाते में देख सकते हैं, जहाँ हम यह भी बताते हैं कि हमारा जवाब कब तक मिलेगा। यदि कोई फँसा है या अभी असुरक्षित है, तो कृपया तुरंत हमें फ़ोन करें।',
+      mr: 'नमस्कार {{customerName}}, आम्हाला {{buildingName}} साठी तुमची विनंती {{ticketCode}} मिळाली आहे. तुम्ही ती तुमच्या AIEC खात्यात पाहू शकता, जिथे आमचे उत्तर कधीपर्यंत मिळेल हेही सांगितले आहे. कोणी अडकले असेल किंवा आत्ता असुरक्षित असेल, तर कृपया लगेच आम्हाला फोन करा.',
+    },
+  },
+  {
+    groupId: 'tpl-ticket-visit',
+    name: 'Service visit booked',
+    channel: 'whatsapp',
+    associatedStage: 'won',
+    mergeFields: ['customerName', 'buildingName', 'ticketCode', 'technicianName', 'visitWhen'],
+    body: {
+      en: 'Hi {{customerName}}, a service visit for your request {{ticketCode}} at {{buildingName}} is booked: {{technicianName}} will come on {{visitWhen}}. If that does not suit you, reply here and we will move it.',
+      hi: 'नमस्ते {{customerName}}, {{buildingName}} पर आपके अनुरोध {{ticketCode}} के लिए सर्विस विज़िट तय हो गई है: {{technicianName}} {{visitWhen}} को आएँगे। यदि यह आपके लिए ठीक नहीं है, तो यहीं जवाब दें, हम इसे बदल देंगे।',
+      mr: 'नमस्कार {{customerName}}, {{buildingName}} येथील तुमच्या विनंतीसाठी {{ticketCode}} सर्व्हिस भेट ठरली आहे: {{technicianName}} {{visitWhen}} रोजी येतील. ते तुम्हाला सोयीचे नसल्यास येथेच उत्तर द्या, आम्ही ते बदलू.',
+    },
+  },
+  {
     groupId: 'tpl-handover-certificate',
     name: 'Handover completion certificate',
     channel: 'whatsapp',

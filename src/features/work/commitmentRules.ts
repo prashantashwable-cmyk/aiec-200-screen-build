@@ -153,6 +153,7 @@ export interface CommitmentSources {
   /** SOP rollouts: each affected partner's own acknowledgement, and Admin's look at what is still open (159). */
   /** Serious training feedback Admin has not dealt with, and the standing look at the routine kind (160). */
   tds: { deposits: { month: string; tds: number; due: string; done: boolean }[]; returns: { fy: string; quarter: number; due: string; done: boolean }[] };
+  serviceTickets: { respond: { id: string; code: string; ownerUserId: string; dueAt: string; urgency: string; site: string }[]; visits: { id: string; code: string; technicianId: string; dueAt: string; site: string; date: string; state: 'open' | 'done' | 'cancelled' }[]; claims: { id: string; code: string; since: string }[]; followups: { id: string; code: string; since: string; unsafe: boolean }[] };
   payoutQueries: { open: { id: string; code: string; partnerName: string; entryId: string; since: string }[]; answered: { id: string; code: string; userId: string; entryId: string; at: string; route?: string }[]; disputes: { id: string; code: string; partnerName: string; entryId: string; dueAt: string }[]; reviews: { id: string; code: string; since: string }[] };
   contests: { live: { contestId: string; name: string; endsAt: string; userId: string; closing: boolean }[]; results: { contestId: string; name: string; userId: string; rank: number; total: number; early: boolean; closedAt: string; open: boolean }[] };
   payoutDisbursements: { attention: { count: number; oldestAt: string | null } };
@@ -2247,6 +2248,94 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
         paused: false,
         actionRoute: `/rewards-leaderboard?contest=${x.contestId}`,
         oversightRoute: '/contest-setup',
+      }));
+    },
+  },
+  {
+    // A customer's request is answered by the time they were told (175): a person on call within minutes for an emergency, hours for a safety concern.
+    kind: 'service_ticket_respond',
+    nudgeBefore: minutes(10),
+    escalateAfter: minutes(30),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'sla_breach',
+    collect(src) {
+      return src.serviceTickets.respond.map((x) => ({
+        ...base('service_ticket_respond', 'service_ticket', x.id),
+        ownerUserId: x.ownerUserId,
+        titleKey: x.urgency === 'emergency' ? 'work.title.service_ticket_respond_emergency' : 'work.title.service_ticket_respond',
+        titleParams: { code: x.code, site: x.site },
+        dueAt: x.dueAt,
+        state: 'open' as const,
+        paused: false,
+        actionRoute: `/service-requests/${x.id}`,
+        oversightRoute: `/service-requests/${x.id}`,
+      }));
+    },
+  },
+  {
+    // The technician's own promise: the service visit at the time agreed (175), in their inbox the moment they are named.
+    kind: 'service_visit',
+    nudgeBefore: hours(12),
+    escalateAfter: hours(4),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'staffing',
+    collect(src) {
+      return src.serviceTickets.visits.map((x) => ({
+        ...base('service_visit', 'service_ticket', x.id),
+        ownerUserId: x.technicianId,
+        titleKey: 'work.title.service_visit',
+        titleParams: { code: x.code, site: x.site, date: x.date },
+        dueAt: x.dueAt,
+        state: x.state,
+        paused: false,
+        actionRoute: `/service-requests/${x.id}`,
+        oversightRoute: `/service-requests/${x.id}`,
+      }));
+    },
+  },
+  {
+    // Whose fault a defect is must be decided by a person from the installation's record, and the customer waits for the answer (175).
+    kind: 'service_claim_review',
+    nudgeBefore: days(1),
+    escalateAfter: days(1),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'quality',
+    collect(src) {
+      return src.serviceTickets.claims.map((x) => ({
+        ...base('service_claim_review', 'service_ticket', x.id),
+        ownerUserId: adminId(src),
+        titleKey: 'work.title.service_claim_review',
+        titleParams: { code: x.code },
+        dueAt: new Date(Date.parse(x.since) + days(3)).toISOString(),
+        state: 'open' as const,
+        paused: false,
+        actionRoute: `/service-requests/${x.id}`,
+        oversightRoute: `/service-requests/${x.id}`,
+      }));
+    },
+  },
+  {
+    // A visit that did not close the request (parts needed, a follow-up, a missed visit or a lift shut down for safety) is Admin's to take forward (175).
+    kind: 'service_visit_followup',
+    nudgeBefore: hours(4),
+    escalateAfter: hours(12),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'quality',
+    collect(src) {
+      return src.serviceTickets.followups.map((x) => ({
+        ...base('service_visit_followup', 'service_ticket', x.id),
+        ownerUserId: adminId(src),
+        titleKey: x.unsafe ? 'work.title.service_visit_followup_unsafe' : 'work.title.service_visit_followup',
+        titleParams: { code: x.code },
+        dueAt: new Date(Date.parse(x.since) + (x.unsafe ? hours(4) : days(1))).toISOString(),
+        state: 'open' as const,
+        paused: false,
+        actionRoute: `/service-requests/${x.id}`,
+        oversightRoute: `/service-requests/${x.id}`,
       }));
     },
   },
