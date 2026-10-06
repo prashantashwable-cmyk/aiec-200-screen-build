@@ -151,6 +151,7 @@ export interface CommitmentSources {
   complianceReview: { dueAt: string; cycle: string; done: boolean };
   /** SOP rollouts: each affected partner's own acknowledgement, and Admin's look at what is still open (159). */
   /** Serious training feedback Admin has not dealt with, and the standing look at the routine kind (160). */
+  tds: { deposits: { month: string; tds: number; due: string; done: boolean }[]; returns: { fy: string; quarter: number; due: string; done: boolean }[] };
   payoutQueries: { open: { id: string; code: string; partnerName: string; entryId: string; since: string }[]; answered: { id: string; code: string; userId: string; entryId: string; at: string }[] };
   contests: { live: { contestId: string; name: string; endsAt: string; userId: string; closing: boolean }[]; results: { contestId: string; name: string; userId: string; rank: number; total: number; early: boolean; closedAt: string; open: boolean }[] };
   payoutDisbursements: { attention: { count: number; oldestAt: string | null } };
@@ -2289,6 +2290,50 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
         paused: false,
         actionRoute: `/payout-history?entry=${q.entryId}`,
         oversightRoute: `/payout-tracker?entry=${q.entryId}&days=all`,
+      }));
+    },
+  },
+  {
+    // Tax deducted from partners is deposited by the 7th of the next month (169): Admin records the accountant's challan. Placeholder date, the accountant confirms.
+    kind: 'tds_deposit',
+    nudgeBefore: days(5),
+    escalateAfter: days(3),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'payment',
+    collect(src) {
+      return src.tds.deposits.map((x) => ({
+        ...base('tds_deposit', 'application', x.month),
+        ownerUserId: adminId(src),
+        titleKey: 'work.title.tds_deposit',
+        titleParams: { month: x.month },
+        dueAt: x.due,
+        state: x.done ? ('done' as const) : ('open' as const),
+        paused: false,
+        actionRoute: '/tds-statement',
+        oversightRoute: '/tds-statement',
+      }));
+    },
+  },
+  {
+    // The quarterly TDS return is filed by the accountant; Admin records it so partners' certificates become final (169).
+    kind: 'tds_return',
+    nudgeBefore: days(10),
+    escalateAfter: days(3),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'payment',
+    collect(src) {
+      return src.tds.returns.map((x) => ({
+        ...base('tds_return', 'application', `${x.fy}:${x.quarter}`),
+        ownerUserId: adminId(src),
+        titleKey: 'work.title.tds_return',
+        titleParams: { fy: x.fy.slice(3), quarter: String(x.quarter) },
+        dueAt: x.due,
+        state: x.done ? ('done' as const) : ('open' as const),
+        paused: false,
+        actionRoute: '/tds-statement',
+        oversightRoute: '/tds-statement',
       }));
     },
   },

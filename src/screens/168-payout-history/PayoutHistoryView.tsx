@@ -123,7 +123,7 @@ function statementInput(t: T, v: PayoutStatementView, lang: string): StatementIn
   return {
     lang, brand: 'ALL INDIA ELEVATORS COMPANY', heading: t(K.statement.heading), number: v.number, numberLabel: t(K.statement.number), holderLabel: t(K.statement.holder), holder: v.person.name,
     periodLabel: t(K.statement.period), period: periodLabel(t, v.period, lang),
-    totals: [{ label: t(K.statement.totals.earned), value: money(v.totals.earned) }, { label: t(K.statement.totals.paid), value: money(v.totals.paid) }, { label: t(K.statement.totals.reversed), value: money(v.totals.reversed) }, { label: t(K.statement.totals.outstanding), value: money(v.totals.outstanding) }],
+    totals: [{ label: t(K.statement.totals.earned), value: money(v.totals.earned) }, { label: t(K.statement.totals.paid), value: money(v.totals.paid) }, ...(v.totals.tds > 0 ? [{ label: t(K.statement.totals.tds), value: money(v.totals.tds) }] : []), { label: t(K.statement.totals.reversed), value: money(v.totals.reversed) }, { label: t(K.statement.totals.outstanding), value: money(v.totals.outstanding) }],
     columns: { date: t(K.statement.col.date), title: t(K.statement.col.title), type: t(K.statement.col.type), amount: t(K.statement.col.amount), status: t(K.statement.col.status) },
     lines: v.lines.map((l) => ({ date: l.date, title: reasonText(t, l.reasonKey), type: t(K.statement.type[l.type]), amount: l.amount, status: t(K.stage[l.stage]), reference: l.reference ? t(K.row.ref, { ref: l.reference }) : '' })),
     money, dateOf: (iso) => formatDate(iso, lang), generated: t(K.statement.generated, { date: formatDate(v.generatedAt, lang) }), footer: t(K.statement.footer), tokens: themeTokens(),
@@ -158,6 +158,7 @@ function Statements({ d, s, t }: { d: PayoutHistoryView; s: PayoutHistoryState; 
                   <>
                     <span className="t-sm">{t(K.statements.earned, { amount: formatINR(v.totals.earned) })}</span>
                     <span className="t-sm">{t(K.statements.paid, { amount: formatINR(v.totals.paid) })}</span>
+                    {v.totals.tds > 0 && <span className="t-sm" data-statement-tds>{t(K.statements.tds, { amount: formatINR(v.totals.tds) })}</span>}
                     {v.totals.reversed > 0 && <span className="t-sm" data-reversed>{t(K.statements.reversed, { amount: formatINR(v.totals.reversed) })}</span>}
                     <span className="t-xs t-muted">{t(K.statements.outstanding, { amount: formatINR(v.totals.outstanding) })}</span>
                   </>
@@ -286,6 +287,7 @@ function Detail({ v, s, t }: { v: PayoutEntryDetail | null; s: PayoutHistoryStat
             <p className="t-sm" data-stage-hint>{stageHint(t, e)}</p>
           </div>
           {e.payment && <p className="t-sm" data-payment>{t(K.detail.paidFacts, { date: formatDate(e.payment.completedAt, lang), method: methodText(t, e.payment.method) })}{e.payment.destination ? ` · ${e.payment.destination}` : ''}{e.payment.bankReference ? ` · ${t(K.row.ref, { ref: e.payment.bankReference })}` : ''}</p>}
+          {e.payment && e.payment.tds > 0 && <p className="t-sm" data-tds>{t(K.detail.tds, { amount: formatINR(e.payment.tds) })} <Button size="sm" variant="ghost" data-open-tds onClick={() => s.goTo('/tds-statement')}>{t(K.detail.tdsLink)}</Button></p>}
           {e.adjusted && <p className="t-sm" data-adjusted-block style={{ borderLeft: '3px solid var(--color-warning)', paddingLeft: 'var(--space-3)' }}>{t(K.detail.adjusted, { from: formatINR(e.adjusted.from), to: formatINR(e.adjusted.to) })}</p>}
           {e.reversal && (
             <div className="stack gap-1" data-reversal-block style={{ borderLeft: '3px solid var(--color-warning)', paddingLeft: 'var(--space-3)' }}>

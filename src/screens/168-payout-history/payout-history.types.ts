@@ -74,6 +74,7 @@ export const HISTORY_KEYS = {
     csv: 'payoutHistory.statements.csv',
     downloaded: 'payoutHistory.statements.downloaded',
     csvDone: 'payoutHistory.statements.csvDone',
+    tds: 'payoutHistory.statements.tds',
   },
   statement: {
     heading: 'payoutHistory.statement.heading',
@@ -99,6 +100,7 @@ export const HISTORY_KEYS = {
       paid: 'payoutHistory.statement.totals.paid',
       reversed: 'payoutHistory.statement.totals.reversed',
       outstanding: 'payoutHistory.statement.totals.outstanding',
+      tds: 'payoutHistory.statement.totals.tds',
     },
   },
   filter: {
@@ -158,6 +160,8 @@ export const HISTORY_KEYS = {
     reversal: 'payoutHistory.detail.reversal',
     reversalNote: 'payoutHistory.detail.reversalNote',
     paidFacts: 'payoutHistory.detail.paidFacts',
+    tds: 'payoutHistory.detail.tds',
+    tdsLink: 'payoutHistory.detail.tdsLink',
     supplier: {
       note: 'payoutHistory.detail.supplier.note',
       open: 'payoutHistory.detail.supplier.open',

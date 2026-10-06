@@ -268,6 +268,15 @@ import type {
   PayoutBatchResult,
   PayoutDecisionView,
   PayoutQueueRow,
+  TdsAdminQuarter,
+  TdsAdminView,
+  TdsCertificateView,
+  TdsDeductionRow,
+  TdsExportRow,
+  TdsPartnerView,
+  TdsProfileRow,
+  TdsQuarterView,
+  TdsRuleView,
   PayoutMoney,
   PayoutEntryDetail,
   PayoutEventView,
@@ -684,6 +693,11 @@ import type {
   CommissionRule,
   CommissionRuleVersion,
   PayoutDecision,
+  TdsRateRecord,
+  TdsDeduction,
+  PartnerTaxProfile,
+  TdsDeposit,
+  TdsReturn,
   PayoutQuery,
   EarnedBadge,
   LeaderboardExclusion,
@@ -883,6 +897,8 @@ import type { HoldKind as PaHoldKind, PayoutFlag as PaFlag } from '@/features/co
 import { ATTENTION_DUE as DB_ATTENTION_DUE, NOTE_MIN as DB_NOTE_MIN, RUNS_SHOWN as DB_RUNS_SHOWN, SETTLE_MS as DB_SETTLE_MS, UPI_LIMIT as DB_UPI_LIMIT, detailsProblem as dbDetailsProblem, groupTransfers as dbGroupTransfers, hasBank as dbHasBank, hasUpi as dbHasUpi, lastSlot as dbLastSlot, maskAccount as dbMask, methodFor as dbMethodFor, needsDetails as dbNeedsDetails, nextSlot as dbNextSlot, railOutcome as dbRailOutcome, retryProblem as dbRetryProblem, scheduleProblem as dbScheduleProblem } from '@/features/commission/disbursement';
 import { CORRECTION_NOTE_MS, MOVEMENTS_SHOWN, closingSoon, gapToAbove, phaseOf, rankAll, shortName, tiedOnNumber, toReachRank } from '@/features/rewards/standings';
 import type { Ranked } from '@/features/rewards/standings';
+import { DEDUCTS_AT_PAYOUT as TDS_DEDUCTS, DEFAULT_RATES as DEFAULT_TDS_RATES, NO_PAN_RATE as TDS_NO_PAN_RATE, SECTIONS, SECTION_OF_ROLE as TDS_SECTION_OF, ackProblem as tdsAckProblem, challanProblem as tdsChallanProblem, deductionFor as tdsDeductionFor, depositDueOf as tdsDepositDueOf, fyIdOf as tdsFyIdOf, fyRange as tdsFyRange, inRange as tdsInRange, maskPan as tdsMaskPan, panProblem as tdsPanProblem, quarterOf as tdsQuarterOf, quarterRange as tdsQuarterRange, rateProblem as tdsRateProblem, returnDueOf as tdsReturnDueOf, versionAt as tdsVersionAt } from '@/features/tax/tds';
+import type { Quarter as TdsQuarter, TdsRole, TdsSection } from '@/features/tax/tds';
 import { MONTHS_OFFERED as PH_MONTHS, PAGE as PH_PAGE, QUERY_DUE as PH_QUERY_DUE, answerProblem as phAnswerProblem, countsAsEarned as phCountsAsEarned, filterOf as phFilterOf, fyOf as phFyOf, inPeriod as phInPeriod, monthIdOf as phMonthId, periodOf as phPeriodOf, queryProblem as phQueryProblem, stageOf as phStageOf } from '@/features/payout/history';
 import type { Stage as PayoutStage } from '@/features/payout/history';
 import { MAX_CASH as CF_MAX_CASH, MAX_DAYS as CF_MAX_DAYS, MAX_PLACES as CF_MAX_PLACES, MAX_TENURE_DAYS as CF_MAX_TENURE, MIN_DAYS as CF_MIN_DAYS, END_REASON_MIN as CF_END_REASON_MIN, PREVIEW_SHOWN as CF_PREVIEW_SHOWN, START_NOW_SLACK as CF_START_NOW_SLACK, contestProblem as cfContestProblem, earlyEndProblem as cfEarlyEndProblem, previewChecks as cfPreviewChecks } from '@/features/rewards/contestConfig';
@@ -2603,6 +2619,7 @@ function commitmentSources(now: number): CommitmentSources {
     payoutDisbursements: payoutDisbursementSignals(),
     contests: contestSignals(Date.now()),
     payoutQueries: payoutQuerySignals(),
+    tds: tdsObligations(Date.now()),
     exits: exitSignals(),
     handoverReviews: handoverSignals().reviews,
     qcMechChecks,
@@ -2868,6 +2885,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   syncTrainingFeedback(now);
   syncPayoutSpikes(now);
   syncDisbursements(now);
+  syncTds(now);
   syncContests(now);
   syncBadges(now);
   syncPartnerInterviews(now);
@@ -9221,6 +9239,194 @@ function payoutApprovalSignals(now: number): { pending: { count: number; oldestA
 }
 
 
+/* ------------------------------------------------------------------ Tax deducted at source (169) */
+
+const TDS_ALERT_UNTAXED = 'tds.alert.untaxed';
+const TDS_ALERT_SUPPLIER = 'tds.alert.supplier';
+/** The records start here: payments made before it are counted toward the yearly limit but carried no deduction at the time. */
+const tdsRecordsFrom = Date.now();
+const tdsIso = (ms: number): string => new Date(ms).toISOString();
+const tdsRates: TdsRateRecord[] = SECTIONS.map((section) => ({ id: `tr-${section}-1`, section, version: 1, rate: DEFAULT_TDS_RATES[section].rate, threshold: DEFAULT_TDS_RATES[section].threshold, effectiveFrom: tdsFyRange(tdsFyIdOf(Date.now())).from, reason: 'Starting value, for the accountant to confirm', byName: 'Prashant Vasant Wable', at: tdsIso(Date.now()), isDemo: true }));
+const tdsDeductions: TdsDeduction[] = [];
+const tdsProfiles: PartnerTaxProfile[] = Object.entries({ 'u-srv-1': 'AFRPP4821L', 'u-srv-2': 'BKDPD7710M', 'u-srv-3': 'CQSPS3390H', 'u-tech-1': 'DRKPK5521N', 'u-tech-2': 'EVMPM8830R', 'u-tech-3': 'FJMPM2204T', 'u-tech-5': 'GADPD9916V', 'u-sup-1': 'HKLPV4410C' }).map(([userId, pan]) => ({ userId, pan, recordedAt: tdsIso(Date.now() - 100 * 86_400_000), byName: 'Onboarding' }));
+const tdsDeposits: TdsDeposit[] = [];
+const tdsReturns: TdsReturn[] = [];
+let tdsDeductionCounter = 0;
+let tdsDepositCounter = 0;
+
+const tdsRoleOf = (userId: string): TdsRole | null => { const r = byId(users, userId)?.role; return r === 'surveyor' || r === 'technician' || r === 'supplier' ? r : null; };
+const tdsPanOf = (userId: string): string | null => tdsProfiles.find((p) => p.userId === userId)?.pan ?? null;
+const tdsRuleAt = (section: TdsSection, at: number): TdsRateRecord => tdsVersionAt(tdsRates.filter((r) => r.section === section), at) ?? tdsRates.filter((r) => r.section === section)[0];
+const tdsActive = (d: TdsDeduction): boolean => !d.voidedAt;
+const tdsSupplierOf = (userId: string): Supplier | undefined => suppliers.find((sp) => supplierUserFor(sp)?.id === userId);
+
+/** What a partner was paid in a financial year, by the day it was paid: a commission payout's entries, or a supplier's executed payments. */
+function tdsPaidItems(userId: string): { id: string; amount: number; paidAt: string }[] {
+  const role = tdsRoleOf(userId);
+  if (role === 'supplier') { const sp = tdsSupplierOf(userId); return sp ? supplierPayments.filter((p) => p.supplierId === sp.id && p.status === 'executed' && p.executedAt).map((p) => ({ id: p.id, amount: p.amount, paidAt: p.executedAt as string })) : []; }
+  return commissions.filter((e) => e.userId === userId && e.status === 'paid' && e.paidAt && (!e.currency || e.currency === 'INR')).map((e) => ({ id: e.id, amount: e.amount, paidAt: e.paidAt as string }));
+}
+const tdsCovered = (): Set<string> => new Set(tdsDeductions.filter(tdsActive).flatMap((d) => d.entryIds));
+
+/** What the next payout of this size would carry. null for a role that is not deducted at payout. */
+function tdsCompute(partnerId: string, gross: number, now: number): (ReturnType<typeof tdsDeductionFor> & { section: TdsSection; fy: string; baseRate: number; panOnFile: boolean; rateVersion: number }) | null {
+  const role = tdsRoleOf(partnerId);
+  if (!role || !TDS_DEDUCTS[role]) return null;
+  const section = TDS_SECTION_OF[role];
+  const fy = tdsFyIdOf(now);
+  const rule = tdsRuleAt(section, now);
+  const covered = tdsCovered();
+  const range = tdsFyRange(fy);
+  const earlier = tdsPaidItems(partnerId).filter((x) => tdsInRange(x.paidAt, range) && !covered.has(x.id)).reduce((a, x) => a + x.amount, 0);
+  const mine = tdsDeductions.filter((d) => d.partnerId === partnerId && d.fy === fy && tdsActive(d));
+  const d = tdsDeductionFor({ gross, grossBefore: earlier + mine.reduce((a, x) => a + x.grossAmount, 0), deductedBefore: mine.reduce((a, x) => a + x.amount, 0), baseRate: rule.rate, threshold: rule.threshold, panOnFile: !!tdsPanOf(partnerId) });
+  return { ...d, section, fy, baseRate: rule.rate, panOnFile: !!tdsPanOf(partnerId), rateVersion: rule.version };
+}
+function tdsRecord(partnerId: string, c: NonNullable<ReturnType<typeof tdsCompute>>, entryIds: string[], gross: number, disbursementId: string, now: number): TdsDeduction {
+  tdsDeductionCounter += 1;
+  const rec: TdsDeduction = { id: `td-${tdsDeductionCounter}`, code: `AIEC-TD-${1000 + tdsDeductionCounter}`, partnerId, role: tdsRoleOf(partnerId) as TdsRole, section: c.section, fy: c.fy, quarter: tdsQuarterOf(now), deductedAt: tdsIso(now), grossAmount: gross, cumulativeGross: c.cumulativeGross, baseRate: c.baseRate, rate: c.rate, amount: c.amount, panOnFile: c.panOnFile, rateVersion: c.rateVersion, catchUp: c.catchUp, entryIds, disbursementId, isDemo: true };
+  tdsDeductions.push(rec);
+  return rec;
+}
+const tdsVoid = (disbursementId: string, now: number): void => { for (const d of tdsDeductions) if (d.disbursementId === disbursementId && !d.voidedAt) d.voidedAt = tdsIso(now); };
+const tdsConfirm = (disbursementId: string, at: number): void => { for (const d of tdsDeductions) if (d.disbursementId === disbursementId && !d.voidedAt) d.confirmedAt = tdsIso(at); };
+
+const tdsRowOf = (d: TdsDeduction): TdsDeductionRow => ({ id: d.id, code: d.code, date: d.deductedAt, grossAmount: d.grossAmount, rate: d.rate, amount: d.amount, section: d.section, quarter: d.quarter, catchUp: d.catchUp, disbursementCode: d.disbursementId ? (byId(payoutDisbursements, d.disbursementId)?.code ?? null) : null, confirmed: !!d.confirmedAt, higherRate: d.rate > d.baseRate });
+
+function tdsFysOf(userId: string, now: number): string[] {
+  const s = new Set<string>([tdsFyIdOf(now)]);
+  for (const x of tdsPaidItems(userId)) s.add(tdsFyIdOf(x.paidAt));
+  for (const d of tdsDeductions.filter((x) => x.partnerId === userId && tdsActive(x))) s.add(d.fy);
+  return [...s].sort((a, b) => (a < b ? 1 : -1));
+}
+
+function tdsPartnerOf(fyParam: string | null, userId: string, now: number): TdsPartnerView {
+  const u = byId(users, userId);
+  const role = tdsRoleOf(userId);
+  if (!u || !role) throw new RepositoryError('forbidden');
+  const name = role === 'supplier' ? (tdsSupplierOf(userId)?.name ?? u.name) : u.name;
+  const fys = tdsFysOf(userId, now);
+  const fy = fyParam && /^fy-\d{4}$/.test(fyParam) ? fyParam : fys[0];
+  const section = TDS_SECTION_OF[role];
+  const range = tdsFyRange(fy);
+  const items = tdsPaidItems(userId).filter((x) => tdsInRange(x.paidAt, range));
+  const mine = tdsDeductions.filter((d) => d.partnerId === userId && d.fy === fy && tdsActive(d)).sort((a, b) => (a.deductedAt < b.deductedAt ? 1 : -1));
+  const covered = tdsCovered();
+  const earlier = items.filter((x) => !covered.has(x.id)).reduce((a, x) => a + x.amount, 0);
+  const gross = items.reduce((a, x) => a + x.amount, 0);
+  const rule = tdsRuleAt(section, now);
+  const upcoming = tdsRates.filter((r) => r.section === section && Date.parse(r.effectiveFrom) > now).sort((a, b) => a.version - b.version)[0] ?? null;
+  const deducts = TDS_DEDUCTS[role];
+  const expected = gross > rule.threshold ? Math.round(((tdsPanOf(userId) ? rule.rate : Math.max(rule.rate, TDS_NO_PAN_RATE)) / 100) * gross) : 0;
+  const quarters: TdsQuarterView[] = ([1, 2, 3, 4] as const).map((q) => {
+    const r = tdsQuarterRange(fy, q);
+    const qItems = items.filter((x) => tdsInRange(x.paidAt, r));
+    const qDed = mine.filter((d) => d.quarter === q);
+    const ret = tdsReturns.find((x) => x.fy === fy && x.quarter === q);
+    return { quarter: q, from: r.from, to: r.to, gross: qItems.reduce((a, x) => a + x.amount, 0), tds: qDed.reduce((a, d) => a + d.amount, 0), certificate: ret ? 'final' : qItems.length > 0 || qDed.length > 0 ? 'provisional' : 'none', returnFiledAt: ret?.filedAt ?? null, deductions: qDed.length };
+  });
+  return JSON.parse(JSON.stringify({
+    person: { name, role, id: userId }, fy, fys, pan: { onFile: !!tdsPanOf(userId), masked: tdsPanOf(userId) ? tdsMaskPan(tdsPanOf(userId) as string) : null }, section,
+    rule: { rate: rule.rate, threshold: rule.threshold, effectiveFrom: rule.effectiveFrom }, nextRule: upcoming ? { rate: upcoming.rate, threshold: upcoming.threshold, effectiveFrom: upcoming.effectiveFrom } : null,
+    status: !deducts ? (gross > rule.threshold ? 'watching' : 'zero') : gross > rule.threshold ? 'deducting' : 'zero', gross, earlierGross: earlier, deducted: mine.reduce((a, d) => a + d.amount, 0), expected, toDeduct: deducts ? Math.max(0, expected - mine.reduce((a, d) => a + d.amount, 0)) : 0, quarters, deductions: mine.map(tdsRowOf), deductsAtPayout: deducts, at: tdsIso(now),
+  })) as TdsPartnerView;
+}
+
+function tdsCertificateOf(fy: string, quarter: 0 | TdsQuarter, userId: string, now: number): TdsCertificateView {
+  const v = tdsPartnerOf(fy, userId, now);
+  const q = quarter === 0 ? null : quarter;
+  const range = q ? tdsQuarterRange(fy, q) : tdsFyRange(fy);
+  const items = tdsPaidItems(userId).filter((x) => tdsInRange(x.paidAt, range));
+  const rows = tdsDeductions.filter((d) => d.partnerId === userId && d.fy === fy && tdsActive(d) && (!q || d.quarter === q)).sort((a, b) => (a.deductedAt < b.deductedAt ? -1 : 1));
+  const quartersWith = ([1, 2, 3, 4] as const).filter((x) => tdsDeductions.some((d) => d.partnerId === userId && d.fy === fy && tdsActive(d) && d.quarter === x));
+  const filed = q ? !!tdsReturns.find((x) => x.fy === fy && x.quarter === q) : quartersWith.length > 0 && quartersWith.every((x) => tdsReturns.some((r) => r.fy === fy && r.quarter === x));
+  const ret = q ? tdsReturns.find((x) => x.fy === fy && x.quarter === q) : null;
+  const short = userId.replace(/[^A-Za-z0-9]/g, '').slice(-6).toUpperCase();
+  return JSON.parse(JSON.stringify({
+    number: `AIEC-TDS-${short}-${fy.slice(3)}-${q ? `Q${q}` : 'A'}`, status: filed ? 'final' : 'provisional', fy, quarter, deductor: 'ALL INDIA ELEVATORS COMPANY', person: { name: v.person.name, role: v.person.role }, pan: tdsPanOf(userId), section: v.section,
+    gross: items.reduce((a, x) => a + x.amount, 0), tds: rows.reduce((a, d) => a + d.amount, 0), rows: rows.map(tdsRowOf), returnAck: ret?.ack ?? null, filedAt: ret?.filedAt ?? null, generatedAt: tdsIso(now),
+  })) as TdsCertificateView;
+}
+
+const tdsMonthOf = (iso: string): string => { const d = new Date(iso); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
+
+function tdsAdminOf(fyParam: string | null, now: number): TdsAdminView {
+  const allFys = new Set<string>([tdsFyIdOf(now)]);
+  for (const d of tdsDeductions.filter(tdsActive)) allFys.add(d.fy);
+  const fys = [...allFys].sort((a, b) => (a < b ? 1 : -1));
+  const fy = fyParam && /^fy-\d{4}$/.test(fyParam) ? fyParam : fys[0];
+  const ded = tdsDeductions.filter((d) => d.fy === fy && tdsActive(d));
+  const quarters: TdsAdminQuarter[] = ([1, 2, 3, 4] as const).map((q) => {
+    const r = tdsQuarterRange(fy, q);
+    const qd = ded.filter((d) => d.quarter === q);
+    const months = [...new Set(qd.map((d) => tdsMonthOf(d.deductedAt)))].sort().map((month) => {
+      const md = qd.filter((d) => tdsMonthOf(d.deductedAt) === month);
+      const deps = tdsDeposits.filter((x) => x.month === month);
+      return { month, tds: md.reduce((a, d) => a + d.amount, 0), due: tdsDepositDueOf(`${month}-15T00:00:00`), deposited: deps.reduce((a, x) => a + x.amount, 0), deposits: deps.map((x) => ({ id: x.id, bsr: x.bsr, serial: x.serial, date: x.date, amount: x.amount })) };
+    });
+    const ret = tdsReturns.find((x) => x.fy === fy && x.quarter === q);
+    return { quarter: q, from: r.from, to: r.to, deductions: qd.length, partners: new Set(qd.filter((d) => d.amount > 0).map((d) => d.partnerId)).size, gross: qd.reduce((a, d) => a + d.grossAmount, 0), tds: qd.reduce((a, d) => a + d.amount, 0), deposited: months.reduce((a, m) => a + m.deposited, 0), months, returnDue: tdsReturnDueOf(fy, q), returnAck: ret?.ack ?? null, returnFiledAt: ret?.filedAt ?? null };
+  });
+  const partners = users.filter((u) => (u.role === 'surveyor' || u.role === 'technician') && u.status === 'active').concat(users.filter((u) => u.role === 'supplier' && u.status === 'active' && tdsSupplierOf(u.id)));
+  const profiles: TdsProfileRow[] = partners.map((u) => {
+    const role = u.role as TdsRole;
+    const paid = tdsPaidItems(u.id).filter((x) => tdsInRange(x.paidAt, tdsFyRange(fy))).reduce((a, x) => a + x.amount, 0);
+    return { userId: u.id, name: role === 'supplier' ? (tdsSupplierOf(u.id)?.name ?? u.name) : u.name, role, masked: tdsPanOf(u.id) ? tdsMaskPan(tdsPanOf(u.id) as string) : null, paid, deducted: ded.filter((d) => d.partnerId === u.id).reduce((a, d) => a + d.amount, 0), higherRate: !tdsPanOf(u.id) };
+  }).sort((a, b) => Number(b.higherRate) - Number(a.higherRate) || b.paid - a.paid);
+  const rules: TdsRuleView[] = SECTIONS.map((section) => {
+    const vs = tdsRates.filter((r) => r.section === section).sort((a, b) => a.version - b.version);
+    const cur = tdsRuleAt(section, now);
+    const up = vs.find((r) => Date.parse(r.effectiveFrom) > now) ?? null;
+    return { section, role: (Object.keys(TDS_SECTION_OF) as TdsRole[]).find((k) => TDS_SECTION_OF[k] === section) as TdsRole, current: { version: cur.version, rate: cur.rate, threshold: cur.threshold, effectiveFrom: cur.effectiveFrom }, upcoming: up ? { version: up.version, rate: up.rate, threshold: up.threshold, effectiveFrom: up.effectiveFrom, reason: up.reason } : null, history: [...vs].reverse().map((r) => ({ version: r.version, rate: r.rate, threshold: r.threshold, effectiveFrom: r.effectiveFrom, reason: r.reason, byName: r.byName })) };
+  });
+  const thresholdOf = (role: TdsRole) => tdsRuleAt(TDS_SECTION_OF[role], now).threshold;
+  return JSON.parse(JSON.stringify({
+    fy, fys,
+    kpis: { gross: ded.reduce((a, d) => a + d.grossAmount, 0), tds: ded.reduce((a, d) => a + d.amount, 0), partnersDeducted: new Set(ded.filter((d) => d.amount > 0).map((d) => d.partnerId)).size, belowLimit: profiles.filter((p) => p.paid <= thresholdOf(p.role)).length, withoutPan: profiles.filter((p) => p.higherRate).length, deposited: quarters.reduce((a, q) => a + q.deposited, 0) },
+    quarters, rules, profiles, at: tdsIso(now),
+  })) as TdsAdminView;
+}
+
+/** Tax deducted that nobody has deposited or filed yet is somebody's obligation (a deposit by the 7th of the next month, a return each quarter). */
+function tdsObligations(now: number): { deposits: { month: string; tds: number; due: string; done: boolean }[]; returns: { fy: string; quarter: number; due: string; done: boolean }[] } {
+  void now;
+  const deposits: ReturnType<typeof tdsObligations>['deposits'] = [];
+  const returns: ReturnType<typeof tdsObligations>['returns'] = [];
+  const active = tdsDeductions.filter(tdsActive);
+  for (const month of [...new Set(active.map((d) => tdsMonthOf(d.deductedAt)))].sort()) {
+    const tds = active.filter((d) => tdsMonthOf(d.deductedAt) === month).reduce((a, d) => a + d.amount, 0);
+    if (tds <= 0) continue;
+    deposits.push({ month, tds, due: tdsDepositDueOf(`${month}-15T00:00:00`), done: tdsDeposits.filter((x) => x.month === month).reduce((a, x) => a + x.amount, 0) >= tds });
+  }
+  for (const key of [...new Set(active.map((d) => `${d.fy}:${d.quarter}`))]) { const [fy, q] = key.split(':'); returns.push({ fy, quarter: Number(q), due: tdsReturnDueOf(fy, Number(q) as TdsQuarter), done: tdsReturns.some((x) => x.fy === fy && x.quarter === Number(q)) }); }
+  return { deposits, returns };
+}
+
+/** Payments made without a deduction, or a supplier past the limit: put in front of Admin, since the next payout will not quietly fix it. */
+function syncTds(now: number): void {
+  const covered = tdsCovered();
+  const alertsOpen = (title: string, rel: string) => alerts.find((a) => a.titleKey === title && a.relatedId === rel && a.status !== 'resolved');
+  for (const u of users.filter((x) => tdsRoleOf(x.id) && x.status === 'active')) {
+    const role = tdsRoleOf(u.id) as TdsRole;
+    const fy = tdsFyIdOf(now);
+    const section = TDS_SECTION_OF[role];
+    const rule = tdsRuleAt(section, now);
+    const items = tdsPaidItems(u.id).filter((x) => tdsInRange(x.paidAt, tdsFyRange(fy)));
+    const gross = items.reduce((a, x) => a + x.amount, 0);
+    const rel = `tds:${role === 'supplier' ? 'supplier' : 'untaxed'}:${u.id}:${fy}`;
+    const title = role === 'supplier' ? TDS_ALERT_SUPPLIER : TDS_ALERT_UNTAXED;
+    const open = alertsOpen(title, rel);
+    // Commission paid outside a payout run after records began, with the limit passed and nothing deducted for it.
+    const untaxed = role === 'supplier' ? [] : items.filter((x) => !covered.has(x.id) && Date.parse(x.paidAt) >= tdsRecordsFrom);
+    const owed = Math.round(((tdsPanOf(u.id) ? rule.rate : Math.max(rule.rate, TDS_NO_PAN_RATE)) / 100) * gross);
+    const deducted = tdsDeductions.filter((d) => d.partnerId === u.id && d.fy === fy && tdsActive(d)).reduce((a, d) => a + d.amount, 0);
+    const need = role === 'supplier' ? gross > rule.threshold : untaxed.length > 0 && gross > rule.threshold && owed - deducted > 0;
+    if (need && !open) raiseAlert({ titleKey: title, context: `${nameOf(u.id)}: paid ${gross} this financial year, ${role === 'supplier' ? 'over the limit with no deduction made' : `${untaxed.length} payment(s) without tax deducted`}`, severity: 'medium', category: 'payment', relatedId: rel, sourceRoute: '/tds-statement' });
+    else if (!need && open) patchInPlace(alerts, open.id, { status: 'resolved', resolvedAt: tdsIso(now), resolvedBy: 'system', resolutionNote: 'The shortfall is covered.' });
+  }
+}
+
+
 /* ------------------------------------------------------------------ Automated payout disbursement (164) */
 
 const DB_FAILED_ALERT = 'payoutDisbursement.alert.failed';
@@ -9294,11 +9500,14 @@ function dbSend(partnerId: string, entries: CommissionEntry[], kind: PayoutDisbu
   const out: PayoutDisbursement[] = [];
   const limit = acct && dbHasUpi(acct) && !dbHasBank(acct) ? DB_UPI_LIMIT : null;
   for (const group of dbGroupTransfers(entries, { consolidate: payoutSchedule.consolidate || !!opts.retryOf, limit })) {
-    const amount = group.reduce((a, e) => a + e.amount, 0);
+    const gross = group.reduce((a, e) => a + e.amount, 0);
+    // Tax deducted at source (169) is held back from the transfer: the partner's entries stay at their gross figure, and what is sent is the net.
+    const ded = tdsCompute(partnerId, gross, now);
+    const amount = gross - (ded?.amount ?? 0);
     const pick = dbMethodFor(acct, amount);
     disbursementCounter += 1;
     const base: PayoutDisbursement = {
-      id: `db-${disbursementCounter}`, code: `AIEC-DB-${disbursementCounter}`, partnerId, entryIds: group.map((e) => e.id), amount, method: 'method' in pick ? pick.method : (acct && dbHasUpi(acct) ? 'upi' : 'bank_transfer'),
+      id: `db-${disbursementCounter}`, code: `AIEC-DB-${disbursementCounter}`, partnerId, entryIds: group.map((e) => e.id), amount, grossAmount: gross, tdsAmount: ded?.amount ?? 0, method: 'method' in pick ? pick.method : (acct && dbHasUpi(acct) ? 'upi' : 'bank_transfer'),
       destination: acct && 'method' in pick ? dbDestination(acct, pick.method) : '', status: 'initiated', kind: opts.retryOf ? 'retry' : kind, ...(opts.runId ? { runId: opts.runId } : {}), ...(opts.retryOf ? { retryOf: opts.retryOf.id } : {}),
       attempt: (opts.retryOf?.attempt ?? 0) + 1, createdAt: dbIso(now), createdByName: byName, events: [], isDemo: true,
     };
@@ -9309,6 +9518,7 @@ function dbSend(partnerId: string, entries: CommissionEntry[], kind: PayoutDisbu
     else if (payoutRail.status === 'unavailable') fail('bank_unavailable');
     else { base.status = 'processing'; base.sentAt = dbIso(now); dbEvent(base, 'processing', byName, undefined, now); }
     payoutDisbursements.push(base);
+    if (ded) tdsRecord(partnerId, ded, base.entryIds, gross, base.id, now);
     dbPointer(base.entryIds, base);
     if (base.status === 'failed') dbRaiseFailure(base);
     out.push(base);
@@ -9317,6 +9527,7 @@ function dbSend(partnerId: string, entries: CommissionEntry[], kind: PayoutDisbu
 }
 
 function dbRaiseFailure(d: PayoutDisbursement): void {
+  tdsVoid(d.id, Date.now());
   const needs = dbNeedsDetails(d.failure as DbFailure);
   raiseAlert({
     titleKey: DB_FAILED_ALERT, context: `${d.code} ${nameOf(d.partnerId)} ${d.amount}: ${d.failure}`, severity: needs || d.failure === 'limit_exceeded' ? 'high' : 'medium', category: 'payment', relatedId: `payout-disb:${d.id}`, sourceRoute: `/payout-disbursement?disbursement=${d.id}`,
@@ -9334,6 +9545,7 @@ function dbSettle(now: number): void {
     if (out.ok) {
       const ref = `${d.method === 'upi' ? 'UPI' : 'NEFT'}${new Date(due).toISOString().slice(2, 10).replace(/-/g, '')}${String(d.id.replace(/\D/g, '')).padStart(4, '0')}`;
       d.status = 'completed'; d.completedAt = dbIso(due); d.bankReference = ref;
+      tdsConfirm(d.id, due);
       dbEvent(d, 'completed', 'Banking partner', ref, due);
       for (const id of d.entryIds) patchInPlace(commissions, id, { status: 'paid' as const, paidAt: dbIso(due), disbursement: { id: d.id, status: 'completed' as const } });
       bankTransactions.push({ id: `btx-w-${d.id}`, postedAt: dbIso(due), direction: 'debit', amount: d.amount, reference: ref, narration: `${d.method === 'upi' ? 'UPI' : 'NEFT'} DR ${ref} ${nameOf(d.partnerId).toUpperCase()}`, counterparty: nameOf(d.partnerId), isDemo: true });
@@ -9442,7 +9654,7 @@ function dbRowOf(d: PayoutDisbursement, now: number): DisbursementRowView {
   const from = d.retryOf ? byId(payoutDisbursements, d.retryOf) : null;
   return {
     id: d.id, code: d.code, partnerId: d.partnerId, partnerName: nameOf(d.partnerId) === 'AIEC' ? (byId(suppliers, d.partnerId)?.name ?? d.partnerId) : nameOf(d.partnerId), partnerRole: dbPartnerRole(d.partnerId),
-    amount: d.amount, entryCount: d.entryIds.length, entryIds: [...d.entryIds], method: d.method, destination: d.destination, status: d.status, kind: d.kind, runCode: d.runId ? (byId(payoutRuns, d.runId)?.code ?? null) : null,
+    amount: d.amount, grossAmount: d.grossAmount ?? d.amount, tdsAmount: d.tdsAmount ?? 0, entryCount: d.entryIds.length, entryIds: [...d.entryIds], method: d.method, destination: d.destination, status: d.status, kind: d.kind, runCode: d.runId ? (byId(payoutRuns, d.runId)?.code ?? null) : null,
     createdAt: d.createdAt, sentAt: d.sentAt ?? null, completedAt: d.completedAt ?? null, failedAt: d.failedAt ?? null, failure: (d.failure as DbFailure | undefined) ?? null, needsDetails: dbNeedsDetails(d.failure as DbFailure | undefined),
     attempt: d.attempt, retryOfCode: from?.code ?? null, continuedBy: next?.code ?? null, bankReference: d.bankReference ?? null, minutesOut: d.status === 'processing' && d.sentAt ? Math.max(0, Math.floor((now - Date.parse(d.sentAt)) / 60_000)) : null,
   };
@@ -9811,7 +10023,7 @@ function phEntryOf(e: CommissionEntry): PayoutHistoryEntry {
     holdKind: approvalHeld ? ((e.payoutApproval?.holdKind ?? 'other') as PaHoldKind) : null,
     needsDetails: !!disb && disb.status === 'failed' && dbNeedsDetails(disb.failure as DbFailure | undefined), adjusted: adj ? { from: adj.before, to: adj.after } : null,
     reversal: e.reversal ? { ...e.reversal } : null,
-    payment: done ? { code: done.code, method: done.method, destination: done.destination, completedAt: done.completedAt as string, bankReference: done.bankReference ?? '' } : null,
+    payment: done ? { code: done.code, method: done.method, destination: done.destination, completedAt: done.completedAt as string, bankReference: done.bankReference ?? '', tds: done.tdsAmount ?? 0 } : null,
     openQuery: payoutQueries.some((q) => q.entryId === e.id && phQueryStatus(q) === 'open'), route: null,
   };
 }
@@ -9825,7 +10037,7 @@ function phSupplierEntries(supplierId: string): PayoutHistoryEntry[] {
     return {
       id: p.id, source: 'supplier', reasonKey: `supplierPayment.part.${p.part}`, category: 'supply', amount: p.amount + adj, stage, earnedAt: p.triggeredAt, paidAt: p.executedAt ?? null, dealCode: po ? (byId(deals, po.dealId)?.code ?? null) : null, jobCode: null, holdKind: null, needsDetails: false,
       adjusted: adj !== 0 ? { from: p.amount, to: p.amount + adj } : null, reversal: null,
-      payment: p.executedAt ? { code: p.code, method: 'bank_transfer', destination: '', completedAt: p.executedAt, bankReference: p.bankReference ?? '' } : null, openQuery: supplierPaymentQueries.some((q) => q.paymentId === p.id), route: `/supplier-payment-history?payment=${p.id}`,
+      payment: p.executedAt ? { code: p.code, method: 'bank_transfer', destination: '', completedAt: p.executedAt, bankReference: p.bankReference ?? '', tds: 0 } : null, openQuery: supplierPaymentQueries.some((q) => q.paymentId === p.id), route: `/supplier-payment-history?payment=${p.id}`,
     };
   });
 }
@@ -9927,7 +10139,7 @@ function phStatementOf(periodId: string, userId: string, now: number): PayoutSta
   const short = (w.supplierId ?? userId).replace(/[^A-Za-z0-9]/g, '').slice(-6).toUpperCase();
   return JSON.parse(JSON.stringify({
     period: { id: p.id, kind: p.kind, from: p.from, to: p.to, earned: sum('earned'), paid: sum('paid'), count: lines.filter((l) => l.type === 'earned').length },
-    person: { name: w.name, role: w.role, id: userId }, number: `AIEC-ST-${short}-${p.id.toUpperCase()}`, lines, totals: { earned: sum('earned'), paid: sum('paid'), reversed: sum('reversed'), outstanding }, generatedAt: new Date(now).toISOString(),
+    person: { name: w.name, role: w.role, id: userId }, number: `AIEC-ST-${short}-${p.id.toUpperCase()}`, lines, totals: { earned: sum('earned'), paid: sum('paid'), reversed: sum('reversed'), outstanding, tds: tdsDeductions.filter((d) => d.partnerId === userId && tdsActive(d) && tdsInRange(d.deductedAt, p)).reduce((a, d) => a + d.amount, 0) }, generatedAt: new Date(now).toISOString(),
   })) as PayoutStatementView;
 }
 
@@ -19489,6 +19701,74 @@ export const memoryRepository: Repository = {
       paDecide({ entryId: e.id, kind: 'released', at: new Date(now).toISOString(), byName: admin.name });
       syncCommitments(now);
       return JSON.parse(JSON.stringify(paRowOf(byId(commissions, e.id) as CommissionEntry, now, paContext()))) as PayoutQueueRow;
+    }),
+
+  /* --------------------------------- Tax deducted at source (169) */
+  getTdsStatement: (fy, userId) => simulateRead((): TdsPartnerView => { syncDisbursements(Date.now()); return tdsPartnerOf(fy, userId, Date.now()); }),
+
+  getTdsCertificate: (fy, quarter, userId) => simulateRead((): TdsCertificateView => { syncDisbursements(Date.now()); return tdsCertificateOf(fy, quarter, userId, Date.now()); }),
+
+  getTdsAdmin: (fy, adminId) => simulateRead((): TdsAdminView => { ofAdmin(adminId); syncDisbursements(Date.now()); syncTds(Date.now()); return tdsAdminOf(fy, Date.now()); }),
+
+  getTdsExport: (fy, quarter, adminId) =>
+    simulateRead((): TdsExportRow[] => {
+      ofAdmin(adminId);
+      return tdsDeductions.filter((d) => d.fy === fy && tdsActive(d) && (quarter === 0 || d.quarter === quarter)).sort((a, b) => (a.deductedAt < b.deductedAt ? -1 : 1)).map((d) => ({
+        code: d.code, date: d.deductedAt, partnerId: d.partnerId, partnerName: nameOf(d.partnerId), pan: tdsPanOf(d.partnerId) ?? '', section: d.section, gross: d.grossAmount, rate: d.rate, tds: d.amount, quarter: d.quarter, disbursement: d.disbursementId ? (byId(payoutDisbursements, d.disbursementId)?.code ?? '') : '',
+      }));
+    }),
+
+  recordTdsDeposit: (month, input, adminId) =>
+    simulateWrite((): TdsAdminView => {
+      const admin = ofAdmin(adminId);
+      const now = Date.now();
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month) || !tdsDeductions.some((d) => tdsActive(d) && tdsMonthOf(d.deductedAt) === month && d.amount > 0)) throw new RepositoryError('nothing_to_file');
+      const problem = tdsChallanProblem(input, now);
+      if (problem) throw new RepositoryError(problem);
+      tdsDepositCounter += 1;
+      tdsDeposits.push({ id: `tdp-${tdsDepositCounter}`, month, bsr: input.bsr.trim(), serial: input.serial.trim(), date: input.date, amount: input.amount, byName: admin.name, at: tdsIso(now), isDemo: true });
+      syncCommitments(now);
+      return tdsAdminOf(null, now);
+    }),
+
+  recordTdsReturn: (fy, quarter, input, adminId) =>
+    simulateWrite((): TdsAdminView => {
+      const admin = ofAdmin(adminId);
+      const now = Date.now();
+      if (!tdsDeductions.some((d) => tdsActive(d) && d.fy === fy && d.quarter === quarter)) throw new RepositoryError('nothing_to_file');
+      const problem = tdsAckProblem(input.ack);
+      if (problem) throw new RepositoryError(problem);
+      if (!Number.isFinite(Date.parse(input.filedAt)) || Date.parse(input.filedAt) > now + 86_400_000) throw new RepositoryError('date_invalid');
+      const i = tdsReturns.findIndex((x) => x.fy === fy && x.quarter === quarter);
+      const rec: TdsReturn = { fy, quarter, ack: input.ack.trim(), filedAt: input.filedAt, byName: admin.name, at: tdsIso(now), isDemo: true };
+      if (i >= 0) tdsReturns[i] = rec; else tdsReturns.push(rec);
+      syncCommitments(now);
+      return tdsAdminOf(fy, now);
+    }),
+
+  scheduleTdsRate: (section, input, adminId) =>
+    simulateWrite((): TdsAdminView => {
+      const admin = ofAdmin(adminId);
+      const now = Date.now();
+      if (!SECTIONS.includes(section)) throw new RepositoryError('not_found');
+      const vs = tdsRates.filter((r) => r.section === section).sort((a, b) => b.version - a.version);
+      const problem = tdsRateProblem(input, now, vs[0]?.effectiveFrom ?? null);
+      if (problem) throw new RepositoryError(problem);
+      tdsRates.push({ id: `tr-${section}-${(vs[0]?.version ?? 0) + 1}`, section, version: (vs[0]?.version ?? 0) + 1, rate: input.rate, threshold: input.threshold, effectiveFrom: new Date(input.effectiveFrom).toISOString(), reason: input.reason.trim(), byName: admin.name, at: tdsIso(now), isDemo: true });
+      return tdsAdminOf(null, now);
+    }),
+
+  recordPartnerPan: (userId, pan, adminId) =>
+    simulateWrite((): TdsAdminView => {
+      const admin = ofAdmin(adminId);
+      const now = Date.now();
+      if (!tdsRoleOf(userId)) throw new RepositoryError('not_found');
+      const problem = tdsPanProblem(pan.trim().toUpperCase());
+      if (problem) throw new RepositoryError(problem);
+      const rec: PartnerTaxProfile = { userId, pan: pan.trim().toUpperCase(), recordedAt: tdsIso(now), byName: admin.name };
+      const i = tdsProfiles.findIndex((p) => p.userId === userId);
+      if (i >= 0) tdsProfiles[i] = rec; else tdsProfiles.push(rec);
+      return tdsAdminOf(null, now);
     }),
 
   /* --------------------------------- Payout history & statements (168) */

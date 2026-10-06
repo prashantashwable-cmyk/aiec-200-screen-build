@@ -71,6 +71,7 @@ const translations: ScreenTranslations = {
         csv: 'Download as a spreadsheet (CSV)',
         downloaded: 'Your statement is saved.',
         csvDone: 'Your spreadsheet is saved.',
+        tds: 'Tax deducted at source in this period: {{amount}}',
       },
       statement: {
         heading: 'Payout statement',
@@ -96,6 +97,7 @@ const translations: ScreenTranslations = {
           paid: 'Paid in the period',
           reversed: 'Taken back in the period',
           outstanding: 'Still to reach you at the end',
+          tds: 'Tax deducted at source in the period',
         },
       },
       filter: {
@@ -156,6 +158,8 @@ const translations: ScreenTranslations = {
         reversal: 'Taken back on {{date}}: {{reason}}',
         reversalNote: 'It is counted in "Taken back", not removed from your history. If you think this is wrong, ask below.',
         paidFacts: 'Paid {{date}} by {{method}}',
+        tds: 'Tax deducted at source on this transfer: {{amount}}',
+        tdsLink: 'Open my TDS statement',
         supplier: {
           note: 'A supplier payment keeps its full detail, adjustments and questions on the supplier payment history.',
           open: 'Open it in the supplier payment history',
@@ -284,6 +288,7 @@ const translations: ScreenTranslations = {
         csv: 'स्प्रेडशीट (CSV) के रूप में डाउनलोड करें',
         downloaded: 'आपका विवरण सहेज लिया गया।',
         csvDone: 'आपकी स्प्रेडशीट सहेज ली गई।',
+        tds: 'इस अवधि में स्रोत पर काटा गया कर: {{amount}}',
       },
       statement: {
         heading: 'भुगतान विवरण',
@@ -309,6 +314,7 @@ const translations: ScreenTranslations = {
           paid: 'अवधि में चुकाया',
           reversed: 'अवधि में वापस लिया',
           outstanding: 'अंत में आप तक पहुँचना बाकी',
+          tds: 'अवधि में स्रोत पर काटा गया कर',
         },
       },
       filter: {
@@ -369,6 +375,8 @@ const translations: ScreenTranslations = {
         reversal: '{{date}} को वापस लिया गया: {{reason}}',
         reversalNote: 'यह "वापस लिया गया" में गिना जाता है, आपके इतिहास से हटाया नहीं गया। यदि आपको लगता है कि यह गलत है, तो नीचे पूछें।',
         paidFacts: '{{date}} को {{method}} से चुकाया',
+        tds: 'इस ट्रांसफ़र पर स्रोत पर काटा गया कर: {{amount}}',
+        tdsLink: 'मेरा TDS विवरण खोलें',
         supplier: {
           note: 'आपूर्तिकर्ता भुगतान का पूरा विवरण, समायोजन और प्रश्न सप्लायर भुगतान इतिहास में रहते हैं।',
           open: 'सप्लायर भुगतान इतिहास में खोलें',
@@ -497,6 +505,7 @@ const translations: ScreenTranslations = {
         csv: 'स्प्रेडशीट (CSV) म्हणून डाउनलोड करा',
         downloaded: 'तुमचे विवरण जतन केले.',
         csvDone: 'तुमची स्प्रेडशीट जतन केली.',
+        tds: 'या कालावधीत स्रोतावर कापलेला कर: {{amount}}',
       },
       statement: {
         heading: 'पेमेंट विवरण',
@@ -522,6 +531,7 @@ const translations: ScreenTranslations = {
           paid: 'कालावधीत दिले',
           reversed: 'कालावधीत परत घेतले',
           outstanding: 'शेवटी तुमच्यापर्यंत पोहोचायचे बाकी',
+          tds: 'कालावधीत स्रोतावर कापलेला कर',
         },
       },
       filter: {
@@ -582,6 +592,8 @@ const translations: ScreenTranslations = {
         reversal: '{{date}} रोजी परत घेतले: {{reason}}',
         reversalNote: 'हे "परत घेतले" मध्ये मोजले जाते, तुमच्या इतिहासातून काढलेले नाही. हे चुकीचे वाटल्यास खाली विचारा.',
         paidFacts: '{{date}} रोजी {{method}} ने दिले',
+        tds: 'या ट्रान्सफरवर स्रोतावर कापलेला कर: {{amount}}',
+        tdsLink: 'माझे TDS विवरण उघडा',
         supplier: {
           note: 'पुरवठादार पेमेंटचा पूर्ण तपशील, समायोजने आणि प्रश्न पुरवठादार पेमेंट इतिहासात राहतात.',
           open: 'पुरवठादार पेमेंट इतिहासात उघडा',

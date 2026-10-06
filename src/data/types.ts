@@ -4686,6 +4686,84 @@ export interface PayoutQuery {
   isDemo: boolean;
 }
 
+/* ------------------------------------------------------------------ Tax deducted at source (169) */
+
+/** One version of a TDS section's rate and yearly limit. Append-only and may start on a future day, so a rule change is scheduled, never retroactive; a deduction keeps the rate it was made at. */
+export interface TdsRateRecord {
+  id: string;
+  section: '194H' | '194C' | '194Q';
+  version: number;
+  /** Percent. */
+  rate: number;
+  /** Tax is deducted once the partner's payouts in the financial year pass this. */
+  threshold: number;
+  effectiveFrom: string;
+  reason: string;
+  byName: string;
+  at: string;
+  isDemo: boolean;
+}
+
+/** What was deducted from one payout (or none: below the limit, a genuine zero). Never edited: a transfer that did not go has its deduction voided, and the retry makes a new one. */
+export interface TdsDeduction {
+  id: string;
+  code: string;
+  partnerId: string;
+  role: 'surveyor' | 'technician' | 'supplier';
+  section: '194H' | '194C' | '194Q';
+  fy: string;
+  quarter: 1 | 2 | 3 | 4;
+  deductedAt: string;
+  /** What this payout was worth before tax. */
+  grossAmount: number;
+  /** Everything paid to them this financial year including this payout (the limit is judged on it). */
+  cumulativeGross: number;
+  baseRate: number;
+  /** The rate applied: the base rate, or the higher one when there was no PAN. */
+  rate: number;
+  amount: number;
+  panOnFile: boolean;
+  rateVersion: number;
+  /** The share of the deduction that belongs to earlier payments this year (the payout that crosses the limit carries it). */
+  catchUp: number;
+  entryIds: string[];
+  disbursementId?: string;
+  confirmedAt?: string;
+  voidedAt?: string;
+  isDemo: boolean;
+}
+
+export interface PartnerTaxProfile {
+  userId: string;
+  pan?: string;
+  recordedAt?: string;
+  byName?: string;
+}
+
+/** A deposit of the tax deducted in one month, recorded by Admin from the accountant's challan. */
+export interface TdsDeposit {
+  id: string;
+  month: string;
+  bsr: string;
+  serial: string;
+  date: string;
+  amount: number;
+  byName: string;
+  at: string;
+  isDemo: boolean;
+}
+
+/** A quarterly return filed by the accountant, recorded with its acknowledgement. */
+export interface TdsReturn {
+  fy: string;
+  quarter: 1 | 2 | 3 | 4;
+  ack: string;
+  filedAt: string;
+  byName: string;
+  at: string;
+  isDemo: boolean;
+}
+
 /** Where a partner is paid (164). The full number never leaves the repository; views show the last four digits. `simulatedBank` stands in for what the bank itself would answer. */
 export interface PayoutAccount {
   userId: string;
@@ -4720,7 +4798,11 @@ export interface PayoutDisbursement {
   code: string;
   partnerId: string;
   entryIds: string[];
+  /** What was sent to the partner's account (after any tax deducted at source). */
   amount: number;
+  /** What the entries are worth before tax, and the tax held back from this transfer (169). */
+  grossAmount?: number;
+  tdsAmount?: number;
   method: 'bank_transfer' | 'upi';
   /** What it was sent to, as it read then (masked): later changes to the partner's details never rewrite it. */
   destination: string;
@@ -4924,7 +5006,7 @@ export type CommitmentKind =
   | 'exit_dispute_decide'
   | 'tier_review_due'
   | 'certification_renewal'
-  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply'
+  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'

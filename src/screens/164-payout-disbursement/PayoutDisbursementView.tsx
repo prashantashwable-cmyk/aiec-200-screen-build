@@ -387,6 +387,9 @@ function Detail({ s, t }: { s: PayoutDisbursementState; t: T }) {
 
           <dl className="stack gap-2" style={{ margin: 0 }}>
             <Fact label={t(K.detail.method)} value={t(K.method[v.row.method])} />
+            {v.row.tdsAmount > 0 && <Fact label={t(K.detail.gross)} value={formatINR(v.row.grossAmount)} />}
+            {v.row.tdsAmount > 0 && <Fact label={t(K.detail.tds)} value={`− ${formatINR(v.row.tdsAmount)}`} />}
+            {v.row.tdsAmount > 0 && <Fact label={t(K.detail.net)} value={formatINR(v.row.amount)} />}
             {v.row.destination && <Fact label={t(K.detail.to)} value={v.row.destination} />}
             {v.row.bankReference && <Fact label={t(K.detail.reference)} value={v.row.bankReference} />}
             {v.row.runCode && <Fact label={t(K.detail.run)} value={`${v.row.runCode} · ${t(K.kind[v.row.kind])}`} />}
@@ -395,6 +398,7 @@ function Detail({ s, t }: { s: PayoutDisbursementState; t: T }) {
             {(v.row.completedAt ?? v.row.failedAt) && <Fact label={t(K.detail.finished)} value={formatDate((v.row.completedAt ?? v.row.failedAt) as string, lang)} />}
           </dl>
 
+          {v.row.tdsAmount > 0 && <p className="t-xs t-muted" data-tds-note>{t(K.detail.tdsNote)}</p>}
           {v.row.status === 'completed' && (
             <p className="t-sm" data-reconciled={v.reconciled ? '1' : '0'}>{v.reconciled ? t(K.detail.reconciled) : t(K.detail.notReconciled)} <Button size="sm" variant="ghost" data-open-reconciliation onClick={() => s.goTo('/reconciliation')}>{t(K.detail.openReconciliation)}</Button></p>
           )}

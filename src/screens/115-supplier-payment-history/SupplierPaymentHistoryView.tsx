@@ -123,6 +123,7 @@ export function SupplierPaymentHistoryView() {
         subtitle={t(s.isAdmin ? K.subtitle : K.subtitleSupplier)}
         action={
           <span className="row gap-2">
+            {!s.isAdmin && <Button size="sm" variant="ghost" data-open-tds onClick={() => navigate('/tds-statement')}>{t('tdsStatement.link.open')}</Button>}
             {!s.isAdmin && <Button size="sm" variant="ghost" data-open-statements onClick={() => navigate('/payout-history')}>{t('payoutHistory.link.open')}</Button>}
             <Button size="sm" variant="secondary" disabled={s.exporting || pg.matched === 0} onClick={() => void exportCsv()}>
               <DownloadSimple size={14} aria-hidden="true" /> {t(K.exportAction.label)}

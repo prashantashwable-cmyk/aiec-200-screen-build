@@ -11,6 +11,7 @@ import type { CompleteInput, DecisionSignal, Phase as InterviewPhase } from '@/f
 import type { Demand, GuideAnswers, InterestProblem, InterestRole, RecruitRole, RecruitSource } from '@/features/recruitment/interest';
 import type { Outstanding, SectionId } from '@/features/recruitment/application';
 import type { JudgementDecision, JudgementProblem, ShareBasis } from '@/features/commission/finalPayout';
+import type { ChallanProblem as TdsChallanProblem, PanProblem as TdsPanProblem, Quarter as TdsQuarter, RateProblem as TdsRateProblem, TdsRole, TdsSection } from '@/features/tax/tds';
 import type { QueryProblem as PayoutQueryProblem, Stage as PayoutStage, StatusFilter as PayoutStatusFilter } from '@/features/payout/history';
 import type { ContestInput, ContestProblem as ContestConfigProblem, EarlyEndProblem, PreviewCheck } from '@/features/rewards/contestConfig';
 import type { BadgeCategory, BadgeIcon, BadgeMetric, Progress as BadgeProgress, Rarity as BadgeRarity } from '@/features/rewards/badges';
@@ -6235,7 +6236,10 @@ export interface DisbursementRowView {
   partnerId: string;
   partnerName: string;
   partnerRole: 'surveyor' | 'technician' | 'supplier' | 'other';
+  /** What was sent to the account, after any tax deducted at source. */
   amount: number;
+  grossAmount: number;
+  tdsAmount: number;
   entryCount: number;
   entryIds: string[];
   method: DisbursementMethod;
@@ -6425,6 +6429,111 @@ export interface ContestLeaderboardView {
 }
 export type ContestProblem = 'not_found' | 'forbidden';
 
+/* ------------------------------------------------------------------ Tax deducted at source (169) */
+
+export interface TdsDeductionRow {
+  id: string;
+  code: string;
+  date: string;
+  grossAmount: number;
+  rate: number;
+  amount: number;
+  section: TdsSection;
+  quarter: TdsQuarter;
+  catchUp: number;
+  disbursementCode: string | null;
+  confirmed: boolean;
+  /** Higher rate because no PAN was on file. */
+  higherRate: boolean;
+}
+export interface TdsQuarterView {
+  quarter: TdsQuarter;
+  from: string;
+  to: string;
+  /** What was paid to the partner in it (from the payout ledger). */
+  gross: number;
+  tds: number;
+  /** A certificate is final once the quarter's return is filed; before that the statement is provisional. */
+  certificate: 'final' | 'provisional' | 'none';
+  returnFiledAt: string | null;
+  deductions: number;
+}
+export interface TdsPartnerView {
+  person: { name: string; role: TdsRole; id: string };
+  fy: string;
+  fys: string[];
+  pan: { onFile: boolean; masked: string | null };
+  section: TdsSection;
+  /** The rule as it applies now, and one already scheduled for a later day. */
+  rule: { rate: number; threshold: number; effectiveFrom: string };
+  nextRule: { rate: number; threshold: number; effectiveFrom: string } | null;
+  /** zero = below the yearly limit so far (a real zero); deducting = tax is being deducted; watching = a supplier whose payments are watched, not deducted. */
+  status: 'zero' | 'deducting' | 'watching';
+  /** Paid to them this financial year, counted toward the limit. */
+  gross: number;
+  /** Paid before TDS was recorded (counted toward the limit, no deduction made at the time). */
+  earlierGross: number;
+  deducted: number;
+  /** What the rule says should have been deducted on everything paid so far, and what is still to be taken from upcoming payouts. */
+  expected: number;
+  toDeduct: number;
+  quarters: TdsQuarterView[];
+  deductions: TdsDeductionRow[];
+  deductsAtPayout: boolean;
+  at: string;
+}
+export interface TdsCertificateView {
+  number: string;
+  status: 'final' | 'provisional';
+  fy: string;
+  /** 0 = the whole financial year. */
+  quarter: 0 | TdsQuarter;
+  deductor: string;
+  person: { name: string; role: TdsRole };
+  pan: string | null;
+  section: TdsSection;
+  gross: number;
+  tds: number;
+  rows: TdsDeductionRow[];
+  returnAck: string | null;
+  filedAt: string | null;
+  generatedAt: string;
+}
+export interface TdsAdminQuarter {
+  quarter: TdsQuarter;
+  from: string;
+  to: string;
+  deductions: number;
+  partners: number;
+  gross: number;
+  tds: number;
+  deposited: number;
+  /** One line per month with tax deducted: when the deposit is due and whether it is covered. */
+  months: { month: string; tds: number; due: string; deposited: number; deposits: { id: string; bsr: string; serial: string; date: string; amount: number }[] }[];
+  returnDue: string;
+  returnAck: string | null;
+  returnFiledAt: string | null;
+}
+export interface TdsRuleView {
+  section: TdsSection;
+  role: TdsRole;
+  current: { version: number; rate: number; threshold: number; effectiveFrom: string };
+  upcoming: { version: number; rate: number; threshold: number; effectiveFrom: string; reason: string } | null;
+  history: { version: number; rate: number; threshold: number; effectiveFrom: string; reason: string; byName: string }[];
+}
+export interface TdsProfileRow { userId: string; name: string; role: TdsRole; masked: string | null; paid: number; deducted: number; higherRate: boolean }
+export interface TdsAdminView {
+  fy: string;
+  fys: string[];
+  kpis: { gross: number; tds: number; partnersDeducted: number; belowLimit: number; withoutPan: number; deposited: number };
+  quarters: TdsAdminQuarter[];
+  rules: TdsRuleView[];
+  profiles: TdsProfileRow[];
+  at: string;
+}
+export interface TdsExportRow { code: string; date: string; partnerId: string; partnerName: string; pan: string; section: TdsSection; gross: number; rate: number; tds: number; quarter: TdsQuarter; disbursement: string }
+export type TdsProblem = TdsRateProblem | TdsChallanProblem | TdsPanProblem | 'not_found' | 'not_admin' | 'forbidden' | 'nothing_to_file';
+
 /* ------------------------------------------------------------------ Payout history & statements (168) */
 
 export interface PayoutHistoryFilter {
@@ -6454,7 +6563,7 @@ export interface PayoutHistoryEntry {
   /** The amount was changed after it was recorded: what it was and what it is. */
   adjusted: { from: number; to: number } | null;
   reversal: { at: string; reason: string; wasPaid: boolean } | null;
-  payment: { code: string; method: 'bank_transfer' | 'upi'; destination: string; completedAt: string; bankReference: string } | null;
+  payment: { code: string; method: 'bank_transfer' | 'upi'; destination: string; completedAt: string; bankReference: string; tds: number } | null;
   openQuery: boolean;
   /** Where a question about it is asked: this screen for a commission entry, the supplier payment screen for a supplier's. */
   route: string | null;
@@ -6520,7 +6629,7 @@ export interface PayoutStatementView {
   person: { name: string; role: 'surveyor' | 'technician' | 'supplier'; id: string };
   number: string;
   lines: PayoutStatementLine[];
-  totals: { earned: number; paid: number; reversed: number; outstanding: number };
+  totals: { earned: number; paid: number; reversed: number; outstanding: number; tds: number };
   generatedAt: string;
 }
 export type { PayoutQueryProblem };
@@ -7479,6 +7588,16 @@ export interface Repository {
   handleTrainingFeedback(feedbackId: string, input: { status: FeedbackStatusName; note: string; addressedInVersion?: number }, adminId: string): Promise<FeedbackItemView>;
   /** Hides (or restores) a comment that is abusive or not constructive; its ratings keep counting. */
   moderateTrainingFeedback(feedbackId: string, input: { hide: boolean; reason: string }, adminId: string): Promise<FeedbackItemView>;
+  // Tax deducted at source (169)
+  getTdsStatement(fy: string | null, userId: string): Promise<TdsPartnerView>;
+  getTdsCertificate(fy: string, quarter: 0 | TdsQuarter, userId: string): Promise<TdsCertificateView>;
+  getTdsAdmin(fy: string | null, adminId: string): Promise<TdsAdminView>;
+  getTdsExport(fy: string, quarter: 0 | TdsQuarter, adminId: string): Promise<TdsExportRow[]>;
+  recordTdsDeposit(month: string, input: { bsr: string; serial: string; date: string; amount: number }, adminId: string): Promise<TdsAdminView>;
+  recordTdsReturn(fy: string, quarter: TdsQuarter, input: { ack: string; filedAt: string }, adminId: string): Promise<TdsAdminView>;
+  /** Schedules a rate or limit for a section from a day that has not passed: never changes what was already deducted. */
+  scheduleTdsRate(section: TdsSection, input: { rate: number; threshold: number; effectiveFrom: string; reason: string }, adminId: string): Promise<TdsAdminView>;
+  recordPartnerPan(userId: string, pan: string, adminId: string): Promise<TdsAdminView>;
   // Payout history & statements (168)
   getPayoutHistory(filter: PayoutHistoryFilter, userId: string): Promise<PayoutHistoryView>;
   getPayoutEntryDetail(entryId: string, userId: string): Promise<PayoutEntryDetail>;
