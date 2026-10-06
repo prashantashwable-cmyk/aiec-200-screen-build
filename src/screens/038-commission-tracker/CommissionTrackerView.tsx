@@ -74,7 +74,7 @@ export function CommissionTrackerView() {
 
   return (
     <Screen>
-      <ScreenHeader title={t(K.title)} subtitle={t(K.subtitle)} action={<Button size="sm" variant="secondary" data-open-rewards onClick={() => navigate('/rewards-leaderboard')}>{t('rewardsLeaderboard.link.open')}</Button>} />
+      <ScreenHeader title={t(K.title)} subtitle={t(K.subtitle)} action={<span className="row gap-2"><Button size="sm" variant="secondary" data-open-rewards onClick={() => navigate('/rewards-leaderboard')}>{t('rewardsLeaderboard.link.open')}</Button><Button size="sm" variant="secondary" data-open-badges onClick={() => navigate('/badges')}>{t('badges.link.open')}</Button></span>} />
 
       <SegBar
         label={t(K.period.thisMonth)}

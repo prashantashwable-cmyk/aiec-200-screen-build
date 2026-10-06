@@ -268,6 +268,9 @@ import type {
   PayoutBatchResult,
   PayoutDecisionView,
   PayoutQueueRow,
+  BadgeCollectionView,
+  BadgeEntryView,
+  BadgeNextView,
   ContestDetailView,
   ContestLeaderboardView,
   ContestListItem,
@@ -665,6 +668,7 @@ import type {
   CommissionRule,
   CommissionRuleVersion,
   PayoutDecision,
+  EarnedBadge,
   LeaderboardExclusion,
   ContestMovement,
   ContestReward,
@@ -862,6 +866,8 @@ import type { HoldKind as PaHoldKind, PayoutFlag as PaFlag } from '@/features/co
 import { ATTENTION_DUE as DB_ATTENTION_DUE, NOTE_MIN as DB_NOTE_MIN, RUNS_SHOWN as DB_RUNS_SHOWN, SETTLE_MS as DB_SETTLE_MS, UPI_LIMIT as DB_UPI_LIMIT, detailsProblem as dbDetailsProblem, groupTransfers as dbGroupTransfers, hasBank as dbHasBank, hasUpi as dbHasUpi, lastSlot as dbLastSlot, maskAccount as dbMask, methodFor as dbMethodFor, needsDetails as dbNeedsDetails, nextSlot as dbNextSlot, railOutcome as dbRailOutcome, retryProblem as dbRetryProblem, scheduleProblem as dbScheduleProblem } from '@/features/commission/disbursement';
 import { CORRECTION_NOTE_MS, MOVEMENTS_SHOWN, closingSoon, gapToAbove, phaseOf, rankAll, shortName, tiedOnNumber, toReachRank } from '@/features/rewards/standings';
 import type { Ranked } from '@/features/rewards/standings';
+import { BADGE_DEFS, NEXT_SHOWN as BADGE_NEXT_SHOWN, crossingDate as bdCrossing, defOf as defOfBadge, isNew as badgeIsNew, progressOf as badgeProgressOf, rarityOf as badgeRarityOf, versionInForce as badgeVersionInForce, versionOf as badgeVersionOf } from '@/features/rewards/badges';
+import type { BadgeDef, BadgeMetric, BadgeRole, Rarity as BadgeRarity } from '@/features/rewards/badges';
 import type { DisbursementMethod as DbMethod, FailureReason as DbFailure } from '@/features/commission/disbursement';
 import { APPROVED_WAIT as PT_APPROVED_WAIT, CATEGORIES as PT_CATEGORIES, PAGE as PT_PAGE, STATUSES as PT_STATUSES, byCurrency as ptByCurrency, categoryOf as ptCategoryOf, isStaleApproved as ptIsStale, outliersOf as ptOutliers, spikeOf as ptSpike, sum as ptSum, trendOf as ptTrend, triggerOf as ptTriggerOf } from '@/features/commission/payoutTracker';
 import type { AttentionKind as PtAttentionKind, PayoutCategory as PtCategory, PayoutStatus as PtStatus } from '@/features/commission/payoutTracker';
@@ -2839,6 +2845,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   syncPayoutSpikes(now);
   syncDisbursements(now);
   syncContests(now);
+  syncBadges(now);
   syncPartnerInterviews(now);
   syncVerification(now);
   syncOffers(now);
@@ -9612,6 +9619,113 @@ function cnDetailOf(c: Contest, viewer: User, now: number): ContestDetailView {
     contest: cnListItem(c, now), frozen: !!c.final, closingSoon: phaseOf(c, now) === 'active' && closingSoon(c.endsAt, now), rows, total: ranked.length, me,
     movements: moves.map((m): ContestMovementView => ({ id: m.id, at: m.at, kind: m.kind, from: m.from, to: m.to, correction: m.correction, userName: admin ? nameOf(m.userId) : null })), excludedCount: admin ? excluded.length : 0,
   })) as ContestDetailView;
+}
+
+
+
+/* ------------------------------------------------------------------ Badges & milestones (166) */
+
+/**
+ * Catalogue badges earned. One seeded under an earlier bar (leads_5 on version 1, which asked for 4 leads: the bar is 5 now), so the "honoured under the rules of its day"
+ * case is visible; the rest are awarded from the records by `syncBadges`.
+ */
+const earnedBadges: EarnedBadge[] = [{ id: 'eb-1', userId: 'u-srv-3', badgeId: 'leads_5', version: 1, earnedAt: new Date(Date.now() - 36 * 86_400_000).toISOString(), isDemo: true }];
+let earnedBadgeCounter = 1;
+
+const bdUsers = (): User[] => users.filter((u) => (u.role === 'surveyor' || u.role === 'technician') && u.status === 'active');
+const bdOwnLeads = (userId: string): Lead[] => leads.filter((l) => l.surveyorId === userId);
+const bdWon = (userId: string): Lead[] => bdOwnLeads(userId).filter((l) => l.stage === 'won');
+const bdContestWins = (userId: string): { at: string }[] => contests.filter((c) => c.final?.rows.some((r) => r.userId === userId && r.rank === 1 && r.value > 0)).map((c) => ({ at: c.endedAt ?? c.endsAt }));
+
+/** The number a badge counts, from the same records the leaderboard reads (024). */
+function bdMetricOf(u: User, metric: BadgeMetric, now: number): number {
+  if (metric === 'leadsCaptured') return bdOwnLeads(u.id).length;
+  if (metric === 'leadsConverted') return bdWon(u.id).length;
+  if (metric === 'revenue') return bdWon(u.id).reduce((a, l) => a + l.estimatedValue, 0);
+  if (metric === 'jobsCompleted') return jobs.filter((j) => j.technicianId === u.id && j.status === 'completed').length;
+  if (metric === 'contestWins') return bdContestWins(u.id).length;
+  return u.joinedAt ? Math.max(0, Math.floor((now - Date.parse(u.joinedAt)) / 86_400_000)) : 0;
+}
+/** The day a badge was really earned: when the record that took the number over the bar happened. */
+function bdMilestoneAt(u: User, metric: BadgeMetric, threshold: number): string | null {
+  if (metric === 'leadsCaptured') return bdCrossing(bdOwnLeads(u.id).map((l) => ({ at: l.createdAt, amount: 1 })), threshold);
+  if (metric === 'leadsConverted') return bdCrossing(bdWon(u.id).map((l) => ({ at: l.stageEnteredAt, amount: 1 })), threshold);
+  if (metric === 'revenue') return bdCrossing(bdWon(u.id).map((l) => ({ at: l.stageEnteredAt, amount: l.estimatedValue })), threshold);
+  if (metric === 'jobsCompleted') return bdCrossing(jobs.filter((j) => j.technicianId === u.id && j.status === 'completed' && j.completedAt).map((j) => ({ at: j.completedAt as string, amount: 1 })), threshold);
+  if (metric === 'contestWins') return bdCrossing(bdContestWins(u.id).map((w) => ({ at: w.at, amount: 1 })), threshold);
+  return u.joinedAt ? new Date(Date.parse(u.joinedAt) + threshold * 86_400_000).toISOString() : null;
+}
+
+/** Awards what has been earned, once. A badge is never removed or re-dated; a raised bar only affects people who do not hold it yet. */
+function syncBadges(now: number): void {
+  syncContests(now);
+  for (const u of bdUsers()) {
+    for (const d of BADGE_DEFS) {
+      if (!d.roles.includes(u.role as BadgeRole) || earnedBadges.some((e) => e.userId === u.id && e.badgeId === d.id)) continue;
+      const v = badgeVersionInForce(d, now);
+      if (bdMetricOf(u, d.metric, now) < v.threshold) continue;
+      const reached = bdMilestoneAt(u, d.metric, v.threshold);
+      // It cannot be earned before this version of the badge existed.
+      const at = Math.min(now, Math.max(reached ? Date.parse(reached) : now, Date.parse(v.effectiveFrom)));
+      earnedBadgeCounter += 1;
+      earnedBadges.push({ id: `eb-${earnedBadgeCounter}`, userId: u.id, badgeId: d.id, version: v.version, earnedAt: new Date(at).toISOString(), isDemo: true });
+      logAutomatedAction({ sourceKey: 'badge.awarded', triggeringCondition: `${u.name} reached the bar for ${d.id} (version ${v.version})`, actionTaken: 'Recorded the badge against their name, dated to the record that earned it', affectedRecordId: u.id, affectedRecordType: 'other', subjectLabel: d.id } as Parameters<typeof logAutomatedAction>[0]);
+    }
+  }
+}
+
+/** Everyone a badge could be earned by, and how many of them hold it today: rarity is a live fact about the workforce, never a label frozen at some earlier day. */
+function bdRarityOf(d: BadgeDef): BadgeRarity {
+  const base = bdUsers().filter((u) => d.roles.includes(u.role as BadgeRole));
+  const holders = base.filter((u) => earnedBadges.some((e) => e.userId === u.id && e.badgeId === d.id));
+  return badgeRarityOf(holders.length, base.length);
+}
+function bdTrainingRarity(moduleId: string): BadgeRarity {
+  const m = byId(trainingModules, moduleId) as TrainingModule;
+  const people = new Map<string, { userIds: string[]; roles: TrainingRole[] }>();
+  for (const u of bdUsers()) { const p = tnPersonOf(u.id); if (p) people.set([...p.userIds].sort()[0], p); }
+  const base = [...people.values()].filter((p) => tnRequired(m, p.roles));
+  const holders = base.filter((p) => certBadges.some((b) => b.moduleId === moduleId && p.userIds.includes(b.userId)));
+  return badgeRarityOf(holders.length, base.length);
+}
+
+function bdCollectionOf(u: User, now: number): BadgeCollectionView {
+  syncBadges(now);
+  const role = u.role as BadgeRole;
+  const person = tnPersonOf(u.id) as { name: string; roles: TrainingRole[]; userIds: string[] };
+  const earnedCatalogue: BadgeEntryView[] = earnedBadges.filter((e) => e.userId === u.id && defOfBadge(e.badgeId)).map((e) => {
+    const d = defOfBadge(e.badgeId) as BadgeDef;
+    const cur = badgeVersionInForce(d, now);
+    const mine = badgeVersionOf(d, e.version);
+    return { id: `b:${d.id}`, category: d.category, badgeId: d.id, moduleCode: null, icon: d.icon, metric: d.metric, earnedAt: e.earnedAt, isNew: badgeIsNew(e.earnedAt, now), threshold: mine.threshold, currentThreshold: cur.threshold, earnedUnderEarlier: mine.threshold !== cur.threshold, rarity: bdRarityOf(d), certStatus: null, certCode: null };
+  });
+  const latestCerts = new Set(certLatestOf(person.userIds).map((b) => b.id));
+  const earnedTraining: BadgeEntryView[] = certBadges.filter((b) => latestCerts.has(b.id)).map((b) => {
+    const v = certBadgeViewOf(b, true, now);
+    return { id: `c:${b.id}`, category: 'training' as const, badgeId: null, moduleCode: v.moduleCode, icon: 'cert' as const, metric: null, earnedAt: b.issuedAt, isNew: badgeIsNew(b.issuedAt, now), threshold: null, currentThreshold: null, earnedUnderEarlier: v.earlierStandard, rarity: bdTrainingRarity(b.moduleId), certStatus: v.status, certCode: b.code };
+  });
+  const earned = [...earnedCatalogue, ...earnedTraining].sort((a, b) => (a.earnedAt < b.earnedAt ? 1 : -1));
+  // Next up, from live numbers: the nearest unearned badge of each family, then training that is under way.
+  const held = new Set(earnedCatalogue.map((e) => e.badgeId));
+  const next: BadgeNextView[] = [];
+  const families = new Map<string, BadgeDef>();
+  for (const d of BADGE_DEFS.filter((x) => x.roles.includes(role) && !held.has(x.id)).sort((a, b) => a.order - b.order)) if (!families.has(d.family)) families.set(d.family, d);
+  for (const d of families.values()) {
+    const v = badgeVersionInForce(d, now);
+    next.push({ id: `b:${d.id}`, category: d.category, kind: 'metric', badgeId: d.id, moduleCode: null, icon: d.icon, metric: d.metric, progress: badgeProgressOf(Math.min(bdMetricOf(u, d.metric, now), v.threshold), v.threshold), rarity: bdRarityOf(d), route: null });
+  }
+  for (const step of certNextSteps(person, now).filter((x) => x.kind === 'lessons' || x.kind === 'test')) {
+    const total = trainingLessons.filter((l) => l.moduleId === step.moduleId).length;
+    const done = tnProgressOf(person.userIds, step.moduleId)?.lessonsDone ?? 0;
+    next.push({ id: `c:${step.moduleId}`, category: 'training', kind: step.kind as 'lessons' | 'test', badgeId: null, moduleCode: step.moduleCode, icon: 'cert', metric: null, progress: badgeProgressOf(step.kind === 'test' ? total : Math.min(done, total), Math.max(1, total) + 1), rarity: bdTrainingRarity(step.moduleId), route: step.route });
+  }
+  next.sort((a, b) => b.progress.pct - a.progress.pct);
+  const rarest = [...earned].filter((e) => e.rarity.base > 0).sort((a, b) => a.rarity.pct - b.rarity.pct)[0];
+  return JSON.parse(JSON.stringify({
+    person: { name: u.name, role: u.role, joinedAt: u.joinedAt ?? null }, earned, next: next.slice(0, BADGE_NEXT_SHOWN),
+    summary: { total: earned.length, performance: earned.filter((e) => e.category === 'performance').length, training: earned.filter((e) => e.category === 'training').length, tenure: earned.filter((e) => e.category === 'tenure').length, newCount: earned.filter((e) => e.isNew).length, rarestId: rarest && rarest.rarity.tier && (rarest.rarity.tier === 'rare' || rarest.rarity.tier === 'epic') ? rarest.id : null },
+    at: new Date(now).toISOString(),
+  })) as BadgeCollectionView;
 }
 
 
@@ -19039,6 +19153,14 @@ export const memoryRepository: Repository = {
       paDecide({ entryId: e.id, kind: 'released', at: new Date(now).toISOString(), byName: admin.name });
       syncCommitments(now);
       return JSON.parse(JSON.stringify(paRowOf(byId(commissions, e.id) as CommissionEntry, now, paContext()))) as PayoutQueueRow;
+    }),
+
+  /* --------------------------------- Badges & milestones (166) */
+  getBadgeCollection: (userId) =>
+    simulateRead((): BadgeCollectionView => {
+      const u = byId(users, userId);
+      if (!u || (u.role !== 'surveyor' && u.role !== 'technician')) throw new RepositoryError('forbidden');
+      return bdCollectionOf(u, Date.now());
     }),
 
   /* --------------------------------- Rewards & gamification leaderboard (165) */

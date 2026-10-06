@@ -125,7 +125,7 @@ export function TechnicianHomeView() {
         )}
       </div>
 
-      <div className="mb-3"><Button size="sm" variant="secondary" data-open-rewards onClick={() => navigate("/rewards-leaderboard")}>{t("rewardsLeaderboard.link.open")}</Button></div>
+      <div className="mb-3 row gap-2 wrap"><Button size="sm" variant="secondary" data-open-rewards onClick={() => navigate("/rewards-leaderboard")}>{t("rewardsLeaderboard.link.open")}</Button><Button size="sm" variant="secondary" data-open-badges onClick={() => navigate("/badges")}>{t("badges.link.open")}</Button></div>
 
       {sosBanner && (
         <SosStatus

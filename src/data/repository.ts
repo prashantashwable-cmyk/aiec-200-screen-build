@@ -11,6 +11,7 @@ import type { CompleteInput, DecisionSignal, Phase as InterviewPhase } from '@/f
 import type { Demand, GuideAnswers, InterestProblem, InterestRole, RecruitRole, RecruitSource } from '@/features/recruitment/interest';
 import type { Outstanding, SectionId } from '@/features/recruitment/application';
 import type { JudgementDecision, JudgementProblem, ShareBasis } from '@/features/commission/finalPayout';
+import type { BadgeCategory, BadgeIcon, BadgeMetric, Progress as BadgeProgress, Rarity as BadgeRarity } from '@/features/rewards/badges';
 import type { ContestMetric, ContestPhase } from '@/features/rewards/standings';
 import type { DisbursementKind, DisbursementMethod, DisbursementStatus, FailureReason as DisbursementFailure, RetryProblem } from '@/features/commission/disbursement';
 import type { HoldKind as PayoutHoldKind, PayoutFlag, QueueState as PayoutQueueState, SkipReason as PayoutSkipReason } from '@/features/commission/payoutApproval';
@@ -6422,6 +6423,48 @@ export interface ContestLeaderboardView {
 }
 export type ContestProblem = 'not_found' | 'forbidden';
 
+/* ------------------------------------------------------------------ Badges & milestones (166) */
+
+export interface BadgeEntryView {
+  /** `b:<badge id>` for a catalogue badge, `c:<certification id>` for a training certification. */
+  id: string;
+  category: BadgeCategory;
+  badgeId: string | null;
+  moduleCode: string | null;
+  icon: BadgeIcon | 'cert';
+  metric: BadgeMetric | null;
+  earnedAt: string;
+  isNew: boolean;
+  /** The criteria it was earned under, and what it asks now. */
+  threshold: number | null;
+  currentThreshold: number | null;
+  /** Earned under rules since changed (a raised bar, or a module revised): honoured, and said so. */
+  earnedUnderEarlier: boolean;
+  rarity: BadgeRarity;
+  certStatus: CertBadgeStatus | null;
+  certCode: string | null;
+}
+export interface BadgeNextView {
+  id: string;
+  category: BadgeCategory;
+  kind: 'metric' | 'lessons' | 'test';
+  badgeId: string | null;
+  moduleCode: string | null;
+  icon: BadgeIcon | 'cert';
+  metric: BadgeMetric | null;
+  progress: BadgeProgress;
+  rarity: BadgeRarity;
+  route: string | null;
+}
+export interface BadgeCollectionView {
+  person: { name: string; role: 'surveyor' | 'technician'; joinedAt: string | null };
+  earned: BadgeEntryView[];
+  next: BadgeNextView[];
+  summary: { total: number; performance: number; training: number; tenure: number; newCount: number; rarestId: string | null };
+  at: string;
+}
+export type BadgeProblem = 'forbidden';
+
 export type DisbursementProblem =
   | 'not_found'
   | 'not_failed'
@@ -7282,6 +7325,8 @@ export interface Repository {
   handleTrainingFeedback(feedbackId: string, input: { status: FeedbackStatusName; note: string; addressedInVersion?: number }, adminId: string): Promise<FeedbackItemView>;
   /** Hides (or restores) a comment that is abusive or not constructive; its ratings keep counting. */
   moderateTrainingFeedback(feedbackId: string, input: { hide: boolean; reason: string }, adminId: string): Promise<FeedbackItemView>;
+  // Badges & milestones (166)
+  getBadgeCollection(userId: string): Promise<BadgeCollectionView>;
   // Rewards & gamification leaderboard (165)
   getContestLeaderboard(contestId: string | null, userId: string): Promise<ContestLeaderboardView>;
   listLeaderboardExclusions(): Promise<LeaderboardExclusion[]>;

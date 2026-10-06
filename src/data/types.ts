@@ -4647,6 +4647,17 @@ export interface LeaderboardExclusion {
   at: string;
 }
 
+/** A catalogue badge a partner has earned (166). Never removed or edited: the criteria version it was earned under is kept, so raising the bar later never takes it back. */
+export interface EarnedBadge {
+  id: string;
+  userId: string;
+  badgeId: string;
+  /** The criteria version in force when it was earned. */
+  version: number;
+  earnedAt: string;
+  isDemo: boolean;
+}
+
 /** Where a partner is paid (164). The full number never leaves the repository; views show the last four digits. `simulatedBank` stands in for what the bank itself would answer. */
 export interface PayoutAccount {
   userId: string;
