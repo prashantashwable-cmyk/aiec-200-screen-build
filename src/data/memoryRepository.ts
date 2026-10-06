@@ -287,6 +287,12 @@ import type {
   PayoutMessageView,
   CustomerConcern,
   ProjectStatusView,
+  VaultDocRow,
+  VaultDocument,
+  VaultField,
+  VaultSection,
+  VaultValue,
+  VaultView,
   ProjectMilestone,
   ProjectPhaseView,
   ProjectUpcoming,
@@ -918,6 +924,8 @@ import { CORRECTION_NOTE_MS, MOVEMENTS_SHOWN, closingSoon, gapToAbove, phaseOf, 
 import type { Ranked } from '@/features/rewards/standings';
 import { DEDUCTS_AT_PAYOUT as TDS_DEDUCTS, DEFAULT_RATES as DEFAULT_TDS_RATES, NO_PAN_RATE as TDS_NO_PAN_RATE, SECTIONS, SECTION_OF_ROLE as TDS_SECTION_OF, ackProblem as tdsAckProblem, challanProblem as tdsChallanProblem, deductionFor as tdsDeductionFor, depositDueOf as tdsDepositDueOf, fyIdOf as tdsFyIdOf, fyRange as tdsFyRange, inRange as tdsInRange, maskPan as tdsMaskPan, panProblem as tdsPanProblem, quarterOf as tdsQuarterOf, quarterRange as tdsQuarterRange, rateProblem as tdsRateProblem, returnDueOf as tdsReturnDueOf, versionAt as tdsVersionAt } from '@/features/tax/tds';
 import type { Quarter as TdsQuarter, TdsRole, TdsSection } from '@/features/tax/tds';
+import { VAULT_KINDS, validityState } from '@/features/documents/vault';
+import type { VaultKind } from '@/features/documents/vault';
 import { MONTHS_OFFERED as PH_MONTHS, PAGE as PH_PAGE, QUERY_DUE as PH_QUERY_DUE, answerProblem as phAnswerProblem, countsAsEarned as phCountsAsEarned, filterOf as phFilterOf, fyOf as phFyOf, inPeriod as phInPeriod, monthIdOf as phMonthId, periodOf as phPeriodOf, queryProblem as phQueryProblem, stageOf as phStageOf } from '@/features/payout/history';
 import type { Stage as PayoutStage } from '@/features/payout/history';
 import { CORRECTION_MAX as PD_CORRECTION_MAX, ESCALATED_TARGET as PD_ESCALATED, OTHERS_SHOWN as PD_OTHERS_SHOWN, PAGE as PD_PAGE, PROGRESS_EVERY as PD_PROGRESS_EVERY, REVIEW_DUE as PD_REVIEW_DUE, RESULT_DAYS as PD_RESULT_DAYS, SYSTEMIC_MIN as PD_SYSTEMIC_MIN, correctionProblem as pdCorrectionProblem, dueAtOf as pdDueAtOf, explainProblem as pdExplainProblem, medianDays as pdMedianDays, patternsOf as pdPatternsOf, progressDue as pdProgressDue, raiseProblem as pdRaiseProblem, reasonProblem as pdReasonProblem, repeatOf as pdRepeatOf, slaOf as pdSlaOf, updateProblem as pdUpdateProblem } from '@/features/payout/dispute';
@@ -10554,8 +10562,8 @@ function psStatusOf(user: User, projectKey: string | null, now: number): Project
   }
 
   const documents: ProjectDocument[] = [];
-  if (quote) documents.push({ id: `quote:${quote.id}`, kind: 'quotation', code: quote.code, at: quote.acceptedAt ?? null, route: null });
-  if (terms?.bothPartyConfirmedFlag) documents.push({ id: `terms:${terms.id}`, kind: 'agreement', code: deal.code, at: terms.customerConfirmedAt ?? terms.internalConfirmedAt ?? null, route: null });
+  if (quote) documents.push({ id: `quote:${quote.id}`, kind: 'quotation', code: quote.code, at: quote.acceptedAt ?? null, route: `/documents?doc=quotation:${quote.id}` });
+  if (terms?.bothPartyConfirmedFlag) documents.push({ id: `terms:${terms.id}`, kind: 'agreement', code: deal.code, at: terms.customerConfirmedAt ?? terms.internalConfirmedAt ?? null, route: `/documents?doc=agreement:${terms.id}` });
   for (const dc of deliveryConfirmations.filter((c) => c.dealId === deal.id && c.status === 'signed')) documents.push({ id: `dc:${dc.id}`, kind: 'delivery', code: null, at: dc.signedAt ?? null, route: '/delivery-confirmation' });
   if (job && completion) documents.push({ id: `cert:${job.id}`, kind: 'certificate', code: completion.certificateNo, at: completion.issuedAt, route: `/handover-certificate/${job.id}` });
   if (job && reg) documents.push({ id: `warranty:${job.id}`, kind: 'warranty', code: null, at: reg.registeredAt, route: `/warranty/${job.id}` });
@@ -10564,6 +10572,145 @@ function psStatusOf(user: User, projectKey: string | null, now: number): Project
   const pausedFor: ProjectStatusView['pausedFor'] = held ? (job?.heldBy === ISSUE_HOLD ? 'issue' : 'payment') : null;
   const pausedPaymentId = pausedFor === 'payment' ? (payments.filter((p) => p.dealId === deal.id && isOutstanding(p) && p.status !== 'disputed' && daysOverdue(p, now) > 0).sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0]?.id ?? null) : null;
   return { ...base, hidden, milestones, upcoming, next, phases, highlights, documents, pausedFor, pausedPaymentId };
+}
+
+
+/* ------------------------------------------------------------------ Customer document vault (173) */
+
+interface VdDoc { row: VaultDocRow; sections: VaultSection[]; issuedBy: string | null }
+const vdText = (v: string): VaultValue => ({ t: 'text', v });
+const vdDate = (v: string): VaultValue => ({ t: 'date', v });
+const vdMoney = (v: number): VaultValue => ({ t: 'money', v });
+const vdKey = (k: string): VaultValue => ({ t: 'key', k });
+const vdNum = (v: number): VaultValue => ({ t: 'num', v });
+const vdF = (labelKey: string, value: VaultValue | null | undefined | false): VaultField[] => (value ? [{ labelKey, value }] : []);
+const vdLast10 = (phone: string | undefined): string => (phone ?? '').replace(/\D/g, '').slice(-10);
+
+/** The customer's deals: those that carry their account, and those made before it existed that name their own phone (linked afterwards, never lost). */
+function vdDealsOf(user: User): Deal[] {
+  const mine = vdLast10(user.phone);
+  return deals.filter((d) => d.customerId === user.id || (!d.customerId && mine !== '' && vdLast10(byId(leads, d.leadId)?.contactPhone) === mine));
+}
+
+function vdDocsOf(user: User, now: number): VdDoc[] {
+  const out: VdDoc[] = [];
+  const joined = user.joinedAt ? Date.parse(user.joinedAt) : 0;
+  for (const deal of vdDealsOf(user)) {
+    const lead = byId(leads, deal.leadId);
+    const siteName = lead?.siteName ?? deal.code;
+    const dealJobs = jobs.filter((j) => j.dealId === deal.id);
+    ensureStageInvoices(deal.id, deal, lead ?? null);
+    const base = { dealId: deal.id, dealCode: deal.code, siteName };
+    const row = (r: Omit<VaultDocRow, 'dealId' | 'dealCode' | 'siteName' | 'beforeAccount'>): VaultDocRow => ({ ...base, ...r, beforeAccount: joined > 0 && Date.parse(r.issuedAt) < joined });
+    const push = (r: VaultDocRow, sections: VaultSection[], issuedBy: string | null = null) => out.push({ row: r, sections, issuedBy });
+
+    // Quotations: every one that was sent, with later versions superseding earlier ones.
+    const qs = quotations.filter((q) => q.leadId === deal.leadId && q.status !== 'draft' && (q.sentAt || q.acceptedAt));
+    for (const q of qs) {
+      const next = quotations.find((x) => x.supersedesQuotationId === q.id && x.status !== 'draft');
+      let root = q;
+      while (root.supersedesQuotationId) { const prev = byId(quotations, root.supersedesQuotationId); if (!prev) break; root = prev; }
+      const issued = q.sentAt ?? q.createdAt;
+      const expired = !q.acceptedAt && !!q.validityDate && validityState(q.validityDate, now) === 'expired';
+      push(row({ id: `quotation:${q.id}`, kind: 'quotation', subKind: null, code: q.code, version: q.version, issuedAt: issued, status: next ? 'superseded' : 'current', supersededByCode: next?.code ?? null, chainId: `quotation:${root.id}`, validity: q.validityDate && !q.acceptedAt ? { kind: 'quote', startsOn: issued, until: q.validityDate, state: validityState(q.validityDate, now) } : null, route: null }), [
+        { headingKey: 'documentVault.section.document', fields: [...vdF('documentVault.field.number', vdText(q.code)), ...vdF('documentVault.field.version', vdNum(q.version)), ...vdF('documentVault.field.status', vdKey(`quotationStatus.${expired ? 'expired' : q.status}`)), ...vdF('documentVault.field.issued', vdDate(issued)), ...vdF('documentVault.field.validUntil', q.validityDate ? vdDate(q.validityDate) : null), ...vdF('documentVault.field.accepted', q.acceptedAt ? vdDate(q.acceptedAt) : null)] },
+        { headingKey: 'documentVault.section.lift', fields: [...vdF('documentVault.field.drive', vdKey(`driveType.${q.driveType}`)), ...vdF('documentVault.field.persons', vdNum(q.capacityPersons)), ...vdF('documentVault.field.capacityKg', vdNum(q.capacityKg)), ...vdF('documentVault.field.stops', vdNum(q.stopsCount)), ...vdF('documentVault.field.height', vdNum(q.travelHeightM)), ...vdF('documentVault.field.finish', vdKey(`finishTier.${q.finishTier}`))] },
+        { headingKey: 'documentVault.section.price', fields: [...vdF('documentVault.field.gstAmount', vdMoney(q.cost.gstAmount)), ...vdF('documentVault.field.totalInclGst', vdMoney(q.cost.finalPrice))] },
+      ], nameOf(q.createdBy));
+    }
+
+    // The agreement, signed by both sides, with every amendment as it was noted.
+    const terms = dealTermsRecords.find((t) => t.dealId === deal.id);
+    if (terms?.bothPartyConfirmedFlag) {
+      const at = terms.customerConfirmedAt ?? terms.internalConfirmedAt ?? terms.updatedAt;
+      push(row({ id: `agreement:${terms.id}`, kind: 'agreement', subKind: null, code: deal.code, version: 1 + terms.amendments.length, issuedAt: at, status: 'current', supersededByCode: null, chainId: `agreement:${terms.id}`, validity: null, route: null }), [
+        { headingKey: 'documentVault.section.document', fields: [...vdF('documentVault.field.number', vdText(deal.code)), ...vdF('documentVault.field.signed', vdDate(at)), ...vdF('documentVault.field.agreedPrice', vdMoney(terms.finalAgreedPrice))] },
+        { headingKey: 'documentVault.section.paymentPlan', fields: terms.paymentStagePlan.map((p) => ({ labelKey: `documentVault.stage.${p.stage}`, value: vdText(`${p.percentage}% · ${formatINRPlain(Math.round((terms.finalAgreedPrice * p.percentage) / 100))}`) })) },
+        ...(terms.specialTermsNotes.trim() ? [{ headingKey: 'documentVault.section.specialTerms', fields: [{ labelKey: 'documentVault.field.notes', value: vdText(terms.specialTermsNotes.trim()) }] }] : []),
+        ...(terms.amendments.length ? [{ headingKey: 'documentVault.section.amendments', fields: terms.amendments.map((a) => ({ labelKey: 'documentVault.field.amended', value: vdText(`${a.note} (${new Date(a.amendedAt).toISOString().slice(0, 10)})`) })) }] : []),
+      ], terms.internalConfirmedBy ? nameOf(terms.internalConfirmedBy) : null);
+    }
+
+    // Invoices and credit notes; a reissue makes the invoice it replaced superseded, which stays readable.
+    for (const inv of invoices.filter((i) => i.dealId === deal.id && i.type !== 'final')) {
+      const replacedBy = invoices.find((x) => x.supersedesInvoiceId === inv.id);
+      let rootInv = inv;
+      while (rootInv.supersedesInvoiceId) { const prev = byId(invoices, rootInv.supersedesInvoiceId); if (!prev) break; rootInv = prev; }
+      push(row({ id: `invoice:${inv.id}`, kind: 'invoice', subKind: inv.type, code: inv.code, version: null, issuedAt: inv.issuedAt, status: replacedBy ? 'superseded' : 'current', supersededByCode: replacedBy?.code ?? null, chainId: `invoice:${rootInv.id}`, validity: null, route: `/deals/${deal.id}/invoices` }), [
+        { headingKey: 'documentVault.section.document', fields: [...vdF('documentVault.field.number', vdText(inv.code)), ...vdF('documentVault.field.issued', vdDate(inv.issuedAt)), ...vdF('documentVault.field.forStage', inv.stage ? vdKey(`documentVault.stage.${inv.stage}`) : null), ...vdF('documentVault.field.reason', inv.reissueReason ? vdText(inv.reissueReason) : inv.creditNoteReason ? vdText(inv.creditNoteReason) : null), ...vdF('documentVault.field.against', inv.referencesInvoiceId ? vdText(byId(invoices, inv.referencesInvoiceId)?.code ?? '') : null)] },
+        { headingKey: 'documentVault.section.parties', fields: [...vdF('documentVault.field.billedTo', vdText(inv.customerName)), ...vdF('documentVault.field.address', inv.customerAddress ? vdText(inv.customerAddress) : null), ...vdF('documentVault.field.yourGstin', inv.customerGstin ? vdText(inv.customerGstin) : null), ...vdF('documentVault.field.aiecGstin', vdText(inv.aiecGstin))] },
+        { headingKey: 'documentVault.section.amounts', fields: [...vdF('documentVault.field.taxable', vdMoney(inv.taxableValue)), ...vdF('documentVault.field.gstPercent', vdNum(inv.gstPercent)), ...vdF('documentVault.field.gstAmount', vdMoney(inv.gstAmount)), ...vdF('documentVault.field.totalInclGst', vdMoney(inv.totalAmount))] },
+      ], inv.issuedBy);
+    }
+
+    // Receipts: one for every payment that has actually come in.
+    for (const p of payments.filter((x) => x.dealId === deal.id && receivedAmountOf(x) > 0)) {
+      const at = p.paidAt ?? p.lastReceivedAt ?? p.dueDate;
+      const inv = invoices.find((i) => i.paymentId === p.id && !invoices.some((x) => x.supersedesInvoiceId === i.id));
+      push(row({ id: `receipt:${p.id}`, kind: 'receipt', subKind: null, code: p.code, version: null, issuedAt: at, status: 'current', supersededByCode: null, chainId: `receipt:${p.id}`, validity: null, route: '/payments/history' }), [
+        { headingKey: 'documentVault.section.document', fields: [...vdF('documentVault.field.number', vdText(p.code)), ...vdF('documentVault.field.received', vdDate(at)), ...vdF('documentVault.field.forStage', vdKey(`documentVault.stage.${p.stage}`)), ...vdF('documentVault.field.method', p.method ? vdKey(`documentVault.method.${p.method}`) : null), ...vdF('documentVault.field.reference', p.gatewayTransactionRef ? vdText(p.gatewayTransactionRef) : p.manualReferenceNumber ? vdText(p.manualReferenceNumber) : null), ...vdF('documentVault.field.invoice', inv ? vdText(inv.code) : null)] },
+        { headingKey: 'documentVault.section.amounts', fields: [...vdF('documentVault.field.stageAmount', vdMoney(p.amount)), ...vdF('documentVault.field.amountReceived', vdMoney(receivedAmountOf(p)))] },
+      ]);
+    }
+
+    for (const job of dealJobs) {
+      const jobBase = { dealId: deal.id };
+      void jobBase;
+      // Compliance certificate: AIEC's own certificate, every version kept.
+      for (const c of complianceCertificates.filter((x) => x.jobId === job.id)) {
+        const standards = [c.primary, ...c.additional].map((st) => (st.id === 'other' ? (st.label ?? '') : st.id.replace('_', ' '))).filter(Boolean).join(', ');
+        push(row({ id: `compliance:${c.id}`, kind: 'compliance', subKind: null, code: c.code, version: c.version, issuedAt: c.issuedAt, status: c.supersededBy ? 'superseded' : 'current', supersededByCode: c.supersededBy ? (byId(complianceCertificates, c.supersededBy)?.code ?? null) : null, chainId: `compliance:${job.id}`, validity: null, route: null }), [
+          { headingKey: 'documentVault.section.document', fields: [...vdF('documentVault.field.number', vdText(c.code)), ...vdF('documentVault.field.version', vdNum(c.version)), ...vdF('documentVault.field.issued', vdDate(c.issuedAt)), ...vdF('documentVault.field.site', vdText(job.siteName)), ...vdF('documentVault.field.standards', vdText(standards)), ...vdF('documentVault.field.drive', vdKey(`driveType.${c.driveType}`)), ...vdF('documentVault.field.basedOn', vdText(c.quotationCode))] },
+          ...(c.historic ? [] : [{ headingKey: 'documentVault.section.checks', fields: [...vdF('documentVault.field.installSteps', vdText(`${c.package.installation.stepsDone}/${c.package.installation.stepsTotal}`)), ...vdF('documentVault.field.mechanicalSigned', c.package.mechanical.signedOff ? vdDate(c.package.mechanical.signedOff.at) : null), ...vdF('documentVault.field.electricalSigned', c.package.electrical.signedOff ? vdDate(c.package.electrical.signedOff.at) : null)] }]),
+          { headingKey: 'documentVault.section.notice', fields: [{ labelKey: 'documentVault.field.notice', value: vdKey('documentVault.complianceNotice') }] },
+        ], c.issuedByName);
+      }
+      // Handover certificate, as issued.
+      const hc = handoverCompletions.find((x) => x.jobId === job.id);
+      if (hc) push(row({ id: `handover:${job.id}`, kind: 'handover', subKind: null, code: hc.certificateNo, version: null, issuedAt: hc.issuedAt, status: 'current', supersededByCode: null, chainId: `handover:${job.id}`, validity: null, route: `/handover-certificate/${job.id}` }), [
+        { headingKey: 'documentVault.section.document', fields: [...vdF('documentVault.field.number', vdText(hc.certificateNo)), ...vdF('documentVault.field.issued', vdDate(hc.issuedAt)), ...vdF('documentVault.field.site', vdText(hc.summary.siteName)), ...vdF('documentVault.field.address', vdText(hc.summary.address)), ...vdF('documentVault.field.job', vdText(hc.summary.jobCode)), ...vdF('documentVault.field.customer', vdText(hc.summary.customerName))] },
+      ], hc.issuedByName);
+      // Warranty and AMC, as registered.
+      const reg = registrationOf(job.id);
+      if (reg) {
+        const warrantyEnd = reg.terms.service.endsOn;
+        push(row({ id: `warranty:${job.id}`, kind: 'warranty', subKind: null, code: null, version: null, issuedAt: reg.registeredAt, status: 'current', supersededByCode: null, chainId: `warranty:${job.id}`, validity: { kind: 'service_warranty', startsOn: reg.startsOn, until: warrantyEnd, state: validityState(warrantyEnd, now) }, route: `/warranty/${job.id}` }), [
+          { headingKey: 'documentVault.section.document', fields: [...vdF('documentVault.field.registered', vdDate(reg.registeredAt)), ...vdF('documentVault.field.site', vdText(job.siteName)), ...vdF('documentVault.field.starts', vdDate(reg.startsOn)), ...vdF('documentVault.field.basedOn', vdText(`${reg.terms.basis.quotationCode} v${reg.terms.basis.version}`))] },
+          { headingKey: 'documentVault.section.serviceWarranty', fields: [...vdF('documentVault.field.months', vdNum(reg.terms.service.months)), ...vdF('documentVault.field.validUntil', vdDate(warrantyEnd))] },
+          { headingKey: 'documentVault.section.partsWarranty', fields: reg.terms.parts.map((pt) => ({ labelKey: 'documentVault.field.part', value: vdText(`${pt.description} × ${pt.quantity}${pt.months ? ` · ${pt.months}` : ''}`) })) },
+        ], reg.registeredByName);
+        if (reg.amc && reg.amc.status === 'active') {
+          const last = reg.amc.terms[reg.amc.terms.length - 1];
+          push(row({ id: `amc:${job.id}`, kind: 'amc', subKind: reg.amc.tier ?? null, code: null, version: reg.amc.terms.length, issuedAt: reg.amc.decidedAt, status: 'current', supersededByCode: null, chainId: `amc:${job.id}`, validity: last ? { kind: 'amc_term', startsOn: last.startsOn, until: last.endsOn, state: validityState(last.endsOn, now) } : null, route: `/warranty/${job.id}` }), [
+            { headingKey: 'documentVault.section.document', fields: [...vdF('documentVault.field.registered', vdDate(reg.amc.decidedAt)), ...vdF('documentVault.field.site', vdText(job.siteName)), ...vdF('documentVault.field.plan', reg.amc.tier ? vdKey(`documentVault.tier.${reg.amc.tier}`) : null), ...vdF('documentVault.field.annualPrice', reg.amc.annualPrice ? vdMoney(reg.amc.annualPrice) : null), ...vdF('documentVault.field.includedVisits', reg.amc.includedVisits !== undefined ? vdNum(reg.amc.includedVisits + reg.amc.extraVisits) : null), ...vdF('documentVault.field.response', reg.amc.responseTimeHours ? vdNum(reg.amc.responseTimeHours) : null)] },
+            { headingKey: 'documentVault.section.terms', fields: reg.amc.terms.map((tm) => ({ labelKey: 'documentVault.field.term', value: vdText(`${tm.n}: ${new Date(tm.startsOn).toISOString().slice(0, 10)} → ${new Date(tm.endsOn).toISOString().slice(0, 10)} · ${formatINRPlain(tm.price)}`) })) },
+          ], reg.amc.decidedByName);
+        }
+      }
+    }
+    // Signed delivery confirmations of the deal's parts.
+    for (const dc of deliveryConfirmations.filter((c) => c.dealId === deal.id && c.status === 'signed')) {
+      push(row({ id: `delivery:${dc.id}`, kind: 'delivery', subKind: null, code: dc.code, version: null, issuedAt: dc.signedAt ?? dc.createdAt, status: 'current', supersededByCode: null, chainId: `delivery:${dc.id}`, validity: null, route: '/delivery-confirmation' }), [
+        { headingKey: 'documentVault.section.document', fields: [...vdF('documentVault.field.number', vdText(dc.code)), ...vdF('documentVault.field.signed', vdDate(dc.signedAt ?? dc.createdAt)), ...vdF('documentVault.field.site', vdText(siteName))] },
+        { headingKey: 'documentVault.section.items', fields: dc.items.map((it) => ({ labelKey: 'documentVault.field.item', value: vdText(`${it.description} · ${it.receivedQty}/${it.expectedQty}`) })) },
+      ]);
+    }
+  }
+  return out.sort((a, b) => b.row.issuedAt.localeCompare(a.row.issuedAt));
+}
+const formatINRPlain = (n: number): string => `₹${n.toLocaleString('en-IN')}`;
+
+function vdCustomer(userId: string): User {
+  const user = byId(users, userId);
+  if (!user || user.role !== 'customer') throw new RepositoryError('forbidden');
+  return user;
+}
+function vdViewOf(user: User, now: number): VaultView {
+  const docs = vdDocsOf(user, now);
+  const rows = docs.map((d) => d.row);
+  const counts = Object.fromEntries(VAULT_KINDS.map((k) => [k, rows.filter((r) => r.kind === k && r.status === 'current').length])) as Record<VaultKind, number>;
+  const projects = [...new Map(rows.map((r) => [r.dealId, { dealId: r.dealId, dealCode: r.dealCode, siteName: r.siteName }])).values()];
+  return { rows, counts, projects, beforeAccount: rows.filter((r) => r.beforeAccount).length, at: new Date(now).toISOString() };
 }
 
 /* ------------------------------------------------------------------ Badges & milestones (166) */
@@ -23068,6 +23215,25 @@ export const memoryRepository: Repository = {
       const user = byId(users, userId);
       if (!user || user.role !== 'customer') throw new RepositoryError('forbidden');
       return JSON.parse(JSON.stringify(psStatusOf(user, projectKey, Date.now()))) as ProjectStatusView;
+    }),
+
+
+  getDocumentVault: (userId) =>
+    simulateRead((): VaultView => JSON.parse(JSON.stringify(vdViewOf(vdCustomer(userId), Date.now()))) as VaultView),
+
+  getVaultDocument: (docId, userId) =>
+    simulateRead((): VaultDocument => {
+      const docs = vdDocsOf(vdCustomer(userId), Date.now());
+      const d = docs.find((x) => x.row.id === docId);
+      if (!d) throw new RepositoryError('not_found');
+      const versions = docs.filter((x) => x.row.chainId === d.row.chainId).map((x) => x.row).sort((a, b) => (a.issuedAt < b.issuedAt ? -1 : 1));
+      return JSON.parse(JSON.stringify({ row: d.row, sections: d.sections, versions, issuedBy: d.issuedBy })) as VaultDocument;
+    }),
+
+  getVaultBundle: (userId) =>
+    simulateRead((): VaultDocument[] => {
+      const docs = vdDocsOf(vdCustomer(userId), Date.now());
+      return JSON.parse(JSON.stringify(docs.map((d) => ({ row: d.row, sections: d.sections, versions: docs.filter((x) => x.row.chainId === d.row.chainId).map((x) => x.row), issuedBy: d.issuedBy })))) as VaultDocument[];
     }),
 
   /* --------------------------------- As-installed material log (128) */

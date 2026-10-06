@@ -216,6 +216,7 @@ function Documents({ v, s, t }: { v: ProjectStatusView; s: ProjectStatusState; t
             {d.route && <Button size="sm" variant="secondary" onClick={() => s.goTo(d.route as string)}>{t(K.documents.open)}</Button>}
           </div>
         ))}
+        <Button size="sm" variant="ghost" data-all-documents onClick={() => s.goTo('/documents')}>{t('documentVault.link.open')}</Button>
       </div>
     </Card>
   );

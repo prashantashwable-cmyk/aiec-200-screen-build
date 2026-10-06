@@ -1,3 +1,4 @@
+import type { VaultKind } from '@/features/documents/vault';
 import type { ItemState, SignOffProblem } from '@/features/qc/mechanical';
 import type { ElecSignOffProblem, ElecState } from '@/features/qc/electrical';
 import type { DisputeDecision, SnagProblem, SnagSeverity } from '@/features/qc/snags';
@@ -6740,6 +6741,51 @@ export interface ProjectStatusView {
   at: string;
 }
 
+
+/* ------------------------------------------------------------------ Customer document vault (173) */
+
+/** A value on a document, in a form the reader can translate: a number, a date, a word or a translation key, never English made up here. */
+export type VaultValue = { t: 'text'; v: string } | { t: 'money'; v: number } | { t: 'date'; v: string } | { t: 'num'; v: number } | { t: 'key'; k: string };
+export interface VaultField { labelKey: string; value: VaultValue }
+export interface VaultSection { headingKey: string; fields: VaultField[] }
+export interface VaultValidity {
+  /** What the end date is the end of (`documentVault.validity.<kind>`). */
+  kind: 'quote' | 'service_warranty' | 'amc_term';
+  startsOn: string | null;
+  until: string | null;
+  state: 'valid' | 'expiring' | 'expired';
+}
+export interface VaultDocRow {
+  id: string;
+  kind: VaultKind;
+  /** The kind of invoice / certificate version etc., for the title. */
+  subKind: string | null;
+  code: string | null;
+  version: number | null;
+  issuedAt: string;
+  dealId: string;
+  dealCode: string;
+  siteName: string;
+  /** `current` is what stands today; a superseded one is kept exactly as issued. */
+  status: 'current' | 'superseded' | 'void';
+  supersededByCode: string | null;
+  /** The documents of one chain (all the versions of a quotation, an invoice and its reissue) share this. */
+  chainId: string;
+  validity: VaultValidity | null;
+  /** Where the document was issued, when the customer has a screen for it there. */
+  route: string | null;
+  /** Issued before the customer's account existed: linked to them afterwards, never lost. */
+  beforeAccount: boolean;
+}
+export interface VaultDocument { row: VaultDocRow; sections: VaultSection[]; versions: VaultDocRow[]; issuedBy: string | null }
+export interface VaultView {
+  rows: VaultDocRow[];
+  counts: Record<VaultKind, number>;
+  projects: { dealId: string; dealCode: string; siteName: string }[];
+  beforeAccount: number;
+  at: string;
+}
+
 /* ------------------------------------------------------------------ Payout disputes (170) */
 
 export interface PayoutDisputeRow {
@@ -8061,6 +8107,12 @@ export interface Repository {
   getCustomerHome(projectKey: string | null, userId: string): Promise<CustomerHomeView>;
   /** Customer's own view of a project's whole journey (172): the same data as the installation timeline, with curated photos and documents. */
   getProjectStatus(projectKey: string | null, userId: string): Promise<ProjectStatusView>;
+
+  /* Customer document vault (173) — every issued document, exactly as it was issued */
+  getDocumentVault(userId: string): Promise<VaultView>;
+  getVaultDocument(docId: string, userId: string): Promise<VaultDocument>;
+  /** Every document with its content, for the "download all" bundle. */
+  getVaultBundle(userId: string): Promise<VaultDocument[]>;
   /** Admin only: shows or hides the customer's view of a job's timeline. Hiding needs a reason. */
   setTimelineCustomerVisible(jobId: string, visible: boolean, note: string, adminId: string): Promise<InstallTimelineView>;
 

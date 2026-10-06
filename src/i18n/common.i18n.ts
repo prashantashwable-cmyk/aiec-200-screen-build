@@ -147,6 +147,7 @@ const common: ScreenTranslations = {
       suppliers: 'Suppliers',
       menu: 'Menu',
       shipments: 'Delivery',
+      documents: 'Documents',
     },
     calendar: {
       previous: 'Previous',
@@ -591,6 +592,7 @@ const common: ScreenTranslations = {
       suppliers: 'सप्लायर',
       menu: 'मेन्यू',
       shipments: 'डिलीवरी',
+      documents: 'दस्तावेज़',
     },
     calendar: {
       previous: 'पिछला',
@@ -1036,6 +1038,7 @@ const common: ScreenTranslations = {
       suppliers: 'पुरवठादार',
       menu: 'मेनू',
       shipments: 'डिलिव्हरी',
+      documents: 'कागदपत्रे',
     },
     calendar: {
       previous: 'मागचा',

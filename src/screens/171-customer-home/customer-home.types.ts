@@ -6,7 +6,7 @@ export const viewKey = (userId: string, project: string) => `aiec.customerHome.$
 export const statusPath = (projectKey: string) => `/project-status?p=${encodeURIComponent(projectKey)}`;
 export const paymentsPath = '/payments/history';
 export const checkoutPath = (paymentId: string) => `/customer/payments/${paymentId}/checkout`;
-export const documentsPath = (jobId: string | null, handedOver: boolean) => (handedOver && jobId ? `/handover-certificate/${jobId}` : '/delivery-confirmation');
+export const documentsPath = '/documents';
 export const servicePath = (jobId: string) => `/warranty/${jobId}`;
 
 export const HOME_KEYS = {
