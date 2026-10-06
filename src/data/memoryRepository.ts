@@ -268,6 +268,13 @@ import type {
   PayoutBatchResult,
   PayoutDecisionView,
   PayoutQueueRow,
+  ContestDetailView,
+  ContestLeaderboardView,
+  ContestListItem,
+  ContestMeView,
+  ContestMovementView,
+  ContestRewardView,
+  ContestStandingRow,
   PayoutQueueView,
   DisbursementActionResult,
   DisbursementBoardView,
@@ -658,6 +665,10 @@ import type {
   CommissionRule,
   CommissionRuleVersion,
   PayoutDecision,
+  LeaderboardExclusion,
+  ContestMovement,
+  ContestReward,
+  Contest,
   DisbursementEvent,
   PayoutSchedule,
   PayoutRun,
@@ -849,6 +860,8 @@ import { DEFAULT_PARAMS as CR_DEFAULTS, NOTICE_DAYS as CR_NOTICE_DAYS, NOTICE_MA
 import { APPROVE_DUE as PA_APPROVE_DUE, HOLD_KINDS as PA_HOLD_KINDS, HOLD_REVIEW as PA_HOLD_REVIEW, ROUTINE_LIMIT as PA_ROUTINE_LIMIT, approveProblem as paApproveProblem, batchSkipReason as paBatchSkip, holdProblem as paHoldProblem, isRoutine as paIsRoutine, stateOf as paStateOf } from '@/features/commission/payoutApproval';
 import type { HoldKind as PaHoldKind, PayoutFlag as PaFlag } from '@/features/commission/payoutApproval';
 import { ATTENTION_DUE as DB_ATTENTION_DUE, NOTE_MIN as DB_NOTE_MIN, RUNS_SHOWN as DB_RUNS_SHOWN, SETTLE_MS as DB_SETTLE_MS, UPI_LIMIT as DB_UPI_LIMIT, detailsProblem as dbDetailsProblem, groupTransfers as dbGroupTransfers, hasBank as dbHasBank, hasUpi as dbHasUpi, lastSlot as dbLastSlot, maskAccount as dbMask, methodFor as dbMethodFor, needsDetails as dbNeedsDetails, nextSlot as dbNextSlot, railOutcome as dbRailOutcome, retryProblem as dbRetryProblem, scheduleProblem as dbScheduleProblem } from '@/features/commission/disbursement';
+import { CORRECTION_NOTE_MS, MOVEMENTS_SHOWN, closingSoon, gapToAbove, phaseOf, rankAll, shortName, tiedOnNumber, toReachRank } from '@/features/rewards/standings';
+import type { Ranked } from '@/features/rewards/standings';
 import type { DisbursementMethod as DbMethod, FailureReason as DbFailure } from '@/features/commission/disbursement';
 import { APPROVED_WAIT as PT_APPROVED_WAIT, CATEGORIES as PT_CATEGORIES, PAGE as PT_PAGE, STATUSES as PT_STATUSES, byCurrency as ptByCurrency, categoryOf as ptCategoryOf, isStaleApproved as ptIsStale, outliersOf as ptOutliers, spikeOf as ptSpike, sum as ptSum, trendOf as ptTrend, triggerOf as ptTriggerOf } from '@/features/commission/payoutTracker';
 import type { AttentionKind as PtAttentionKind, PayoutCategory as PtCategory, PayoutStatus as PtStatus } from '@/features/commission/payoutTracker';
@@ -2825,6 +2838,7 @@ function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   syncTrainingFeedback(now);
   syncPayoutSpikes(now);
   syncDisbursements(now);
+  syncContests(now);
   syncPartnerInterviews(now);
   syncVerification(now);
   syncOffers(now);
@@ -9492,6 +9506,114 @@ function dbRetry(d: PayoutDisbursement, adminName: string, now: number): PayoutD
   dbEvent(d, 'retried', adminName, undefined, now);
   return dbSend(d.partnerId, entries, 'retry', adminName, now, { retryOf: d });
 }
+
+
+/* ------------------------------------------------------------------ Rewards & gamification leaderboard (165) */
+
+const cnDay = 86_400_000;
+const cnAgo = (d: number): string => new Date(Date.now() - d * cnDay).toISOString();
+const cnAhead = (d: number): string => new Date(Date.now() + d * cnDay).toISOString();
+/** Seeded contests. 167 owns creating and ending them; these let the partner view and its edge cases be seen. The windows and prizes are placeholders. */
+const contests: Contest[] = [
+  { id: 'cn-1', code: 'AIEC-CN-1001', name: 'October lead-capture sprint', description: 'Capture good leads and see them through: every lead you capture in the window counts.', cohort: 'surveyor', metric: 'leadsCaptured', startsAt: cnAgo(40), endsAt: cnAhead(5), rewards: [{ rank: 1, kind: 'cash', amount: 5000 }, { rank: 2, kind: 'cash', amount: 3000 }, { rank: 3, kind: 'recognition', label: 'Top Surveyor badge' }], createdByName: 'Prashant Vasant Wable', createdAt: cnAgo(41), isDemo: true },
+  { id: 'cn-2', code: 'AIEC-CN-1002', name: 'Installations done right', description: 'Finish installations properly: each job you complete in the window counts.', cohort: 'technician', metric: 'jobsCompleted', startsAt: cnAgo(60), endsAt: cnAhead(12), rewards: [{ rank: 1, kind: 'cash', amount: 6000 }, { rank: 2, kind: 'recognition', label: 'Master Installer shout-out' }], createdByName: 'Prashant Vasant Wable', createdAt: cnAgo(61), isDemo: true },
+  { id: 'cn-3', code: 'AIEC-CN-1003', name: 'September lead capture', description: 'Every good lead you captured in the window.', cohort: 'surveyor', metric: 'leadsCaptured', startsAt: cnAgo(70), endsAt: cnAgo(20), rewards: [{ rank: 1, kind: 'cash', amount: 4000 }, { rank: 2, kind: 'recognition', label: 'Field Star of the month' }], createdByName: 'Prashant Vasant Wable', createdAt: cnAgo(71), isDemo: true },
+  { id: 'cn-4', code: 'AIEC-CN-1004', name: 'Revenue rally', description: 'Value of the deals you closed.', cohort: 'surveyor', metric: 'revenue', startsAt: cnAhead(6), endsAt: cnAhead(40), rewards: [{ rank: 1, kind: 'cash', amount: 8000 }], createdByName: 'Prashant Vasant Wable', createdAt: cnAgo(2), isDemo: true },
+];
+const contestMovements: ContestMovement[] = [];
+let contestMovementCounter = 0;
+const contestSnapshots = new Map<string, Record<string, { value: number; rank: number }>>();
+const leaderboardExclusions: LeaderboardExclusion[] = [];
+
+const cnEnd = (c: Contest): number => (c.endedAt ? Date.parse(c.endedAt) : Date.parse(c.endsAt));
+/** The number being competed on, counted only inside the contest's own window. Attribution is the leaderboard's (024): the lead's current owner. */
+function cnValueOf(c: Contest, userId: string): number {
+  const from = Date.parse(c.startsAt);
+  const to = cnEnd(c);
+  const within = (iso: string | undefined): boolean => !!iso && Date.parse(iso) >= from && Date.parse(iso) < to;
+  if (c.metric === 'jobsCompleted') return jobs.filter((j) => j.technicianId === userId && j.status === 'completed' && within(j.completedAt)).length;
+  const own = leads.filter((l) => l.surveyorId === userId);
+  if (c.metric === 'leadsCaptured') return own.filter((l) => within(l.createdAt)).length;
+  const won = own.filter((l) => l.stage === 'won' && within(l.stageEnteredAt));
+  return c.metric === 'leadsConverted' ? won.length : won.reduce((a, l) => a + l.estimatedValue, 0);
+}
+const cnParticipants = (c: Contest): User[] => users.filter((u) => u.role === c.cohort && u.status === 'active');
+const cnExcluded = (userId: string): boolean => leaderboardExclusions.some((x) => x.userId === userId);
+
+function cnRank(c: Contest): { ranked: Ranked[]; excluded: string[] } {
+  const all = cnParticipants(c);
+  const inRanking = all.filter((u) => !cnExcluded(u.id));
+  if (c.final) {
+    const ranked = c.final.rows.map((r) => ({ userId: r.userId, value: r.value, rating: byId(users, r.userId)?.rating ?? 0, rank: r.rank }));
+    return { ranked, excluded: all.filter((u) => cnExcluded(u.id)).map((u) => u.id) };
+  }
+  if (Date.now() < Date.parse(c.startsAt)) return { ranked: [], excluded: [] };
+  return { ranked: rankAll(inRanking.map((u) => ({ userId: u.id, value: cnValueOf(c, u.id), rating: u.rating ?? 0 }))), excluded: all.filter((u) => cnExcluded(u.id)).map((u) => u.id) };
+}
+
+/** Freezes a finished contest's standings, and records every change in a live one so a standing never shifts without a visible reason. */
+function syncContests(now: number): void {
+  for (const c of contests) {
+    const phase = phaseOf(c, now);
+    if ((phase === 'closed' || phase === 'ended_early') && !c.final) {
+      const { ranked } = cnRank(c);
+      c.final = { at: new Date(now).toISOString(), rows: ranked.map((r) => ({ userId: r.userId, rank: r.rank, value: r.value })) };
+      continue;
+    }
+    if (phase !== 'active') continue;
+    const { ranked } = cnRank(c);
+    const prev = contestSnapshots.get(c.id);
+    const next: Record<string, { value: number; rank: number }> = {};
+    for (const r of ranked) next[r.userId] = { value: r.value, rank: r.rank };
+    contestSnapshots.set(c.id, next);
+    if (!prev) continue;
+    const at = new Date(now).toISOString();
+    const anyDrop = ranked.some((r) => prev[r.userId] && r.value < prev[r.userId].value);
+    for (const r of ranked) {
+      const before = prev[r.userId];
+      if (!before) continue;
+      if (r.value !== before.value) { contestMovementCounter += 1; contestMovements.push({ id: `cm-${contestMovementCounter}`, contestId: c.id, userId: r.userId, at, kind: 'value', from: before.value, to: r.value, correction: r.value < before.value, isDemo: true }); }
+      if (r.rank !== before.rank) { contestMovementCounter += 1; contestMovements.push({ id: `cm-${contestMovementCounter}`, contestId: c.id, userId: r.userId, at, kind: 'rank', from: before.rank, to: r.rank, correction: anyDrop, isDemo: true }); }
+    }
+  }
+}
+
+const cnRewardView = (r: ContestReward): ContestRewardView => ({ rank: r.rank, kind: r.kind, amount: r.amount ?? null, label: r.label ?? null });
+const cnListItem = (c: Contest, now: number): ContestListItem => ({
+  id: c.id, code: c.code, name: c.name, description: c.description ?? null, cohort: c.cohort, metric: c.metric, phase: phaseOf(c, now), startsAt: c.startsAt, endsAt: c.endsAt, endedAt: c.endedAt ?? null, endedReason: c.endedReason ?? null,
+  rewards: [...c.rewards].sort((a, b) => a.rank - b.rank).map(cnRewardView), participants: cnParticipants(c).length,
+});
+
+function cnDetailOf(c: Contest, viewer: User, now: number): ContestDetailView {
+  const admin = viewer.role === 'admin';
+  const { ranked, excluded } = cnRank(c);
+  const rewardAt = (rank: number): ContestRewardView | null => { const r = c.rewards.find((x) => x.rank === rank); return r ? cnRewardView(r) : null; };
+  const recent = contestMovements.filter((m) => m.contestId === c.id);
+  const corrected = (userId: string): string | null => recent.filter((m) => m.userId === userId && m.kind === 'value' && m.correction && now - Date.parse(m.at) <= CORRECTION_NOTE_MS).map((m) => m.at).sort().pop() ?? null;
+  const nameOfRow = (userId: string): string => { const n = byId(users, userId)?.name ?? userId; return admin || userId === viewer.id ? n : shortName(n); };
+  const rows: ContestStandingRow[] = ranked.map((r, i) => ({ userId: r.userId, name: nameOfRow(r.userId), rank: r.rank, value: r.value, isMe: r.userId === viewer.id, tiedWithNext: tiedOnNumber(r, ranked[i + 1]), reward: rewardAt(r.rank), correctedAt: corrected(r.userId) }));
+  let me: ContestMeView | null = null;
+  if (!admin) {
+    const mine = ranked.find((r) => r.userId === viewer.id);
+    if (mine) {
+      const above = ranked[mine.rank - 2] ?? null;
+      const g = gapToAbove(mine, above);
+      const prizeRanks = c.rewards.map((r) => r.rank).filter((k) => k < mine.rank).sort((a, b) => b - a);
+      const k = prizeRanks[0];
+      const need = k ? toReachRank(mine, ranked, k) : null;
+      me = {
+        rank: mine.rank, value: mine.value, ofTotal: ranked.length, reward: rewardAt(mine.rank), above: g && above ? { name: nameOfRow(above.userId), gap: g.gap, toPass: g.toPass } : null,
+        toPrize: k && need !== null ? { rank: k, reward: rewardAt(k) as ContestRewardView, toPass: need } : null, paused: false,
+      };
+    } else if (excluded.includes(viewer.id)) me = { rank: 0, value: cnValueOf(c, viewer.id), ofTotal: ranked.length, reward: null, above: null, toPrize: null, paused: true };
+  }
+  const moves = recent.filter((m) => admin || m.userId === viewer.id).sort((a, b) => (a.at < b.at ? 1 : -1)).slice(0, MOVEMENTS_SHOWN);
+  return JSON.parse(JSON.stringify({
+    contest: cnListItem(c, now), frozen: !!c.final, closingSoon: phaseOf(c, now) === 'active' && closingSoon(c.endsAt, now), rows, total: ranked.length, me,
+    movements: moves.map((m): ContestMovementView => ({ id: m.id, at: m.at, kind: m.kind, from: m.from, to: m.to, correction: m.correction, userName: admin ? nameOf(m.userId) : null })), excludedCount: admin ? excluded.length : 0,
+  })) as ContestDetailView;
+}
+
 
 const tcCanLead = (userId: string): boolean => (byId(users, userId)?.role === 'technician' ? tcEffectsOf('technician', tierNow(userId), Date.now()).canLead !== false : true);
 
@@ -18917,6 +19039,35 @@ export const memoryRepository: Repository = {
       paDecide({ entryId: e.id, kind: 'released', at: new Date(now).toISOString(), byName: admin.name });
       syncCommitments(now);
       return JSON.parse(JSON.stringify(paRowOf(byId(commissions, e.id) as CommissionEntry, now, paContext()))) as PayoutQueueRow;
+    }),
+
+  /* --------------------------------- Rewards & gamification leaderboard (165) */
+  getContestLeaderboard: (contestId, userId) =>
+    simulateRead((): ContestLeaderboardView => {
+      const viewer = byId(users, userId);
+      if (!viewer || (viewer.role !== 'admin' && viewer.role !== 'surveyor' && viewer.role !== 'technician')) throw new RepositoryError('forbidden');
+      const now = Date.now();
+      syncContests(now);
+      const visible = contests.filter((c) => viewer.role === 'admin' || c.cohort === viewer.role);
+      const order = { active: 0, scheduled: 1, closed: 2, ended_early: 2 } as const;
+      const sorted = [...visible].sort((a, b) => order[phaseOf(a, now)] - order[phaseOf(b, now)] || (phaseOf(a, now) === 'closed' || phaseOf(a, now) === 'ended_early' ? Date.parse(b.endsAt) - Date.parse(a.endsAt) : phaseOf(a, now) === 'scheduled' ? Date.parse(a.startsAt) - Date.parse(b.startsAt) : Date.parse(a.endsAt) - Date.parse(b.endsAt)));
+      const shown = sorted.filter((c, i) => phaseOf(c, now) === 'active' || phaseOf(c, now) === 'scheduled' || sorted.slice(0, i).filter((x) => phaseOf(x, now) === 'closed' || phaseOf(x, now) === 'ended_early').length < 3);
+      const pick = contestId ? shown.find((c) => c.id === contestId) ?? visible.find((c) => c.id === contestId) : shown[0];
+      if (contestId && !pick) throw new RepositoryError('not_found');
+      return JSON.parse(JSON.stringify({ at: new Date(now).toISOString(), contests: shown.map((c) => cnListItem(c, now)), selected: pick ? cnDetailOf(pick, viewer, now) : null })) as ContestLeaderboardView;
+    }),
+
+  listLeaderboardExclusions: () => simulateRead(() => JSON.parse(JSON.stringify(leaderboardExclusions)) as LeaderboardExclusion[]),
+
+  setLeaderboardExclusion: (userId, reason, adminId) =>
+    simulateWrite((): LeaderboardExclusion[] => {
+      const admin = ofAdmin(adminId);
+      const i = leaderboardExclusions.findIndex((x) => x.userId === userId);
+      if (reason === null) { if (i >= 0) leaderboardExclusions.splice(i, 1); }
+      else if (i >= 0) leaderboardExclusions[i] = { ...leaderboardExclusions[i], reason: reason || 'flagged for review' };
+      else leaderboardExclusions.push({ userId, reason: reason || 'flagged for review', byName: admin.name, at: new Date().toISOString() });
+      syncContests(Date.now());
+      return JSON.parse(JSON.stringify(leaderboardExclusions)) as LeaderboardExclusion[];
     }),
 
   /* --------------------------------- Automated payout disbursement (164) */

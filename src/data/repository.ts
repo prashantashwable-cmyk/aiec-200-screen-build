@@ -11,6 +11,7 @@ import type { CompleteInput, DecisionSignal, Phase as InterviewPhase } from '@/f
 import type { Demand, GuideAnswers, InterestProblem, InterestRole, RecruitRole, RecruitSource } from '@/features/recruitment/interest';
 import type { Outstanding, SectionId } from '@/features/recruitment/application';
 import type { JudgementDecision, JudgementProblem, ShareBasis } from '@/features/commission/finalPayout';
+import type { ContestMetric, ContestPhase } from '@/features/rewards/standings';
 import type { DisbursementKind, DisbursementMethod, DisbursementStatus, FailureReason as DisbursementFailure, RetryProblem } from '@/features/commission/disbursement';
 import type { HoldKind as PayoutHoldKind, PayoutFlag, QueueState as PayoutQueueState, SkipReason as PayoutSkipReason } from '@/features/commission/payoutApproval';
 import type { AttentionKind as PayoutAttentionKind, PayoutCategory, PayoutStatus, Spike as PayoutSpike, Trend as PayoutTrend } from '@/features/commission/payoutTracker';
@@ -68,6 +69,7 @@ import type {
   HandoverCompletion,
   FinalPayoutLine,
   PayoutJudgement,
+  LeaderboardExclusion,
   CompletionMilestone,
   AmcPricingTier,
   SnagEvent,
@@ -6344,6 +6346,82 @@ export interface DisbursementActionResult {
   skipped: { partnerId: string; partnerName: string; reason: string }[];
   run: PayoutRunView | null;
 }
+/* ------------------------------------------------------------------ Rewards & gamification leaderboard (165) */
+
+export interface ContestRewardView {
+  rank: number;
+  kind: 'cash' | 'recognition';
+  amount: number | null;
+  label: string | null;
+}
+export interface ContestListItem {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  cohort: 'surveyor' | 'technician';
+  metric: ContestMetric;
+  phase: ContestPhase;
+  startsAt: string;
+  endsAt: string;
+  endedAt: string | null;
+  endedReason: string | null;
+  rewards: ContestRewardView[];
+  participants: number;
+}
+export interface ContestStandingRow {
+  userId: string;
+  name: string;
+  rank: number;
+  value: number;
+  isMe: boolean;
+  /** Level on the number with the one below, so the order is explained. */
+  tiedWithNext: boolean;
+  reward: ContestRewardView | null;
+  /** A number here went down in the last week: a record was corrected. */
+  correctedAt: string | null;
+}
+export interface ContestMovementView {
+  id: string;
+  at: string;
+  kind: 'value' | 'rank';
+  from: number;
+  to: number;
+  correction: boolean;
+  /** Whose movement it is: only ever the viewer's own, or any for Admin. */
+  userName: string | null;
+}
+export interface ContestMeView {
+  rank: number;
+  value: number;
+  ofTotal: number;
+  reward: ContestRewardView | null;
+  /** The person directly above, and how far. */
+  above: { name: string; gap: number; toPass: number } | null;
+  /** The nearest prize place not yet held, and what it takes. */
+  toPrize: { rank: number; reward: ContestRewardView; toPass: number } | null;
+  /** Taken out of the ranking pending a review. */
+  paused: boolean;
+}
+export interface ContestDetailView {
+  contest: ContestListItem;
+  /** Frozen at the close: later corrections never change who won. */
+  frozen: boolean;
+  closingSoon: boolean;
+  rows: ContestStandingRow[];
+  total: number;
+  me: ContestMeView | null;
+  movements: ContestMovementView[];
+  /** Admin only: how many are out of the ranking pending a review. */
+  excludedCount: number;
+}
+export interface ContestLeaderboardView {
+  at: string;
+  contests: ContestListItem[];
+  selected: ContestDetailView | null;
+}
+export type ContestProblem = 'not_found' | 'forbidden';
+
 export type DisbursementProblem =
   | 'not_found'
   | 'not_failed'
@@ -7204,6 +7282,10 @@ export interface Repository {
   handleTrainingFeedback(feedbackId: string, input: { status: FeedbackStatusName; note: string; addressedInVersion?: number }, adminId: string): Promise<FeedbackItemView>;
   /** Hides (or restores) a comment that is abusive or not constructive; its ratings keep counting. */
   moderateTrainingFeedback(feedbackId: string, input: { hide: boolean; reason: string }, adminId: string): Promise<FeedbackItemView>;
+  // Rewards & gamification leaderboard (165)
+  getContestLeaderboard(contestId: string | null, userId: string): Promise<ContestLeaderboardView>;
+  listLeaderboardExclusions(): Promise<LeaderboardExclusion[]>;
+  setLeaderboardExclusion(userId: string, reason: string | null, adminId: string): Promise<LeaderboardExclusion[]>;
   // Automated payout disbursement (164)
   getPayoutDisbursements(filter: DisbursementFilter, adminId: string): Promise<DisbursementBoardView>;
   getDisbursementDetail(disbursementId: string, adminId: string): Promise<DisbursementDetailView>;

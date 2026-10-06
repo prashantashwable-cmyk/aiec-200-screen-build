@@ -4592,6 +4592,61 @@ export interface CommissionEntry {
   isDemo: boolean;
 }
 
+/* ------------------------------------------------------------------ Contests and the leaderboard (165, configured by 167) */
+
+export interface ContestReward {
+  /** The place that earns it: 1 for the winner. */
+  rank: number;
+  kind: 'cash' | 'recognition';
+  /** Rupees, for a cash reward. */
+  amount?: number;
+  /** What a recognition reward is (a badge, a shout-out), written by Admin. */
+  label?: string;
+}
+
+/**
+ * A time-boxed competition on one number (165 reads it, 167 configures it). The phase is never stored: it follows the dates, or `endedAt` when Admin stopped it early.
+ * Once it closes, `final` freezes the standings so a later data correction can never silently change who won.
+ */
+export interface Contest {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+  cohort: 'surveyor' | 'technician';
+  metric: 'leadsCaptured' | 'leadsConverted' | 'revenue' | 'jobsCompleted';
+  startsAt: string;
+  endsAt: string;
+  rewards: ContestReward[];
+  createdByName: string;
+  createdAt: string;
+  endedAt?: string;
+  endedReason?: string;
+  final?: { at: string; rows: { userId: string; rank: number; value: number }[] };
+  isDemo: boolean;
+}
+
+/** A change in someone's standing, kept so a number never moves without a visible reason. `correction` = the number went down, which only a corrected record can do. */
+export interface ContestMovement {
+  id: string;
+  contestId: string;
+  userId: string;
+  at: string;
+  kind: 'value' | 'rank';
+  from: number;
+  to: number;
+  correction: boolean;
+  isDemo: boolean;
+}
+
+/** Someone Admin has taken out of the ranking pending a review (024). One list, shared by every view of the ranking. */
+export interface LeaderboardExclusion {
+  userId: string;
+  reason: string;
+  byName: string;
+  at: string;
+}
+
 /** Where a partner is paid (164). The full number never leaves the repository; views show the last four digits. `simulatedBank` stands in for what the bank itself would answer. */
 export interface PayoutAccount {
   userId: string;

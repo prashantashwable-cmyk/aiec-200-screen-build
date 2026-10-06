@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useData } from '@/data/DataProvider';
+import { useSession } from '@/session/SessionProvider';
 import { formatINRCompact, formatPercent } from '@/design-system';
 import type { SurveyorScore, TechnicianScore } from '@/data/repository';
 import {
@@ -8,8 +9,6 @@ import {
   TECHNICIAN_METRICS,
 } from './leaderboard.types';
 import type { Cohort, LeaderboardRow, LeaderboardStatus, MetricId, PeriodId, ViewMode } from './leaderboard.types';
-
-const EXCLUDED_STORAGE_KEY = 'aiec.leaderboardExclusions';
 
 interface LeaderboardState {
   status: LeaderboardStatus;
@@ -26,14 +25,6 @@ interface LeaderboardState {
   excludeWorker: (userId: string, reason: string) => void;
   includeWorker: (userId: string) => void;
   reload: () => Promise<void>;
-}
-
-function readExclusions(): Record<string, string> {
-  try {
-    return JSON.parse(localStorage.getItem(EXCLUDED_STORAGE_KEY) ?? '{}') as Record<string, string>;
-  } catch {
-    return {};
-  }
 }
 
 function joinedWithin(joinedAt: string | undefined, days: number): boolean {
@@ -61,6 +52,7 @@ function sparklineFor(seed: string, base: number): number[] {
  */
 export function useLeaderboard(): LeaderboardState {
   const repository = useData();
+  const { user } = useSession();
   const [status, setStatus] = useState<LeaderboardStatus>('loading');
   const [cohort, setCohortState] = useState<Cohort>('surveyor');
   const [period, setPeriod] = useState<PeriodId>('month');
@@ -70,16 +62,19 @@ export function useLeaderboard(): LeaderboardState {
   const [technicianScores, setTechnicianScores] = useState<TechnicianScore[]>([]);
   const [users, setUsers] = useState<Record<string, string>>({});
   const [joinDates, setJoinDates] = useState<Record<string, string | undefined>>({});
-  const [exclusions, setExclusions] = useState<Record<string, string>>(readExclusions);
+  // Shared with every other view of the ranking (the partners' contest standings read it too), so it lives in the repository, not on this device.
+  const [exclusions, setExclusions] = useState<Record<string, string>>({});
 
   const reload = useCallback(async () => {
     setStatus('loading');
     try {
-      const [surveyors, technicians, allUsers] = await Promise.all([
+      const [surveyors, technicians, allUsers, excluded] = await Promise.all([
         repository.getSurveyorScores(),
         repository.getTechnicianScores(),
         repository.listUsers(),
+        repository.listLeaderboardExclusions(),
       ]);
+      setExclusions(Object.fromEntries(excluded.map((x) => [x.userId, x.reason])));
       setSurveyorScores(surveyors);
       setTechnicianScores(technicians);
       setUsers(Object.fromEntries(allUsers.map((u) => [u.id, u.name])));
@@ -167,21 +162,16 @@ export function useLeaderboard(): LeaderboardState {
   }, [cohort, metric, view, surveyorScores, technicianScores, users, joinDates, exclusions]);
 
   const excludeWorker = useCallback((userId: string, reason: string) => {
-    setExclusions((current) => {
-      const next = { ...current, [userId]: reason || 'flagged for review' };
-      localStorage.setItem(EXCLUDED_STORAGE_KEY, JSON.stringify(next));
-      return next;
-    });
-  }, []);
+    if (!user) return;
+    setExclusions((current) => ({ ...current, [userId]: reason || 'flagged for review' }));
+    void repository.setLeaderboardExclusion(userId, reason || 'flagged for review', user.id).catch(() => void reload());
+  }, [repository, user, reload]);
 
   const includeWorker = useCallback((userId: string) => {
-    setExclusions((current) => {
-      const next = { ...current };
-      delete next[userId];
-      localStorage.setItem(EXCLUDED_STORAGE_KEY, JSON.stringify(next));
-      return next;
-    });
-  }, []);
+    if (!user) return;
+    setExclusions((current) => { const next = { ...current }; delete next[userId]; return next; });
+    void repository.setLeaderboardExclusion(userId, null, user.id).catch(() => void reload());
+  }, [repository, user, reload]);
 
   return {
     status,

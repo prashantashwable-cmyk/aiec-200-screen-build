@@ -1,7 +1,9 @@
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { ChatCircleText } from '@phosphor-icons/react';
 import {
   Badge,
+  Button,
   Card,
   EmptyState,
   ErrorState,
@@ -34,6 +36,7 @@ const STATUS_TONE = {
  */
 export function CommissionTrackerView() {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
   const toast = useToast();
   const s = useCommissionTracker();
 
@@ -71,7 +74,7 @@ export function CommissionTrackerView() {
 
   return (
     <Screen>
-      <ScreenHeader title={t(K.title)} subtitle={t(K.subtitle)} />
+      <ScreenHeader title={t(K.title)} subtitle={t(K.subtitle)} action={<Button size="sm" variant="secondary" data-open-rewards onClick={() => navigate('/rewards-leaderboard')}>{t('rewardsLeaderboard.link.open')}</Button>} />
 
       <SegBar
         label={t(K.period.thisMonth)}

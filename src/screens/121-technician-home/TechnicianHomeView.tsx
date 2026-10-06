@@ -125,6 +125,8 @@ export function TechnicianHomeView() {
         )}
       </div>
 
+      <div className="mb-3"><Button size="sm" variant="secondary" data-open-rewards onClick={() => navigate("/rewards-leaderboard")}>{t("rewardsLeaderboard.link.open")}</Button></div>
+
       {sosBanner && (
         <SosStatus
           attempt={h.sos}
