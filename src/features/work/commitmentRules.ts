@@ -150,6 +150,7 @@ export interface CommitmentSources {
   complianceReview: { dueAt: string; cycle: string; done: boolean };
   /** SOP rollouts: each affected partner's own acknowledgement, and Admin's look at what is still open (159). */
   /** Serious training feedback Admin has not dealt with, and the standing look at the routine kind (160). */
+  contests: { live: { contestId: string; name: string; endsAt: string; userId: string; closing: boolean }[]; results: { contestId: string; name: string; userId: string; rank: number; total: number; early: boolean; closedAt: string; open: boolean }[] };
   payoutDisbursements: { attention: { count: number; oldestAt: string | null } };
   payoutApprovals: { pending: { count: number; oldestAt: string | null }; held: { id: string; partnerName: string; since: string }[] };
   commissionNotices: { ruleId: string; version: number; userId: string; role: 'surveyor' | 'technician'; effectiveFrom: string; from: string; to: string; open: boolean }[];
@@ -2178,6 +2179,71 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
           oversightRoute: '/payout-disbursement?state=attention',
         },
       ];
+    },
+  },
+  {
+    // A partner is told a contest they can win is running (the launch), and again in its last day (167). Heads-ups on their own list, never work: they are cancelled when the contest ends.
+    kind: 'contest_live',
+    nudgeBefore: days(365),
+    escalateAfter: days(365),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'staffing',
+    collect(src) {
+      return src.contests.live.map((x) => ({
+        ...base('contest_live', 'application', `${x.contestId}:${x.userId}`),
+        ownerUserId: x.userId,
+        titleKey: 'work.title.contest_live',
+        titleParams: { name: x.name },
+        dueAt: x.endsAt,
+        state: 'open' as const,
+        paused: false,
+        actionRoute: `/rewards-leaderboard?contest=${x.contestId}`,
+        oversightRoute: '/contest-setup',
+      }));
+    },
+  },
+  {
+    kind: 'contest_closing',
+    nudgeBefore: days(2),
+    escalateAfter: days(365),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'staffing',
+    collect(src) {
+      return src.contests.live.filter((x) => x.closing).map((x) => ({
+        ...base('contest_closing', 'application', `${x.contestId}:${x.userId}`),
+        ownerUserId: x.userId,
+        titleKey: 'work.title.contest_closing',
+        titleParams: { name: x.name },
+        dueAt: x.endsAt,
+        state: 'open' as const,
+        paused: false,
+        actionRoute: `/rewards-leaderboard?contest=${x.contestId}`,
+        oversightRoute: '/contest-setup',
+      }));
+    },
+  },
+  {
+    // The result is told to everyone who took part, with their own place (167), for a week.
+    kind: 'contest_result',
+    nudgeBefore: days(30),
+    escalateAfter: days(365),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'staffing',
+    collect(src) {
+      return src.contests.results.map((x) => ({
+        ...base('contest_result', 'application', `${x.contestId}:${x.userId}`),
+        ownerUserId: x.userId,
+        titleKey: x.early ? 'work.title.contest_result_early' : 'work.title.contest_result',
+        titleParams: { name: x.name, rank: String(x.rank), total: String(x.total) },
+        dueAt: new Date(Date.parse(x.closedAt) + 7 * 86_400_000).toISOString(),
+        state: x.open ? ('open' as const) : ('cancelled' as const),
+        paused: false,
+        actionRoute: `/rewards-leaderboard?contest=${x.contestId}`,
+        oversightRoute: '/contest-setup',
+      }));
     },
   },
   {

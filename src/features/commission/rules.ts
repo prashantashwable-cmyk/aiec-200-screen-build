@@ -101,6 +101,7 @@ export const RULE_OF_REASON: Record<string, CommissionRuleId | null> = {
   'commission.reason.installationCompleted': 'install_pool',
   'commission.reason.qcCompleted': 'qc_fee',
   'commission.reason.monthlyBonus': null,
+  'commission.reason.contestPrize': null,
   'commission.reason.exitSettlement': null,
 };
 

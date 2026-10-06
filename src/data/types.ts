@@ -4576,6 +4576,9 @@ export interface CommissionEntry {
   payoutRole?: 'surveyor' | 'sales' | 'technician_lead' | 'technician' | 'qc_inspector';
   /** The judgement (140) that is holding this entry back: it stays `projected` until Admin releases it. */
   heldBy?: string;
+  /** Set on a contest prize (167): which contest and the place that earned it. */
+  contestId?: string;
+  contestRank?: number;
   /** The commission rule (161) and the version of it that was in force when this was earned. Older entries carry none and are traced by their reason and date. */
   ruleId?: string;
   ruleVersion?: number;
@@ -4623,6 +4626,15 @@ export interface Contest {
   endedAt?: string;
   endedReason?: string;
   final?: { at: string; rows: { userId: string; rank: number; value: number }[] };
+  /** Who may take part (167): partners with at least this much tenure on the day it starts, and whether someone who joins later can take part (counting only from the day they joined). */
+  minTenureDays?: number;
+  allowLateJoiners?: boolean;
+  /** Whether the prizes are paid at the close; an early end chooses (`none` when the contest was flawed). */
+  rewardPolicy?: 'pay' | 'none';
+  /** What closing paid out: each cash prize is a real commission entry, cleared through the payout approval like any other (163); a recognition prize is recorded. `legacy` = settled before this record existed. */
+  rewarded?: { at: string; entries: { userId: string; rank: number; kind: 'cash' | 'recognition'; amount?: number; label?: string; entryId?: string }[]; skipped: { rank: number; reason: 'no_winner' | 'nothing_earned' | 'not_paid' }[]; legacy?: boolean };
+  /** Append-only: who did what to this contest and when. */
+  events?: { at: string; kind: 'created' | 'edited' | 'launched' | 'ended_early' | 'closed' | 'rewarded' | 'cancelled'; byName: string; detail?: string }[];
   isDemo: boolean;
 }
 
@@ -4896,7 +4908,7 @@ export type CommitmentKind =
   | 'exit_dispute_decide'
   | 'tier_review_due'
   | 'certification_renewal'
-  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention'
+  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'

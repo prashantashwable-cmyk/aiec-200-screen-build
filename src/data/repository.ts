@@ -11,6 +11,7 @@ import type { CompleteInput, DecisionSignal, Phase as InterviewPhase } from '@/f
 import type { Demand, GuideAnswers, InterestProblem, InterestRole, RecruitRole, RecruitSource } from '@/features/recruitment/interest';
 import type { Outstanding, SectionId } from '@/features/recruitment/application';
 import type { JudgementDecision, JudgementProblem, ShareBasis } from '@/features/commission/finalPayout';
+import type { ContestInput, ContestProblem as ContestConfigProblem, EarlyEndProblem, PreviewCheck } from '@/features/rewards/contestConfig';
 import type { BadgeCategory, BadgeIcon, BadgeMetric, Progress as BadgeProgress, Rarity as BadgeRarity } from '@/features/rewards/badges';
 import type { ContestMetric, ContestPhase } from '@/features/rewards/standings';
 import type { DisbursementKind, DisbursementMethod, DisbursementStatus, FailureReason as DisbursementFailure, RetryProblem } from '@/features/commission/disbursement';
@@ -6423,6 +6424,58 @@ export interface ContestLeaderboardView {
 }
 export type ContestProblem = 'not_found' | 'forbidden';
 
+/* ------------------------------------------------------------------ Contest configuration (167) */
+
+export interface ContestEventView { at: string; kind: string; byName: string; detail: string | null }
+export interface ContestAdminRow extends ContestListItem {
+  minTenureDays: number;
+  allowLateJoiners: boolean;
+  durationDays: number;
+  totalCash: number;
+  /** Rules cannot change once it has started. */
+  locked: boolean;
+  rewardPolicy: 'pay' | 'none' | null;
+  /** The people in the reward places once it is over (only as many as there are places). */
+  winners: { rank: number; name: string; value: number }[];
+  /** What closing paid out as real commission entries, or null when nothing was (yet). */
+  paid: { entries: number; amount: number } | null;
+  legacy: boolean;
+}
+export interface ContestAdminBoard {
+  at: string;
+  contests: ContestAdminRow[];
+  counts: { live: number; scheduled: number; finished: number; all: number };
+  limits: { maxCash: number; maxPlaces: number; minDays: number; maxDays: number; maxTenureDays: number; endReasonMin: number };
+}
+export interface ContestOutcomeView {
+  participants: number;
+  /** Total of the competed number during the contest and over an equally long stretch before it. */
+  during: number;
+  before: number;
+  /** Surveyor contests only: how the leads captured in each stretch turned out so far, so a quantity contest can be weighed against quality. */
+  quality: { during: { captured: number; won: number; lost: number }; before: { captured: number; won: number; lost: number } } | null;
+  small: boolean;
+}
+export interface ContestPrizeView { entryId: string; name: string; rank: number; amount: number; ledger: 'projected' | 'approved' | 'paid' | 'forfeited'; approval: 'pending' | 'held' | 'cleared' | null }
+export interface ContestAdminDetail {
+  row: ContestAdminRow;
+  standings: { rank: number; name: string; value: number }[];
+  events: ContestEventView[];
+  outcome: ContestOutcomeView | null;
+  prizes: ContestPrizeView[];
+  recognitions: { rank: number; name: string; label: string }[];
+}
+export interface ContestPreviewView {
+  window: { from: string; to: string; trailing: boolean };
+  participants: number;
+  rows: { rank: number; name: string; value: number }[];
+  checks: PreviewCheck[];
+  problem: ContestConfigProblem | null;
+}
+export type ContestSaveProblem = ContestConfigProblem | 'locked' | 'not_found' | 'not_admin';
+export type ContestEndProblem = EarlyEndProblem | 'not_live' | 'not_found' | 'not_admin';
+export type { ContestInput };
+
 /* ------------------------------------------------------------------ Badges & milestones (166) */
 
 export interface BadgeEntryView {
@@ -7325,6 +7378,15 @@ export interface Repository {
   handleTrainingFeedback(feedbackId: string, input: { status: FeedbackStatusName; note: string; addressedInVersion?: number }, adminId: string): Promise<FeedbackItemView>;
   /** Hides (or restores) a comment that is abusive or not constructive; its ratings keep counting. */
   moderateTrainingFeedback(feedbackId: string, input: { hide: boolean; reason: string }, adminId: string): Promise<FeedbackItemView>;
+  // Contest configuration (167)
+  getContestAdminBoard(adminId: string): Promise<ContestAdminBoard>;
+  getContestAdminDetail(contestId: string, adminId: string): Promise<ContestAdminDetail>;
+  /** Scores a contest as it would stand today, before it is saved or launched. */
+  previewContest(input: ContestInput, adminId: string, excludeId?: string): Promise<ContestPreviewView>;
+  /** Creates a contest, or (with `id`) changes one that has not started. */
+  saveContest(input: ContestInput & { id?: string }, adminId: string): Promise<ContestAdminRow>;
+  cancelScheduledContest(contestId: string, adminId: string): Promise<ContestAdminBoard>;
+  endContestEarly(contestId: string, input: { reason: string; rewards: 'pay' | 'none' }, adminId: string): Promise<ContestAdminRow>;
   // Badges & milestones (166)
   getBadgeCollection(userId: string): Promise<BadgeCollectionView>;
   // Rewards & gamification leaderboard (165)

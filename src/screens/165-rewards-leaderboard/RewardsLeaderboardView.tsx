@@ -47,7 +47,7 @@ export function RewardsLeaderboardScreen() {
           {d.contests.length > 1 && <Picker d={d} s={s} t={t} />}
           {!d.contests.some((c) => c.phase === 'active') && <None d={d} t={t} />}
           {d.selected && <Contest v={d.selected} s={s} t={t} admin={admin} />}
-          {admin && <div className="row gap-2 wrap" style={{ alignItems: 'center' }}><p className="t-xs t-muted" data-admin-note>{t(K.admin.note)}</p><Button size="sm" variant="secondary" data-open-leaderboard onClick={() => s.goTo('/admin/analytics/leaderboard')}>{t(K.admin.leaderboard)}</Button></div>}
+          {admin && <div className="row gap-2 wrap" style={{ alignItems: 'center' }}><p className="t-xs t-muted" data-admin-note>{t(K.admin.note)}</p><Button size="sm" variant="secondary" data-open-leaderboard onClick={() => s.goTo('/admin/analytics/leaderboard')}>{t(K.admin.leaderboard)}</Button><Button size="sm" variant="secondary" data-open-setup onClick={() => s.goTo('/contest-setup')}>{t('contestSetup.link.open')}</Button></div>}
           <p className="t-xs t-muted" data-placeholder>{t(K.placeholder, { poll: LIVE_POLL_MS / 1000, closing: CLOSING_POLL_MS / 1000, hours: Math.round(CLOSING_SOON / 3_600_000), days: CORRECTION_NOTE_DAYS })}</p>
         </div>
       </Screen>

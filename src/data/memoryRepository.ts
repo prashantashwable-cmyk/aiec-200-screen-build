@@ -268,6 +268,12 @@ import type {
   PayoutBatchResult,
   PayoutDecisionView,
   PayoutQueueRow,
+  ContestAdminBoard,
+  ContestAdminDetail,
+  ContestAdminRow,
+  ContestPreviewView,
+  ContestPrizeView,
+  ContestOutcomeView,
   BadgeCollectionView,
   BadgeEntryView,
   BadgeNextView,
@@ -866,6 +872,9 @@ import type { HoldKind as PaHoldKind, PayoutFlag as PaFlag } from '@/features/co
 import { ATTENTION_DUE as DB_ATTENTION_DUE, NOTE_MIN as DB_NOTE_MIN, RUNS_SHOWN as DB_RUNS_SHOWN, SETTLE_MS as DB_SETTLE_MS, UPI_LIMIT as DB_UPI_LIMIT, detailsProblem as dbDetailsProblem, groupTransfers as dbGroupTransfers, hasBank as dbHasBank, hasUpi as dbHasUpi, lastSlot as dbLastSlot, maskAccount as dbMask, methodFor as dbMethodFor, needsDetails as dbNeedsDetails, nextSlot as dbNextSlot, railOutcome as dbRailOutcome, retryProblem as dbRetryProblem, scheduleProblem as dbScheduleProblem } from '@/features/commission/disbursement';
 import { CORRECTION_NOTE_MS, MOVEMENTS_SHOWN, closingSoon, gapToAbove, phaseOf, rankAll, shortName, tiedOnNumber, toReachRank } from '@/features/rewards/standings';
 import type { Ranked } from '@/features/rewards/standings';
+import { MAX_CASH as CF_MAX_CASH, MAX_DAYS as CF_MAX_DAYS, MAX_PLACES as CF_MAX_PLACES, MAX_TENURE_DAYS as CF_MAX_TENURE, MIN_DAYS as CF_MIN_DAYS, END_REASON_MIN as CF_END_REASON_MIN, PREVIEW_SHOWN as CF_PREVIEW_SHOWN, START_NOW_SLACK as CF_START_NOW_SLACK, contestProblem as cfContestProblem, earlyEndProblem as cfEarlyEndProblem, previewChecks as cfPreviewChecks } from '@/features/rewards/contestConfig';
+import type { ContestInput } from '@/features/rewards/contestConfig';
+import type { ContestPhase } from '@/features/rewards/standings';
 import { BADGE_DEFS, NEXT_SHOWN as BADGE_NEXT_SHOWN, crossingDate as bdCrossing, defOf as defOfBadge, isNew as badgeIsNew, progressOf as badgeProgressOf, rarityOf as badgeRarityOf, versionInForce as badgeVersionInForce, versionOf as badgeVersionOf } from '@/features/rewards/badges';
 import type { BadgeDef, BadgeMetric, BadgeRole, Rarity as BadgeRarity } from '@/features/rewards/badges';
 import type { DisbursementMethod as DbMethod, FailureReason as DbFailure } from '@/features/commission/disbursement';
@@ -2579,6 +2588,7 @@ function commitmentSources(now: number): CommitmentSources {
     commissionNotices: commissionNoticeSignals(Date.now()),
     payoutApprovals: payoutApprovalSignals(Date.now()),
     payoutDisbursements: payoutDisbursementSignals(),
+    contests: contestSignals(Date.now()),
     exits: exitSignals(),
     handoverReviews: handoverSignals().reviews,
     qcMechChecks,
@@ -9524,9 +9534,10 @@ const cnAhead = (d: number): string => new Date(Date.now() + d * cnDay).toISOStr
 const contests: Contest[] = [
   { id: 'cn-1', code: 'AIEC-CN-1001', name: 'October lead-capture sprint', description: 'Capture good leads and see them through: every lead you capture in the window counts.', cohort: 'surveyor', metric: 'leadsCaptured', startsAt: cnAgo(40), endsAt: cnAhead(5), rewards: [{ rank: 1, kind: 'cash', amount: 5000 }, { rank: 2, kind: 'cash', amount: 3000 }, { rank: 3, kind: 'recognition', label: 'Top Surveyor badge' }], createdByName: 'Prashant Vasant Wable', createdAt: cnAgo(41), isDemo: true },
   { id: 'cn-2', code: 'AIEC-CN-1002', name: 'Installations done right', description: 'Finish installations properly: each job you complete in the window counts.', cohort: 'technician', metric: 'jobsCompleted', startsAt: cnAgo(60), endsAt: cnAhead(12), rewards: [{ rank: 1, kind: 'cash', amount: 6000 }, { rank: 2, kind: 'recognition', label: 'Master Installer shout-out' }], createdByName: 'Prashant Vasant Wable', createdAt: cnAgo(61), isDemo: true },
-  { id: 'cn-3', code: 'AIEC-CN-1003', name: 'September lead capture', description: 'Every good lead you captured in the window.', cohort: 'surveyor', metric: 'leadsCaptured', startsAt: cnAgo(70), endsAt: cnAgo(20), rewards: [{ rank: 1, kind: 'cash', amount: 4000 }, { rank: 2, kind: 'recognition', label: 'Field Star of the month' }], createdByName: 'Prashant Vasant Wable', createdAt: cnAgo(71), isDemo: true },
+  { id: 'cn-3', code: 'AIEC-CN-1003', name: 'September lead capture', description: 'Every good lead you captured in the window.', cohort: 'surveyor', metric: 'leadsCaptured', startsAt: cnAgo(70), endsAt: cnAgo(20), rewards: [{ rank: 1, kind: 'cash', amount: 4000 }, { rank: 2, kind: 'recognition', label: 'Field Star of the month' }], rewardPolicy: 'pay', rewarded: { at: cnAgo(20), entries: [], skipped: [], legacy: true }, createdByName: 'Prashant Vasant Wable', createdAt: cnAgo(71), isDemo: true },
   { id: 'cn-4', code: 'AIEC-CN-1004', name: 'Revenue rally', description: 'Value of the deals you closed.', cohort: 'surveyor', metric: 'revenue', startsAt: cnAhead(6), endsAt: cnAhead(40), rewards: [{ rank: 1, kind: 'cash', amount: 8000 }], createdByName: 'Prashant Vasant Wable', createdAt: cnAgo(2), isDemo: true },
 ];
+let contestCounter = 4;
 const contestMovements: ContestMovement[] = [];
 let contestMovementCounter = 0;
 const contestSnapshots = new Map<string, Record<string, { value: number; rank: number }>>();
@@ -9534,17 +9545,23 @@ const leaderboardExclusions: LeaderboardExclusion[] = [];
 
 const cnEnd = (c: Contest): number => (c.endedAt ? Date.parse(c.endedAt) : Date.parse(c.endsAt));
 /** The number being competed on, counted only inside the contest's own window. Attribution is the leaderboard's (024): the lead's current owner. */
-function cnValueOf(c: Contest, userId: string): number {
-  const from = Date.parse(c.startsAt);
-  const to = cnEnd(c);
-  const within = (iso: string | undefined): boolean => !!iso && Date.parse(iso) >= from && Date.parse(iso) < to;
-  if (c.metric === 'jobsCompleted') return jobs.filter((j) => j.technicianId === userId && j.status === 'completed' && within(j.completedAt)).length;
+function cnMetricIn(metric: Contest['metric'], userId: string, fromMs: number, toMs: number): number {
+  const within = (iso: string | undefined): boolean => !!iso && Date.parse(iso) >= fromMs && Date.parse(iso) < toMs;
+  if (metric === 'jobsCompleted') return jobs.filter((j) => j.technicianId === userId && j.status === 'completed' && within(j.completedAt)).length;
   const own = leads.filter((l) => l.surveyorId === userId);
-  if (c.metric === 'leadsCaptured') return own.filter((l) => within(l.createdAt)).length;
+  if (metric === 'leadsCaptured') return own.filter((l) => within(l.createdAt)).length;
   const won = own.filter((l) => l.stage === 'won' && within(l.stageEnteredAt));
-  return c.metric === 'leadsConverted' ? won.length : won.reduce((a, l) => a + l.estimatedValue, 0);
+  return metric === 'leadsConverted' ? won.length : won.reduce((a, l) => a + l.estimatedValue, 0);
 }
-const cnParticipants = (c: Contest): User[] => users.filter((u) => u.role === c.cohort && u.status === 'active');
+const cnValueOf = (c: Contest, userId: string): number => cnMetricIn(c.metric, userId, Date.parse(c.startsAt), cnEnd(c));
+/** Who may take part: someone who joined after it started only if late joiners are allowed (and then only what they do from joining counts); otherwise tenure on the day it starts. */
+function cnEligible(c: Pick<Contest, 'startsAt' | 'minTenureDays' | 'allowLateJoiners'>, u: User): boolean {
+  const start = Date.parse(c.startsAt);
+  const joined = u.joinedAt ? Date.parse(u.joinedAt) : 0;
+  if (joined > start) return c.allowLateJoiners !== false;
+  return start - joined >= (c.minTenureDays ?? 0) * 86_400_000;
+}
+const cnParticipants = (c: Pick<Contest, 'cohort' | 'startsAt' | 'minTenureDays' | 'allowLateJoiners'>): User[] => users.filter((u) => u.role === c.cohort && u.status === 'active' && cnEligible(c, u));
 const cnExcluded = (userId: string): boolean => leaderboardExclusions.some((x) => x.userId === userId);
 
 function cnRank(c: Contest): { ranked: Ranked[]; excluded: string[] } {
@@ -9563,8 +9580,7 @@ function syncContests(now: number): void {
   for (const c of contests) {
     const phase = phaseOf(c, now);
     if ((phase === 'closed' || phase === 'ended_early') && !c.final) {
-      const { ranked } = cnRank(c);
-      c.final = { at: new Date(now).toISOString(), rows: ranked.map((r) => ({ userId: r.userId, rank: r.rank, value: r.value })) };
+      cnClose(c, now, 'AIEC Assistant');
       continue;
     }
     if (phase !== 'active') continue;
@@ -9621,6 +9637,135 @@ function cnDetailOf(c: Contest, viewer: User, now: number): ContestDetailView {
   })) as ContestDetailView;
 }
 
+
+
+/* ------------------------------------------------------------------ Contest configuration (167) */
+
+const cnEvent = (c: Contest, kind: NonNullable<Contest['events']>[number]['kind'], byName: string, detail?: string, at?: number): void => {
+  c.events = [...(c.events ?? []), { at: new Date(at ?? Date.now()).toISOString(), kind, byName, ...(detail ? { detail } : {}) }];
+};
+
+/** Closing is what pays: each cash prize becomes a real commission entry, cleared through the payout approval like any other (163), and a recognition prize is recorded. Idempotent. */
+function cnClose(c: Contest, now: number, byName: string): void {
+  if (c.final) return;
+  const { ranked } = cnRank(c);
+  const at = new Date(now).toISOString();
+  c.final = { at, rows: ranked.map((r) => ({ userId: r.userId, rank: r.rank, value: r.value })) };
+  cnEvent(c, c.endedAt ? 'ended_early' : 'closed', byName, c.endedReason, now);
+  if (c.rewarded) return;
+  const policy = c.rewardPolicy ?? 'pay';
+  const rewarded: NonNullable<Contest['rewarded']> = { at, entries: [], skipped: [] };
+  for (const r of [...c.rewards].sort((a, b) => a.rank - b.rank)) {
+    const winner = c.final.rows.find((x) => x.rank === r.rank);
+    if (policy === 'none') { rewarded.skipped.push({ rank: r.rank, reason: 'not_paid' }); continue; }
+    if (!winner) { rewarded.skipped.push({ rank: r.rank, reason: 'no_winner' }); continue; }
+    if (winner.value <= 0) { rewarded.skipped.push({ rank: r.rank, reason: 'nothing_earned' }); continue; }
+    if (r.kind === 'cash') {
+      const entry: CommissionEntry = { id: `c-${c.id}-${r.rank}`, userId: winner.userId, reasonKey: 'commission.reason.contestPrize', amount: r.amount ?? 0, status: 'approved', earnedAt: at, contestId: c.id, contestRank: r.rank, isDemo: true };
+      commissions.push(entry);
+      rewarded.entries.push({ userId: winner.userId, rank: r.rank, kind: 'cash', amount: r.amount ?? 0, entryId: entry.id });
+    } else rewarded.entries.push({ userId: winner.userId, rank: r.rank, kind: 'recognition', label: r.label ?? '' });
+  }
+  c.rewarded = rewarded;
+  c.rewardPolicy = policy;
+  cnEvent(c, 'rewarded', byName, policy === 'none' ? 'not_paid' : `${rewarded.entries.length}`, now);
+  if (policy === 'pay' && rewarded.entries.some((e) => e.kind === 'cash')) logAutomatedAction({ sourceKey: 'contest.prizes', triggeringCondition: `${c.code} closed`, actionTaken: 'Recorded each cash prize as a commission entry, to be cleared through the payout approval like any other', affectedRecordId: c.id, affectedRecordType: 'other', subjectLabel: c.code } as Parameters<typeof logAutomatedAction>[0]);
+}
+
+const cnPhase = (c: Contest, now: number): ContestPhase => phaseOf(c, now);
+const cnPrizeStateOf = (e: CommissionEntry): ContestPrizeView['approval'] => (e.status === 'approved' ? ((paStateOf({ status: e.status, amount: e.amount, approval: e.payoutApproval }) ?? null) as ContestPrizeView['approval']) : null);
+
+function cnRowOf(c: Contest, now: number): ContestAdminRow {
+  const phase = cnPhase(c, now);
+  const entries = c.rewarded?.entries ?? [];
+  const winners = c.final ? c.final.rows.filter((r) => r.rank <= Math.max(1, c.rewards.length) && r.value > 0).map((r) => ({ rank: r.rank, name: nameOf(r.userId), value: r.value })) : [];
+  const cash = entries.filter((e) => e.kind === 'cash');
+  return JSON.parse(JSON.stringify({
+    ...cnListItem(c, now), minTenureDays: c.minTenureDays ?? 0, allowLateJoiners: c.allowLateJoiners !== false, durationDays: Math.round((Date.parse(c.endsAt) - Date.parse(c.startsAt)) / 86_400_000),
+    totalCash: c.rewards.filter((r) => r.kind === 'cash').reduce((a, r) => a + (r.amount ?? 0), 0), locked: phase !== 'scheduled', rewardPolicy: c.rewardPolicy ?? null, winners,
+    paid: c.rewarded && !c.rewarded.legacy && cash.length > 0 ? { entries: cash.length, amount: cash.reduce((a, e) => a + (e.amount ?? 0), 0) } : null, legacy: !!c.rewarded?.legacy,
+  })) as ContestAdminRow;
+}
+
+function cnBoardOf(now: number): ContestAdminBoard {
+  syncContests(now);
+  const order = { active: 0, scheduled: 1, closed: 2, ended_early: 2 } as const;
+  const sorted = [...contests].sort((a, b) => order[cnPhase(a, now)] - order[cnPhase(b, now)] || (cnPhase(a, now) === 'active' ? Date.parse(a.endsAt) - Date.parse(b.endsAt) : cnPhase(a, now) === 'scheduled' ? Date.parse(a.startsAt) - Date.parse(b.startsAt) : Date.parse(b.endsAt) - Date.parse(a.endsAt)));
+  const rows = sorted.map((c) => cnRowOf(c, now));
+  return JSON.parse(JSON.stringify({
+    at: new Date(now).toISOString(), contests: rows,
+    counts: { live: rows.filter((r) => r.phase === 'active').length, scheduled: rows.filter((r) => r.phase === 'scheduled').length, finished: rows.filter((r) => r.phase === 'closed' || r.phase === 'ended_early').length, all: rows.length },
+    limits: { maxCash: CF_MAX_CASH, maxPlaces: CF_MAX_PLACES, minDays: CF_MIN_DAYS, maxDays: CF_MAX_DAYS, maxTenureDays: CF_MAX_TENURE, endReasonMin: CF_END_REASON_MIN },
+  })) as ContestAdminBoard;
+}
+
+/** How the number moved over the contest compared with an equally long stretch before it, with the quality of leads beside it for a lead-count contest (a prompt to think, never a verdict). */
+function cnOutcomeOf(c: Contest): ContestOutcomeView {
+  const from = Date.parse(c.startsAt);
+  const to = cnEnd(c);
+  const span = to - from;
+  const people = c.final ? c.final.rows.map((r) => r.userId) : cnParticipants(c).map((u) => u.id);
+  const sum = (a: number, b: number): number => people.reduce((n, id) => n + cnMetricIn(c.metric, id, a, b), 0);
+  const during = sum(from, to);
+  const before = sum(from - span, from);
+  const stage = (a: number, b: number) => {
+    const ls = leads.filter((l) => people.includes(l.surveyorId) && Date.parse(l.createdAt) >= a && Date.parse(l.createdAt) < b);
+    return { captured: ls.length, won: ls.filter((l) => l.stage === 'won').length, lost: ls.filter((l) => l.stage === 'lost').length };
+  };
+  const quality = c.metric === 'leadsCaptured' ? { during: stage(from, to), before: stage(from - span, from) } : null;
+  return { participants: people.length, during, before, quality, small: people.length < 5 || during + before < 10 };
+}
+
+function cnDetailAdmin(c: Contest, now: number): ContestAdminDetail {
+  syncContests(now);
+  const { ranked } = cnRank(c);
+  const entries = c.rewarded?.entries ?? [];
+  const prizes: ContestPrizeView[] = entries.filter((e) => e.kind === 'cash' && e.entryId).map((e) => {
+    const led = byId(commissions, e.entryId as string);
+    return { entryId: e.entryId as string, name: nameOf(e.userId), rank: e.rank, amount: e.amount ?? 0, ledger: (led?.status ?? 'approved') as ContestPrizeView['ledger'], approval: led ? cnPrizeStateOf(led) : null };
+  });
+  return JSON.parse(JSON.stringify({
+    row: cnRowOf(c, now), standings: ranked.map((r) => ({ rank: r.rank, name: nameOf(r.userId), value: r.value })), events: [...(c.events ?? [])].sort((a, b) => (a.at < b.at ? 1 : -1)).map((e) => ({ at: e.at, kind: e.kind, byName: e.byName, detail: e.detail ?? null })),
+    outcome: cnPhase(c, now) === 'scheduled' ? null : cnOutcomeOf(c), prizes, recognitions: entries.filter((e) => e.kind === 'recognition').map((e) => ({ rank: e.rank, name: nameOf(e.userId), label: e.label ?? '' })),
+  })) as ContestAdminDetail;
+}
+
+/** The contest as it would be scored today: a live one over its own days so far, a future one over an equally long stretch ending now. */
+function cnPreviewOf(input: ContestInput, now: number, excludeId?: string): ContestPreviewView {
+  const problem = cfContestProblem(input, now, { editing: !!excludeId });
+  const start = Date.parse(input.startsAt);
+  const end = Date.parse(input.endsAt);
+  const span = Number.isFinite(end - start) && end > start ? end - start : 7 * 86_400_000;
+  const trailing = !(start <= now);
+  const from = trailing ? now - span : start;
+  const to = trailing ? now : Math.min(now, end);
+  const probe = { id: 'preview', cohort: input.cohort, startsAt: new Date(start).toISOString(), minTenureDays: input.minTenureDays, allowLateJoiners: input.allowLateJoiners } as Contest;
+  const people = cnParticipants(probe).filter((u) => !cnExcluded(u.id));
+  const ranked = rankAll(people.map((u) => ({ userId: u.id, value: cnMetricIn(input.metric, u.id, from, to), rating: u.rating ?? 0 })));
+  const overlaps = contests.some((x) => x.id !== excludeId && x.cohort === input.cohort && x.metric === input.metric && (phaseOf(x, now) === 'active' || phaseOf(x, now) === 'scheduled') && Date.parse(x.startsAt) < end && Date.parse(x.endsAt) > start);
+  return JSON.parse(JSON.stringify({
+    window: { from: new Date(from).toISOString(), to: new Date(to).toISOString(), trailing }, participants: people.length,
+    rows: ranked.slice(0, CF_PREVIEW_SHOWN).map((r) => ({ rank: r.rank, name: nameOf(r.userId), value: r.value })), checks: cfPreviewChecks(ranked.map((r) => r.value), input.metric, overlaps), problem,
+  })) as ContestPreviewView;
+}
+
+/** Everything the people in contests are told, as heads-ups on their own list: the launch, the closing hours, and the result. None is work, none is chased. */
+const CONTEST_RESULT_DAYS = 7;
+function contestSignals(now: number): { live: { contestId: string; name: string; endsAt: string; userId: string; closing: boolean }[]; results: { contestId: string; name: string; userId: string; rank: number; total: number; early: boolean; closedAt: string; open: boolean }[] } {
+  const live: ReturnType<typeof contestSignals>['live'] = [];
+  const results: ReturnType<typeof contestSignals>['results'] = [];
+  for (const c of contests) {
+    const phase = cnPhase(c, now);
+    if (phase === 'active') {
+      const closing = closingSoon(c.endsAt, now);
+      for (const u of cnParticipants(c)) live.push({ contestId: c.id, name: c.name, endsAt: c.endsAt, userId: u.id, closing });
+    } else if ((phase === 'closed' || phase === 'ended_early') && c.final && !c.rewarded?.legacy) {
+      const closedAt = c.final.at;
+      for (const r of c.final.rows) results.push({ contestId: c.id, name: c.name, userId: r.userId, rank: r.rank, total: c.final.rows.length, early: phase === 'ended_early', closedAt, open: now - Date.parse(closedAt) < CONTEST_RESULT_DAYS * 86_400_000 });
+    }
+  }
+  return { live, results };
+}
 
 
 /* ------------------------------------------------------------------ Badges & milestones (166) */
@@ -19153,6 +19298,83 @@ export const memoryRepository: Repository = {
       paDecide({ entryId: e.id, kind: 'released', at: new Date(now).toISOString(), byName: admin.name });
       syncCommitments(now);
       return JSON.parse(JSON.stringify(paRowOf(byId(commissions, e.id) as CommissionEntry, now, paContext()))) as PayoutQueueRow;
+    }),
+
+  /* --------------------------------- Contest configuration (167) */
+  getContestAdminBoard: (adminId) =>
+    simulateRead((): ContestAdminBoard => {
+      ofAdmin(adminId);
+      return cnBoardOf(Date.now());
+    }),
+
+  getContestAdminDetail: (contestId, adminId) =>
+    simulateRead((): ContestAdminDetail => {
+      ofAdmin(adminId);
+      const c = byId(contests, contestId);
+      if (!c) throw new RepositoryError('not_found');
+      return cnDetailAdmin(c, Date.now());
+    }),
+
+  previewContest: (input, adminId, excludeId) =>
+    simulateRead((): ContestPreviewView => {
+      ofAdmin(adminId);
+      return cnPreviewOf(input, Date.now(), excludeId);
+    }),
+
+  saveContest: (input, adminId) =>
+    simulateWrite((): ContestAdminRow => {
+      const admin = ofAdmin(adminId);
+      const now = Date.now();
+      const existing = input.id ? byId(contests, input.id) : null;
+      if (input.id && !existing) throw new RepositoryError('not_found');
+      if (existing && cnPhase(existing, now) !== 'scheduled') throw new RepositoryError('locked');
+      // Starting within a few minutes of now is starting now: the contest is live from this moment.
+      const startMs = Math.abs(Date.parse(input.startsAt) - now) <= CF_START_NOW_SLACK ? now : Date.parse(input.startsAt);
+      const clean: ContestInput = { ...input, name: input.name.trim(), description: input.description.trim(), startsAt: new Date(startMs).toISOString(), endsAt: new Date(Date.parse(input.endsAt)).toISOString(), rewards: input.rewards.map((r) => ({ rank: r.rank, kind: r.kind, ...(r.kind === 'cash' ? { amount: r.amount } : { label: (r.label ?? '').trim() }) })) };
+      const problem = cfContestProblem(clean, now, { editing: !!existing });
+      if (problem) throw new RepositoryError(problem);
+      const rewards: ContestReward[] = clean.rewards.map((r) => ({ rank: r.rank, kind: r.kind, ...(r.kind === 'cash' ? { amount: r.amount as number } : { label: r.label as string }) }));
+      if (existing) {
+        Object.assign(existing, { name: clean.name, description: clean.description || undefined, cohort: clean.cohort, metric: clean.metric, startsAt: clean.startsAt, endsAt: clean.endsAt, rewards, minTenureDays: clean.minTenureDays, allowLateJoiners: clean.allowLateJoiners });
+        cnEvent(existing, 'edited', admin.name, undefined, now);
+        syncContests(now);
+        return cnRowOf(existing, now);
+      }
+      contestCounter += 1;
+      const c: Contest = { id: `cn-${contestCounter}`, code: `AIEC-CN-${1000 + contestCounter}`, name: clean.name, ...(clean.description ? { description: clean.description } : {}), cohort: clean.cohort, metric: clean.metric, startsAt: clean.startsAt, endsAt: clean.endsAt, rewards, minTenureDays: clean.minTenureDays, allowLateJoiners: clean.allowLateJoiners, createdByName: admin.name, createdAt: new Date(now).toISOString(), isDemo: true };
+      cnEvent(c, 'created', admin.name, undefined, now);
+      contests.push(c);
+      syncContests(now);
+      syncCommitments(now);
+      return cnRowOf(c, now);
+    }),
+
+  cancelScheduledContest: (contestId, adminId) =>
+    simulateWrite((): ContestAdminBoard => {
+      ofAdmin(adminId);
+      const now = Date.now();
+      const c = byId(contests, contestId);
+      if (!c) throw new RepositoryError('not_found');
+      if (cnPhase(c, now) !== 'scheduled') throw new RepositoryError('locked');
+      contests.splice(contests.indexOf(c), 1);
+      return cnBoardOf(now);
+    }),
+
+  endContestEarly: (contestId, input, adminId) =>
+    simulateWrite((): ContestAdminRow => {
+      const admin = ofAdmin(adminId);
+      const now = Date.now();
+      const c = byId(contests, contestId);
+      if (!c) throw new RepositoryError('not_found');
+      if (cnPhase(c, now) !== 'active') throw new RepositoryError('not_live');
+      const problem = cfEarlyEndProblem(input.reason, input.rewards);
+      if (problem) throw new RepositoryError(problem);
+      c.endedAt = new Date(now).toISOString();
+      c.endedReason = input.reason.trim();
+      c.rewardPolicy = input.rewards;
+      cnClose(c, now, admin.name);
+      syncCommitments(now);
+      return cnRowOf(c, now);
     }),
 
   /* --------------------------------- Badges & milestones (166) */
