@@ -176,6 +176,7 @@ export function useServiceTickets() {
     resolve: (note: string) => act(() => repository.resolveServiceTicket(ticketId, user?.id ?? '', note)),
     decide: (responsibility: TicketResponsibility, note: string, reviewedEvidence: boolean) => act(() => repository.decideTicketClaim(ticketId, user?.id ?? '', { responsibility, note, reviewedEvidence })),
     startVisit: () => act(() => repository.startServiceVisit(ticketId, user?.id ?? '')),
+    onTheWay: async () => { const place = await currentPlace(2500); return act(() => repository.markOnTheWay(ticketId, user?.id ?? '', place)); },
     completeVisit: (outcome: VisitOutcome, notes: string, partsNote: string) => act(() => repository.completeServiceVisit(ticketId, user?.id ?? '', { outcome, notes, partsNote })),
   };
 }

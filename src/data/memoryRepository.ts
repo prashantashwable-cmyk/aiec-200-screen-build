@@ -296,6 +296,12 @@ import type {
   CustomerPayView,
   ServiceDeskView,
   FeedbackAdminRow,
+  MaintenanceBooking,
+  MaintenanceDeskView,
+  MaintenanceLiftView,
+  MaintenanceSlotView,
+  TechnicianProfile,
+  VisitTracking,
   FeedbackBoard,
   FeedbackBoardFilter,
   FeedbackDeskView,
@@ -575,6 +581,7 @@ import type {
   TriggerRuleEvaluation,
 } from './repository';
 import type {
+  TicketVisit,
   CustomerFeedback,
   SupportContext,
   SupportHandoffReason,
@@ -960,6 +967,10 @@ import type { Quarter as TdsQuarter, TdsRole, TdsSection } from '@/features/tax/
 import { bankEvidenceFor, heroOf, loanStateOf, remindersOf, stageStateOf } from '@/features/payments/customerSchedule';
 import { MAX_ATTACHMENTS as TICKET_MAX_ATTACHMENTS, MIN_NOTE as TICKET_MIN_NOTE, REOPEN_WINDOW as TK_REOPEN_WINDOW, chargeableOf as ticketChargeable, claimProblem as ticketClaimProblem, closesTicket as ticketClosesTicket, completeProblem as ticketCompleteProblem, coverageOf, filingProblem as ticketFilingProblem, isOpen as ticketIsOpen, lettersOf as ticketLetters, responseTargetOf, summaryOf, triageOf, visitEndOf, visitProblem as ticketVisitProblem } from '@/features/service/tickets';
 import type { Triage } from '@/features/service/tickets';
+import { ADHOC_NOTE_MIN as BOOKING_ADHOC_NOTE_MIN, FAR_DAYS, FRESH_LOCATION as BOOKING_FRESH_LOCATION, MIN_NOTICE as BOOKING_MIN_NOTICE, OFFER_DAYS, amcStateOf, bestFor as bookingBestFor, bookingProblem as bookingProblemOf, chargeableOf as bookingChargeableOf, etaMinutesOf as bookingEtaMinutes, honestyOf as bookingHonestyOf, phaseOf as bookingPhaseOf, slotsOf as bookingSlotsOf, visitPriceOf } from '@/features/service/booking';
+import type { Candidate as BookingCandidate } from '@/features/service/booking';
+import { DRIVE_SKILL } from '@/features/training/skills';
+import { addDays } from '@/features/qc/inspectors';
 import { HUMAN_HOLD as SUPPORT_HUMAN_HOLD, MAX_MESSAGE as SUPPORT_MAX_MESSAGE, QUEUE_BUSY as SUPPORT_QUEUE_BUSY, REPLY_TARGET_MIN as SUPPORT_REPLY_TARGET_MIN, decide as supportDecide, handlingOf as supportHandlingOf, intentOf as supportIntentOf, queueOf as supportQueueOf } from '@/features/support/chat';
 import type { Intent as SupportIntent, Parsed as SupportParsed } from '@/features/support/chat';
 import { DIMENSIONS_FOR as FEEDBACK_DIMENSIONS, MIN_SAMPLE as FEEDBACK_MIN_SAMPLE, NEGATIVE_AT as FEEDBACK_NEGATIVE_AT, OUTREACH_DUE as FEEDBACK_OUTREACH_DUE, OUTREACH_NOTE_MIN as FEEDBACK_OUTREACH_NOTE_MIN, WEAK_AT as FEEDBACK_WEAK_AT, WEAK_DUE as FEEDBACK_WEAK_DUE, availability as feedbackAvailability, blendedRating as feedbackBlendedRating, dueWindowOf as feedbackDueWindow, feedbackProblem as feedbackProblemOf, flagsOf as feedbackFlagsOf, parseRequestId as feedbackParse, requestIdOf as feedbackRequestIdOf, staffMentions as feedbackMentions } from '@/features/feedback/feedback';
@@ -10940,6 +10951,7 @@ function tkViewOf(t: ServiceTicket, viewer: User, now: number): TicketView {
       attachments: t.attachments, siteName: t.siteName, address: t.address, jobId: t.jobId, dealId: t.dealId, createdAt: t.createdAt, updatedAt: t.updatedAt, responseDueAt: t.responseDueAt, firstResponseAt: t.firstResponseAt ?? null,
       coverage: t.coverage,
       claim: { raised: t.claim.raised, review: t.claim.review, decided: d && role !== 'technician' ? { responsibility: d.responsibility, chargeable: ticketChargeable(d.responsibility), at: d.at, note: role === 'admin' ? d.note : null, byName: role === 'admin' ? d.byName : null } : null },
+      booking: t.booking ?? null,
       visit: t.visit ? { ...t.visit, technicianName: customerSide ? tkFirst(t.visit.technicianName) : t.visit.technicianName, notes: customerSide ? undefined : t.visit.notes, partsNote: customerSide ? undefined : t.visit.partsNote } : null,
       resolution: t.resolution ? { note: customerSide && t.resolution.outcome ? '' : t.resolution.note, at: t.resolution.at, outcome: t.resolution.outcome ?? null } : null,
       canWithdraw: customerSide && (t.status === 'submitted' || t.status === 'assigned') && t.visit?.status !== 'in_progress',
@@ -11354,6 +11366,61 @@ function feedbackSignals(): { outreach: { id: string; code: string; customer: st
   const outreach = customerFeedback.filter(fbNeedsOutreach).map((f) => ({ id: f.id, code: f.code, customer: nameOf(f.customerId), dueAt: new Date(Date.parse(f.createdAt) + (f.flags.includes('negative') || f.flags.includes('staff_concern') ? FEEDBACK_OUTREACH_DUE : FEEDBACK_WEAK_DUE)).toISOString(), weakOnly: !f.flags.includes('negative') && !f.flags.includes('staff_concern') }));
   const recognitions = customerFeedback.filter((f) => f.sentiment === 'positive' && f.mentioned.length > 0).flatMap((f) => f.mentioned.filter((id) => byId(users, id)?.role === 'technician').map((id) => ({ id: `${f.id}:${id}`, userId: id, from: nameOf(f.customerId).trim().split(/\s+/)[0] ?? '', at: f.createdAt })));
   return { outreach, recognitions };
+}
+
+/* ------------------------------------------------------------------ Maintenance booking (178) */
+
+/**
+ * A maintenance visit is a service ticket (175) the customer books themself: the same visit record, the same technician screen, the same commitments. The matching reuses the quality-check scheduling's own idea of
+ * who is free (days off, other visits, installation days) and adds the lift's skill, the day's workload and how near the technician is.
+ */
+const mbFirst = (name: string): string => name.trim().split(/\s+/)[0] ?? name;
+function mbProfile(u: User): TechnicianProfile {
+  const r = ratingOf(u);
+  return { id: u.id, firstName: mbFirst(u.name), name: u.name, rating: r > 0 ? Math.round(r * 10) / 10 : null, jobsDone: jobs.filter((j) => j.status === 'completed' && (j.technicianId === u.id || j.crew?.some((c) => c.userId === u.id))).length, skills: normalizeSkills(u.skills) };
+}
+function mbBusyFacts(userId: string, exceptTicket?: string): BusyFacts {
+  const facts = inspectorBusyFacts(userId);
+  const visits = serviceTickets.filter((t) => t.id !== exceptTicket && t.status !== 'withdrawn' && t.status !== 'resolved' && t.visit?.technicianId === userId && (t.visit.status === 'planned' || t.visit.status === 'in_progress')).map((t) => ({ date: (t.visit as TicketVisit).date, window: (t.visit as TicketVisit).window }));
+  return { ...facts, visits: [...facts.visits, ...visits] };
+}
+function mbCandidates(job: Job, exceptTicket?: string): BookingCandidate[] {
+  const deal = byId(deals, job.dealId);
+  const lead = deal ? byId(leads, deal.leadId) : undefined;
+  const spec = deal ? lockedSpecOf(deal.leadId) : null;
+  const skill = spec ? DRIVE_SKILL[spec.driveType] : null;
+  return users.filter((u) => u.role === 'technician' && u.status === 'active' && trainingClear(u.id) && (!skill || normalizeSkills(u.skills).includes(skill))).map((u) => {
+    const busy = mbBusyFacts(u.id, exceptTicket);
+    const load: Record<string, number> = {};
+    for (const v of busy.visits) load[v.date] = (load[v.date] ?? 0) + 1;
+    for (const d of busy.installDays) load[d] = (load[d] ?? 0) + 2;
+    return { id: u.id, busy, distanceKm: u.location ? haversineKm(u.location, job.location) : u.city && u.city === lead?.city ? 5 : 40, load };
+  });
+}
+function mbLiftOf(job: Job, now: number): MaintenanceLiftView {
+  const w = warrantyViewOf(job, 'customer', now);
+  const last = w.amc?.terms[w.amc.terms.length - 1];
+  const amcFacts = w.amc ? { status: w.amc.status, endsOn: last?.endsOn ?? null, tier: w.amc.tier ?? null, includedVisits: w.amc.includedVisits ?? 0, extraVisits: w.amc.extraVisits ?? 0, annualPrice: w.amc.annualPrice ?? null, responseHours: w.amc.responseTimeHours ?? null } : null;
+  const amc = amcStateOf({ warrantyEndsOn: w.terms?.service.endsOn ?? null, amc: amcFacts }, now);
+  // Free visits already booked in the current term.
+  const since = last ? Date.parse(last.startsOn) : 0;
+  const used = serviceTickets.filter((t) => t.jobId === job.id && t.category === 'maintenance' && t.status !== 'withdrawn' && t.booking && !t.booking.chargeable && Date.parse(t.createdAt) >= since).length;
+  const spec = lockedSpecOf(byId(deals, job.dealId)?.leadId ?? '');
+  return { jobId: job.id, code: job.code, siteName: job.siteName, address: job.address, amc: { state: amc.state, endsOn: amc.endsOn, tier: amc.tier, visitsTotal: amc.visitsTotal, visitsUsed: used, visitsLeft: Math.max(0, amc.visitsTotal - used), estimatedPrice: visitPriceOf(amc.annualPrice, amc.visitsTotal), responseHours: amc.responseHours }, warrantyEndsOn: w.terms?.service.endsOn ?? null, skill: spec ? DRIVE_SKILL[spec.driveType] : null };
+}
+function mbDeskOf(user: User, jobId: string | null, now: number): MaintenanceDeskView {
+  const handed = vdDealsOf(user).flatMap((d) => jobs.filter((j) => j.dealId === d.id && j.status === 'completed'));
+  const lifts = handed.map((j) => mbLiftOf(j, now));
+  const job = handed.find((j) => j.id === jobId) ?? handed[0] ?? null;
+  const base = { lifts, chosen: job?.id ?? null, bookings: serviceTickets.filter((t) => t.customerId === user.id && t.category === 'maintenance').sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((t) => tkRowOf(t, 'customer', now)), emergencyPhone: tkAdmin()?.phone ?? null, at: new Date(now).toISOString() };
+  if (!job) return { ...base, slots: [], honesty: 'skill_gap', earliest: null };
+  const cands = mbCandidates(job);
+  const today = qcDay(now);
+  const far = bookingSlotsOf({ today, now, cands, days: FAR_DAYS });
+  const offered = far.filter((s) => s.date <= addDays(today, OFFER_DAYS));
+  const { honesty, earliest } = bookingHonestyOf(cands, offered, far);
+  const profile = (id: string | null) => { const u = id ? byId(users, id) : undefined; return u ? mbProfile(u) : null; };
+  return JSON.parse(JSON.stringify({ ...base, slots: offered.filter((s) => s.best).map((s) => ({ date: s.date, window: s.window, technician: profile(s.best) })), honesty, earliest })) as MaintenanceDeskView;
 }
 
 /* ------------------------------------------------------------------ Badges & milestones (166) */
@@ -23877,6 +23944,122 @@ export const memoryRepository: Repository = {
     simulateRead((): VaultDocument[] => {
       const docs = vdDocsOf(vdCustomer(userId), Date.now());
       return JSON.parse(JSON.stringify(docs.map((d) => ({ row: d.row, sections: d.sections, versions: docs.filter((x) => x.row.chainId === d.row.chainId).map((x) => x.row), issuedBy: d.issuedBy })))) as VaultDocument[];
+    }),
+
+  /* --------------------------------- Maintenance booking (178) */
+  getMaintenanceDesk: (userId, jobId) =>
+    simulateRead((): MaintenanceDeskView => {
+      const user = vdCustomer(userId);
+      const now = Date.now();
+      tkSeeds(now);
+      return mbDeskOf(user, jobId, now);
+    }),
+
+  bookMaintenanceVisit: (userId, input) =>
+    simulateWrite((): MaintenanceBooking => {
+      const user = vdCustomer(userId);
+      const now = Date.now();
+      tkSeeds(now);
+      const view = (t: ServiceTicket): MaintenanceBooking => ({ ticket: tkViewOf(t, user, now), technician: t.visit ? mbProfile(byId(users, t.visit.technicianId) as User) : null, chargeable: !!t.booking?.chargeable, estimatedPrice: t.booking?.estimatedPrice ?? null, pending: t.booking?.status === 'pending' });
+      const prior = serviceTickets.find((t) => t.customerId === user.id && t.clientId === input.clientId);
+      if (prior) return view(prior);
+      const job = byId(jobs, input.jobId);
+      const deal = job ? vdDealsOf(user).find((d) => d.id === job.dealId) : undefined;
+      if (!job || !deal) throw new RepositoryError('lift_required');
+      if (job.status !== 'completed') throw new RepositoryError('not_handed_over');
+      const note = (input.note ?? '').trim();
+      const purposeProblem = input.purpose === 'routine' || input.purpose === 'adhoc' ? null : 'purpose_invalid';
+      if (purposeProblem) throw new RepositoryError(purposeProblem);
+      if (input.purpose === 'adhoc' && ticketLetters(note) < BOOKING_ADHOC_NOTE_MIN) throw new RepositoryError('note_required');
+      const lift = mbLiftOf(job, now);
+      const chargeable = bookingChargeableOf(lift.amc.state, lift.amc.visitsLeft);
+      const estimatedPrice = chargeable ? lift.amc.estimatedPrice : null;
+      const at = new Date(now).toISOString();
+      let tech: User | null = null;
+      if (input.date) {
+        const problem = bookingProblemOf({ date: input.date, window: input.window, now, purpose: input.purpose, note, lettersInNote: ticketLetters(note) });
+        if (problem) throw new RepositoryError(problem);
+        const best = bookingBestFor(mbCandidates(job), input.date, input.window).best;
+        if (!best) throw new RepositoryError('slot_taken');
+        tech = byId(users, best) ?? null;
+      }
+      serviceTicketCounter += 1;
+      const lead = byId(leads, deal.leadId);
+      const coverage = tkCoverageOf(job, now);
+      const t: ServiceTicket = {
+        id: `tk-${serviceTicketCounter}`, code: `AIEC-TK-${serviceTicketCounter}`, customerId: user.id, dealId: deal.id, jobId: job.id, siteName: job.siteName, address: job.address || lead?.address || '',
+        contactName: user.name, contactPhone: user.phone ?? '', category: 'maintenance', urgency: 'low', route: tech ? 'site_visit' : 'triage', impact: null, summary: summaryOf(note), description: note, attachments: [],
+        claim: { raised: false, review: false }, triage: { confidence: tech ? 'confident' : 'needs_human', reason: tech ? null : 'general', words: [] }, coverage, status: tech ? 'assigned' : 'submitted',
+        responseDueAt: new Date(now + (tech ? 0 : 3 * 86_400_000)).toISOString(), firstResponseAt: tech ? at : undefined, reopenedCount: 0, clientId: input.clientId, createdAt: at, updatedAt: at, events: [], isDemo: true,
+        booking: { purpose: input.purpose, chargeable, estimatedPrice, status: tech ? 'confirmed' : 'pending' },
+      };
+      tkEvent(t, { at, kind: 'filed', audience: 'customer', byRole: 'customer', byName: user.name });
+      if (tech && input.date) {
+        t.visit = { technicianId: tech.id, technicianName: tech.name, date: input.date, window: input.window, status: 'planned', assignedAt: at, assignedByName: 'AIEC' };
+        tkEvent(t, { at, kind: 'assigned', audience: 'customer', byRole: 'system', byName: 'AIEC', params: { name: tkFirst(tech.name), date: input.date, window: input.window } });
+        logAutomatedAction({ sourceKey: 'maintenance.assigned', triggeringCondition: `${user.name} booked a ${input.purpose === 'adhoc' ? 'call-out' : 'maintenance'} visit for ${input.date}`, actionTaken: `Matched ${tech.name} by skill, workload and distance`, affectedRecordId: t.id, affectedRecordType: 'other', subjectLabel: t.code });
+        tkMessageCustomer(t, 'tpl-ticket-visit', { technicianName: tkFirst(tech.name), visitWhen: (lang) => `${input.date}, ${tkWindowWord(input.window, lang)}` });
+      } else {
+        logAutomatedAction({ sourceKey: 'maintenance.pending', triggeringCondition: `${user.name} asked for a maintenance visit and no technician could be promised`, actionTaken: 'Left it with Admin to confirm a date honestly', affectedRecordId: t.id, affectedRecordType: 'other', subjectLabel: t.code });
+      }
+      serviceTickets.push(t);
+      return view(t);
+    }),
+
+  rescheduleMaintenanceVisit: (ticketId, userId, input) =>
+    simulateWrite((): MaintenanceBooking => {
+      const user = vdCustomer(userId);
+      const now = Date.now();
+      tkSeeds(now);
+      const t = tkTicket(ticketId);
+      tkViewable(t, user);
+      if (t.category !== 'maintenance' || t.status !== 'assigned' || t.visit?.status !== 'planned') throw new RepositoryError('invalid_state');
+      if (visitEndOf(t.visit.date, t.visit.window) - 4 * 3_600_000 - now < BOOKING_MIN_NOTICE) throw new RepositoryError('notice_short');
+      const job = byId(jobs, t.jobId ?? '');
+      if (!job) throw new RepositoryError('lift_required');
+      const problem = bookingProblemOf({ date: input.date, window: input.window, now, purpose: 'routine', note: '', lettersInNote: 0 });
+      if (problem) throw new RepositoryError(problem);
+      const best = bookingBestFor(mbCandidates(job, t.id), input.date, input.window).best;
+      if (!best) throw new RepositoryError('slot_taken');
+      const tech = byId(users, best) as User;
+      const at = new Date(now).toISOString();
+      t.visit = { ...t.visit, technicianId: tech.id, technicianName: tech.name, date: input.date, window: input.window, assignedAt: at, assignedByName: 'AIEC' };
+      tkEvent(t, { at, kind: 'reassigned', audience: 'customer', byRole: 'system', byName: 'AIEC', params: { name: tkFirst(tech.name), date: input.date, window: input.window } });
+      return { ticket: tkViewOf(t, user, now), technician: mbProfile(tech), chargeable: !!t.booking?.chargeable, estimatedPrice: t.booking?.estimatedPrice ?? null, pending: false };
+    }),
+
+  getVisitTracking: (ticketId, userId) =>
+    simulateRead((): VisitTracking => {
+      const user = vdCustomer(userId);
+      const now = Date.now();
+      tkSeeds(now);
+      const t = tkTicket(ticketId);
+      tkViewable(t, user);
+      const v = t.visit ?? null;
+      const phase = bookingPhaseOf({ ticketStatus: t.status, visit: v, today: qcDay(now) });
+      const tech = v ? byId(users, v.technicianId) : undefined;
+      const job = byId(jobs, t.jobId ?? '');
+      const fresh = tech?.location && tech.lastSeenAt && now - Date.parse(tech.lastSeenAt) <= BOOKING_FRESH_LOCATION && v?.onTheWayAt && Date.parse(tech.lastSeenAt) >= Date.parse(v.onTheWayAt) - 60_000;
+      const eta = phase === 'on_the_way' && fresh && tech?.location && job ? { minutes: bookingEtaMinutes(haversineKm(tech.location, job.location)), positionAgeMin: Math.max(0, Math.round((now - Date.parse(tech.lastSeenAt as string)) / 60_000)) } : null;
+      return JSON.parse(JSON.stringify({ phase, date: v?.date ?? null, window: v?.window ?? null, technician: tech ? mbProfile(tech) : null, eta, onTheWayAt: v?.onTheWayAt ?? null, at: new Date(now).toISOString() })) as VisitTracking;
+    }),
+
+  markOnTheWay: (ticketId, technicianId, location) =>
+    simulateWrite((): TicketView => {
+      const tech = byId(users, technicianId);
+      if (!tech || tech.role !== 'technician') throw new RepositoryError('forbidden');
+      const now = Date.now();
+      tkSeeds(now);
+      const t = tkTicket(ticketId);
+      tkViewable(t, tech);
+      if (!ticketIsOpen(t.status) || t.visit?.status !== 'planned') throw new RepositoryError('invalid_state');
+      if (t.visit.date !== qcDay(now)) throw new RepositoryError('not_today');
+      if (t.visit.onTheWayAt) return tkViewOf(t, tech, now);
+      const at = new Date(now).toISOString();
+      t.visit.onTheWayAt = at;
+      if (location) { t.visit.onTheWayLocation = location; patchInPlace(users, tech.id, { location, lastSeenAt: at, onDuty: true }); }
+      tkEvent(t, { at, kind: 'on_the_way', audience: 'customer', byRole: 'technician', byName: tech.name });
+      return tkViewOf(t, tech, now);
     }),
 
   /* --------------------------------- Customer feedback (177) */

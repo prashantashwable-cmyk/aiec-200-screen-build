@@ -153,6 +153,10 @@ export const TICKET_KEYS = {
       title: 'serviceTickets.cat.general.title',
       body: 'serviceTickets.cat.general.body',
     },
+    maintenance: {
+      title: 'serviceTickets.cat.maintenance.title',
+      body: 'serviceTickets.cat.maintenance.body',
+    },
   },
   coverage: {
     in_warranty: 'serviceTickets.coverage.in_warranty',
@@ -295,6 +299,7 @@ export const TICKET_KEYS = {
     triaged: 'serviceTickets.event.triaged',
     retriaged: 'serviceTickets.event.retriaged',
     urgency_changed: 'serviceTickets.event.urgency_changed',
+    on_the_way: 'serviceTickets.event.on_the_way',
   },
   outcome: {
     fixed: 'serviceTickets.outcome.fixed',
@@ -435,6 +440,8 @@ export const TICKET_KEYS = {
     unsafe: 'serviceTickets.tech.unsafe',
     done: 'serviceTickets.tech.done',
     noAccess: 'serviceTickets.tech.noAccess',
+    onTheWay: 'serviceTickets.tech.onTheWay',
+    onTheWayDone: 'serviceTickets.tech.onTheWayDone',
   },
   alert: {
     emergency: 'serviceTickets.alert.emergency',

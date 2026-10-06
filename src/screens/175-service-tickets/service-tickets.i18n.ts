@@ -135,6 +135,10 @@ const translations: ScreenTranslations = {
           title: 'Something else, or not sure',
           body: 'Tell us in your own words and a person will send it to the right team.',
         },
+        maintenance: {
+          title: 'Maintenance visit',
+          body: 'A routine visit or a non-urgent call-out booked by the customer.',
+        },
       },
       coverage: {
         in_warranty: 'Under warranty until {{date}}',
@@ -280,6 +284,7 @@ const translations: ScreenTranslations = {
         triaged: 'Sorted by our rules',
         retriaged: 'Category or urgency changed by a person',
         urgency_changed: 'Urgency changed',
+        on_the_way: 'Your technician is on the way',
       },
       outcome: {
         fixed: 'Fixed',
@@ -420,6 +425,8 @@ const translations: ScreenTranslations = {
         unsafe: 'Choosing this tells Admin at once, and the customer is told the lift is out of service for their safety.',
         done: 'Visit recorded. Thank you.',
         noAccess: 'This is not one of your visits.',
+        onTheWay: 'I am on my way',
+        onTheWayDone: 'The customer can see you are on the way.',
       },
       alert: {
         emergency: 'A customer reports an emergency: reach them now',
@@ -562,6 +569,10 @@ const translations: ScreenTranslations = {
         general: {
           title: 'कुछ और, या पक्का नहीं',
           body: 'अपने शब्दों में बताएँ, कोई व्यक्ति इसे सही टीम तक पहुँचाएगा।',
+        },
+        maintenance: {
+          title: 'मेंटेनेंस विज़िट',
+          body: 'ग्राहक द्वारा तय की गई नियमित विज़िट या ग़ैर-ज़रूरी कॉल-आउट।',
         },
       },
       coverage: {
@@ -708,6 +719,7 @@ const translations: ScreenTranslations = {
         triaged: 'हमारे नियमों से छाँटा गया',
         retriaged: 'श्रेणी या तात्कालिकता एक व्यक्ति ने बदली',
         urgency_changed: 'तात्कालिकता बदली',
+        on_the_way: 'आपके तकनीशियन रास्ते में हैं',
       },
       outcome: {
         fixed: 'ठीक किया गया',
@@ -848,6 +860,8 @@ const translations: ScreenTranslations = {
         unsafe: 'इसे चुनने पर Admin को तुरंत सूचना जाती है, और ग्राहक को बताया जाता है कि उनकी सुरक्षा के लिए लिफ़्ट बंद है।',
         done: 'विज़िट दर्ज हो गई। धन्यवाद।',
         noAccess: 'यह आपकी विज़िट में से नहीं है।',
+        onTheWay: 'मैं रास्ते में हूँ',
+        onTheWayDone: 'ग्राहक देख सकता है कि आप रास्ते में हैं।',
       },
       alert: {
         emergency: 'एक ग्राहक आपातकाल बता रहा है: अभी संपर्क करें',
@@ -990,6 +1004,10 @@ const translations: ScreenTranslations = {
         general: {
           title: 'काहीतरी वेगळे, किंवा खात्री नाही',
           body: 'तुमच्या शब्दांत सांगा, कोणीतरी ते योग्य टीमकडे पाठवेल.',
+        },
+        maintenance: {
+          title: 'मेंटेनन्स भेट',
+          body: 'ग्राहकाने ठरवलेली नियमित भेट किंवा तातडीची नसलेली कॉल-आउट.',
         },
       },
       coverage: {
@@ -1136,6 +1154,7 @@ const translations: ScreenTranslations = {
         triaged: 'आमच्या नियमांनी वर्गीकृत',
         retriaged: 'वर्ग किंवा तातडी एका व्यक्तीने बदलली',
         urgency_changed: 'तातडी बदलली',
+        on_the_way: 'तुमचे तंत्रज्ञ वाटेत आहेत',
       },
       outcome: {
         fixed: 'दुरुस्त केले',
@@ -1276,6 +1295,8 @@ const translations: ScreenTranslations = {
         unsafe: 'हे निवडल्यास Admin ला लगेच कळवले जाते, आणि ग्राहकाला त्यांच्या सुरक्षेसाठी लिफ्ट बंद असल्याचे सांगितले जाते.',
         done: 'भेट नोंदवली. धन्यवाद.',
         noAccess: 'ही तुमची भेट नाही.',
+        onTheWay: 'मी वाटेत आहे',
+        onTheWayDone: 'ग्राहकाला तुम्ही वाटेत आहात हे दिसते.',
       },
       alert: {
         emergency: 'एक ग्राहक आणीबाणी कळवत आहे: आत्ता संपर्क साधा',

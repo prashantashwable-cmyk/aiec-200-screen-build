@@ -5370,7 +5370,7 @@ export interface TemplateStat {
 /* ------------------------------------------------------------------ Service tickets (175) */
 
 /** What the customer says it is about. `emergency` (someone trapped / unsafe right now) is its own path; `safety` is "looks or sounds unsafe"; `fault` is "not working properly". */
-export type TicketCategory = 'emergency' | 'safety' | 'fault' | 'billing' | 'general';
+export type TicketCategory = 'emergency' | 'safety' | 'fault' | 'billing' | 'general' | 'maintenance';
 export type TicketUrgency = 'emergency' | 'high' | 'normal' | 'low';
 /** For a fault: how bad it is, in the customer's own terms. */
 export type TicketImpact = 'out_of_service' | 'working_badly' | 'minor';
@@ -5406,7 +5406,7 @@ export interface TicketAttachment {
 export interface TicketEvent {
   id: string;
   at: string;
-  kind: 'filed' | 'triaged' | 'retriaged' | 'reply' | 'info' | 'assigned' | 'reassigned' | 'started' | 'visit_done' | 'resolved' | 'reopened' | 'withdrawn' | 'claim_decided' | 'internal_note' | 'urgency_changed';
+  kind: 'filed' | 'on_the_way' | 'triaged' | 'retriaged' | 'reply' | 'info' | 'assigned' | 'reassigned' | 'started' | 'visit_done' | 'resolved' | 'reopened' | 'withdrawn' | 'claim_decided' | 'internal_note' | 'urgency_changed';
   /** What the customer may read. An internal event (Admin's own notes, the evidence review) never reaches them. */
   audience: 'customer' | 'internal';
   byRole: 'customer' | 'admin' | 'technician' | 'system';
@@ -5423,6 +5423,9 @@ export interface TicketVisit {
   status: 'planned' | 'in_progress' | 'done' | 'missed';
   assignedAt: string;
   assignedByName: string;
+  /** The technician said they are on the way (the customer sees it on the day), with where they were. */
+  onTheWayAt?: string;
+  onTheWayLocation?: GeoPoint;
   startedAt?: string;
   doneAt?: string;
   outcome?: VisitOutcome;
@@ -5460,6 +5463,8 @@ export interface ServiceTicket {
   responseDueAt: string;
   firstResponseAt?: string;
   visit?: TicketVisit;
+  /** A maintenance booking made by the customer themself (178): routine or a non-urgent call-out, free under their service plan or chargeable. */
+  booking?: { purpose: 'routine' | 'adhoc'; chargeable: boolean; estimatedPrice: number | null; status: 'confirmed' | 'pending' };
   resolution?: { note: string; byName: string; at: string; outcome?: VisitOutcome };
   reopenedCount: number;
   /** Idempotence for a request sent twice from a phone with poor signal. */

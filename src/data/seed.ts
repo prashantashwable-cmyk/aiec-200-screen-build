@@ -306,7 +306,7 @@ export const seedUsers: User[] = [
     onDuty: true,
     location: { lat: 18.559, lng: 73.7868 },
     lastSeenAt: minutesAgo(22),
-    skills: ['traction', 'hydraulic', 'controller', 'safety_rescue'],
+    skills: ['traction', 'hydraulic', 'controller', 'safety_rescue', 'mrl_gearless'],
   },
   {
     id: 'u-tech-3',
@@ -343,7 +343,7 @@ export const seedUsers: User[] = [
     onDuty: true,
     location: { lat: 18.5204, lng: 73.8567 },
     lastSeenAt: minutesAgo(40),
-    skills: ['mechanical', 'electrical', 'safety_rescue'],
+    skills: ['mechanical', 'electrical', 'safety_rescue', 'mrl_gearless'],
     documents: [
       { id: 'd20', kind: 'certificate', label: 'Lift inspector course', status: 'verified', uploadedAt: daysAgo(380) },
       { id: 'd21', kind: 'licence', label: 'Electrical supervisor licence', status: 'verified', uploadedAt: daysAgo(380) },

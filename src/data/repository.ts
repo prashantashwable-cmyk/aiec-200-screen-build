@@ -6922,6 +6922,7 @@ export interface TicketView {
     coverage: TicketCoverage;
     claim: { raised: boolean; review: boolean; decided: { responsibility: TicketResponsibility; chargeable: boolean; at: string; note: string | null; byName: string | null } | null };
     visit: (Omit<TicketVisit, 'technicianName'> & { technicianName: string }) | null;
+    booking: { purpose: 'routine' | 'adhoc'; chargeable: boolean; estimatedPrice: number | null; status: 'confirmed' | 'pending' } | null;
     resolution: { note: string; at: string; outcome: VisitOutcome | null } | null;
     canWithdraw: boolean;
     canReopen: boolean;
@@ -7066,6 +7067,44 @@ export interface FeedbackDetail extends FeedbackAdminRow {
   outreach: { byName: string; at: string; note: string } | null;
   ticketCode: string | null;
   customerPhone: string | null;
+}
+
+/* ------------------------------------------------------------------ Maintenance booking (178) */
+
+export interface TechnicianProfile { id: string; firstName: string; name: string; rating: number | null; jobsDone: number; skills: string[] }
+export interface MaintenanceLiftView {
+  jobId: string;
+  code: string;
+  siteName: string;
+  address: string;
+  amc: { state: 'active' | 'expiring' | 'lapsed' | 'warranty' | 'none'; endsOn: string | null; tier: string | null; visitsTotal: number; visitsUsed: number; visitsLeft: number; estimatedPrice: number | null; responseHours: number | null };
+  warrantyEndsOn: string | null;
+  /** The skill tag this lift's drive needs, or null when none is tracked for it. */
+  skill: string | null;
+}
+export interface MaintenanceSlotView { date: string; window: 'morning' | 'afternoon'; technician: TechnicianProfile | null }
+export interface MaintenanceDeskView {
+  lifts: MaintenanceLiftView[];
+  chosen: string | null;
+  slots: MaintenanceSlotView[];
+  honesty: 'ok' | 'skill_gap' | 'none_in_window' | 'none_soon';
+  earliest: { date: string; window: 'morning' | 'afternoon' } | null;
+  /** The customer's maintenance bookings, newest first. */
+  bookings: TicketRow[];
+  emergencyPhone: string | null;
+  at: string;
+}
+export interface MaintenanceBookInput { clientId: string; jobId: string; purpose: 'routine' | 'adhoc'; date: string | null; window: 'morning' | 'afternoon'; note: string }
+export interface MaintenanceBooking { ticket: TicketView; technician: TechnicianProfile | null; chargeable: boolean; estimatedPrice: number | null; pending: boolean }
+export interface VisitTracking {
+  phase: 'not_today' | 'scheduled' | 'on_the_way' | 'arrived' | 'done' | 'missed' | 'cancelled';
+  date: string | null;
+  window: 'morning' | 'afternoon' | null;
+  technician: TechnicianProfile | null;
+  /** From the technician's own position when it is fresh; null says plainly that there is no live position to estimate from. */
+  eta: { minutes: number; positionAgeMin: number } | null;
+  onTheWayAt: string | null;
+  at: string;
 }
 
 /* ------------------------------------------------------------------ Payout disputes (170) */
@@ -8397,6 +8436,12 @@ export interface Repository {
   getVaultBundle(userId: string): Promise<VaultDocument[]>;
   /** 174: the customer's payment picture for one project (the first needing attention when none is named). */
   getCustomerPayments(dealId: string | null, userId: string): Promise<CustomerPayView>;
+  /* 178 — maintenance booking: self-service visits with real slots, an automatically matched technician, and live arrival on the day. */
+  getMaintenanceDesk(userId: string, jobId: string | null): Promise<MaintenanceDeskView>;
+  bookMaintenanceVisit(userId: string, input: MaintenanceBookInput): Promise<MaintenanceBooking>;
+  rescheduleMaintenanceVisit(ticketId: string, userId: string, input: { date: string; window: 'morning' | 'afternoon' }): Promise<MaintenanceBooking>;
+  getVisitTracking(ticketId: string, userId: string): Promise<VisitTracking>;
+  markOnTheWay(ticketId: string, technicianId: string, location?: GeoPoint): Promise<TicketView>;
   /* 177 — customer feedback: a short ask at the right moment, ratings that stay specific, and a person for anyone unhappy. */
   getFeedbackDesk(userId: string): Promise<FeedbackDeskView>;
   submitFeedback(userId: string, input: { clientId: string; requestId: string; overall: number; dimensions: Partial<Record<FeedbackDimension, number>>; comment: string }): Promise<FeedbackSubmitResult>;

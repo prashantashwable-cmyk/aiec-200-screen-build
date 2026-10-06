@@ -187,6 +187,7 @@ function Tiles({ c, s, t, supportPhone }: { c: CustomerProjectHome; s: CustomerH
       <Tile id="documents" icon={<FileText size={22} />} title={t(K.tile.documents.title)} hint={t(K.tile.documents.hint)} onClick={() => s.goTo(documentsPath)} />
       <Tile id="support" icon={<Headset size={22} />} title={t(K.tile.support.title)} hint={t(K.tile.support.hint)} onClick={() => s.goTo('/support-chat')} />
       {handed && c.jobId && <Tile id="service" icon={<Wrench size={22} />} title={t(K.tile.service.title)} hint={t(K.tile.service.hint)} onClick={() => s.goTo(servicePath(c.jobId as string))} />}
+      {handed && c.jobId && <Tile id="maintenance" icon={<Wrench size={22} />} title={t('maintenance.link.open')} hint={t('maintenance.purpose.routine.body')} onClick={() => s.goTo(`/maintenance?job=${c.jobId}`)} />}
     </div>
   );
 }

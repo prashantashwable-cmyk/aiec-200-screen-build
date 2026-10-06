@@ -475,7 +475,12 @@ function TechTicket({ v, s, t, lang }: { v: TicketView; s: ServiceTicketsState; 
           </div>
         </div>
       </Card>
-      {visit?.status === 'planned' && canWork && <ActionBar><Button className="grow" block data-act="start-visit" onClick={() => void run(() => s.startVisit())}>{t(K.tech.start)}</Button></ActionBar>}
+      {visit?.status === 'planned' && canWork && (
+        <ActionBar>
+          {!visit.onTheWayAt && visit.date === new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 10) && <Button variant="secondary" data-act="on-the-way" onClick={() => void run(() => s.onTheWay(), () => toast.push(t(K.tech.onTheWayDone), 'success'))}>{t(K.tech.onTheWay)}</Button>}
+          <Button className="grow" block data-act="start-visit" onClick={() => void run(() => s.startVisit())}>{t(K.tech.start)}</Button>
+        </ActionBar>
+      )}
       {canWork && visit?.status === 'in_progress' && (
         <Card>
           <div className="stack gap-3" data-complete>
