@@ -1326,3 +1326,67 @@ compliance tracker takes a person's territory from their city and its trend leav
 no expiring certifications, so they have no refresher route, and surveyors have no SOP library route. A credential has no public
 verification page, only a number AIEC can confirm. Technician home (121) shows no banner for pending safety training; the job screens
 show the generic `training_incomplete` message.
+
+## Module 17 — Commission, Rewards & Payouts (`161`–`170`, checkpoint-verified)
+
+Ten screens that make "pay people for what they did, and show them how" one ledger instead of ten. Everything reads the one
+`CommissionEntry` ledger; nothing keeps a second copy of a figure.
+
+| # | Screen | Route | What it owns |
+|---|---|---|---|
+| 161 | Commission Rules Engine | `/commission-rules` | The seven rules with their rates, append-only versions (never reach back), simulation before publishing, advance notice |
+| 162 | Workforce Payout Tracker | `/payout-tracker` | Admin's whole-business read of the ledger, spotting the unusual |
+| 163 | Payout Approval Queue | `/payout-approval` | A person clears every payout; flags, holds (the partner sees the kind, never the reason) |
+| 164 | Automated Payout Disbursement | `/payout-disbursement` | Only cleared entries go out; failures are never silent or retried blindly |
+| 165 | Rewards Leaderboard | `/rewards-leaderboard` | One ranking every role reads; a standing never moves without a reason |
+| 166 | Badges & Milestones | `/badges` | Honoured under the rules of the day they were earned; rarity stated honestly |
+| 167 | Contest Setup | `/contest-setup` | Contest configuration; closing creates real prize entries in 163's queue |
+| 168 | Payout History & Statements | `/payout-history` | The partner's own record, statements, a way to ask |
+| 169 | Tax Deduction (TDS) Statement | `/tds-statement` | Tax deducted at disbursement, certificates, Admin's deposit / return record |
+| 170 | Dispute / Query on Payout | `/payout-dispute` | A fair, audited way to say "this looks wrong"; corrections go through the ledger |
+
+**Decisions that shape everything else**
+
+- **The ledger vocabulary never changed** (`projected | approved | paid | forfeited`). 163's checkpoint (`payoutApproval`), 164's pointer
+  (`disbursement`), 168's `reversal` and 170's `correctsId` are separate fields, so 038 / 121 / 150 / 162 / 028 read what they always read.
+- **A payout is cleared by a person, sent once, and told to the partner honestly.** 163 clears, 164 sends only cleared entries (one
+  transfer per partner, never re-sent while in flight, a failed one blocks that partner until dealt with), 168 shows the stage in the
+  partner's words, 169 shows what tax was taken, 170 is the way back when it looks wrong.
+- **Nothing is edited after the fact.** A rule change is a new version from a future day; a tier, badge or tax rate keeps the version it
+  was earned under; a correction is a *new* entry stamped with the original's rule and version (`correctsId`); a contest's standings
+  are frozen at the close.
+- **Tax is taken at disbursement** (194H surveyors, 194C technicians): the transfer is gross minus TDS, the first deduction catches up
+  on everything paid earlier in the year, a failed transfer voids its deduction, certificates stay provisional until Admin records the
+  quarter's return. Suppliers (194Q) are watched, not deducted.
+- **Disputes are one record with 168's question.** A dispute adds a topic, a claimed figure, a longer target (5 days, 7 once escalated),
+  an update to the partner every 3 days once late, repeat-ask handling that reads new information as new and identical words as a
+  repeat, and a **systemic** path: a dispute that points at a rule asks for a rules review and counts who else might be short.
+- **Every dated obligation is a commitment** (`payout_approval`, `payout_hold_review`, `payout_disbursement_attention`,
+  `contest_live / closing / result`, `payout_query_answer / reply`, `tds_deposit`, `tds_return`, `payout_dispute_resolve`,
+  `payout_rule_review`) and every automation logs itself (`payout_dispute.progress`, `payout_dispute.pattern`, `badge.awarded`,
+  `payout_tracker.spike`, `payout_disbursement.failed`).
+
+**Checkpoint (as of this module).** All ten screens were clicked through as Admin, surveyor, technician and supplier (English, Hindi
+and Marathi) at 390, 820 and 1440 with no horizontal overflow, no raw translation keys and no console errors, exercising the paths that
+matter: batch approve and a flagged payout that must be acknowledged, a failed transfer and its retry, a run stopped partway, a contest
+that closes into prize entries, a TDS catch-up deduction and a certificate turning final once the return is recorded, a dispute going
+from raised to escalated to a correcting entry that appears in 163's queue, and a repeat ask refused when it only repeats. Checkpoint
+fixes: 168's / 162's question threads showed an app-written line as "You" with no text once disputes existed (now rendered from its
+key), 038's "Something looks wrong" now opens the dispute form, and a supplier dispute needs the amount it is about (the repository
+already required it). Earlier screens spot-checked: 120 reconciliation (worker payouts now arrive net of TDS and still match their
+bank lines), 115 supplier payment history, 140 handover certificate and its payout judgement (an in-flight entry is locked like a paid
+one), 121 technician home, 028 finance overview, 149 partner directory: all clean.
+
+**Placeholder business decisions to confirm (flagged on screen where they show)**
+
+- 161: every rate and the 5% burden warning, the 70% dominance line, 7-day notice. 162: spike 1.8× / ₹25,000, outlier 3×, 7-day wait.
+- 163: ₹25,000 routine limit, 2-day look, 7-day hold review. 164: UPI limit ₹1,00,000, Friday 11:00 weekly run, settle times.
+- 165–167: closing-soon 24 h, badge catalogue and bars, rarity bands, contest limits (5 places, ₹1,00,000 a place, 120 days).
+- 169: rates (2% / 1% / 0.1%), limits (₹20,000 / ₹1,00,000 / ₹50,00,000), 20% without a PAN, deposit by the 7th, return dates.
+- 170: answer in 5 days (acknowledge in 24 h), 7 days once escalated, an update every 3 days, correction limit ₹1,00,000, a pattern at
+  3 disputes from 2 partners in 30 days, 85% alike is a repeat.
+
+**Honest limits.** A partner cannot enter their own bank details or PAN (Admin records them after speaking to them). Exit settlements
+(150) still bypass the approval queue and TDS. `site_visit` / `lead_qualified` entries are seeded, not generated. A recognition prize
+gives no badge. Admin can only add to a figure from a dispute, never reduce one. The banking partner and the ID service are
+simulated. The rate-based contest metrics (conversion, QC pass) are not offered yet.
