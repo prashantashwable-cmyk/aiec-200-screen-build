@@ -5056,7 +5056,7 @@ export type CommitmentKind =
   | 'exit_dispute_decide'
   | 'tier_review_due'
   | 'certification_renewal'
-  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup' | 'support_chat_reply' | 'feedback_outreach' | 'feedback_recognition' | 'referral_reward' | 'automation_pause_review' | 'escalation_drill_due' | 'escalation_gap_fix' | 'integration_followup' | 'integration_credential_rotation' | 'sandbox_promotion_pending' | 'sandbox_library_review' | 'company_profile_legal_verify' | 'permission_override_review'
+  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup' | 'support_chat_reply' | 'feedback_outreach' | 'feedback_recognition' | 'referral_reward' | 'automation_pause_review' | 'escalation_drill_due' | 'escalation_gap_fix' | 'integration_followup' | 'integration_credential_rotation' | 'sandbox_promotion_pending' | 'sandbox_library_review' | 'company_profile_legal_verify' | 'permission_override_review' | 'monitor_daily_check' | 'monitor_concern_followup'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'
@@ -6019,3 +6019,28 @@ export interface PermissionChange {
   /** For a refused attempt: why. */
   refusal?: string;
 }
+
+/* ------------------------------------------------------------------ Single-person monitor (193) */
+
+export interface MonitorConfig { adminId: string; signalIds: string[]; preset: string | null; checkTime: string; checkDays: number[]; updatedAt: string }
+/** A morning check that was made: what the panel showed, and whether it was "all fine" or "with concerns". Append-only. */
+export interface MonitorCheck {
+  id: string;
+  code: string;
+  adminId: string;
+  adminName: string;
+  at: string;
+  kind: 'all_fine' | 'with_concerns';
+  note: string;
+  panel: string[];
+  values: Record<string, number | null>;
+  statuses: Record<string, 'ok' | 'watch' | 'act'>;
+  actIds: string[];
+  /** Signals outside the Admin's own set that needed action at the time. */
+  outsideActIds: string[];
+  hash: string;
+}
+/** Something the Admin knows that no number shows: kept, looked at again on a day, and closed with a word. */
+export interface MonitorConcern { id: string; adminId: string; note: string; createdAt: string; reviewAt: string; resolvedAt?: string; resolution?: string }
+/** The Admin is away: a chosen backup may look at a limited, read-only panel until the day they are back. The access itself is one of 192's time-limited exceptions. */
+export interface MonitorAbsence { id: string; adminId: string; from: string; until: string; backupUserId: string; backupName: string; reason: string; overrideId: string; endedAt?: string; endedReason?: string }

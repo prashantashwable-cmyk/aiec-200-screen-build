@@ -161,6 +161,7 @@ export interface CommitmentSources {
   /** What a recovered outage left behind that still needs a person (186). */
   integrations: { followUps: { id: string; name: string; since: string; count: number }[]; rotations: { id: string; name: string; dueAt: string }[] };
   /** A rule that passed its sandbox tests and is still not live, and a scenario library nobody has reviewed in a while (190). */
+  monitor: { checks: { adminId: string; day: string; dueAt: string }[]; concerns: { id: string; adminId: string; note: string; reviewAt: string }[] };
   permissions: { reviews: { id: string; name: string; screen: string; dueAt: string }[] };
   companyProfile: { verify: { id: string; version: number; dueAt: string }[] };
   sandbox: { promotions: { id: string; name: string; since: string }[]; review: { dueAt: string } | null };
@@ -2463,6 +2464,50 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
         paused: false,
         actionRoute: `/automation-sandbox?rule=${x.id}`,
         oversightRoute: '/automation-sandbox',
+      }));
+    },
+  },
+  {
+    // The morning check is the discipline the whole system is built around (193): owed on each day the Admin has chosen, until a check is recorded; days they are away do not count.
+    kind: 'monitor_daily_check',
+    nudgeBefore: minutes(30),
+    escalateAfter: hours(24),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'automation',
+    collect(src) {
+      return src.monitor.checks.map((x) => ({
+        ...base('monitor_daily_check', 'alert', `${x.adminId}:${x.day}`),
+        ownerUserId: x.adminId,
+        titleKey: 'work.title.monitor_daily_check',
+        titleParams: {},
+        dueAt: x.dueAt,
+        state: 'open' as const,
+        paused: false,
+        actionRoute: '/monitor',
+        oversightRoute: '/monitor',
+      }));
+    },
+  },
+  {
+    // Something the Admin knows that no number shows is not forgotten (193): it comes back on the day they set.
+    kind: 'monitor_concern_followup',
+    nudgeBefore: hours(4),
+    escalateAfter: days(3),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'automation',
+    collect(src) {
+      return src.monitor.concerns.map((x) => ({
+        ...base('monitor_concern_followup', 'alert', x.id),
+        ownerUserId: x.adminId,
+        titleKey: 'work.title.monitor_concern_followup',
+        titleParams: { note: x.note.length > 60 ? `${x.note.slice(0, 57)}…` : x.note },
+        dueAt: x.reviewAt,
+        state: 'open' as const,
+        paused: false,
+        actionRoute: '/monitor',
+        oversightRoute: '/monitor',
       }));
     },
   },

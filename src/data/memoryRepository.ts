@@ -1016,6 +1016,8 @@ import { MANY_AT as WF_MANY_AT, MAX_PER_RUN as WF_MAX_PER_RUN, conflictsOf as wf
 import type { RecordValues, RuleDraft, SubjectId as WfSubject } from '@/features/automation/customRules';
 import { CHANNELS as INT_CHANNELS, CORE_TYPES as INT_CORE, DEFAULT_URGENCY_CHANNELS as INT_DEFAULTS, NO_CHANNELS as INT_NONE, atLeast as intAtLeast, channelProblems as intChannelProblems, contentProblems as intContentProblems, fatigueOf as intFatigueOf, isBlocking as intIsBlocking, reducesReach as intReducesReach, severityFloorOf as intSeverityFloor, urgencyOfSeverity as intUrgencyOfSeverity } from '@/features/notifications/internal';
 import type { Urgency as IntUrgency } from '@/features/notifications/internal';
+import { ABSENCE_MAX_DAYS as MN_ABSENCE_MAX, CONCERN_DAYS_MAX as MN_CONCERN_MAX, CONVERSION_WATCH as MN_CONVERSION_WATCH, DEFAULT_CHECK_DAYS as MN_DEFAULT_DAYS, DEFAULT_CHECK_TIME as MN_DEFAULT_TIME, DEFAULT_PRESET as MN_DEFAULT_PRESET, NOTE_MIN as MN_NOTE_MIN, OVERDUE_ACT_DAYS as MN_OVERDUE_ACT, PRESETS as MN_PRESETS, QUOTE_EXPIRY_DAYS as MN_QUOTE_EXPIRY, SIGNALS as MN_SIGNALS, checkProblem as mnCheckProblem, configProblem as mnConfigProblem, dayKey as mnDayKey, isCriticalFlag as mnIsCritical, panelIds as mnPanelIds, signalDef as mnSignalDef, snapshotHash as mnSnapshotHash, statusOfAlerts as mnStatusOfAlerts, streakOf as mnStreakOf, todayAt as mnTodayAt, trendOf as mnTrendOf } from '@/features/monitor/signals';
+import type { MonitorStatus as MnStatus } from '@/features/monitor/signals';
 import { BUILT_IN_ROLES as PM_BUILT_IN, CREEP_OVERRIDES as PM_CREEP, CUSTOM_BASES as PM_CUSTOM_BASES, MAX_SCREENS_PER_CHANGE as PM_MAX_SCREENS, NAME_MIN as PM_NAME_MIN, PAGE as PM_PAGE, REASON_MIN_OVERRIDE as PM_REASON_OVERRIDE, REASON_MIN_ROLE as PM_REASON_ROLE, accessFor as pmAccessFor, adminOnly as pmAdminOnly, cellOf as pmCellOf, decisionKey as pmKey, defaultAllows as pmDefaultAllows, isExpired as pmIsExpired, lettersOf as pmLetters, lockedFor as pmLockedFor, moduleOf as pmModuleOf, overrideDueAt as pmOverrideDueAt, reasonProblem as pmReasonProblem, riskOf as pmRiskOf, untilProblem as pmUntilProblem, worstRisk as pmWorstRisk } from '@/features/access/permissions';
 import type { Decision as PmDecision, RoleLite as PmRoleLite, ScreenRef as PmScreenRef } from '@/features/access/permissions';
 import { DEFAULT_TOKENS as CP_DEFAULT_TOKENS, REASON_MIN_COSMETIC as CP_REASON_COSMETIC, REASON_MIN_LEGAL as CP_REASON_LEGAL, NOTE_MIN as CP_NOTE_MIN, addressLine as cpAddressLine, changesOf as cpChangesOf, contrastChecks as cpContrast, draftHash as cpDraftHash, effectiveProblem as cpEffectiveProblem, kindOf as cpKindOf, lettersOf as cpLetters, profileProblems as cpProfileProblems, stateOfGstin as cpStateOfGstin, statusOf as cpStatusOf, verifyDueAt as cpVerifyDueAt, versionAt as cpVersionAt } from '@/features/brand/brand';
@@ -1029,12 +1031,12 @@ import type { OverrideKind, OverrideProblem } from '@/features/override/rules';
 import { GENESIS as AUDIT_GENESIS, codeOf as auditCodeOf, hashOf as auditHashOf, verifyChain as auditVerify } from '@/features/audit/chain';
 import { BOT_DRIFT_POINTS as HC_BOT_DRIFT, BOT_MIN_SAMPLE as HC_BOT_MIN, ENGINE_DOWN_MS as HC_ENGINE_DOWN, INTEGRATIONS as HC_INTEGRATIONS, MAX_PROBES as HC_MAX_PROBES, STATUS_WINDOW_MS as HC_STATUS_WINDOW, NOTE_MIN as HC_NOTE_MIN, PROBE_EVERY_MS as HC_PROBE_EVERY, WINDOW_MS as HC_WINDOW, agreementOf as hcAgreement, causeOf as hcCause, integrationDef as hcDef, isHttpUrl as hcIsUrl, judge as hcJudge, recovered as hcRecovered, sharedCauseOf as hcShared, uptimeOf as hcUptime } from '@/features/health/system';
 import type { IntegrationDef as HcDef, Observation as HcObservation, TechStatus } from '@/features/health/system';
-import type { AccessGrantsView, CustomRoleInput, MatrixRowView, PermissionLogFilter, PermissionLogView, PermissionMatrixFilter, PermissionMatrixView, PermissionOverview, PermissionRoleView, PermissionUserRow, RoleChangeInput, RoleChangePreview, UserAccessView, UserOverrideInput, BrandView, CompanyProfilePreview, CompanyProfilePublishInput, CompanyProfileVersionView, CompanyProfileView, CompanyUsage, SandboxRunView, SandboxPromotionPreview, SandboxPromotionRow, SandboxRuleRef, SandboxScenarioView, SandboxView, IntegrationManagementView, IntegrationSetupView, IsolationCheckView, OverrideCandidate, OverrideConsoleView, OverridePreviewView, AuditDetailView, AuditExportView, AuditFilter, AuditRowView, AuditSearchView, BotHealthView, SystemHealthIntegrationView, SystemHealthView } from './repository';
+import type { MonitorAbsenceInput, MonitorBackupCandidate, MonitorCheckInput, MonitorConfigInput, MonitorPanelView, MonitorSignalView, AccessGrantsView, CustomRoleInput, MatrixRowView, PermissionLogFilter, PermissionLogView, PermissionMatrixFilter, PermissionMatrixView, PermissionOverview, PermissionRoleView, PermissionUserRow, RoleChangeInput, RoleChangePreview, UserAccessView, UserOverrideInput, BrandView, CompanyProfilePreview, CompanyProfilePublishInput, CompanyProfileVersionView, CompanyProfileView, CompanyUsage, SandboxRunView, SandboxPromotionPreview, SandboxPromotionRow, SandboxRuleRef, SandboxScenarioView, SandboxView, IntegrationManagementView, IntegrationSetupView, IsolationCheckView, OverrideCandidate, OverrideConsoleView, OverridePreviewView, AuditDetailView, AuditExportView, AuditFilter, AuditRowView, AuditSearchView, BotHealthView, SystemHealthIntegrationView, SystemHealthView } from './repository';
 import { SLA_CATEGORIES, WINDOW_DAYS as SLA_WINDOW_DAYS, elapsedMsOf as slaElapsedOf, pauseOf as slaPauseOf, ratioOf as slaRatioOf, rollupOf as slaRollupOf, statusOf as slaStatusOf, targetSignal as slaTargetSignal, trendOf as slaTrendOf, triageScore as slaTriageScore } from '@/features/sla/consolidated';
 import type { SlaItem } from '@/features/sla/consolidated';
 import type { SlaCategoryView, SlaItemView, SlaOverviewView } from './repository';
 import { BACKUP_KEYS as ESC_BACKUP_KEYS, DEMO_CONFIRM_MS as ESC_DEMO_CONFIRM_MS, DEMO_SILENCE_MS as ESC_DEMO_SILENCE_MS, DRILL_GAP_TITLE as ESC_DRILL_GAP_TITLE, ESC_CHANNELS, EXHAUSTED_TITLE as ESC_EXHAUSTED_TITLE, MAX_BACKUPS as ESC_MAX_BACKUPS, NOTE_MIN as ESC_NOTE_MIN, PRIMARY as ESC_PRIMARY, SCENARIOS as ESC_SCENARIOS, SCENARIO_NAMES as ESC_NAMES, chainProblems as escChainProblems, drillDueAt as escDrillDueAt, drillStepsOf as escDrillStepsOf, exhaustedAfterMinutes as escExhaustedAfter, offsetsOf as escOffsets, phoneProblem as escPhoneBad, railOutcome as escRailOutcome, repeatOffsets as escRepeatOffsets, scenarioDef as escDef, scenarioIdOf as escScenarioIdOf, withTierIds as escTierIds } from '@/features/escalation/matrix';
-import type { CompanyProfileVersion, Role, CustomRole, PermissionChange, PermissionChangeKind, UserAccessOverride, SandboxBaseline, SandboxRun, SandboxScenario, IntegrationChange, IntegrationCredentialView, IntegrationSetup, AuditExportRecord, LeadStage, ManualOverride, IntegrationConfig, IntegrationIncident, IntegrationProbe, MessageStatus } from './types';
+import type { MonitorAbsence, MonitorCheck, MonitorConcern, MonitorConfig, CompanyProfileVersion, Role, CustomRole, PermissionChange, PermissionChangeKind, UserAccessOverride, SandboxBaseline, SandboxRun, SandboxScenario, IntegrationChange, IntegrationCredentialView, IntegrationSetup, AuditExportRecord, LeadStage, ManualOverride, IntegrationConfig, IntegrationIncident, IntegrationProbe, MessageStatus } from './types';
 import type { EscalationChainTier, EscalationChannel, EscalationContact, EscalationDelivery, EscalationDrill, EscalationDrillStep, EscalationLastResort, EscalationRun, EscalationScenarioConfig } from './types';
 import type { AlertEscalationView, EscalationGap, EscalationMatrixView, EscalationRunView, EscalationScenarioView } from './repository';
 import { VAULT_KINDS, validityState } from '@/features/documents/vault';
@@ -2879,6 +2881,7 @@ function commitmentSources(now: number): CommitmentSources {
     sandbox: sbSignals(now),
     companyProfile: cpSignals(now),
     permissions: pmSignals(now),
+    monitor: mnSignalsForCommitments(now),
     tds: tdsObligations(Date.now()),
     exits: exitSignals(),
     handoverReviews: handoverSignals().reviews,
@@ -4669,6 +4672,152 @@ function syncPermissions(now: number): void {
 function pmSignals(now: number): { reviews: { id: string; name: string; screen: string; dueAt: string }[] } {
   pmEnsure();
   return { reviews: userOverrides.filter((o) => !o.endedAt && !pmIsExpired(o, now)).map((o) => ({ id: o.id, name: byId(users, o.userId)?.name ?? o.userId, screen: o.screenId, dueAt: pmOverrideDueAt(o) })) };
+}
+
+/* ============================================ Single-person monitor (193) */
+
+const monitorConfigs = new Map<string, MonitorConfig>();
+const monitorChecks: MonitorCheck[] = [];
+const monitorConcerns: MonitorConcern[] = [];
+const monitorAbsences: MonitorAbsence[] = [];
+let mnSeeded = false;
+
+const mnConfigOf = (adminId: string): MonitorConfig => {
+  let c = monitorConfigs.get(adminId);
+  if (!c) { c = { adminId, signalIds: [...MN_PRESETS[MN_DEFAULT_PRESET]], preset: MN_DEFAULT_PRESET, checkTime: MN_DEFAULT_TIME, checkDays: [...MN_DEFAULT_DAYS], updatedAt: new Date().toISOString() }; monitorConfigs.set(adminId, c); }
+  return c;
+};
+const mnAbsenceActive = (a: MonitorAbsence, now: number): boolean => !a.endedAt && Date.parse(a.from) <= now && Date.parse(a.until) > now;
+const mnAway = (adminId: string) => (key: string): boolean => monitorAbsences.some((a) => a.adminId === adminId && mnDayKey(Date.parse(a.from)) <= key && key <= mnDayKey(a.endedAt ? Date.parse(a.endedAt) : Date.parse(a.until)));
+
+interface MnRaw { id: string; value: number | null; status: MnStatus; params: Record<string, string | number> }
+/** Each signal is read from the records the dedicated screen already keeps and judged by that screen's own beacons (alerts, breaches, health), never by a second list kept here. */
+function mnSignals(now: number, adminId: string): Map<string, MnRaw> {
+  const out = new Map<string, MnRaw>();
+  const put = (id: string, value: number | null, status: MnStatus, params: Record<string, string | number> = {}) => out.set(id, { id, value, status, params });
+  const open = alerts.filter((a) => a.status === 'open');
+  const counts = (pred: (a: Alert) => boolean) => { const l = open.filter(pred); return { n: l.length, critical: l.filter((a) => a.severity === 'critical').length, high: l.filter((a) => a.severity === 'high').length, other: l.filter((a) => a.severity !== 'critical' && a.severity !== 'high').length }; };
+  const byAlerts = (id: string, pred: (a: Alert) => boolean) => { const c = counts(pred); put(id, c.n, mnStatusOfAlerts(c), { count: c.n, critical: c.critical, high: c.high }); };
+  byAlerts('critical_alerts', (a) => a.severity === 'critical');
+  byAlerts('safety', (a) => a.category === 'safety');
+  byAlerts('emergency_chain', (a) => a.titleKey === 'escalationMatrix.alert.exhausted' || a.titleKey === 'escalationMatrix.alert.drillGap');
+  const chain = auditVerify(automatedActionLog);
+  put('audit_chain', chain.ok ? 0 : 1, chain.ok ? 'ok' : 'act', { entries: chain.count });
+  const health = systemHealthView(now).totals;
+  put('integrations', health.down + health.degraded, health.down > 0 ? 'act' : health.degraded > 0 ? 'watch' : 'ok', { down: health.down, degraded: health.degraded });
+  const sandboxIds = igSandboxInProd(appEnvironment, integrationSetups.map((x) => ({ id: x.id, mode: x.mode })));
+  put('sandbox_prod', sandboxIds.length, sandboxIds.length > 0 ? 'act' : 'ok', { count: sandboxIds.length });
+  const auto = automationOverviewOf(now);
+  put('automation', auto.totals.unhealthy, auto.overall === 'down' ? 'act' : auto.overall === 'degraded' || auto.overall === 'paused' ? 'watch' : 'ok', { count: auto.totals.unhealthy, paused: auto.totals.paused });
+  const sla = slaOverview(now).totals;
+  put('sla', sla.breached, sla.breached > 0 ? 'act' : sla.atRisk > 0 ? 'watch' : 'ok', { count: sla.breached, atRisk: sla.atRisk });
+  const mine = commitments.filter((c) => c.status === 'open' && !c.paused && c.ownerUserId === adminId);
+  const overdue = mine.filter((c) => Date.parse(c.dueAt) < now).length;
+  const dueSoon = mine.filter((c) => Date.parse(c.dueAt) >= now && Date.parse(c.dueAt) - now <= 86_400_000).length;
+  put('commitments', overdue, overdue > 0 ? 'act' : dueSoon > 0 ? 'watch' : 'ok', { count: overdue, today: dueSoon });
+  const week = 7 * 86_400_000;
+  const newLeads = leads.filter((l) => now - Date.parse(l.createdAt) <= week).length;
+  put('leads_new', newLeads, newLeads === 0 ? 'watch' : 'ok', { count: newLeads });
+  const won = leads.filter((l) => l.stage === 'won').length;
+  const closed = won + leads.filter((l) => l.stage === 'lost').length;
+  const conv = closed > 0 ? Math.round((won / closed) * 100) : null;
+  put('conversion', conv, conv !== null && conv / 100 < MN_CONVERSION_WATCH ? 'watch' : 'ok', { pct: conv ?? 0 });
+  const expiring = quotations.filter((q) => (q.status === 'sent' || q.status === 'viewed') && !!q.validityDate && Date.parse(q.validityDate) >= now && Date.parse(q.validityDate) - now <= MN_QUOTE_EXPIRY * 86_400_000).length;
+  put('quotes_expiring', expiring, expiring > 0 ? 'watch' : 'ok', { count: expiring, days: MN_QUOTE_EXPIRY });
+  const revenue = deals.filter((d) => d.status === 'won' && d.closedAt && Date.parse(d.closedAt) >= startOfMonth()).reduce((n, d) => n + d.agreedPrice, 0);
+  put('revenue_month', revenue, 'ok', { amount: revenue });
+  const late = payments.filter((p) => isOutstanding(p) && daysOverdue(p, now) > 0);
+  const lateAmount = late.reduce((n, p) => n + remainingBalance(p), 0);
+  const oldest = late.reduce((m, p) => Math.max(m, daysOverdue(p, now)), 0);
+  put('payments_overdue', lateAmount, late.length === 0 ? 'ok' : oldest >= MN_OVERDUE_ACT ? 'act' : 'watch', { amount: lateAmount, count: late.length, days: oldest });
+  const waiting = supplierPayments.filter((p) => p.status === 'pending_approval').length;
+  put('supplier_pay', waiting, waiting > 0 ? 'watch' : 'ok', { count: waiting });
+  byAlerts('payouts', (a) => a.titleKey.startsWith('payoutDisbursement.alert.'));
+  byAlerts('workforce', (a) => a.category === 'staffing');
+  byAlerts('quality', (a) => a.category === 'quality');
+  return out;
+}
+
+function mnSeed(now: number): void {
+  if (mnSeeded) return;
+  mnSeeded = true;
+  const admin = users.find((u) => u.role === 'admin' && u.status === 'active');
+  if (!admin) return;
+  mnConfigOf(admin.id);
+  const cfg = mnConfigOf(admin.id);
+  const sigs = mnSignals(now, admin.id);
+  // A few earlier mornings, so the arrows have something to compare with and the streak is real. The values are the present ones nudged a little (a seed, not history).
+  for (const [i, daysBack] of [4, 3, 2, 1].entries()) {
+    const at = new Date(now - daysBack * 86_400_000); at.setHours(9, 40 + i, 0, 0);
+    const panel = mnPanelIds(cfg.signalIds);
+    const values: Record<string, number | null> = {};
+    const statuses: Record<string, MnStatus> = {};
+    for (const id of panel) { const r = sigs.get(id)!; values[id] = r.value === null ? null : Math.max(0, r.value + (((i + id.length) % 3) - 1)); statuses[id] = r.status; }
+    const n = monitorChecks.length + 1;
+    monitorChecks.push(Object.freeze({ id: `mc-${n}`, code: `AIEC-MC-${1000 + n}`, adminId: admin.id, adminName: admin.name, at: at.toISOString(), kind: 'all_fine', note: '', panel, values, statuses, actIds: [], outsideActIds: [], hash: mnSnapshotHash(values, statuses) }) as MonitorCheck);
+  }
+}
+
+function mnBackupCandidates(adminId: string): MonitorBackupCandidate[] {
+  const seen = new Set<string>();
+  const out: MonitorBackupCandidate[] = [];
+  for (const c of escBackups) {
+    const u = c?.userId ? byId(users, c.userId) : undefined;
+    if (u && u.status === 'active' && u.role !== 'admin' && u.role !== 'customer' && u.role !== 'supplier' && !seen.has(u.id)) { seen.add(u.id); out.push({ userId: u.id, name: u.name, role: u.role, fromMatrix: true }); }
+  }
+  for (const u of users) if (u.status === 'active' && (u.role === 'surveyor' || u.role === 'technician') && !seen.has(u.id) && out.length < 14 && u.id !== adminId) { seen.add(u.id); out.push({ userId: u.id, name: u.name, role: u.role, fromMatrix: false }); }
+  return out;
+}
+
+function mnPanelFor(viewer: User, now: number): MonitorPanelView {
+  mnSeed(now);
+  const isAdmin = viewer.role === 'admin';
+  const cover = isAdmin ? null : monitorAbsences.find((a) => a.backupUserId === viewer.id && mnAbsenceActive(a, now));
+  if (!isAdmin && !cover) throw new RepositoryError('not_allowed');
+  const adminId = isAdmin ? viewer.id : cover!.adminId;
+  const cfg = mnConfigOf(adminId);
+  const sigs = mnSignals(now, adminId);
+  const mineChecks = monitorChecks.filter((c) => c.adminId === adminId).sort((a, b) => (a.at < b.at ? 1 : -1));
+  const last = mineChecks[0] ?? null;
+  const panel = isAdmin ? mnPanelIds(cfg.signalIds) : MN_SIGNALS.filter((x) => x.limited).map((x) => x.id);
+  const views: MonitorSignalView[] = MN_SIGNALS.filter((def) => isAdmin || def.limited).map((def) => {
+    const r = sigs.get(def.id)!;
+    const prev = isAdmin ? last?.values[def.id] ?? null : null;
+    const t = mnTrendOf(r.value, prev ?? null);
+    return { id: def.id, group: def.group, unit: def.unit, value: r.value, previous: prev ?? null, direction: t.direction, pct: t.pct, status: r.status, critical: mnIsCritical(def, r.status), pinned: def.pinned, configured: panel.includes(def.id), limited: def.limited, route: def.route, params: r.params };
+  });
+  const shown = views.filter((v) => v.configured);
+  const values: Record<string, number | null> = {};
+  const statuses: Record<string, MnStatus> = {};
+  for (const v of shown) { values[v.id] = v.value; statuses[v.id] = v.status; }
+  const todayKey = mnDayKey(now);
+  const checkedDays = new Set(mineChecks.map((c) => mnDayKey(Date.parse(c.at))));
+  const team = monitorChecks.filter((c) => c.adminId !== adminId && mnDayKey(Date.parse(c.at)) === todayKey).map((c) => ({ adminName: c.adminName, at: c.at, kind: c.kind }));
+  const absence = isAdmin ? monitorAbsences.find((a) => a.adminId === adminId && !a.endedAt && Date.parse(a.until) > now) ?? null : null;
+  return {
+    viewer: isAdmin ? 'admin' : 'backup', signals: views, panel, outside: views.filter((v) => !v.configured && v.status === 'act').map((v) => v.id),
+    config: isAdmin ? { signalIds: [...cfg.signalIds], preset: cfg.preset, checkTime: cfg.checkTime, checkDays: [...cfg.checkDays] } : null,
+    anyCritical: views.some((v) => v.critical), actCount: shown.filter((v) => v.status === 'act').length, watchCount: shown.filter((v) => v.status === 'watch').length,
+    lastCheck: isAdmin ? last : null, checkedToday: checkedDays.has(todayKey), team, streak: isAdmin ? mnStreakOf(checkedDays, cfg.checkDays, mnAway(adminId), now) : 0,
+    recent: isAdmin ? mineChecks.slice(0, 10).map((c) => JSON.parse(JSON.stringify(c)) as MonitorCheck) : [],
+    concerns: isAdmin ? monitorConcerns.filter((c) => c.adminId === adminId && !c.resolvedAt).sort((a, b) => (a.reviewAt < b.reviewAt ? -1 : 1)).map((c) => ({ ...c })) : [],
+    absence: absence ? { ...absence } : null, candidates: isAdmin ? mnBackupCandidates(adminId) : [], hash: mnSnapshotHash(values, statuses),
+    covering: cover ? { adminName: byId(users, cover.adminId)?.name ?? '', until: cover.until } : null, at: new Date(now).toISOString(),
+  };
+}
+
+function mnSignalsForCommitments(now: number): { checks: { adminId: string; day: string; dueAt: string }[]; concerns: { id: string; adminId: string; note: string; reviewAt: string }[] } {
+  mnSeed(now);
+  const today = mnDayKey(now);
+  const checks: { adminId: string; day: string; dueAt: string }[] = [];
+  for (const u of users) {
+    if (u.role !== 'admin' || u.status !== 'active') continue;
+    const cfg = mnConfigOf(u.id);
+    if (!cfg.checkDays.includes(new Date(now).getDay()) || mnAway(u.id)(today)) continue;
+    if (monitorChecks.some((c) => c.adminId === u.id && mnDayKey(Date.parse(c.at)) === today)) continue;
+    checks.push({ adminId: u.id, day: today, dueAt: new Date(mnTodayAt(cfg.checkTime, now)).toISOString() });
+  }
+  return { checks, concerns: monitorConcerns.filter((c) => !c.resolvedAt).map((c) => ({ id: c.id, adminId: c.adminId, note: c.note, reviewAt: c.reviewAt })) };
 }
 
 const heartbeatCommitments = { notifications: 0, alerts: 0 };
@@ -26249,6 +26398,88 @@ export const memoryRepository: Repository = {
       const offset = filter.offset ?? 0;
       const limit = filter.limit === 0 ? list.length : filter.limit ?? PM_PAGE;
       return { entries: list.slice(offset, offset + limit).map((e) => ({ ...e })), total: list.length } as PermissionLogView;
+    }),
+  /* 193 — single-person monitor */
+  getMonitorPanel: (userId) => simulateRead(() => { const u = byId(users, userId); if (!u) throw new RepositoryError('not_found'); return mnPanelFor(u, Date.now()); }),
+  saveMonitorConfig: (userId, input) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      const now = Date.now();
+      mnSeed(now);
+      const problem = mnConfigProblem(input.signalIds, input.checkTime, input.checkDays);
+      if (problem) throw new RepositoryError(problem);
+      monitorConfigs.set(admin.id, { adminId: admin.id, signalIds: [...new Set(input.signalIds)].filter((id) => !!mnSignalDef(id) && !mnSignalDef(id)!.pinned), preset: input.preset && input.preset in MN_PRESETS ? input.preset : null, checkTime: input.checkTime, checkDays: [...new Set(input.checkDays)].sort(), updatedAt: new Date(now).toISOString() });
+      return mnPanelFor(admin, now);
+    }),
+  recordMonitorCheck: (userId, input) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      const now = Date.now();
+      const view = mnPanelFor(admin, now);
+      if (input.hash !== view.hash) throw new RepositoryError('panel_changed');
+      const actIds = view.signals.filter((v) => v.configured && v.status === 'act').map((v) => v.id);
+      const problem = mnCheckProblem(input.kind, actIds, input.note);
+      if (problem) throw new RepositoryError(problem);
+      const values: Record<string, number | null> = {};
+      const statuses: Record<string, MnStatus> = {};
+      for (const v of view.signals.filter((x) => x.configured)) { values[v.id] = v.value; statuses[v.id] = v.status; }
+      const n = monitorChecks.length + 1;
+      monitorChecks.push(Object.freeze({ id: `mc-${n}`, code: `AIEC-MC-${1000 + n}`, adminId: admin.id, adminName: admin.name, at: new Date(now).toISOString(), kind: input.kind, note: input.note.trim(), panel: view.panel, values, statuses, actIds, outsideActIds: view.outside, hash: view.hash }) as MonitorCheck);
+      return mnPanelFor(admin, now);
+    }),
+  addMonitorConcern: (userId, note, reviewDays) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      const now = Date.now();
+      mnSeed(now);
+      if (note.replace(/[^\p{L}]/gu, '').length < MN_NOTE_MIN) throw new RepositoryError('note_short');
+      if (!Number.isInteger(reviewDays) || reviewDays < 1 || reviewDays > MN_CONCERN_MAX) throw new RepositoryError('review_invalid');
+      monitorConcerns.push({ id: `mk-${monitorConcerns.length + 1}`, adminId: admin.id, note: note.trim(), createdAt: new Date(now).toISOString(), reviewAt: new Date(now + reviewDays * 86_400_000).toISOString() });
+      return mnPanelFor(admin, now);
+    }),
+  resolveMonitorConcern: (userId, concernId, note) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      const now = Date.now();
+      mnSeed(now);
+      const c = monitorConcerns.find((x) => x.id === concernId && x.adminId === admin.id && !x.resolvedAt);
+      if (!c) throw new RepositoryError('not_found');
+      if (note.replace(/[^\p{L}]/gu, '').length < MN_NOTE_MIN) throw new RepositoryError('note_short');
+      c.resolvedAt = new Date(now).toISOString();
+      c.resolution = note.trim();
+      return mnPanelFor(admin, now);
+    }),
+  setMonitorAbsence: (userId, input) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      const now = Date.now();
+      mnSeed(now);
+      if (monitorAbsences.some((a) => a.adminId === admin.id && !a.endedAt && Date.parse(a.until) > now)) throw new RepositoryError('already_away');
+      const until = Date.parse(input.until);
+      if (!Number.isFinite(until) || until <= now || until > now + MN_ABSENCE_MAX * 86_400_000) throw new RepositoryError('until_invalid');
+      const backup = mnBackupCandidates(admin.id).find((c) => c.userId === input.backupUserId);
+      if (!backup) throw new RepositoryError('backup_invalid');
+      if (input.reason.replace(/[^\p{L}]/gu, '').length < MN_NOTE_MIN) throw new RepositoryError('reason_short');
+      // The access is one of 192's time-limited exceptions: it shows up in the permission audit, ends on its own and can be removed there.
+      if (!pmRef('193')) throw new RepositoryError('access_unavailable');
+      pmSetOverride(admin, { targetUserId: backup.userId, screenIds: ['193'], effect: 'allow', reason: `Backup viewer for the monitor panel while ${admin.name} is away: ${input.reason.trim()}`, until: new Date(until).toISOString(), confirmHighRisk: true }, now);
+      const ov = [...userOverrides].reverse().find((o) => o.userId === backup.userId && o.screenId === '193' && !o.endedAt);
+      monitorAbsences.push({ id: `ma-${monitorAbsences.length + 1}`, adminId: admin.id, from: new Date(now).toISOString(), until: new Date(until).toISOString(), backupUserId: backup.userId, backupName: backup.name, reason: input.reason.trim(), overrideId: ov?.id ?? '' });
+      return mnPanelFor(admin, now);
+    }),
+  endMonitorAbsence: (userId, reason) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      const now = Date.now();
+      mnSeed(now);
+      const a = monitorAbsences.find((x) => x.adminId === admin.id && !x.endedAt && Date.parse(x.until) > now);
+      if (!a) throw new RepositoryError('not_found');
+      if (reason.replace(/[^\p{L}]/gu, '').length < MN_NOTE_MIN) throw new RepositoryError('reason_short');
+      const ov = userOverrides.find((o) => o.id === a.overrideId && !o.endedAt);
+      if (ov) { ov.endedAt = new Date(now).toISOString(); ov.endedReason = 'removed'; ov.endedByName = admin.name; pmWrite(admin, 'override_removed', now, { userId: ov.userId, userName: byId(users, ov.userId)?.name ?? ov.userId, screenIds: [ov.screenId], reason: `The Admin is back: ${reason.trim()}` }); }
+      a.endedAt = new Date(now).toISOString();
+      a.endedReason = reason.trim();
+      return mnPanelFor(admin, now);
     }),
   /* 189 — integration management */
   getIntegrationManagement: (userId) => simulateRead(() => { intAdmin(userId); syncIntegrationManagement(Date.now()); return igView(Date.now()); }),

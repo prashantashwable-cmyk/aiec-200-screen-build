@@ -1,5 +1,6 @@
 import type { VaultKind } from '@/features/documents/vault';
 import type { BrandDraft, ContrastCheck } from '@/features/brand/brand';
+import type { CheckKind as MonitorCheckKind, Direction as MonitorDirection, MonitorGroup, MonitorStatus, MonitorUnit } from '@/features/monitor/signals';
 import type { Risk as AccessRisk, ScreenRef, Source as AccessSource } from '@/features/access/permissions';
 import type { CategoryRollup as SlaRollup, PauseReason as SlaPauseReason, SlaCategory, SlaStatus, TargetSignal as SlaTargetSignal, TrendDirection as SlaTrendDirection, TrendPoint as SlaTrendPoint } from '@/features/sla/consolidated';
 import type { ItemState, SignOffProblem } from '@/features/qc/mechanical';
@@ -139,6 +140,9 @@ import type {
   SandboxRun,
   CompanyProfileChange,
   CompanyProfileVersion,
+  MonitorAbsence,
+  MonitorCheck,
+  MonitorConcern,
   CustomRole,
   PermissionChange,
   PermissionChangeKind,
@@ -7300,6 +7304,59 @@ export interface UserAccessView {
 export interface PermissionLogFilter { q?: string; kind?: PermissionChangeKind | 'all'; userId?: string; roleId?: string; offset?: number; limit?: number }
 export interface PermissionLogView { entries: PermissionChange[]; total: number }
 
+/* ------------------------------------------------------------------ Single-person monitor (193) */
+
+export interface MonitorSignalView {
+  id: string;
+  group: MonitorGroup;
+  unit: MonitorUnit;
+  value: number | null;
+  /** The value at the last check, for the arrow ("since you last looked"). */
+  previous: number | null;
+  direction: MonitorDirection | null;
+  pct: number | null;
+  status: MonitorStatus;
+  /** Cannot be left unseen: a pinned signal that needs action. */
+  critical: boolean;
+  pinned: boolean;
+  /** In this Admin's own set (pinned ones always are). */
+  configured: boolean;
+  limited: boolean;
+  route: string;
+  /** Numbers the screen puts in the sentence (a count, an amount, days). */
+  params: Record<string, string | number>;
+}
+export interface MonitorBackupCandidate { userId: string; name: string; role: Role; fromMatrix: boolean }
+export interface MonitorPanelView {
+  viewer: 'admin' | 'backup';
+  signals: MonitorSignalView[];
+  /** The order of the panel: pinned first, then the Admin's own set. */
+  panel: string[];
+  /** Signals outside the Admin's own set that need action today. */
+  outside: string[];
+  config: { signalIds: string[]; preset: string | null; checkTime: string; checkDays: number[] } | null;
+  anyCritical: boolean;
+  actCount: number;
+  watchCount: number;
+  lastCheck: MonitorCheck | null;
+  checkedToday: boolean;
+  /** Other people who have checked today, so a small monitoring team sees each other. */
+  team: { adminName: string; at: string; kind: MonitorCheckKind }[];
+  streak: number;
+  recent: MonitorCheck[];
+  concerns: MonitorConcern[];
+  absence: MonitorAbsence | null;
+  candidates: MonitorBackupCandidate[];
+  /** What this view was made of: a check must carry it, so "all fine" is never recorded against a panel that has moved. */
+  hash: string;
+  /** For a backup viewer: whom they are covering for, and until when. */
+  covering: { adminName: string; until: string } | null;
+  at: string;
+}
+export interface MonitorConfigInput { signalIds: string[]; preset: string | null; checkTime: string; checkDays: number[] }
+export interface MonitorCheckInput { kind: MonitorCheckKind; note: string; hash: string }
+export interface MonitorAbsenceInput { until: string; backupUserId: string; reason: string }
+
 /* ------------------------------------------------------------------ Integration management (189) */
 
 export interface IntegrationSetupView {
@@ -9013,6 +9070,14 @@ export interface Repository {
   removeUserOverride(userId: string, overrideId: string, reason: string): Promise<UserAccessView>;
   reviewUserOverride(userId: string, overrideId: string, note: string): Promise<UserAccessView>;
   getPermissionLog(userId: string, filter: PermissionLogFilter): Promise<PermissionLogView>;
+  /* 193 — single-person monitor */
+  getMonitorPanel(userId: string): Promise<MonitorPanelView>;
+  saveMonitorConfig(userId: string, input: MonitorConfigInput): Promise<MonitorPanelView>;
+  recordMonitorCheck(userId: string, input: MonitorCheckInput): Promise<MonitorPanelView>;
+  addMonitorConcern(userId: string, note: string, reviewDays: number): Promise<MonitorPanelView>;
+  resolveMonitorConcern(userId: string, concernId: string, note: string): Promise<MonitorPanelView>;
+  setMonitorAbsence(userId: string, input: MonitorAbsenceInput): Promise<MonitorPanelView>;
+  endMonitorAbsence(userId: string, reason: string): Promise<MonitorPanelView>;
   /* 188 — the console for forcing what a rule would not, with a reason, a preview and a confirmation; guardrails with no override are refused and the attempt kept. */
   getOverrideConsole(userId: string): Promise<OverrideConsoleView>;
   getOverrideCandidates(userId: string, kind: string, q: string): Promise<OverrideCandidate[]>;
