@@ -99,6 +99,7 @@ export const APPLICATION_KEYS = {
     personIntro: 'application.identity.personIntro',
     aadhaar: 'application.identity.aadhaar',
     aadhaarDoc: 'application.identity.aadhaarDoc',
+    aadhaarOnFile: 'application.identity.aadhaarOnFile',
     or: 'application.identity.or',
     pan: 'application.identity.pan',
     panDoc: 'application.identity.panDoc',

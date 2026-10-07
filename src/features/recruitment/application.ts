@@ -35,7 +35,7 @@ export const EMPTY_FORM: ApplicationForm = {
   experience: { years: '', skills: [], sectors: [], summary: '' },
   territory: { zoneIds: [], travelKm: '', ownTransport: false },
   availability: { days: [], timeOfDay: '', hoursPerWeek: '', earliestStart: '' },
-  identity: { aadhaarNumber: '', aadhaarDoc: null, panNumber: '', panDoc: null, gstin: '', gstDoc: null },
+  identity: { aadhaarNumber: '', aadhaarLast4: '', aadhaarChecked: false, aadhaarDoc: null, panNumber: '', panDoc: null, gstin: '', gstDoc: null },
   references: [],
   noReferences: false,
 };
@@ -108,7 +108,7 @@ export function sectionStates(role: RecruitRole, f: ApplicationForm, today: Date
     if (!isValidGstin(f.identity.gstin)) i.push('gstin');
     if (!f.identity.gstDoc) i.push('gst_doc');
   } else {
-    const aadhaar = isValidAadhaar(f.identity.aadhaarNumber) && !!f.identity.aadhaarDoc;
+    const aadhaar = hasValidAadhaar(f.identity) && !!f.identity.aadhaarDoc;
     const pan = isValidPan(f.identity.panNumber) && !!f.identity.panDoc;
     if (!aadhaar && !pan) i.push('identity');
   }
@@ -145,4 +145,15 @@ export function outstandingOf(f: ApplicationForm): Outstanding[] {
 }
 
 /** Aadhaar and PAN are shown to Admin only in part. */
+/** A valid Aadhaar is either one typed on this phone that passes the checksum, or one AIEC recorded as checked (last four digits only). */
+export const hasValidAadhaar = (id: ApplicationForm['identity']): boolean => isValidAadhaar(id.aadhaarNumber) || (id.aadhaarChecked && /^\d{4}$/.test(id.aadhaarLast4));
+
+/** What may leave the phone: the last four digits and whether the checksum passed. Typing a new number replaces the one on file. */
+export const identityForServer = (id: ApplicationForm['identity']): ApplicationForm['identity'] => {
+  const typed = id.aadhaarNumber.replace(/\D/g, '');
+  if (!typed) return { ...id, aadhaarNumber: '' };
+  const ok = isValidAadhaar(id.aadhaarNumber);
+  return { ...id, aadhaarNumber: '', aadhaarLast4: ok ? typed.slice(-4) : '', aadhaarChecked: ok };
+};
+
 export const maskId = (v: string): string => (v.length > 4 ? `${'•'.repeat(v.length - 4)}${v.slice(-4)}` : v);

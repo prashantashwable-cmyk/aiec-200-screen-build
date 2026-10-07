@@ -94,8 +94,8 @@ export function serviceCheck(role: RecruitRole, form: ApplicationForm): ServiceR
     return id.gstDoc ? { result: 'passed', detail: 'verified' } : { result: 'inconclusive', detail: 'no_document' };
   }
   const hasPan = isValidPan(id.panNumber);
-  const hasAadhaar = isValidAadhaar(id.aadhaarNumber);
-  if (!id.panNumber.trim() && !id.aadhaarNumber.trim()) return { result: 'inconclusive', detail: 'no_number' };
+  const hasAadhaar = isValidAadhaar(id.aadhaarNumber) || (id.aadhaarChecked && /^\d{4}$/.test(id.aadhaarLast4));
+  if (!id.panNumber.trim() && !id.aadhaarNumber.trim() && !id.aadhaarLast4) return { result: 'inconclusive', detail: 'no_number' };
   if (id.panNumber.trim() && !hasPan && !hasAadhaar) return { result: 'failed', detail: 'bad_number' };
   if (hasPan) {
     if (!id.panDoc) return { result: 'inconclusive', detail: 'no_document' };

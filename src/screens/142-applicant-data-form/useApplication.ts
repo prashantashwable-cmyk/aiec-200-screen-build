@@ -8,9 +8,12 @@ import { useToast } from '@/design-system';
 import type { ApplicationBoardView, PartnerApplicationView } from '@/data/repository';
 import type { ApplicationForm } from '@/data/types';
 import { seedOnboardingDraft } from '@/features/onboarding/handoff';
-import { EMPTY_FORM, sectionStates } from '@/features/recruitment/application';
+import { EMPTY_FORM, identityForServer, sectionStates } from '@/features/recruitment/application';
 import { APPLICATION_KEYS as K, POLL_MS, SAVE_DELAY_MS, draftKey, keyKey } from './application.types';
 import type { ApplicationStatus } from './application.types';
+
+/** The full Aadhaar number never leaves this phone: only its last four digits and whether the checksum passed. */
+const forServer = (form: ApplicationForm): ApplicationForm => ({ ...form, identity: identityForServer(form.identity) });
 
 export type SaveState = 'saved' | 'saving' | 'offline' | 'failed' | 'idle';
 export interface ActionResult {
@@ -130,7 +133,7 @@ export function useApplication() {
     setSaveState('saving');
     const timer = window.setTimeout(async () => {
       try {
-        const v = await repository.savePartnerApplication(applicationId, key, form);
+        const v = await repository.savePartnerApplication(applicationId, key, forServer(form));
         setView(v);
         setDirty(false);
         setSaveState('saved');
@@ -185,7 +188,7 @@ export function useApplication() {
       if (!navigator.onLine) return { ok: false, code: 'offline' };
       setBusy(true);
       try {
-        await repository.savePartnerApplication(applicationId, key, form);
+        await repository.savePartnerApplication(applicationId, key, forServer(form));
         const v = await repository.submitPartnerApplication(applicationId, key);
         setView(v);
         setDirty(false);

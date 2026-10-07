@@ -2724,7 +2724,9 @@ export interface ApplicationForm {
   territory: { zoneIds: string[]; travelKm: string; ownTransport: boolean };
   availability: { days: number[]; timeOfDay: 'full_day' | 'mornings' | 'afternoons' | 'evenings' | ''; hoursPerWeek: string; earliestStart: string };
   /** Surveyor and technician: an Aadhaar or PAN number with its photo. Supplier: the firm's GSTIN with its certificate. */
-  identity: { aadhaarNumber: string; aadhaarDoc: ApplicationDoc | null; panNumber: string; panDoc: ApplicationDoc | null; gstin: string; gstDoc: ApplicationDoc | null };
+  /** `aadhaarNumber` lives only on the applicant's own phone while they type: AIEC keeps the last four digits and whether the number's
+   *  checksum passed, never the number (UIDAI). The repository blanks `aadhaarNumber` on every save. */
+  identity: { aadhaarNumber: string; aadhaarLast4: string; aadhaarChecked: boolean; aadhaarDoc: ApplicationDoc | null; panNumber: string; panDoc: ApplicationDoc | null; gstin: string; gstDoc: ApplicationDoc | null };
   references: ApplicationReference[];
   /** The applicant has no one to name right now: carried as outstanding for the decision, never a block. */
   noReferences: boolean;

@@ -972,7 +972,7 @@ import type { AmcTierId as WrTierId } from '@/features/qc/warranty';
 import { issueProblem as coIssueProblem, readinessOf as coReadiness, signoffDueAt as coSignoffDue } from '@/features/qc/completion';
 import { crewShares as fpCrewShares, installPoolOf as fpInstallPool, judgementProblem as fpJudgementProblem, qcShares as fpQcShares, salesCloseOf as fpSalesClose } from '@/features/commission/finalPayout';
 import type { Contributor as FpContributor } from '@/features/commission/finalPayout';
-import { SECTIONS as APP_SECTIONS, EMPTY_FORM as APP_EMPTY, maskId as apMask, outstandingOf as apOutstanding, progressOf as apProgress, sectionStates as apSections, submitProblem as apSubmitProblem } from '@/features/recruitment/application';
+import { SECTIONS as APP_SECTIONS, EMPTY_FORM as APP_EMPTY, maskId as apMask, identityForServer as apIdentityForServer, outstandingOf as apOutstanding, progressOf as apProgress, sectionStates as apSections, submitProblem as apSubmitProblem } from '@/features/recruitment/application';
 import { FUNNEL as RD_FUNNEL, NOW_STAGES as RD_NOW, SMALL_SAMPLE as RD_SMALL, WAITLIST_MIN as RD_WAITLIST_MIN, funnelOf as rdFunnelOf, medianOf as rdMedian, roomOf as rdRoom, signalOf as rdSignalOf, trendOf as rdTrend } from '@/features/recruitment/dashboard';
 import type { NowStage as RdNowStage, Period as RdPeriod, RecruitStage as RdRecruitStage } from '@/features/recruitment/dashboard';
 import { TOPICS as TN_TOPICS, currentVersionOf as tnCurrentVersion, curriculumOf as tnCurriculum, jobGateOf as tnJobGate, lockedBy as tnLockedBy, percentOfModule as tnPercent, relevantFor as tnRelevant, requiredFor as tnRequired, startProblem as tnStartProblem, statusOf as tnStatus, updatedSince as tnUpdated } from '@/features/training/curriculum';
@@ -4982,7 +4982,7 @@ function pvRecords(p: PvPerson, now: number): PvRecords {
 }
 
 function pvEraseApplication(a: PartnerApplication, now: number): void {
-  a.form = { ...a.form, personal: { ...a.form.personal, fullName: 'Removed', phone: '', city: '', address: '', dob: '' }, experience: { ...a.form.experience, summary: '' }, identity: { aadhaarNumber: '', aadhaarDoc: null, panNumber: '', panDoc: null, gstin: '', gstDoc: null }, references: [] };
+  a.form = { ...a.form, personal: { ...a.form.personal, fullName: 'Removed', phone: '', city: '', address: '', dob: '' }, experience: { ...a.form.experience, summary: '' }, identity: { aadhaarNumber: '', aadhaarLast4: '', aadhaarChecked: false, aadhaarDoc: null, panNumber: '', panDoc: null, gstin: '', gstDoc: null }, references: [] };
   a.erasedAt = new Date(now).toISOString();
 }
 function pvEraseInterest(i: RecruitmentInterest): void { i.name = 'Removed'; i.phone = `del${i.id}`; }
@@ -11486,7 +11486,7 @@ function applicationViewOf(app: PartnerApplication, viewer: 'applicant' | 'admin
   const sections = apSections(app.role, app.form);
   const form = JSON.parse(JSON.stringify(app.form)) as ApplicationForm;
   if (viewer === 'admin') {
-    form.identity.aadhaarNumber = apMask(form.identity.aadhaarNumber);
+    form.identity.aadhaarNumber = '';
     form.identity.panNumber = apMask(form.identity.panNumber);
   }
   return {
@@ -11828,8 +11828,8 @@ function vfFacts(app: PartnerApplication, item: RequiredItem): VerificationItemV
   const f = app.form;
   if (item.kind === 'identity') {
     const pan = f.identity.panNumber.trim();
-    const aad = f.identity.aadhaarNumber.trim();
-    return pan ? { type: 'pan', number: apMask(pan), doc: !!f.identity.panDoc } : aad ? { type: 'aadhaar', number: apMask(aad), doc: !!f.identity.aadhaarDoc } : { type: 'none', number: '', doc: false };
+    const aad = f.identity.aadhaarLast4;
+    return pan ? { type: 'pan', number: apMask(pan), doc: !!f.identity.panDoc } : aad ? { type: 'aadhaar', number: `•••• •••• ${aad}`, doc: !!f.identity.aadhaarDoc } : { type: 'none', number: '', doc: false };
   }
   if (item.kind === 'registration') return { type: 'gstin', number: f.identity.gstin.trim(), doc: !!f.identity.gstDoc };
   if (item.kind === 'reference') {
@@ -23619,7 +23619,12 @@ export const memoryRepository: Repository = {
       if (patch.experience) f.experience = { ...patch.experience };
       if (patch.territory) f.territory = { ...patch.territory };
       if (patch.availability) f.availability = { ...patch.availability };
-      if (patch.identity) f.identity = { ...patch.identity };
+      if (patch.identity) {
+        // Only the last four digits of an Aadhaar number are kept; a full number that arrives anyway is reduced here, never stored.
+        const next = apIdentityForServer({ ...patch.identity, aadhaarLast4: patch.identity.aadhaarLast4 ?? '', aadhaarChecked: patch.identity.aadhaarChecked ?? false });
+        if (next.aadhaarLast4 && !/^\d{4}$/.test(next.aadhaarLast4)) throw new RepositoryError('invalid_input');
+        f.identity = { ...next, aadhaarChecked: next.aadhaarChecked && !!next.aadhaarLast4 };
+      }
       if (patch.noReferences !== undefined) f.noReferences = patch.noReferences;
       if (patch.references) {
         // A reference keeps what Admin found only while it is still the same person.
