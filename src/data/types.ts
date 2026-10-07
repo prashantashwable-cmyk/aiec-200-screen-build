@@ -5246,6 +5246,8 @@ export interface CommMessage {
    *  message, so Communication Analytics can compute real per-template
    *  response rates instead of an estimate. */
   templateGroupId?: string;
+  /** Set when the channel the template asked for was not allowed for this person (their opt-out or choice) and the notice reached them in the app instead (180). */
+  fallbackFrom?: CommChannel;
   status: MessageStatus;
   at: string;
   /** Bot handled this with confidence below the escalation threshold, or an
@@ -5562,3 +5564,16 @@ export interface ReferralRecord {
   rewardEntryId?: string;
   isDemo: boolean;
 }
+
+
+/* ------------------------------------------------------------------ Notification centre (180) */
+
+/** One customer's choices for the optional kinds of notice (renewal prompts, ideas). Essential notices have none. Channel-level choices (SMS, WhatsApp) are not kept here: they are the compliance record's opt-out events. */
+export interface NotificationPrefs {
+  userId: string;
+  optional: { plan: { sms: boolean; whatsapp: boolean; inApp: boolean }; offers: { sms: boolean; whatsapp: boolean; inApp: boolean } };
+  updatedAt: string;
+}
+
+/** What a customer has seen. A message is read once its id is here; a commitment notice keeps its own `readAt`. */
+export interface NotificationSeen { userId: string; messageId: string; at: string }

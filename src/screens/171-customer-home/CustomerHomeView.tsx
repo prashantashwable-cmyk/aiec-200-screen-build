@@ -188,6 +188,7 @@ function Tiles({ c, s, t, supportPhone }: { c: CustomerProjectHome; s: CustomerH
       <Tile id="support" icon={<Headset size={22} />} title={t(K.tile.support.title)} hint={t(K.tile.support.hint)} onClick={() => s.goTo('/support-chat')} />
       {handed && c.jobId && <Tile id="service" icon={<Wrench size={22} />} title={t(K.tile.service.title)} hint={t(K.tile.service.hint)} onClick={() => s.goTo(servicePath(c.jobId as string))} />}
       {handed && c.jobId && <Tile id="maintenance" icon={<Wrench size={22} />} title={t('maintenance.link.open')} hint={t('maintenance.purpose.routine.body')} onClick={() => s.goTo(`/maintenance?job=${c.jobId}`)} />}
+      <Tile id="notifications" icon={<Bell size={22} />} title={t('notifications.link.open')} hint={(s.view?.unread ?? 0) > 0 ? t('notifications.link.unread', { count: (s.view?.unread ?? 0) }) : t('notifications.link.hint')} onClick={() => s.goTo('/notifications')} />
       <Tile id="referral" icon={<Gift size={22} />} title={t('referral.link.open')} hint={t('referral.link.hint')} onClick={() => s.goTo('/referrals')} />
     </div>
   );

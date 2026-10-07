@@ -298,6 +298,12 @@ import type {
   FeedbackAdminRow,
   MaintenanceBooking,
   MaintenanceDeskView,
+  NotificationCenterView,
+  NotificationFilter,
+  NotificationItemView,
+  NotificationPrefsInput,
+  NotificationPrefsView,
+  NotificationStateView,
   ReferralDeskView,
   ReferralInput,
   ReferralLandingView,
@@ -589,6 +595,8 @@ import type {
 import type {
   TicketVisit,
   CustomerFeedback,
+  NotificationPrefs,
+  NotificationSeen,
   ReferralRecord,
   SupportContext,
   SupportHandoffReason,
@@ -981,6 +989,8 @@ import { addDays } from '@/features/qc/inspectors';
 import { HUMAN_HOLD as SUPPORT_HUMAN_HOLD, MAX_MESSAGE as SUPPORT_MAX_MESSAGE, QUEUE_BUSY as SUPPORT_QUEUE_BUSY, REPLY_TARGET_MIN as SUPPORT_REPLY_TARGET_MIN, decide as supportDecide, handlingOf as supportHandlingOf, intentOf as supportIntentOf, queueOf as supportQueueOf } from '@/features/support/chat';
 import type { Intent as SupportIntent, Parsed as SupportParsed } from '@/features/support/chat';
 import { DIMENSIONS_FOR as FEEDBACK_DIMENSIONS, MIN_SAMPLE as FEEDBACK_MIN_SAMPLE, NEGATIVE_AT as FEEDBACK_NEGATIVE_AT, OUTREACH_DUE as FEEDBACK_OUTREACH_DUE, OUTREACH_NOTE_MIN as FEEDBACK_OUTREACH_NOTE_MIN, WEAK_AT as FEEDBACK_WEAK_AT, WEAK_DUE as FEEDBACK_WEAK_DUE, availability as feedbackAvailability, blendedRating as feedbackBlendedRating, dueWindowOf as feedbackDueWindow, feedbackProblem as feedbackProblemOf, flagsOf as feedbackFlagsOf, parseRequestId as feedbackParse, requestIdOf as feedbackRequestIdOf, staffMentions as feedbackMentions } from '@/features/feedback/feedback';
+import { CATEGORIES as NC_CATEGORIES, DEFAULT_CHOICES, NEW_MS as NC_NEW_MS, PAGE as NC_PAGE, categoryOfGroup as ncCategoryOfGroup, categoryOfKind as ncCategoryOfKind, dayLabelOf as ncDayLabelOf, deliveryOf as ncDeliveryOf, essentialInAppOnly as ncEssentialInAppOnly, isEssential as ncIsEssential } from '@/features/notifications/center';
+import type { NotificationCategory, OptionalCategory, OptionalChoices } from '@/features/notifications/center';
 import { VAULT_KINDS, validityState } from '@/features/documents/vault';
 import type { VaultKind } from '@/features/documents/vault';
 import { MONTHS_OFFERED as PH_MONTHS, PAGE as PH_PAGE, QUERY_DUE as PH_QUERY_DUE, answerProblem as phAnswerProblem, countsAsEarned as phCountsAsEarned, filterOf as phFilterOf, fyOf as phFyOf, inPeriod as phInPeriod, monthIdOf as phMonthId, periodOf as phPeriodOf, queryProblem as phQueryProblem, stageOf as phStageOf } from '@/features/payout/history';
@@ -1773,7 +1783,7 @@ function resolvePaymentScheduleStages(dealId: string, stages: PaymentScheduleSta
     }));
 }
 
-function sendReminderMessage(payment: Payment, lead: Lead, byName: string, channel: CommChannel, templateGroupId: string): CommMessage {
+function sendReminderMessage(payment: Payment, lead: Lead, byName: string, channel: CommChannel, templateGroupId: string, wanted: CommChannel = channel): CommMessage {
   const template = templateInGroup(templateGroupId, 'en');
   const body = template
     ? renderTemplateBody(template.body, { customerName: lead.contactName, buildingName: lead.siteName, quoteAmount: formatINRCompact(remainingBalance(payment)) })
@@ -1794,6 +1804,7 @@ function sendReminderMessage(payment: Payment, lead: Lead, byName: string, chann
     senderName: byName,
     body,
     templateGroupId,
+    ...(wanted !== channel ? { fallbackFrom: wanted } : {}),
     status: 'sent',
     at: now,
     handled: true,
@@ -1880,10 +1891,10 @@ function runPaymentReminders(byName: string, nowMs = Date.now()): ReminderRunRes
         affectedRecordType: 'payment',
         subjectLabel: payment.code,
       });
-    } else if (isOptedOutSync(lead.contactPhone, step.channel)) {
+    } else if (!commChannelFor(lead, step.templateGroupId ?? 'tpl-payment-reminder', step.channel)) {
       result.skippedOptedOut += 1;
     } else {
-      sendReminderMessage(payment, lead, byName, step.channel, step.templateGroupId ?? 'tpl-payment-reminder');
+      sendReminderMessage(payment, lead, byName, commChannelFor(lead, step.templateGroupId ?? 'tpl-payment-reminder', step.channel) as CommChannel, step.templateGroupId ?? 'tpl-payment-reminder', step.channel);
       result.sent += 1;
       logAutomatedAction({
         ruleId,
@@ -1933,7 +1944,7 @@ function buildReminderTimeline(payment: Payment, lead: Lead, config: PaymentRemi
       let outcome: ReminderTimelineEntry['outcome'];
       if (paused) {
         outcome = 'skipped_paused';
-      } else if (step.channel !== 'call' && isOptedOutSync(lead.contactPhone, step.channel)) {
+      } else if (step.channel !== 'call' && !commChannelFor(lead, step.templateGroupId ?? 'tpl-payment-reminder', step.channel)) {
         outcome = 'skipped_opted_out';
       } else {
         const fireDateKey = fireDate.slice(0, 10);
@@ -2279,7 +2290,7 @@ const OPT_OUT_KEYWORDS = ['stop', 'unsubscribe'];
 /** Most recent event per phone+channel (or 'all') wins — opt-outs are
  *  channel-specific by default, with 'all' as the explicit blanket option. */
 function isOptedOutSync(phone: string, channel: CommChannel): boolean {
-  const relevant = optOutEvents.filter((e) => e.contactPhone === phone && (e.channel === channel || e.channel === 'all'));
+  const relevant = optOutEvents.filter((e) => vdLast10(e.contactPhone) === vdLast10(phone) && (e.channel === channel || e.channel === 'all'));
   if (relevant.length === 0) return false;
   const latest = [...relevant].sort((a, b) => b.at.localeCompare(a.at))[0];
   return latest.type === 'opted_out';
@@ -3572,7 +3583,8 @@ function notifyCustomerOfMilestone(legId: string, milestone: ShipmentMilestone):
   const groupId = `tpl-ship-${milestone === 'in_transit' ? 'transit' : milestone}`;
   const template = templateInGroup(groupId, language) ?? templateInGroup(groupId, 'en');
   if (!template) return;
-  if (isOptedOutSync(lead.contactPhone, template.channel)) {
+  const channel = commChannelFor(lead, groupId, template.channel);
+  if (!channel) {
     mark({ customerNotifySkipped: 'opted_out' });
     return;
   }
@@ -3590,7 +3602,7 @@ function notifyCustomerOfMilestone(legId: string, milestone: ShipmentMilestone):
     conversations.push(conversation);
   }
   messageCounter += 1;
-  commMessages.push({ id: `cm-new-${messageCounter}`, conversationId: conversation.id, channel: template.channel, sender: 'bot', body, templateGroupId: groupId, status: 'sent', at: now, handled: true });
+  commMessages.push({ id: `cm-new-${messageCounter}`, conversationId: conversation.id, channel, sender: 'bot', body, templateGroupId: groupId, ...(channel !== template.channel ? { fallbackFrom: template.channel } : {}), status: 'sent', at: now, handled: true });
   patchInPlace(conversations, conversation.id, { lastMessageAt: now });
   mark({ customerNotifiedAt: now });
   logAutomatedAction({
@@ -7909,7 +7921,8 @@ function syncWarrantyReminders(now: number): void {
       const language = lead.preferredLanguage ?? 'en';
       const template = templateInGroup(groupId, language) ?? templateInGroup(groupId, 'en');
       if (!template) continue;
-      if (isOptedOutSync(lead.contactPhone, template.channel)) {
+      const channel = commChannelFor(lead, groupId, template.channel);
+      if (!channel) {
         r.skipped = 'opted_out';
         continue;
       }
@@ -7922,7 +7935,7 @@ function syncWarrantyReminders(now: number): void {
         conversations.push(conversation);
       }
       messageCounter += 1;
-      commMessages.push({ id: `cm-new-${messageCounter}`, conversationId: conversation.id, channel: template.channel, sender: 'bot', body, templateGroupId: groupId, status: 'sent', at, handled: true });
+      commMessages.push({ id: `cm-new-${messageCounter}`, conversationId: conversation.id, channel, sender: 'bot', body, templateGroupId: groupId, ...(channel !== template.channel ? { fallbackFrom: template.channel } : {}), status: 'sent', at, handled: true });
       patchInPlace(conversations, conversation.id, { lastMessageAt: at });
       r.sentAt = at;
       logAutomatedAction({ sourceKey: 'warranty.reminder', triggeringCondition: `${r.kind.replace('_', ' ')} for ${job.code} came due`, actionTaken: `Messaged ${lead.contactName} on ${template.channel}`, affectedRecordId: job.id, affectedRecordType: 'other', subjectLabel: job.code });
@@ -10477,7 +10490,7 @@ function chHomeOf(user: User, projectKey: string | null, now: number): CustomerH
   const rows = all.map((p) => chRowOf(p, now));
   const chosen = all.find((p) => p.key === projectKey) ?? all[0] ?? null;
   const admin = users.find((u) => u.role === 'admin' && u.status === 'active');
-  const unread = workNotifications.filter((n) => n.userId === user.id && !n.readAt).length;
+  const unread = ncItemsOf(user, now).filter((i) => !i.read).length;
   const base = { firstName: user.name.trim().split(/\s+/)[0] ?? user.name, companyName: user.companyName ?? null, unread, projects: rows, supportPhone: admin?.phone ?? null, at: new Date(now).toISOString() };
   if (!chosen) return { ...base, current: null };
 
@@ -10991,7 +11004,8 @@ function tkMessageCustomer(t: ServiceTicket, groupId: string, params: Record<str
   if (!lead) return;
   const language = lead.preferredLanguage ?? 'en';
   const template = templateInGroup(groupId, language) ?? templateInGroup(groupId, 'en');
-  if (!template || isOptedOutSync(lead.contactPhone, template.channel)) return;
+  const channel = template ? commChannelFor(lead, groupId, template.channel) : null;
+  if (!template || !channel) return;
   const at = new Date().toISOString();
   const filled = Object.fromEntries(Object.entries(params).map(([k, v]) => [k, typeof v === 'function' ? v(template.language) : v]));
   const body = renderTemplateBody(template.body, { customerName: lead.contactName, buildingName: t.siteName, ticketCode: t.code, ...filled });
@@ -11002,7 +11016,7 @@ function tkMessageCustomer(t: ServiceTicket, groupId: string, params: Record<str
     conversations.push(conversation);
   }
   messageCounter += 1;
-  commMessages.push({ id: `cm-new-${messageCounter}`, conversationId: conversation.id, channel: template.channel, sender: 'bot', body, templateGroupId: groupId, status: 'sent', at, handled: true });
+  commMessages.push({ id: `cm-new-${messageCounter}`, conversationId: conversation.id, channel, sender: 'bot', body, templateGroupId: groupId, ...(channel !== template.channel ? { fallbackFrom: template.channel } : {}), status: 'sent', at, handled: true });
   patchInPlace(conversations, conversation.id, { lastMessageAt: at });
   logAutomatedAction({ sourceKey: `service_ticket.${groupId.replace('tpl-ticket-', '')}`, triggeringCondition: `${t.code} ${groupId.replace('tpl-ticket-', '')}`, actionTaken: `Messaged ${lead.contactName} on ${template.channel}`, affectedRecordId: t.id, affectedRecordType: 'other', subjectLabel: t.code });
 }
@@ -11588,6 +11602,171 @@ function createReferralReward(deal: Deal, lead: Lead): string | null {
 function referralSignals(): { rewards: { id: string; userId: string; friend: string; at: string }[] } {
   const rewards = referralRecords.flatMap((r) => { const e = r.rewardEntryId ? byId(commissions, r.rewardEntryId) : undefined; return e ? [{ id: r.id, userId: r.customerId, friend: r.name.trim().split(/\s+/)[0] ?? r.name, at: e.earnedAt }] : []; });
   return { rewards };
+}
+
+/* ------------------------------------------------------------------ Notification centre (180) */
+
+/**
+ * The customer's view over what the Communication Engine and the commitment engine have already sent them: nothing here is generated for the app alone. Preferences feed the
+ * compliance record (an SMS / WhatsApp choice is an append-only opt-out event with source `customer_request`), and `commChannelFor` is the one rule every customer send reads.
+ */
+const notificationPrefs: NotificationPrefs[] = [];
+const notificationSeen: NotificationSeen[] = [];
+
+const ncAccountOf = (phone: string): User | undefined => users.find((u) => u.role === 'customer' && u.status === 'active' && vdLast10(u.phone) === vdLast10(phone));
+const ncChoicesOf = (userId: string): OptionalChoices => ({ ...DEFAULT_CHOICES, ...(notificationPrefs.find((p) => p.userId === userId)?.optional ?? {}) });
+
+/** The channel a message may actually use for this person (180), or null when nothing may be sent. An essential notice to someone with an account is never dropped: it lands in the app. */
+function commChannelFor(lead: Lead, groupId: string, wanted: CommChannel): CommChannel | null {
+  if (wanted === 'call' || wanted === 'in_app') return wanted;
+  const account = ncAccountOf(lead.contactPhone);
+  const category = ncCategoryOfGroup(groupId);
+  const essential = ncIsEssential(category);
+  const choice = !essential && account ? ncChoicesOf(account.id)[category as OptionalCategory] : null;
+  const d = ncDeliveryOf({ channel: wanted, essential, optedOut: isOptedOutSync(lead.contactPhone, wanted), choice, hasAccount: !!account });
+  if (d.fellBack) logAutomatedAction({ sourceKey: 'notification.in_app_fallback', triggeringCondition: `${wanted} was not allowed for ${lead.contactName}'s ${category} notice`, actionTaken: 'Delivered the notice in the app instead, so an account holder is not left without it', affectedRecordId: lead.id, affectedRecordType: 'lead', subjectLabel: groupId });
+  return d.channel as CommChannel | null;
+}
+
+/** The latest word on each outside channel from the compliance record, and who gave it. */
+function ncChannelStateOf(phone: string, channel: 'sms' | 'whatsapp'): { on: boolean; locked: 'stop' | 'dnd' | null; since: string | null } {
+  const relevant = optOutEvents.filter((e) => vdLast10(e.contactPhone) === vdLast10(phone) && (e.channel === channel || e.channel === 'all')).sort((a, b) => b.at.localeCompare(a.at));
+  const latest = relevant[0];
+  if (!latest || latest.type === 'opted_in') return { on: true, locked: null, since: latest?.at ?? null };
+  return { on: false, locked: latest.source === 'dnd_registry' ? 'dnd' : latest.source === 'stop_keyword' ? 'stop' : null, since: latest.at };
+}
+
+function ncLeadsOf(user: User): Lead[] {
+  const mine = new Set(vdDealsOf(user).map((d) => d.leadId));
+  return leads.filter((l) => mine.has(l.id) || (vdLast10(l.contactPhone) !== '' && vdLast10(l.contactPhone) === vdLast10(user.phone)));
+}
+
+function ncRouteOf(category: NotificationCategory, dealId: string | null, jobId: string | null, groupId: string | null): string | null {
+  switch (category) {
+    case 'payments': return dealId ? `/my-payments?p=${dealId}` : '/my-payments';
+    case 'project': return groupId === 'tpl-handover-certificate' && jobId ? `/handover-certificate/${jobId}` : '/project-status';
+    case 'delivery': return '/shipments';
+    case 'service': return '/service-requests';
+    case 'plan': return jobId ? `/warranty/${jobId}` : '/maintenance';
+    default: return groupId === 'tpl-amc-reconsider' ? '/maintenance' : '/customer';
+  }
+}
+
+/** Demo history, built the first time the centre is read: what the engines would have sent Rajesh and Meera over the last fortnight, through the real templates. Meera replied STOP to SMS, so her SMS-bound notices reach her in the app. */
+let ncSeeded = false;
+function ncSeeds(now: number): void {
+  if (ncSeeded) return;
+  ncSeeded = true;
+  const day = 86_400_000;
+  const iso = (ms: number) => new Date(ms).toISOString();
+  const push = (lead: Lead | undefined, groupId: string, ago: number, fields: Record<string, string>, over: { channel?: CommChannel; fallbackFrom?: CommChannel } = {}) => {
+    if (!lead) return;
+    const template = templateInGroup(groupId, lead.preferredLanguage ?? 'en') ?? templateInGroup(groupId, 'en');
+    if (!template) return;
+    const at = iso(now - ago);
+    let conversation = conversations.find((c) => c.leadId === lead.id && c.kind !== 'support') ?? null;
+    if (!conversation) { conversationCounter += 1; conversation = { id: `conv-new-${conversationCounter}`, leadId: lead.id, lastMessageAt: at, isDemo: true }; conversations.push(conversation); }
+    messageCounter += 1;
+    commMessages.push({ id: `cm-s180-${messageCounter}`, conversationId: conversation.id, channel: over.channel ?? template.channel, sender: 'bot', body: renderTemplateBody(template.body, { customerName: lead.contactName, buildingName: lead.siteName, ...fields }), templateGroupId: groupId, ...(over.fallbackFrom ? { fallbackFrom: over.fallbackFrom } : {}), status: 'delivered', at, handled: true });
+  };
+  const leadOf = (userId: string): Lead | undefined => { const u = byId(users, userId); const d = u ? vdDealsOf(u)[0] : undefined; return d ? byId(leads, d.leadId) ?? undefined : undefined; };
+  const rajesh = leadOf('u-cust-1');
+  const meera = leadOf('u-cust-2');
+  const part = 'machine and controller delivery';
+  push(rajesh, 'tpl-quote-followup', 12 * day, { quoteAmount: '₹41.2L' });
+  push(rajesh, 'tpl-install-update', 9 * day, { installStep: 'Guide rails fixed' });
+  push(rajesh, 'tpl-ship-dispatched', 3 * day + 6 * 3_600_000, { shipmentLabel: part });
+  push(rajesh, 'tpl-ship-transit', 3 * day + 4 * 3_600_000, { shipmentLabel: part, etaTime: '2:30 pm' });
+  push(rajesh, 'tpl-ship-nearby', 3 * day + 2 * 3_600_000, { shipmentLabel: part });
+  push(rajesh, 'tpl-ship-arrived', 3 * day + 3_600_000, { shipmentLabel: part });
+  push(rajesh, 'tpl-warranty-ending', day + 3_600_000, { endDate: formatDate(iso(now + 55 * day), 'en') });
+  if (meera) {
+    optOutEvents.unshift({ id: 'oo-s180', contactPhone: vdLast10(byId(users, 'u-cust-2')?.phone), contactName: 'Meera', channel: 'sms', type: 'opted_out', source: 'stop_keyword', at: iso(now - 20 * day), recordedBy: 'System', isDemo: true });
+    push(meera, 'tpl-install-update', 6 * day, { installStep: 'Machine room prepared' });
+    push(meera, 'tpl-payment-reminder-firm', 2 * day, { quoteAmount: '₹2.6L' }, { channel: 'in_app', fallbackFrom: 'sms' });
+  }
+}
+
+function ncItemsOf(user: User, now: number): NotificationItemView[] {
+  ncSeeds(now);
+  const items: NotificationItemView[] = [];
+  const seen = new Set(notificationSeen.filter((s) => s.userId === user.id).map((s) => s.messageId));
+  const recent = (at: string) => now - Date.parse(at) < NC_NEW_MS;
+  for (const lead of ncLeadsOf(user)) {
+    const deal = deals.find((d) => d.leadId === lead.id);
+    const job = deal ? jobs.find((j) => j.dealId === deal.id) ?? null : null;
+    const convIds = new Set(conversations.filter((c) => c.leadId === lead.id && c.kind !== 'support').map((c) => c.id));
+    for (const m of commMessages) {
+      if (!convIds.has(m.conversationId) || !m.templateGroupId || m.sender === 'customer' || m.status === 'failed') continue;
+      const category = ncCategoryOfGroup(m.templateGroupId);
+      items.push({
+        id: `m:${m.id}`, source: 'message', category, essential: ncIsEssential(category), titleKey: `notifications.group.${m.templateGroupId}`, body: m.body, channel: m.channel === 'sms' || m.channel === 'whatsapp' ? m.channel : 'in_app', fellBackFrom: m.fallbackFrom === 'sms' || m.fallbackFrom === 'whatsapp' ? m.fallbackFrom : null,
+        at: m.at, dayKey: ncDayLabelOf(m.at, now).key, read: seen.has(m.id) || !recent(m.at), route: ncRouteOf(category, deal?.id ?? null, job?.status === 'completed' ? job.id : null, m.templateGroupId),
+      });
+    }
+  }
+  for (const n of workNotifications.filter((x) => x.userId === user.id)) {
+    const c = commitments.find((x) => x.id === n.commitmentId);
+    if (!c) continue;
+    const category = ncCategoryOfKind(c.kind);
+    items.push({ id: `w:${n.id}`, source: 'work', category, essential: ncIsEssential(category), titleKey: c.titleKey, titleParams: { ...(c.titleParams ?? {}), amount: c.amount != null ? formatINR(c.amount) : '' }, body: '', channel: 'in_app', fellBackFrom: null, at: n.at, dayKey: ncDayLabelOf(n.at, now).key, read: !!n.readAt || !recent(n.at), route: c.actionRoute ?? null });
+  }
+  return items.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : b.id.localeCompare(a.id)));
+}
+
+function ncCenterOf(user: User, filter: NotificationFilter, now: number): NotificationCenterView {
+  const all = ncItemsOf(user, now);
+  const counts = Object.fromEntries(NC_CATEGORIES.map((c) => [c, { total: all.filter((i) => i.category === c).length, unread: all.filter((i) => i.category === c && !i.read).length }])) as NotificationCenterView['counts'];
+  const picked = all.filter((i) => (!filter.category || i.category === filter.category) && (!filter.unreadOnly || !i.read));
+  const limit = filter.limit && filter.limit > 0 ? filter.limit : NC_PAGE;
+  return JSON.parse(JSON.stringify({ items: picked.slice(0, limit), total: picked.length, unread: all.filter((i) => !i.read).length, counts, at: new Date(now).toISOString() })) as NotificationCenterView;
+}
+
+/** What is true now about the thing a notice was about, so an older notice never shows a state that has since changed. */
+function ncStateOf(user: User, item: NotificationItemView, now: number): NotificationStateView {
+  const none: NotificationStateView = { key: '', params: {}, route: item.route };
+  if (item.category === 'payments') {
+    const dealId = /[?&]p=([^&]+)/.exec(item.route ?? '')?.[1] ?? null;
+    const v = cpViewOf(user, dealId, now);
+    const h = v.project?.hero;
+    if (!h) return none;
+    return { key: `notifications.state.payments.${h.kind}`, params: { amount: h.amount, days: h.days, date: h.dueAt ?? '' }, route: item.route };
+  }
+  if (item.category === 'delivery') {
+    const mine = new Set(vdDealsOf(user).map((d) => d.id));
+    const legs = shipmentLegs.filter((l) => mine.has(l.dealId));
+    const moving = legs.filter((l) => l.milestones[l.milestones.length - 1]?.milestone !== 'arrived').length;
+    return { key: legs.length === 0 ? 'notifications.state.delivery.none' : moving > 0 ? 'notifications.state.delivery.moving' : 'notifications.state.delivery.arrived', params: { count: moving }, route: item.route };
+  }
+  if (item.category === 'service') {
+    const open = serviceTickets.filter((t) => t.customerId === user.id && t.status !== 'resolved' && t.status !== 'withdrawn').length;
+    return { key: open > 0 ? 'notifications.state.service.open' : 'notifications.state.service.none', params: { count: open }, route: item.route };
+  }
+  if (item.category === 'plan') {
+    const job = vdDealsOf(user).flatMap((d) => jobs.filter((j) => j.dealId === d.id && j.status === 'completed'))[0];
+    if (!job) return none;
+    const a = mbLiftOf(job, now).amc;
+    return { key: `notifications.state.plan.${a.state}`, params: { date: a.endsOn ?? '' }, route: item.route };
+  }
+  if (item.category === 'project') {
+    const h = chHomeOf(user, null, now).current;
+    if (!h) return none;
+    return { key: h.mode === 'service' ? 'notifications.state.project.service' : 'notifications.state.project.stage', params: { stage: h.stage ?? '', percent: h.percent ?? 0 }, route: item.route };
+  }
+  return none;
+}
+
+function ncPrefsViewOf(user: User): NotificationPrefsView {
+  const sms = ncChannelStateOf(user.phone, 'sms');
+  const whatsapp = ncChannelStateOf(user.phone, 'whatsapp');
+  const mine = (e: OptOutEvent) => vdLast10(e.contactPhone) === vdLast10(user.phone);
+  return {
+    channels: { sms, whatsapp },
+    optional: ncChoicesOf(user.id),
+    phoneMasked: `••••••${vdLast10(user.phone).slice(-4)}`,
+    essentialInAppOnly: ncEssentialInAppOnly(sms.on, whatsapp.on),
+    history: optOutEvents.filter(mine).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 8).map((e) => ({ at: e.at, channel: e.channel, on: e.type === 'opted_in', source: e.source })),
+  };
 }
 
 /* ------------------------------------------------------------------ Badges & milestones (166) */
@@ -13527,7 +13706,8 @@ function completionSignals(): { jobId: string; readyAt: string; issued: boolean;
 function messageLeadFromTemplate(lead: Lead, groupId: string, fields: Record<string, string>, at: string): CommChannel | null {
   const language = lead.preferredLanguage ?? 'en';
   const template = templateInGroup(groupId, language) ?? templateInGroup(groupId, 'en');
-  if (!template || isOptedOutSync(lead.contactPhone, template.channel)) return null;
+  const channel = template ? commChannelFor(lead, groupId, template.channel) : null;
+  if (!template || !channel) return null;
   let conversation = conversations.find((c) => c.leadId === lead.id && c.kind !== 'support') ?? null;
   if (!conversation) {
     conversationCounter += 1;
@@ -13535,9 +13715,9 @@ function messageLeadFromTemplate(lead: Lead, groupId: string, fields: Record<str
     conversations.push(conversation);
   }
   messageCounter += 1;
-  commMessages.push({ id: `cm-new-${messageCounter}`, conversationId: conversation.id, channel: template.channel, sender: 'bot', body: renderTemplateBody(template.body, { customerName: lead.contactName, buildingName: lead.siteName, ...fields }), templateGroupId: groupId, status: 'sent', at, handled: true });
+  commMessages.push({ id: `cm-new-${messageCounter}`, conversationId: conversation.id, channel, sender: 'bot', body: renderTemplateBody(template.body, { customerName: lead.contactName, buildingName: lead.siteName, ...fields }), templateGroupId: groupId, ...(channel !== template.channel ? { fallbackFrom: template.channel } : {}), status: 'sent', at, handled: true });
   patchInPlace(conversations, conversation.id, { lastMessageAt: at });
-  return template.channel;
+  return channel;
 }
 
 /* ============================== Installation SOP (123) */
@@ -24099,6 +24279,48 @@ export const memoryRepository: Repository = {
       return JSON.parse(JSON.stringify(docs.map((d) => ({ row: d.row, sections: d.sections, versions: docs.filter((x) => x.row.chainId === d.row.chainId).map((x) => x.row), issuedBy: d.issuedBy })))) as VaultDocument[];
     }),
 
+  /* --------------------------------- Notification centre (180) */
+  getNotificationCenter: (userId, filter) => simulateRead(() => ncCenterOf(vdCustomer(userId), filter, Date.now())),
+  markNotificationsSeen: (userId, ids) =>
+    simulateWrite(() => {
+      const user = vdCustomer(userId);
+      const at = new Date().toISOString();
+      const targets = ids === 'all' ? ncItemsOf(user, Date.now()).filter((i) => !i.read).map((i) => i.id) : ids;
+      for (const id of targets) {
+        if (id.startsWith('m:')) {
+          const messageId = id.slice(2);
+          if (!notificationSeen.some((x) => x.userId === user.id && x.messageId === messageId)) notificationSeen.push({ userId: user.id, messageId, at });
+        } else if (id.startsWith('w:')) {
+          const i = workNotifications.findIndex((n) => n.userId === user.id && `w:${n.id}` === id && !n.readAt);
+          if (i >= 0) workNotifications[i] = { ...workNotifications[i], readAt: at };
+        }
+      }
+    }),
+  getNotificationState: (userId, itemId) =>
+    simulateRead(() => {
+      const user = vdCustomer(userId);
+      const now = Date.now();
+      const item = ncItemsOf(user, now).find((i) => i.id === itemId);
+      if (!item) throw new RepositoryError('not_found');
+      return JSON.parse(JSON.stringify(ncStateOf(user, item, now))) as NotificationStateView;
+    }),
+  getNotificationPrefs: (userId) => simulateRead(() => JSON.parse(JSON.stringify(ncPrefsViewOf(vdCustomer(userId)))) as NotificationPrefsView),
+  saveNotificationPrefs: (userId, input) =>
+    simulateWrite(() => {
+      const user = vdCustomer(userId);
+      const at = new Date().toISOString();
+      const choiceOk = (c: unknown): c is { sms: boolean; whatsapp: boolean; inApp: boolean } => !!c && typeof (c as { sms: unknown }).sms === 'boolean' && typeof (c as { whatsapp: unknown }).whatsapp === 'boolean' && typeof (c as { inApp: unknown }).inApp === 'boolean';
+      if (!choiceOk(input.optional?.plan) || !choiceOk(input.optional?.offers)) throw new RepositoryError('invalid_choice');
+      const changes = (['sms', 'whatsapp'] as const).filter((ch) => input[ch] !== ncChannelStateOf(user.phone, ch).on);
+      // A number on the national do-not-disturb registry is not switched back on from here.
+      if (changes.some((ch) => input[ch] && ncChannelStateOf(user.phone, ch).locked === 'dnd')) throw new RepositoryError('dnd_locked');
+      for (const ch of changes) optOutEvents.unshift({ id: `oo-new-${(optOutCounter += 1)}`, contactPhone: vdLast10(user.phone), contactName: user.name, channel: ch, type: input[ch] ? 'opted_in' : 'opted_out', source: 'customer_request', reason: 'Changed in the notification centre', at, recordedBy: user.name, isDemo: true });
+      const next: NotificationPrefs = { userId: user.id, optional: { plan: { ...input.optional.plan }, offers: { ...input.optional.offers } }, updatedAt: at };
+      const i = notificationPrefs.findIndex((x) => x.userId === user.id);
+      if (i >= 0) notificationPrefs[i] = next; else notificationPrefs.push(next);
+      return JSON.parse(JSON.stringify(ncPrefsViewOf(user))) as NotificationPrefsView;
+    }),
+
   /* --------------------------------- Referral programme (179) */
   getReferralDesk: (userId) => simulateRead(() => rfReferralDesk(vdCustomer(userId), Date.now())),
   inviteReferral: (userId, input) => simulateWrite(() => rfSubmit(vdCustomer(userId), input, 'invite')),
@@ -25850,7 +26072,8 @@ export const memoryRepository: Repository = {
           result.skipped.push({ caseId: id, reason: 'already_told' });
           continue;
         }
-        if (isOptedOutSync(message.lead.contactPhone, message.template.channel)) {
+        const channel = commChannelFor(message.lead, message.template.groupId, message.channel);
+        if (!channel) {
           result.skipped.push({ caseId: id, reason: 'opted_out' });
           continue;
         }
@@ -25862,7 +26085,7 @@ export const memoryRepository: Repository = {
             conversations.push(conversation);
           }
           messageCounter += 1;
-          commMessages.push({ id: `cm-new-${messageCounter}`, conversationId: conversation.id, channel: message.channel, sender: 'agent', body: message.body, templateGroupId: message.template.groupId, status: 'sent', at, handled: true });
+          commMessages.push({ id: `cm-new-${messageCounter}`, conversationId: conversation.id, channel, sender: 'agent', body: message.body, templateGroupId: message.template.groupId, ...(channel !== message.channel ? { fallbackFrom: message.channel } : {}), status: 'sent', at, handled: true });
           patchInPlace(conversations, conversation.id, { lastMessageAt: at });
           told.add(message.lead.id);
           result.notified += 1;

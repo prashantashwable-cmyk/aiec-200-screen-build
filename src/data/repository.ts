@@ -21,6 +21,7 @@ import type { ContestMetric, ContestPhase } from '@/features/rewards/standings';
 import type { DisbursementKind, DisbursementMethod, DisbursementStatus, FailureReason as DisbursementFailure, RetryProblem } from '@/features/commission/disbursement';
 import type { HoldKind as PayoutHoldKind, PayoutFlag, QueueState as PayoutQueueState, SkipReason as PayoutSkipReason } from '@/features/commission/payoutApproval';
 import type { AttentionKind as PayoutAttentionKind, PayoutCategory, PayoutStatus, Spike as PayoutSpike, Trend as PayoutTrend } from '@/features/commission/payoutTracker';
+import type { NotificationCategory, OptionalChoices } from '@/features/notifications/center';
 import type { Check as CommissionCheck, CommissionParams, CommissionRuleId, ParamDef as CommissionParamDef, RuleGroup, RuleLedger, RuleTrigger, Scenario as CommissionScenario, SimInput as CommissionSimInput, SimResult as CommissionSimResult, StackGroup as CommissionStackGroup } from '@/features/commission/rules';
 import type { ScriptGroup, WalkthroughMode, WalkthroughProblem } from '@/features/qc/walkthrough';
 import type { DocBasis, DocBlock, DocState, HandoverDocKind, HandoverProblem, ReadinessProblem as HandoverReadinessProblem } from '@/features/qc/handover';
@@ -7107,6 +7108,46 @@ export interface VisitTracking {
   at: string;
 }
 
+/* ------------------------------------------------------------------ Notification centre (180) */
+
+export interface NotificationItemView {
+  /** `m:<message id>` (a Communication Engine message) or `w:<id>` (a notice on the customer's own list). */
+  id: string;
+  source: 'message' | 'work';
+  category: NotificationCategory;
+  essential: boolean;
+  /** The title is a translation key; the body of a message is the words that were actually sent, in the language they were sent in. */
+  titleKey: string;
+  titleParams?: Record<string, string>;
+  body: string;
+  channel: 'sms' | 'whatsapp' | 'in_app';
+  /** The channel the notice was meant for, when it reached them in the app instead because that channel was not allowed for them. */
+  fellBackFrom: 'sms' | 'whatsapp' | null;
+  at: string;
+  dayKey: string;
+  read: boolean;
+  route: string | null;
+}
+export interface NotificationFilter { category?: NotificationCategory | null; unreadOnly?: boolean; limit?: number }
+export interface NotificationCenterView {
+  items: NotificationItemView[];
+  total: number;
+  unread: number;
+  counts: Record<NotificationCategory, { total: number; unread: number }>;
+  at: string;
+}
+/** What is true now about the thing a notice was about. `key` is empty when there is nothing to add. */
+export interface NotificationStateView { key: string; params: Record<string, string | number>; route: string | null }
+export interface NotificationChannelPref { on: boolean; locked: 'stop' | 'dnd' | null; since: string | null }
+export interface NotificationPrefsView {
+  channels: { sms: NotificationChannelPref; whatsapp: NotificationChannelPref };
+  optional: OptionalChoices;
+  phoneMasked: string;
+  essentialInAppOnly: boolean;
+  history: { at: string; channel: string; on: boolean; source: string }[];
+}
+export interface NotificationPrefsInput { sms: boolean; whatsapp: boolean; optional: OptionalChoices }
+
 /* ------------------------------------------------------------------ Referral programme (179) */
 
 export type ReferralStatus = 'invited' | 'surveying' | 'surveyed' | 'converted' | 'waiting' | 'closed' | 'known';
@@ -8466,6 +8507,12 @@ export interface Repository {
   getVaultBundle(userId: string): Promise<VaultDocument[]>;
   /** 174: the customer's payment picture for one project (the first needing attention when none is named). */
   getCustomerPayments(dealId: string | null, userId: string): Promise<CustomerPayView>;
+  /* 180 — notification centre: everything the customer was sent, read state, current state of what it was about, and preferences that feed the opt-out record. */
+  getNotificationCenter(userId: string, filter: NotificationFilter): Promise<NotificationCenterView>;
+  markNotificationsSeen(userId: string, ids: string[] | 'all'): Promise<void>;
+  getNotificationState(userId: string, itemId: string): Promise<NotificationStateView>;
+  getNotificationPrefs(userId: string): Promise<NotificationPrefsView>;
+  saveNotificationPrefs(userId: string, input: NotificationPrefsInput): Promise<NotificationPrefsView>;
   /* 179 — referral programme: a personal code, the people referred and where each stands, and a reward through the commission ledger. */
   getReferralDesk(userId: string): Promise<ReferralDeskView>;
   inviteReferral(userId: string, input: ReferralInput): Promise<ReferralSubmitResult>;
