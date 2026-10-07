@@ -1016,17 +1016,19 @@ import { MANY_AT as WF_MANY_AT, MAX_PER_RUN as WF_MAX_PER_RUN, conflictsOf as wf
 import type { RecordValues, RuleDraft, SubjectId as WfSubject } from '@/features/automation/customRules';
 import { CHANNELS as INT_CHANNELS, CORE_TYPES as INT_CORE, DEFAULT_URGENCY_CHANNELS as INT_DEFAULTS, NO_CHANNELS as INT_NONE, atLeast as intAtLeast, channelProblems as intChannelProblems, contentProblems as intContentProblems, fatigueOf as intFatigueOf, isBlocking as intIsBlocking, reducesReach as intReducesReach, severityFloorOf as intSeverityFloor, urgencyOfSeverity as intUrgencyOfSeverity } from '@/features/notifications/internal';
 import type { Urgency as IntUrgency } from '@/features/notifications/internal';
+import { MANAGED_IDS as IG_MANAGED, REASON_MIN as IG_REASON_MIN, ROTATION_MS as IG_ROTATION_MS, ageDaysOf as igAge, credentialProblem as igCredentialProblem, dueForRotation as igDue, endpointFor as igEndpointFor, isManaged as igIsManaged, last4Of as igLast4, maskOf as igMask, modeProblem as igModeProblem, rotationDueAt as igDueAt, sandboxInProduction as igSandboxInProd } from '@/features/integrations/management';
+import type { AppEnvironment as IgEnvironment } from '@/features/integrations/management';
 import { OVERRIDE_KINDS as MO_KINDS, PATTERN_DAYS as MO_PATTERN_DAYS, PROTECTED_KINDS as MO_PROTECTED, PROTECTED_ROUTE as MO_PROTECTED_ROUTE, RULE_ROUTE as MO_RULE_ROUTE, STUCK_DAYS as MO_STUCK_DAYS, commitmentProtected as moProtectedCommitment, isBackwards as moBackwards, isProtected as moIsProtected, leadStageProblem as moLeadStageProblem, patternsOf as moPatterns, reasonProblem as moReasonProblem, skippedStages as moSkipped, untilProblem as moUntilProblem } from '@/features/override/rules';
 import type { OverrideKind, OverrideProblem } from '@/features/override/rules';
 import { GENESIS as AUDIT_GENESIS, codeOf as auditCodeOf, hashOf as auditHashOf, verifyChain as auditVerify } from '@/features/audit/chain';
 import { BOT_DRIFT_POINTS as HC_BOT_DRIFT, BOT_MIN_SAMPLE as HC_BOT_MIN, ENGINE_DOWN_MS as HC_ENGINE_DOWN, INTEGRATIONS as HC_INTEGRATIONS, MAX_PROBES as HC_MAX_PROBES, STATUS_WINDOW_MS as HC_STATUS_WINDOW, NOTE_MIN as HC_NOTE_MIN, PROBE_EVERY_MS as HC_PROBE_EVERY, WINDOW_MS as HC_WINDOW, agreementOf as hcAgreement, causeOf as hcCause, integrationDef as hcDef, isHttpUrl as hcIsUrl, judge as hcJudge, recovered as hcRecovered, sharedCauseOf as hcShared, uptimeOf as hcUptime } from '@/features/health/system';
 import type { IntegrationDef as HcDef, Observation as HcObservation, TechStatus } from '@/features/health/system';
-import type { OverrideCandidate, OverrideConsoleView, OverridePreviewView, AuditDetailView, AuditExportView, AuditFilter, AuditRowView, AuditSearchView, BotHealthView, SystemHealthIntegrationView, SystemHealthView } from './repository';
+import type { IntegrationManagementView, IntegrationSetupView, IsolationCheckView, OverrideCandidate, OverrideConsoleView, OverridePreviewView, AuditDetailView, AuditExportView, AuditFilter, AuditRowView, AuditSearchView, BotHealthView, SystemHealthIntegrationView, SystemHealthView } from './repository';
 import { SLA_CATEGORIES, WINDOW_DAYS as SLA_WINDOW_DAYS, elapsedMsOf as slaElapsedOf, pauseOf as slaPauseOf, ratioOf as slaRatioOf, rollupOf as slaRollupOf, statusOf as slaStatusOf, targetSignal as slaTargetSignal, trendOf as slaTrendOf, triageScore as slaTriageScore } from '@/features/sla/consolidated';
 import type { SlaItem } from '@/features/sla/consolidated';
 import type { SlaCategoryView, SlaItemView, SlaOverviewView } from './repository';
 import { BACKUP_KEYS as ESC_BACKUP_KEYS, DEMO_CONFIRM_MS as ESC_DEMO_CONFIRM_MS, DEMO_SILENCE_MS as ESC_DEMO_SILENCE_MS, DRILL_GAP_TITLE as ESC_DRILL_GAP_TITLE, ESC_CHANNELS, EXHAUSTED_TITLE as ESC_EXHAUSTED_TITLE, MAX_BACKUPS as ESC_MAX_BACKUPS, NOTE_MIN as ESC_NOTE_MIN, PRIMARY as ESC_PRIMARY, SCENARIOS as ESC_SCENARIOS, SCENARIO_NAMES as ESC_NAMES, chainProblems as escChainProblems, drillDueAt as escDrillDueAt, drillStepsOf as escDrillStepsOf, exhaustedAfterMinutes as escExhaustedAfter, offsetsOf as escOffsets, phoneProblem as escPhoneBad, railOutcome as escRailOutcome, repeatOffsets as escRepeatOffsets, scenarioDef as escDef, scenarioIdOf as escScenarioIdOf, withTierIds as escTierIds } from '@/features/escalation/matrix';
-import type { AuditExportRecord, LeadStage, ManualOverride, IntegrationConfig, IntegrationIncident, IntegrationProbe, MessageStatus } from './types';
+import type { IntegrationChange, IntegrationCredentialView, IntegrationSetup, AuditExportRecord, LeadStage, ManualOverride, IntegrationConfig, IntegrationIncident, IntegrationProbe, MessageStatus } from './types';
 import type { EscalationChainTier, EscalationChannel, EscalationContact, EscalationDelivery, EscalationDrill, EscalationDrillStep, EscalationLastResort, EscalationRun, EscalationScenarioConfig } from './types';
 import type { AlertEscalationView, EscalationGap, EscalationMatrixView, EscalationRunView, EscalationScenarioView } from './repository';
 import { VAULT_KINDS, validityState } from '@/features/documents/vault';
@@ -2851,7 +2853,7 @@ function commitmentSources(now: number): CommitmentSources {
     referrals: referralSignals(),
     automationPauses: automationPauseSignals(),
     escalation: escSignals(now),
-    integrations: hcSignals(),
+    integrations: { ...hcSignals(), ...igSignals(now) },
     tds: tdsObligations(Date.now()),
     exits: exitSignals(),
     handoverReviews: handoverSignals().reviews,
@@ -3729,6 +3731,8 @@ function hcFollowUpCount(kind: 'messages' | 'payouts' | 'statements', integratio
 }
 
 function hcProbe(id: string, now: number): void {
+  // A credential being rotated is not an outage: checks wait until the new one has been picked up (189).
+  if (igRotating(id)) return;
   const cfg = hcConfigOf(id);
   const n = integrationProbes.filter((p) => p.integrationId === id).length;
   // The stand-in answers per the demo state: working always, degraded every third check fails, failing always.
@@ -4072,6 +4076,121 @@ function syncOverridePatterns(now: number): void {
   }
 }
 
+/* ============================================ Integration management (189) */
+
+/**
+ * The configuration root for every external connection: which credential each uses, whether it is in test or live mode, and how a credential is rotated without a confusing scattered failure.
+ * A stored secret never leaves the repository: views carry only a mask. Test and live credentials are kept apart, and demo traffic can only ever be given the test one (`igEndpoint`).
+ */
+const integrationSetups: IntegrationSetup[] = [];
+const integrationChanges: IntegrationChange[] = [];
+/** Secrets, by `${integration}:${slot}`. The only copy; nothing returns it. */
+const integrationSecrets = new Map<string, { current: string; previous: string | null }>();
+let appEnvironment: IgEnvironment = 'demo';
+let igSeeded = false;
+let igChangeCounter = 0;
+let igIsolationCheck: IsolationCheckView | null = null;
+
+const igAgo = (days: number): string => new Date(Date.now() - days * 86_400_000).toISOString();
+function igEnsure(): void {
+  if (igSeeded) return;
+  igSeeded = true;
+  // Starting state (placeholders): everything in test mode, test credentials set everywhere, live ones only where the demo has them. Ages vary so the rotation reminder has something to say.
+  const sandboxAge: Record<string, number> = { payment_gateway: 100, whatsapp: 20, sms: 5, maps: 200, financing_partner: 40, bank_feed: 15, payout_rail: 60, id_verification: 30 };
+  const liveIds = ['payment_gateway', 'whatsapp', 'maps'];
+  for (const id of IG_MANAGED) {
+    const cred = (slot: 'sandbox' | 'live', age: number): IntegrationCredentialView => {
+      integrationSecrets.set(`${id}:${slot}`, { current: `${slot}_seed_${id}_secret_${slot === 'live' ? 'q2Lm' : 'a7Kd'}`, previous: null });
+      const secret = integrationSecrets.get(`${id}:${slot}`)!.current;
+      return { keyId: `${slot === 'live' ? 'live' : 'test'}_${id.slice(0, 6)}_${slot === 'live' ? 'A91' : 'T01'}`, masked: igMask(igLast4(secret), secret.length), length: secret.length, createdAt: igAgo(age + 30), rotatedAt: igAgo(age), rotatedByName: 'Prashant Vasant Wable', rotation: null };
+    };
+    integrationSetups.push({ id, mode: 'sandbox', slots: { sandbox: cred('sandbox', sandboxAge[id] ?? 30), live: liveIds.includes(id) ? cred('live', 25) : null } });
+  }
+}
+const igSetupOf = (id: string): IntegrationSetup => { igEnsure(); const s = integrationSetups.find((x) => x.id === id); if (!s) throw new RepositoryError('not_found'); return s; };
+const igActiveSlot = (s: IntegrationSetup): IntegrationCredentialView | null => s.slots[s.mode];
+const igRotating = (id: string): boolean => { if (!igIsManaged(id)) return false; igEnsure(); const s = integrationSetups.find((x) => x.id === id); return !!s && !!igActiveSlot(s)?.rotation; };
+function igChange(id: string, kind: IntegrationChange['kind'], byName: string, summary: string, reason?: string): void {
+  igChangeCounter += 1;
+  integrationChanges.push(Object.freeze({ id: `igc-${igChangeCounter}`, integrationId: id, at: new Date().toISOString(), byName, kind, summary, ...(reason ? { reason: reason.trim() } : {}) }) as IntegrationChange);
+}
+/** What a request is given: demo traffic is always the test credential, whatever the integration is set to. */
+function igEndpoint(id: string, demoUser: boolean): { mode: 'sandbox' | 'live'; slot: 'sandbox' | 'live'; keyId: string | null } {
+  const s = igSetupOf(id);
+  const e = igEndpointFor({ demoUser, configuredMode: s.mode });
+  return { ...e, keyId: s.slots[e.slot]?.keyId ?? null };
+}
+function hcLastSuccess(id: string): string | null {
+  if (id === 'bank_feed') return bankFeed.lastStatementAt ?? null;
+  if (id === 'payout_rail') return payoutDisbursements.filter((d) => d.status === 'completed' && d.completedAt).map((d) => d.completedAt!).sort().pop() ?? null;
+  if (id === 'id_verification') return partnerApplications.flatMap((a) => Object.values(a.verification?.records ?? {})).filter((r) => r.reference && !r.serviceDown).map((r) => r.at).sort().pop() ?? null;
+  return integrationProbes.filter((p) => p.integrationId === id && p.ok).map((p) => p.at).sort().pop() ?? null;
+}
+
+function igView(now: number): IntegrationManagementView {
+  igEnsure();
+  const health = new Map(HC_INTEGRATIONS.map((d) => [d.id, hcIntegrationView(d, now)] as const));
+  const integrations: IntegrationSetupView[] = integrationSetups.map((s) => {
+    const def = hcDef(s.id)!;
+    const h = health.get(s.id)!;
+    const active = igActiveSlot(s);
+    const status: IntegrationSetupView['status'] = !active ? 'not_configured' : active.rotation ? 'rotating' : h.status;
+    return {
+      id: s.id, provider: def.provider, group: def.group, mode: s.mode, status, health: { status: h.status, rate: h.rate, calls: h.calls, errors: h.errors, uptimePct: h.uptimePct },
+      slots: JSON.parse(JSON.stringify(s.slots)), lastSuccessAt: hcLastSuccess(s.id), dueForRotation: !!active && igDue(active.rotatedAt, now), rotationDueAt: active ? igDueAt(active.rotatedAt) : null,
+      ageDays: active ? igAge(active.rotatedAt, now) : null, webhookUrl: `https://api.aiec.example/hooks/${s.id}`, route: def.route, probed: def.monitor === 'probe',
+    };
+  });
+  const sandboxIds = igSandboxInProd(appEnvironment, integrationSetups.map((s) => ({ id: s.id, mode: s.mode })));
+  return JSON.parse(JSON.stringify({ environment: appEnvironment, integrations, changes: [...integrationChanges].reverse().slice(0, 25), sandboxInProduction: sandboxIds, isolation: igIsolationCheck, at: new Date(now).toISOString() })) as IntegrationManagementView;
+}
+
+function igRotate(admin: User, id: string, input: { slot: 'sandbox' | 'live'; keyId: string; secret: string; reason: string }, now: number): void {
+  const s = igSetupOf(id);
+  if (input.slot !== 'sandbox' && input.slot !== 'live') throw new RepositoryError('not_found');
+  const existing = s.slots[input.slot];
+  if (existing?.rotation) throw new RepositoryError('rotating');
+  const secrets = integrationSecrets.get(`${id}:${input.slot}`);
+  const problem = igCredentialProblem({ secret: input.secret, keyId: input.keyId.trim(), current: secrets?.current ?? null });
+  if (problem) throw new RepositoryError(problem);
+  if (input.reason.replace(/[^\p{L}]/gu, '').length < IG_REASON_MIN) throw new RepositoryError('reason_short');
+  const at = new Date(now).toISOString();
+  const keyId = input.keyId.trim() || existing?.keyId || `${input.slot === 'live' ? 'live' : 'test'}_${id.slice(0, 6)}`;
+  integrationSecrets.set(`${id}:${input.slot}`, { current: input.secret, previous: secrets?.current ?? null });
+  const next: IntegrationCredentialView = {
+    keyId, masked: igMask(igLast4(input.secret), input.secret.length), length: input.secret.length, createdAt: existing?.createdAt ?? at, rotatedAt: at, rotatedByName: admin.name,
+    // A first credential takes effect at once; a replacement is picked up over a short window during which both are accepted, so nothing fails in a scatter.
+    rotation: existing ? { startedAt: at, endsAt: new Date(now + IG_ROTATION_MS).toISOString(), previousMasked: existing.masked, byName: admin.name } : null,
+  };
+  s.slots[input.slot] = next;
+  igChange(id, existing ? 'rotation' : 'credential_added', admin.name, existing ? `${input.slot} credential replaced (…${igLast4(input.secret)}), old one accepted until the rotation ends` : `${input.slot} credential added (…${igLast4(input.secret)})`, input.reason);
+}
+
+/** A rotation finishes by itself after its window: the old credential is retired. A rotation cancelled in the meantime restores the old one. Idempotent. */
+function syncIntegrationManagement(now: number): void {
+  igEnsure();
+  for (const s of integrationSetups) {
+    for (const slot of ['sandbox', 'live'] as const) {
+      const c = s.slots[slot];
+      if (!c?.rotation || Date.parse(c.rotation.endsAt) > now) continue;
+      const secrets = integrationSecrets.get(`${s.id}:${slot}`);
+      if (secrets) secrets.previous = null;
+      s.slots[slot] = { ...c, rotation: null };
+      igChange(s.id, 'rotation_completed', 'AIEC Assistant', `${slot} credential rotation finished: the old credential is retired`);
+      logAutomatedAction({ sourceKey: 'integration.rotation_completed', triggeringCondition: `The ${slot} credential for ${hcDef(s.id)?.provider ?? s.id} had been rotating for ${Math.round(IG_ROTATION_MS / 60_000)} minutes`, actionTaken: 'Retired the old credential; only the new one is accepted now', affectedRecordId: s.id, affectedRecordType: 'other', subjectLabel: hcDef(s.id)?.provider ?? s.id });
+    }
+  }
+  const ids = igSandboxInProd(appEnvironment, integrationSetups.map((x) => ({ id: x.id, mode: x.mode })));
+  const open = alerts.find((a) => a.titleKey === 'integrationManagement.alert.sandboxInProduction' && a.status !== 'resolved');
+  if (ids.length > 0 && !open) raiseAlert({ titleKey: 'integrationManagement.alert.sandboxInProduction', context: `${ids.length} integration(s) in test mode while the app serves real customers`, severity: 'high', category: 'automation', relatedId: 'sandbox-in-production', sourceRoute: '/integrations' });
+  else if (ids.length === 0 && open) patchInPlace(alerts, open.id, { status: 'resolved', resolvedBy: 'system', resolvedAt: new Date(now).toISOString(), resolutionNote: 'No integration is in test mode in production any more' });
+}
+
+function igSignals(now: number): { rotations: { id: string; name: string; dueAt: string }[] } {
+  igEnsure();
+  return { rotations: integrationSetups.flatMap((s) => { const c = igActiveSlot(s); return c ? [{ id: `${s.id}:${s.mode}`, name: hcDef(s.id)?.provider ?? s.id, dueAt: igDueAt(c.rotatedAt) }] : []; }) };
+}
+
 const heartbeatCommitments = { notifications: 0, alerts: 0 };
 const HEARTBEAT: { id: string; run: (now: number) => void }[] = [
   { id: 'followUpTasks', run: () => reconcileFollowUpTasks() },
@@ -4132,6 +4251,7 @@ const HEARTBEAT: { id: string; run: (now: number) => void }[] = [
   { id: 'integrationHealth', run: (now) => syncIntegrationHealth(now) },
   { id: 'auditChain', run: (now) => syncAuditChain(now) },
   { id: 'overridePatterns', run: (now) => syncOverridePatterns(now) },
+  { id: 'integrationManagement', run: (now) => syncIntegrationManagement(now) },
   {
     id: 'stageInvoices',
     run: () => {
@@ -25421,6 +25541,63 @@ export const memoryRepository: Repository = {
 
   /* --------------------------------- Notification templates & channels (183) */
   getInternalNotifications: (userId) => simulateRead(() => { intAdmin(userId); return intOverview(Date.now()); }),
+  /* 189 — integration management */
+  getIntegrationManagement: (userId) => simulateRead(() => { intAdmin(userId); syncIntegrationManagement(Date.now()); return igView(Date.now()); }),
+  saveIntegrationCredential: (userId, id, input) => simulateWrite(() => { const admin = intAdmin(userId); igRotate(admin, id, input, Date.now()); return igView(Date.now()); }),
+  cancelIntegrationRotation: (userId, id, slot, reason) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      const s = igSetupOf(id);
+      const c = s.slots[slot];
+      if (!c?.rotation) throw new RepositoryError('not_rotating');
+      if (reason.replace(/[^\p{L}]/gu, '').length < IG_REASON_MIN) throw new RepositoryError('reason_short');
+      const secrets = integrationSecrets.get(`${id}:${slot}`);
+      if (secrets?.previous) { secrets.current = secrets.previous; secrets.previous = null; }
+      const restored = secrets?.current ?? '';
+      s.slots[slot] = { ...c, masked: igMask(igLast4(restored), restored.length), length: restored.length, rotation: null };
+      igChange(id, 'rotation_cancelled', admin.name, `${slot} credential rotation cancelled: the old credential stays in use`, reason);
+      return igView(Date.now());
+    }),
+  setIntegrationMode: (userId, id, input) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      const s = igSetupOf(id);
+      const now = Date.now();
+      const working = hcIntegrationView(hcDef(id)!, now).status === 'operational';
+      const problem = igModeProblem({ to: input.to, from: s.mode, liveConfigured: !!s.slots.live, working, rotating: !!igActiveSlot(s)?.rotation, reason: input.reason, confirmed: input.confirmed });
+      if (problem) throw new RepositoryError(problem);
+      s.mode = input.to;
+      igChange(id, 'mode', admin.name, `Switched to ${input.to === 'live' ? 'live' : 'test (sandbox)'} mode`, input.reason);
+      syncIntegrationManagement(now);
+      return igView(now);
+    }),
+  setAppEnvironment: (userId, env, input) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      if (env === appEnvironment) throw new RepositoryError('same_mode');
+      if (input.reason.replace(/[^\p{L}]/gu, '').length < IG_REASON_MIN) throw new RepositoryError('reason_short');
+      if (!input.confirmed) throw new RepositoryError('confirm_required');
+      appEnvironment = env;
+      igChange('app', 'environment', admin.name, `The app is now ${env === 'production' ? 'serving real customers (production)' : 'a demo'}`, input.reason);
+      syncIntegrationManagement(Date.now());
+      return igView(Date.now());
+    }),
+  verifyDemoIsolation: (userId) =>
+    simulateWrite(() => {
+      intAdmin(userId);
+      igEnsure();
+      const rows = IG_MANAGED.map((id) => {
+        const demo = igEndpoint(id, true);
+        const real = igEndpoint(id, false);
+        const s = igSetupOf(id);
+        // Demo traffic must be handed the test credential and never the live one, even when the integration itself is set to live.
+        const demoSlotKey = s.slots.sandbox?.keyId ?? null;
+        return { id, demoMode: demo.mode, demoKeyId: demo.keyId, productionMode: real.mode, productionKeyId: real.keyId, ok: demo.mode === 'sandbox' && demo.slot === 'sandbox' && demo.keyId === demoSlotKey && (s.slots.live === null || demo.keyId !== s.slots.live.keyId) };
+      });
+      igIsolationCheck = { at: new Date().toISOString(), ok: rows.every((r) => r.ok), rows };
+      return igView(Date.now());
+    }),
+  getSandboxWarning: (userId) => simulateRead(() => { intAdmin(userId); igEnsure(); return { environment: appEnvironment, ids: igSandboxInProd(appEnvironment, integrationSetups.map((s) => ({ id: s.id, mode: s.mode }))) }; }),
   /* 188 — manual override console */
   getOverrideConsole: (userId) => simulateRead(() => { intAdmin(userId); return moConsole(Date.now()); }),
   getOverrideCandidates: (userId, kind, q) => simulateRead(() => { intAdmin(userId); if (!(MO_KINDS as string[]).includes(kind)) throw new RepositoryError('not_found'); return moCandidates(kind as OverrideKind, q, Date.now()); }),

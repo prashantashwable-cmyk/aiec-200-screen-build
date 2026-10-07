@@ -1,3 +1,4 @@
+import { SandboxBanner } from '@/features/integrations/SandboxBanner';
 import { useEffect, useRef, useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -80,6 +81,7 @@ export function AppShell() {
             </button>
           </div>
         )}
+        {role === 'admin' && user && <SandboxBanner userId={user.id} tick={heartbeat.tick} />}
         <div className="shell__topbar">
           <span className="row gap-2">
             <span className="brand-shaft" aria-hidden="true">

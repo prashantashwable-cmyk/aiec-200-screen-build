@@ -5056,7 +5056,7 @@ export type CommitmentKind =
   | 'exit_dispute_decide'
   | 'tier_review_due'
   | 'certification_renewal'
-  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup' | 'support_chat_reply' | 'feedback_outreach' | 'feedback_recognition' | 'referral_reward' | 'automation_pause_review' | 'escalation_drill_due' | 'escalation_gap_fix' | 'integration_followup'
+  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup' | 'support_chat_reply' | 'feedback_outreach' | 'feedback_recognition' | 'referral_reward' | 'automation_pause_review' | 'escalation_drill_due' | 'escalation_gap_fix' | 'integration_followup' | 'integration_credential_rotation'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'
@@ -5855,4 +5855,33 @@ export interface ManualOverride {
   effects: { key: string; params?: Record<string, string | number> }[];
   /** The place in the audit log this override was written to. */
   auditSeq: number | null;
+}
+
+/* ------------------------------------------------------------------ Integration management (189) */
+
+export interface IntegrationCredentialView {
+  keyId: string;
+  /** Only the end of the secret, with the rest hidden: a stored secret is never sent to the screen. */
+  masked: string;
+  length: number;
+  createdAt: string;
+  rotatedAt: string;
+  rotatedByName: string;
+  /** Set while a new credential is being picked up: both the old and the new are accepted until `endsAt`. */
+  rotation: { startedAt: string; endsAt: string; previousMasked: string; byName: string } | null;
+}
+export interface IntegrationSetup {
+  id: string;
+  mode: 'sandbox' | 'live';
+  /** Providers issue separate keys for testing and for real use: each is kept apart, and demo traffic can only ever read the sandbox one. */
+  slots: { sandbox: IntegrationCredentialView | null; live: IntegrationCredentialView | null };
+}
+export interface IntegrationChange {
+  id: string;
+  integrationId: string;
+  at: string;
+  byName: string;
+  kind: 'mode' | 'rotation' | 'rotation_completed' | 'rotation_cancelled' | 'credential_added' | 'environment';
+  summary: string;
+  reason?: string;
 }

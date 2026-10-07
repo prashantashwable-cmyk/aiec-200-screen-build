@@ -159,7 +159,7 @@ export interface CommitmentSources {
   automationPauses: { category: string; name: string; since: string; byName: string }[];
   /** The escalation matrix (184): a drill is owed on each scenario's own rhythm, and a gap a drill found is Admin's to put right within a day. */
   /** What a recovered outage left behind that still needs a person (186). */
-  integrations: { followUps: { id: string; name: string; since: string; count: number }[] };
+  integrations: { followUps: { id: string; name: string; since: string; count: number }[]; rotations: { id: string; name: string; dueAt: string }[] };
   escalation: { drills: { id: string; name: string; dueAt: string }[]; gaps: { id: string; scenarioId: string; name: string; since: string }[] };
   referrals: { rewards: { id: string; userId: string; friend: string; at: string }[] };
   supportChats: { waiting: { id: string; name: string; since: string; urgent: boolean }[] };
@@ -2415,6 +2415,28 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
         paused: false,
         actionRoute: `/system-health?incident=${x.id}`,
         oversightRoute: '/system-health',
+      }));
+    },
+  },
+  {
+    // A credential is not set once and forgotten (189): the one in use is rotated on a rhythm, and Admin is reminded ahead of it.
+    kind: 'integration_credential_rotation',
+    nudgeBefore: days(14),
+    escalateAfter: days(14),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'automation',
+    collect(src) {
+      return src.integrations.rotations.map((x) => ({
+        ...base('integration_credential_rotation', 'alert', x.id),
+        ownerUserId: adminId(src),
+        titleKey: 'work.title.integration_credential_rotation',
+        titleParams: { name: x.name },
+        dueAt: x.dueAt,
+        state: 'open' as const,
+        paused: false,
+        actionRoute: `/integrations?integration=${x.id.split(':')[0]}`,
+        oversightRoute: '/integrations',
       }));
     },
   },

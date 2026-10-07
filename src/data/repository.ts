@@ -133,6 +133,8 @@ import type {
   InternalChannel,
   InternalChannelSet,
   EscalationContact,
+  IntegrationSetup,
+  IntegrationChange,
   ManualOverride,
   AuditExportRecord,
   IntegrationConfig,
@@ -7161,6 +7163,37 @@ export interface InternalNotificationsView {
 }
 export interface InternalTypeInput { urgency: InternalUrgency | null; roles: Record<string, InternalChannelSet> | null; enabled: boolean; content: Partial<Record<Language, InternalContent>> }
 
+/* ------------------------------------------------------------------ Integration management (189) */
+
+export interface IntegrationSetupView {
+  id: string;
+  provider: string;
+  group: string;
+  mode: 'sandbox' | 'live';
+  /** Health from 186, or what is more important to say here: no credential, or a rotation under way. */
+  status: 'operational' | 'degraded' | 'down' | 'rotating' | 'not_configured';
+  health: { status: 'operational' | 'degraded' | 'down'; rate: number | null; calls: number; errors: number; uptimePct: number | null };
+  slots: { sandbox: IntegrationSetup['slots']['sandbox']; live: IntegrationSetup['slots']['live'] };
+  lastSuccessAt: string | null;
+  dueForRotation: boolean;
+  rotationDueAt: string | null;
+  ageDays: number | null;
+  webhookUrl: string;
+  route: string | null;
+  /** True when AIEC checks it on a rhythm, so "Test the connection" has something to run. */
+  probed: boolean;
+}
+export interface IsolationCheckView { at: string; ok: boolean; rows: { id: string; demoMode: string; demoKeyId: string | null; productionMode: string; productionKeyId: string | null; ok: boolean }[] }
+export interface IntegrationManagementView {
+  environment: 'demo' | 'production';
+  integrations: IntegrationSetupView[];
+  changes: IntegrationChange[];
+  sandboxInProduction: string[];
+  isolation: IsolationCheckView | null;
+  at: string;
+}
+export interface IntegrationCredentialInput { slot: 'sandbox' | 'live'; keyId: string; secret: string; reason: string }
+
 /* ------------------------------------------------------------------ Manual override console (188) */
 
 export interface OverrideCandidate { id: string; label: string; detail: string; days: number | null; highlight: boolean; /** Something about it makes it refuse: shown, not hidden. */ blocked: boolean }
@@ -8801,6 +8834,14 @@ export interface Repository {
   getVaultBundle(userId: string): Promise<VaultDocument[]>;
   /** 174: the customer's payment picture for one project (the first needing attention when none is named). */
   getCustomerPayments(dealId: string | null, userId: string): Promise<CustomerPayView>;
+  /* 189 — the configuration root of every external connection: credentials (only ever masked), test and live mode, rotation without a scattered failure, and proof that demo traffic is isolated. */
+  getIntegrationManagement(userId: string): Promise<IntegrationManagementView>;
+  saveIntegrationCredential(userId: string, id: string, input: IntegrationCredentialInput): Promise<IntegrationManagementView>;
+  cancelIntegrationRotation(userId: string, id: string, slot: 'sandbox' | 'live', reason: string): Promise<IntegrationManagementView>;
+  setIntegrationMode(userId: string, id: string, input: { to: 'sandbox' | 'live'; reason: string; confirmed: boolean }): Promise<IntegrationManagementView>;
+  setAppEnvironment(userId: string, env: 'demo' | 'production', input: { reason: string; confirmed: boolean }): Promise<IntegrationManagementView>;
+  verifyDemoIsolation(userId: string): Promise<IntegrationManagementView>;
+  getSandboxWarning(userId: string): Promise<{ environment: 'demo' | 'production'; ids: string[] }>;
   /* 188 — the console for forcing what a rule would not, with a reason, a preview and a confirmation; guardrails with no override are refused and the attempt kept. */
   getOverrideConsole(userId: string): Promise<OverrideConsoleView>;
   getOverrideCandidates(userId: string, kind: string, q: string): Promise<OverrideCandidate[]>;

@@ -41,6 +41,7 @@ export const UNITS: UnitDef[] = [
   { id: 'integrationHealth', category: 'commitments', name: 'Integration health checks' },
   { id: 'auditChain', category: 'commitments', name: 'Audit log integrity check' },
   { id: 'overridePatterns', category: 'commitments', name: 'Manual override patterns' },
+  { id: 'integrationManagement', category: 'commitments', name: 'Credential rotation and test-mode checks' },
   { id: 'followUpTasks', category: 'commitments', name: 'Follow-up task reconciliation' },
   { id: 'paymentReminders', category: 'payments', name: 'Payment reminders' },
   { id: 'scheduledQuotations', category: 'communications', name: 'Scheduled quotation sends' },
