@@ -5056,7 +5056,7 @@ export type CommitmentKind =
   | 'exit_dispute_decide'
   | 'tier_review_due'
   | 'certification_renewal'
-  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup' | 'support_chat_reply' | 'feedback_outreach' | 'feedback_recognition' | 'referral_reward' | 'automation_pause_review' | 'escalation_drill_due' | 'escalation_gap_fix' | 'integration_followup' | 'integration_credential_rotation' | 'sandbox_promotion_pending' | 'sandbox_library_review' | 'company_profile_legal_verify'
+  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup' | 'support_chat_reply' | 'feedback_outreach' | 'feedback_recognition' | 'referral_reward' | 'automation_pause_review' | 'escalation_drill_due' | 'escalation_gap_fix' | 'integration_followup' | 'integration_credential_rotation' | 'sandbox_promotion_pending' | 'sandbox_library_review' | 'company_profile_legal_verify' | 'permission_override_review'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'
@@ -5967,4 +5967,55 @@ export interface CompanyProfileVersion {
   /** A legal change is checked after it takes effect: the first documents, the GST portal, the accountant. */
   announcedAt?: string;
   legal?: { confirmedAt?: string; confirmedByName?: string; note?: string; stateFrom?: string; stateTo?: string };
+}
+
+/* ------------------------------------------------------------------ User & role permissions (192) */
+
+/** A role an Admin adds as the business grows (a QC inspector, a team lead): it behaves like one of the built-in kinds for its home and tab bar, and adds the screens it is granted. */
+export interface CustomRole {
+  id: string;
+  name: string;
+  nameHi: string;
+  nameMr: string;
+  baseRole: Role;
+  description: string;
+  createdAt: string;
+  createdByName: string;
+  retired?: { at: string; byName: string; reason: string };
+}
+/** One person's own exception to their role: always with a reason, and by default an end. Kept after it ends. */
+export interface UserAccessOverride {
+  id: string;
+  userId: string;
+  screenId: string;
+  effect: 'allow' | 'deny';
+  reason: string;
+  until: string | null;
+  createdAt: string;
+  createdByName: string;
+  reviewedAt?: string | null;
+  reviewedByName?: string;
+  reviewNote?: string;
+  endedAt?: string;
+  endedReason?: 'removed' | 'expired';
+  endedByName?: string;
+}
+export type PermissionChangeKind = 'role_grant' | 'role_revoke' | 'role_reset' | 'role_created' | 'role_retired' | 'role_assigned' | 'role_unassigned' | 'override_set' | 'override_removed' | 'override_expired' | 'override_reviewed' | 'refused';
+/** The audit trail: who changed what for whom, why, and how much it mattered. Append-only and frozen. */
+export interface PermissionChange {
+  id: string;
+  code: string;
+  seq: number;
+  at: string;
+  byName: string;
+  kind: PermissionChangeKind;
+  roleId?: string;
+  roleLabel?: string;
+  userId?: string;
+  userName?: string;
+  screenIds: string[];
+  reason: string;
+  risk: 'low' | 'medium' | 'high';
+  /** For a refused attempt: why. */
+  refusal?: string;
 }

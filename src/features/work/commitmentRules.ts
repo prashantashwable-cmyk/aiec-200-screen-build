@@ -161,6 +161,7 @@ export interface CommitmentSources {
   /** What a recovered outage left behind that still needs a person (186). */
   integrations: { followUps: { id: string; name: string; since: string; count: number }[]; rotations: { id: string; name: string; dueAt: string }[] };
   /** A rule that passed its sandbox tests and is still not live, and a scenario library nobody has reviewed in a while (190). */
+  permissions: { reviews: { id: string; name: string; screen: string; dueAt: string }[] };
   companyProfile: { verify: { id: string; version: number; dueAt: string }[] };
   sandbox: { promotions: { id: string; name: string; since: string }[]; review: { dueAt: string } | null };
   escalation: { drills: { id: string; name: string; dueAt: string }[]; gaps: { id: string; scenarioId: string; name: string; since: string }[] };
@@ -2462,6 +2463,28 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
         paused: false,
         actionRoute: `/automation-sandbox?rule=${x.id}`,
         oversightRoute: '/automation-sandbox',
+      }));
+    },
+  },
+  {
+    // An exception to someone's role is not a permanent arrangement (192): it is looked at again on a rhythm, or when its own end comes.
+    kind: 'permission_override_review',
+    nudgeBefore: days(7),
+    escalateAfter: days(14),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'automation',
+    collect(src) {
+      return src.permissions.reviews.map((x) => ({
+        ...base('permission_override_review', 'alert', x.id),
+        ownerUserId: adminId(src),
+        titleKey: 'work.title.permission_override_review',
+        titleParams: { name: x.name, screen: x.screen },
+        dueAt: x.dueAt,
+        state: 'open' as const,
+        paused: false,
+        actionRoute: '/access-control?tab=users',
+        oversightRoute: '/access-control',
       }));
     },
   },

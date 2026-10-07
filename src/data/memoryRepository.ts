@@ -1016,6 +1016,8 @@ import { MANY_AT as WF_MANY_AT, MAX_PER_RUN as WF_MAX_PER_RUN, conflictsOf as wf
 import type { RecordValues, RuleDraft, SubjectId as WfSubject } from '@/features/automation/customRules';
 import { CHANNELS as INT_CHANNELS, CORE_TYPES as INT_CORE, DEFAULT_URGENCY_CHANNELS as INT_DEFAULTS, NO_CHANNELS as INT_NONE, atLeast as intAtLeast, channelProblems as intChannelProblems, contentProblems as intContentProblems, fatigueOf as intFatigueOf, isBlocking as intIsBlocking, reducesReach as intReducesReach, severityFloorOf as intSeverityFloor, urgencyOfSeverity as intUrgencyOfSeverity } from '@/features/notifications/internal';
 import type { Urgency as IntUrgency } from '@/features/notifications/internal';
+import { BUILT_IN_ROLES as PM_BUILT_IN, CREEP_OVERRIDES as PM_CREEP, CUSTOM_BASES as PM_CUSTOM_BASES, MAX_SCREENS_PER_CHANGE as PM_MAX_SCREENS, NAME_MIN as PM_NAME_MIN, PAGE as PM_PAGE, REASON_MIN_OVERRIDE as PM_REASON_OVERRIDE, REASON_MIN_ROLE as PM_REASON_ROLE, accessFor as pmAccessFor, adminOnly as pmAdminOnly, cellOf as pmCellOf, decisionKey as pmKey, defaultAllows as pmDefaultAllows, isExpired as pmIsExpired, lettersOf as pmLetters, lockedFor as pmLockedFor, moduleOf as pmModuleOf, overrideDueAt as pmOverrideDueAt, reasonProblem as pmReasonProblem, riskOf as pmRiskOf, untilProblem as pmUntilProblem, worstRisk as pmWorstRisk } from '@/features/access/permissions';
+import type { Decision as PmDecision, RoleLite as PmRoleLite, ScreenRef as PmScreenRef } from '@/features/access/permissions';
 import { DEFAULT_TOKENS as CP_DEFAULT_TOKENS, REASON_MIN_COSMETIC as CP_REASON_COSMETIC, REASON_MIN_LEGAL as CP_REASON_LEGAL, NOTE_MIN as CP_NOTE_MIN, addressLine as cpAddressLine, changesOf as cpChangesOf, contrastChecks as cpContrast, draftHash as cpDraftHash, effectiveProblem as cpEffectiveProblem, kindOf as cpKindOf, lettersOf as cpLetters, profileProblems as cpProfileProblems, stateOfGstin as cpStateOfGstin, statusOf as cpStatusOf, verifyDueAt as cpVerifyDueAt, versionAt as cpVersionAt } from '@/features/brand/brand';
 import type { BrandDraft } from '@/features/brand/brand';
 import { BUILT_IN as SB_BUILT_IN, ENGINES as SB_ENGINES, EXPECT_SCHEMA as SB_EXPECT, NOTE_MIN as SB_NOTE_MIN, PROMOTE_NUDGE_DAYS as SB_PROMOTE_NUDGE, REVIEW_EVERY_DAYS as SB_REVIEW_EVERY, compareOutcome as sbCompare, hashText as SB_HASH, promotionStatus as sbPromotionStatus, reviewDue as sbReviewDue, reviewDueAt as sbReviewDueAt, scenarioProblem as SB_SCENARIO_PROBLEM, statusOfComparisons as sbStatus } from '@/features/sandbox/testing';
@@ -1027,12 +1029,12 @@ import type { OverrideKind, OverrideProblem } from '@/features/override/rules';
 import { GENESIS as AUDIT_GENESIS, codeOf as auditCodeOf, hashOf as auditHashOf, verifyChain as auditVerify } from '@/features/audit/chain';
 import { BOT_DRIFT_POINTS as HC_BOT_DRIFT, BOT_MIN_SAMPLE as HC_BOT_MIN, ENGINE_DOWN_MS as HC_ENGINE_DOWN, INTEGRATIONS as HC_INTEGRATIONS, MAX_PROBES as HC_MAX_PROBES, STATUS_WINDOW_MS as HC_STATUS_WINDOW, NOTE_MIN as HC_NOTE_MIN, PROBE_EVERY_MS as HC_PROBE_EVERY, WINDOW_MS as HC_WINDOW, agreementOf as hcAgreement, causeOf as hcCause, integrationDef as hcDef, isHttpUrl as hcIsUrl, judge as hcJudge, recovered as hcRecovered, sharedCauseOf as hcShared, uptimeOf as hcUptime } from '@/features/health/system';
 import type { IntegrationDef as HcDef, Observation as HcObservation, TechStatus } from '@/features/health/system';
-import type { BrandView, CompanyProfilePreview, CompanyProfilePublishInput, CompanyProfileVersionView, CompanyProfileView, CompanyUsage, SandboxRunView, SandboxPromotionPreview, SandboxPromotionRow, SandboxRuleRef, SandboxScenarioView, SandboxView, IntegrationManagementView, IntegrationSetupView, IsolationCheckView, OverrideCandidate, OverrideConsoleView, OverridePreviewView, AuditDetailView, AuditExportView, AuditFilter, AuditRowView, AuditSearchView, BotHealthView, SystemHealthIntegrationView, SystemHealthView } from './repository';
+import type { AccessGrantsView, CustomRoleInput, MatrixRowView, PermissionLogFilter, PermissionLogView, PermissionMatrixFilter, PermissionMatrixView, PermissionOverview, PermissionRoleView, PermissionUserRow, RoleChangeInput, RoleChangePreview, UserAccessView, UserOverrideInput, BrandView, CompanyProfilePreview, CompanyProfilePublishInput, CompanyProfileVersionView, CompanyProfileView, CompanyUsage, SandboxRunView, SandboxPromotionPreview, SandboxPromotionRow, SandboxRuleRef, SandboxScenarioView, SandboxView, IntegrationManagementView, IntegrationSetupView, IsolationCheckView, OverrideCandidate, OverrideConsoleView, OverridePreviewView, AuditDetailView, AuditExportView, AuditFilter, AuditRowView, AuditSearchView, BotHealthView, SystemHealthIntegrationView, SystemHealthView } from './repository';
 import { SLA_CATEGORIES, WINDOW_DAYS as SLA_WINDOW_DAYS, elapsedMsOf as slaElapsedOf, pauseOf as slaPauseOf, ratioOf as slaRatioOf, rollupOf as slaRollupOf, statusOf as slaStatusOf, targetSignal as slaTargetSignal, trendOf as slaTrendOf, triageScore as slaTriageScore } from '@/features/sla/consolidated';
 import type { SlaItem } from '@/features/sla/consolidated';
 import type { SlaCategoryView, SlaItemView, SlaOverviewView } from './repository';
 import { BACKUP_KEYS as ESC_BACKUP_KEYS, DEMO_CONFIRM_MS as ESC_DEMO_CONFIRM_MS, DEMO_SILENCE_MS as ESC_DEMO_SILENCE_MS, DRILL_GAP_TITLE as ESC_DRILL_GAP_TITLE, ESC_CHANNELS, EXHAUSTED_TITLE as ESC_EXHAUSTED_TITLE, MAX_BACKUPS as ESC_MAX_BACKUPS, NOTE_MIN as ESC_NOTE_MIN, PRIMARY as ESC_PRIMARY, SCENARIOS as ESC_SCENARIOS, SCENARIO_NAMES as ESC_NAMES, chainProblems as escChainProblems, drillDueAt as escDrillDueAt, drillStepsOf as escDrillStepsOf, exhaustedAfterMinutes as escExhaustedAfter, offsetsOf as escOffsets, phoneProblem as escPhoneBad, railOutcome as escRailOutcome, repeatOffsets as escRepeatOffsets, scenarioDef as escDef, scenarioIdOf as escScenarioIdOf, withTierIds as escTierIds } from '@/features/escalation/matrix';
-import type { CompanyProfileVersion, SandboxBaseline, SandboxRun, SandboxScenario, IntegrationChange, IntegrationCredentialView, IntegrationSetup, AuditExportRecord, LeadStage, ManualOverride, IntegrationConfig, IntegrationIncident, IntegrationProbe, MessageStatus } from './types';
+import type { CompanyProfileVersion, Role, CustomRole, PermissionChange, PermissionChangeKind, UserAccessOverride, SandboxBaseline, SandboxRun, SandboxScenario, IntegrationChange, IntegrationCredentialView, IntegrationSetup, AuditExportRecord, LeadStage, ManualOverride, IntegrationConfig, IntegrationIncident, IntegrationProbe, MessageStatus } from './types';
 import type { EscalationChainTier, EscalationChannel, EscalationContact, EscalationDelivery, EscalationDrill, EscalationDrillStep, EscalationLastResort, EscalationRun, EscalationScenarioConfig } from './types';
 import type { AlertEscalationView, EscalationGap, EscalationMatrixView, EscalationRunView, EscalationScenarioView } from './repository';
 import { VAULT_KINDS, validityState } from '@/features/documents/vault';
@@ -2876,6 +2878,7 @@ function commitmentSources(now: number): CommitmentSources {
     integrations: { ...hcSignals(), ...igSignals(now) },
     sandbox: sbSignals(now),
     companyProfile: cpSignals(now),
+    permissions: pmSignals(now),
     tds: tdsObligations(Date.now()),
     exits: exitSignals(),
     handoverReviews: handoverSignals().reviews,
@@ -4453,6 +4456,221 @@ function cpSignals(now: number): { verify: { id: string; version: number; dueAt:
   return { verify: companyProfiles.filter((v) => v.kind === 'legal' && !v.cancelled && !v.legal?.confirmedAt).map((v) => ({ id: v.id, version: v.version, dueAt: cpVerifyDueAt(v.effectiveFrom) })) };
 }
 
+/* ============================================ User & role permissions (192) */
+
+/** The screens the app declares (one entry per route) and each role's home. The repository holds only decisions; every judgement is made against this table. */
+let accessCatalogue: PmScreenRef[] = [];
+let accessHomes: Record<Role, string> = { admin: '/admin', surveyor: '/surveyor', technician: '/technician', customer: '/customer', supplier: '/supplier' };
+const customRoles: CustomRole[] = [];
+const roleDecisions = new Map<string, PmDecision>();
+const userRoleAssign = new Map<string, string[]>();
+const userOverrides: UserAccessOverride[] = [];
+const permissionLog: PermissionChange[] = [];
+let permissionVersion = 1;
+let pmSeeded = false;
+
+/** The screens as the matrix sees them: one per screen id, public routes left out (nobody governs the login page). A screen with two routes (an applicant's own link and Admin's page) is the union of its governed routes' roles. */
+function pmRefs(): PmScreenRef[] {
+  const byId = new Map<string, PmScreenRef>();
+  for (const r of accessCatalogue) {
+    if (r.roles === 'public') continue;
+    const have = byId.get(r.id);
+    if (!have) byId.set(r.id, { ...r, roles: [...(r.roles as Role[])] });
+    else if (have.roles !== 'public') have.roles = [...new Set([...have.roles, ...(r.roles as Role[])])];
+  }
+  return [...byId.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+const pmRef = (id: string): PmScreenRef | undefined => pmRefs().find((r) => r.id === id);
+const pmRoleLite = (id: string): PmRoleLite | null => {
+  if ((PM_BUILT_IN as string[]).includes(id)) return { id, baseRole: id as Role, builtIn: true };
+  const c = customRoles.find((x) => x.id === id && !x.retired);
+  return c ? { id: c.id, baseRole: c.baseRole, builtIn: false } : null;
+};
+const pmRoleLabel = (id: string): string => customRoles.find((c) => c.id === id)?.name ?? id;
+const pmActiveOverrides = (userId: string, now: number): UserAccessOverride[] => userOverrides.filter((o) => o.userId === userId && !o.endedAt && !pmIsExpired(o, now));
+function pmEnsure(): void {
+  if (pmSeeded) return;
+  pmSeeded = true;
+  const day = 86_400_000;
+  const iso = (d: number) => new Date(Date.now() - d * day).toISOString();
+  customRoles.push({ id: 'cr-1', name: 'QC Inspector', nameHi: 'क्यूसी निरीक्षक', nameMr: 'क्यूसी निरीक्षक', baseRole: 'technician', description: 'A technician who checks other people\'s installations. Starts with what a technician has; screens are added here as inspectors need them.', createdAt: iso(150), createdByName: 'Prashant Vasant Wable' });
+  userRoleAssign.set('u-tech-5', ['cr-1']);
+  userOverrides.push({ id: 'ov-1', userId: 'u-tech-1', screenId: '024', effect: 'allow', reason: 'Senior technician asked to see the technician leaderboard so he can coach his own team.', until: iso(-30), createdAt: iso(40), createdByName: 'Prashant Vasant Wable' });
+  const log = (d: number, kind: PermissionChangeKind, extra: Partial<PermissionChange>) => { permissionLog.push(Object.freeze({ id: `pc-${permissionLog.length + 1}`, code: `AIEC-PC-${1000 + permissionLog.length + 1}`, seq: permissionLog.length + 1, at: iso(d), byName: 'Prashant Vasant Wable', kind, screenIds: [], reason: '', risk: 'low', ...extra }) as PermissionChange); };
+  log(150, 'role_created', { roleId: 'cr-1', roleLabel: 'QC Inspector', reason: 'Independent quality checks need someone who did not install the lift.' });
+  log(149, 'role_assigned', { roleId: 'cr-1', roleLabel: 'QC Inspector', userId: 'u-tech-5', userName: 'Anand Deshpande', reason: 'Anand holds the inspection skills and has not been on an installation crew.' });
+  log(40, 'override_set', { userId: 'u-tech-1', userName: 'Santosh Patil', screenIds: ['024'], risk: 'high', reason: 'Senior technician asked to see the technician leaderboard so he can coach his own team.' });
+  permissionVersion = 2;
+}
+function pmWrite(admin: User, kind: PermissionChangeKind, now: number, extra: Partial<PermissionChange>): PermissionChange {
+  pmEnsure();
+  const n = permissionLog.length + 1;
+  const entry = Object.freeze({ id: `pc-${n}`, code: `AIEC-PC-${1000 + n}`, seq: n, at: new Date(now).toISOString(), byName: admin.name, kind, screenIds: [], reason: '', risk: 'low', ...extra }) as PermissionChange;
+  permissionLog.push(entry);
+  permissionVersion += 1;
+  return entry;
+}
+const pmUsersOf = (roleId: string): User[] => users.filter((u) => u.status === 'active' && ((PM_BUILT_IN as string[]).includes(roleId) ? u.role === roleId : (userRoleAssign.get(u.id) ?? []).includes(roleId)));
+function pmRoleView(id: string): PermissionRoleView {
+  const c = customRoles.find((x) => x.id === id);
+  const decisions = [...roleDecisions.entries()].filter(([k]) => k.startsWith(`${id}|`)).map(([, d]) => d);
+  return { id, name: c ? c.name : id, nameHi: c?.nameHi ?? '', nameMr: c?.nameMr ?? '', baseRole: c ? c.baseRole : (id as Role), builtIn: !c, description: c?.description ?? '', users: pmUsersOf(id).length, grants: decisions.filter((d) => d === 'grant').length, revokes: decisions.filter((d) => d === 'revoke').length, retired: !!c?.retired, createdAt: c?.createdAt ?? null };
+}
+const pmRoleViews = (): PermissionRoleView[] => [...PM_BUILT_IN, ...customRoles.map((c) => c.id)].map(pmRoleView);
+function pmPersonOf(u: User, now: number) {
+  return { baseRole: u.role, customRoleIds: (userRoleAssign.get(u.id) ?? []).filter((id) => customRoles.some((c) => c.id === id && !c.retired)), overrides: new Map(pmActiveOverrides(u.id, now).map((o) => [o.screenId, o.effect] as const)) };
+}
+const pmUserRow = (u: User, now: number): PermissionUserRow => ({ id: u.id, name: u.name, role: u.role, status: u.status, customRoleIds: pmPersonOf(u, now).customRoleIds, overrides: pmActiveOverrides(u.id, now).length, isLastAdmin: u.role === 'admin' && u.status === 'active' && users.filter((x) => x.role === 'admin' && x.status === 'active').length === 1 });
+const pmTitle = (id: string): string => pmRef(id)?.titleKey ?? id;
+
+function pmOverview(now: number): PermissionOverview {
+  pmEnsure();
+  const active = userOverrides.filter((o) => !o.endedAt && !pmIsExpired(o, now));
+  const creep: PermissionOverview['creep'] = [];
+  for (const r of pmRoleViews()) if (r.grants + r.revokes >= PM_CREEP * 2) creep.push({ kind: 'role_diverges', roleId: r.id, name: r.name, count: r.grants + r.revokes });
+  const perUser = new Map<string, number>();
+  for (const o of active) perUser.set(o.userId, (perUser.get(o.userId) ?? 0) + 1);
+  for (const [uid, n] of perUser) if (n >= PM_CREEP) creep.push({ kind: 'person_many', userId: uid, name: byId(users, uid)?.name ?? uid, count: n });
+  const refs = pmRefs();
+  for (const r of pmRoleViews()) {
+    if (!['customer', 'supplier'].includes(r.baseRole)) continue;
+    const high = [...roleDecisions.entries()].filter(([k, d]) => k.startsWith(`${r.id}|`) && d === 'grant').filter(([k]) => { const ref = refs.find((x) => x.id === k.split('|')[1]); return !!ref && pmRiskOf(ref, { id: r.id, baseRole: r.baseRole, builtIn: r.builtIn }) === 'high'; }).length;
+    if (high > 0) creep.push({ kind: 'outside_high', roleId: r.id, name: r.name, count: high });
+  }
+  return {
+    roles: pmRoleViews(), admins: { active: users.filter((u) => u.role === 'admin' && u.status === 'active').length },
+    overrides: { active: active.length, dueForReview: active.filter((o) => Date.parse(pmOverrideDueAt(o)) <= now).length, endingSoon: active.filter((o) => o.until && Date.parse(o.until) - now <= 14 * 86_400_000).length },
+    creep, screens: refs.length, at: new Date(now).toISOString(),
+  };
+}
+
+function pmMatrix(filter: PermissionMatrixFilter): PermissionMatrixView {
+  pmEnsure();
+  const roles = pmRoleViews().filter((r) => !r.retired);
+  const lites = roles.map((r) => ({ r, lite: { id: r.id, baseRole: r.baseRole, builtIn: r.builtIn } as PmRoleLite }));
+  const q = (filter.q ?? '').trim().toLowerCase();
+  const rows: MatrixRowView[] = pmRefs().map((ref) => ({
+    id: ref.id, path: ref.path, titleKey: ref.titleKey, module: pmModuleOf(ref.id), adminOnly: pmAdminOnly(ref), isPublic: false,
+    cells: lites.map(({ lite }) => { const c = pmCellOf(ref, lite, roleDecisions, accessHomes); return { roleId: lite.id, allowed: c.allowed, source: c.source, locked: c.locked, defaultAllowed: c.defaultAllowed }; }),
+  }));
+  const changed = (r: MatrixRowView) => r.cells.some((c) => c.source === 'role_grant' || c.source === 'role_revoke');
+  const base = rows.filter((r) => (!filter.ids || filter.ids.includes(r.id)) && (!q || r.id.includes(q) || r.path.toLowerCase().includes(q)));
+  const shown = base.filter((r) => (filter.module === undefined || filter.module === null || r.module === filter.module) && (!filter.changed || changed(r)) && (!filter.adminOnly || r.adminOnly) && (!filter.roleId || r.cells.some((c) => c.roleId === filter.roleId && c.allowed)));
+  const mods = new Map<number, number>();
+  for (const r of base) mods.set(r.module, (mods.get(r.module) ?? 0) + 1);
+  const offset = filter.offset ?? 0;
+  const limit = filter.limit === 0 ? shown.length : filter.limit ?? PM_PAGE;
+  return { rows: shown.slice(offset, offset + limit), total: shown.length, roles, facets: { modules: [...mods.entries()].sort((a, b) => a[0] - b[0]).map(([module, count]) => ({ module, count })), changed: base.filter(changed).length, adminOnly: base.filter((r) => r.adminOnly).length } };
+}
+
+/** What a role change would do, screen by screen, and why it would be refused. */
+function pmPlan(input: RoleChangeInput): { preview: RoleChangePreview; role: PmRoleLite } {
+  const role = pmRoleLite(input.roleId);
+  if (!role) throw new RepositoryError('not_found');
+  const ids = [...new Set(input.screenIds)];
+  if (ids.length === 0) throw new RepositoryError('no_screens');
+  if (ids.length > PM_MAX_SCREENS) throw new RepositoryError('too_many');
+  let refusal: string | null = null;
+  const rows: RoleChangePreview['rows'] = ids.map((id) => {
+    const ref = pmRef(id);
+    if (!ref) throw new RepositoryError('not_found');
+    const cell = pmCellOf(ref, role, roleDecisions, accessHomes);
+    const locked = pmLockedFor(ref, role, accessHomes);
+    const willBe = input.effect === 'grant' ? true : input.effect === 'revoke' ? false : cell.defaultAllowed;
+    if (locked && !willBe) refusal = refusal ?? 'locked';
+    if (!role.builtIn && input.effect === 'revoke' && !cell.allowed) refusal = refusal ?? 'nothing_to_revoke';
+    return { screenId: id, titleKey: ref.titleKey, was: cell.allowed, willBe: locked ? true : willBe, risk: willBe && !cell.allowed ? pmRiskOf(ref, role) : ('low' as const), locked };
+  });
+  return { preview: { rows, users: pmUsersOf(role.id).length, risk: pmWorstRisk(rows.map((r) => r.risk)), refusal }, role };
+}
+
+function pmChangeRole(admin: User, input: RoleChangeInput, now: number): PermissionChange {
+  const { preview, role } = pmPlan(input);
+  const refuse = (code: string): never => { pmWrite(admin, 'refused', now, { roleId: role.id, roleLabel: pmRoleLabel(role.id), screenIds: preview.rows.map((r) => r.screenId), reason: input.reason.trim(), risk: preview.risk, refusal: code }); throw new RepositoryError(code); };
+  if (preview.refusal) return refuse(preview.refusal);
+  const rp = pmReasonProblem(input.reason, PM_REASON_ROLE);
+  if (rp) throw new RepositoryError(rp);
+  if (preview.risk === 'high' && !input.confirmHighRisk) throw new RepositoryError('high_risk_unconfirmed');
+  const changing = preview.rows.filter((r) => r.was !== r.willBe);
+  for (const r of changing) {
+    const ref = pmRef(r.screenId)!;
+    const k = pmKey(role.id, r.screenId);
+    const dflt = pmDefaultAllows(ref, role);
+    if (input.effect === 'reset') roleDecisions.delete(k);
+    else if (r.willBe === dflt) roleDecisions.delete(k);
+    else roleDecisions.set(k, r.willBe ? 'grant' : 'revoke');
+  }
+  const entry = pmWrite(admin, input.effect === 'grant' ? 'role_grant' : input.effect === 'revoke' ? 'role_revoke' : 'role_reset', now, { roleId: role.id, roleLabel: pmRoleLabel(role.id), screenIds: preview.rows.map((r) => r.screenId), reason: input.reason.trim(), risk: preview.risk });
+  if (preview.risk === 'high') raiseAlert({ titleKey: 'accessControl.alert.sensitive', context: `${pmRoleLabel(role.id)}: ${preview.rows.map((r) => r.screenId).join(', ')}`, severity: 'medium', category: 'automation', relatedId: `pc:${entry.id}`, sourceRoute: `/access-control?tab=audit&entry=${entry.id}` });
+  return entry;
+}
+
+function pmUserAccess(target: User, now: number): UserAccessView {
+  const person = pmPersonOf(target, now);
+  const base: PmRoleLite = { id: target.role, baseRole: target.role, builtIn: true };
+  const beyond: UserAccessView['beyond'] = [];
+  let allowedCount = 0;
+  for (const ref of pmRefs()) {
+    const a = pmAccessFor(ref, person, roleDecisions, accessHomes);
+    if (a.allowed) allowedCount += 1;
+    if (a.allowed !== pmDefaultAllows(ref, base)) beyond.push({ screenId: ref.id, titleKey: ref.titleKey, allowed: a.allowed, source: a.source });
+  }
+  return { user: pmUserRow(target, now), customRoles: person.customRoleIds.map(pmRoleView), beyond, overrides: userOverrides.filter((o) => o.userId === target.id).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)).map((o) => ({ ...o })), allowedCount };
+}
+
+function pmSetOverride(admin: User, input: UserOverrideInput, now: number): void {
+  const target = byId(users, input.targetUserId);
+  if (!target) throw new RepositoryError('not_found');
+  const ids = [...new Set(input.screenIds)];
+  if (ids.length === 0) throw new RepositoryError('no_screens');
+  if (ids.length > PM_MAX_SCREENS) throw new RepositoryError('too_many');
+  const person = pmPersonOf(target, now);
+  const base: PmRoleLite = { id: target.role, baseRole: target.role, builtIn: true };
+  const risks: ('low' | 'medium' | 'high')[] = [];
+  const todo: string[] = [];
+  for (const id of ids) {
+    const ref = pmRef(id);
+    if (!ref) throw new RepositoryError('not_found');
+    if (pmLockedFor(ref, base, accessHomes)) { pmWrite(admin, 'refused', now, { userId: target.id, userName: target.name, screenIds: ids, reason: input.reason.trim(), refusal: 'locked' }); throw new RepositoryError('locked'); }
+    const without = new Map(person.overrides); without.delete(id);
+    const already = pmAccessFor(ref, { ...person, overrides: without }, roleDecisions, accessHomes).allowed;
+    if (input.effect === 'allow' && already) continue;
+    if (input.effect === 'deny' && !already) continue;
+    todo.push(id);
+    if (input.effect === 'allow') risks.push(pmRiskOf(ref, base));
+  }
+  if (todo.length === 0) throw new RepositoryError('nothing_to_change');
+  const rp = pmReasonProblem(input.reason, PM_REASON_OVERRIDE);
+  if (rp) throw new RepositoryError(rp);
+  const up = pmUntilProblem(input.until, now);
+  if (up) throw new RepositoryError(up);
+  const risk = pmWorstRisk(risks);
+  if (risk === 'high' && !input.confirmHighRisk) throw new RepositoryError('high_risk_unconfirmed');
+  for (const id of todo) {
+    for (const old of userOverrides.filter((o) => o.userId === target.id && o.screenId === id && !o.endedAt)) { old.endedAt = new Date(now).toISOString(); old.endedReason = 'removed'; old.endedByName = admin.name; }
+    userOverrides.push({ id: `ov-${userOverrides.length + 1}`, userId: target.id, screenId: id, effect: input.effect, reason: input.reason.trim(), until: input.until, createdAt: new Date(now).toISOString(), createdByName: admin.name });
+  }
+  const entry = pmWrite(admin, 'override_set', now, { userId: target.id, userName: target.name, screenIds: todo, reason: input.reason.trim(), risk });
+  if (risk === 'high') raiseAlert({ titleKey: 'accessControl.alert.sensitive', context: `${target.name}: ${todo.join(', ')}`, severity: 'medium', category: 'automation', relatedId: `pc:${entry.id}`, sourceRoute: `/access-control?tab=audit&entry=${entry.id}` });
+}
+
+/** An exception that has reached its end stops applying by itself and the fact is recorded. Idempotent. */
+function syncPermissions(now: number): void {
+  pmEnsure();
+  for (const o of userOverrides) {
+    if (o.endedAt || !pmIsExpired(o, now)) continue;
+    o.endedAt = new Date(now).toISOString();
+    o.endedReason = 'expired';
+    const u = byId(users, o.userId);
+    pmWrite({ name: 'AIEC Assistant' } as User, 'override_expired', now, { userId: o.userId, userName: u?.name ?? o.userId, screenIds: [o.screenId], reason: 'The end date given for this exception arrived.', risk: 'low' });
+    logAutomatedAction({ sourceKey: 'permissions.override_expired', triggeringCondition: `An access exception for ${u?.name ?? o.userId} on screen ${o.screenId} reached its end date`, actionTaken: 'Stopped applying the exception; the person is back to what their role gives them', affectedRecordId: o.id, affectedRecordType: 'other', subjectLabel: u?.name ?? o.userId });
+  }
+}
+function pmSignals(now: number): { reviews: { id: string; name: string; screen: string; dueAt: string }[] } {
+  pmEnsure();
+  return { reviews: userOverrides.filter((o) => !o.endedAt && !pmIsExpired(o, now)).map((o) => ({ id: o.id, name: byId(users, o.userId)?.name ?? o.userId, screen: o.screenId, dueAt: pmOverrideDueAt(o) })) };
+}
+
 const heartbeatCommitments = { notifications: 0, alerts: 0 };
 const HEARTBEAT: { id: string; run: (now: number) => void }[] = [
   { id: 'followUpTasks', run: () => reconcileFollowUpTasks() },
@@ -4515,6 +4733,7 @@ const HEARTBEAT: { id: string; run: (now: number) => void }[] = [
   { id: 'overridePatterns', run: (now) => syncOverridePatterns(now) },
   { id: 'integrationManagement', run: (now) => syncIntegrationManagement(now) },
   { id: 'companyProfile', run: (now) => syncCompanyProfile(now) },
+  { id: 'permissions', run: (now) => syncPermissions(now) },
   {
     id: 'stageInvoices',
     run: () => {
@@ -25921,6 +26140,115 @@ export const memoryRepository: Repository = {
       v.legal = { ...(v.legal ?? {}), confirmedAt: new Date(now).toISOString(), confirmedByName: admin.name, note: note.trim() };
       syncCompanyProfile(now);
       return cpView(now);
+    }),
+  /* 192 — user & role permissions */
+  setAccessCatalogue: (screens, homes) => simulateRead(() => { accessCatalogue = screens.map((r) => ({ ...r, roles: r.roles === 'public' ? 'public' : [...r.roles] })); accessHomes = { ...homes }; return undefined; }),
+  getMyAccess: (userId) =>
+    simulateRead(() => {
+      pmEnsure();
+      const u = byId(users, userId);
+      if (!u) throw new RepositoryError('not_found');
+      const now = Date.now();
+      syncPermissions(now);
+      const person = pmPersonOf(u, now);
+      const ids = new Set<string>([u.role, ...person.customRoleIds]);
+      return { baseRole: u.role, customRoleIds: person.customRoleIds, decisions: [...roleDecisions.entries()].filter(([k]) => ids.has(k.split('|')[0])).map(([k, effect]) => ({ roleId: k.split('|')[0], screenId: k.split('|')[1], effect })), overrides: [...person.overrides.entries()].map(([screenId, effect]) => ({ screenId, effect })), version: permissionVersion } as AccessGrantsView;
+    }),
+  getPermissionOverview: (userId) => simulateRead(() => { intAdmin(userId); const now = Date.now(); syncPermissions(now); return pmOverview(now); }),
+  getPermissionMatrix: (userId, filter) => simulateRead(() => { intAdmin(userId); return pmMatrix(filter); }),
+  previewRoleChange: (userId, input) => simulateRead(() => { intAdmin(userId); return pmPlan(input).preview; }),
+  changeRolePermission: (userId, input) => simulateWrite(() => { const admin = intAdmin(userId); return pmChangeRole(admin, input, Date.now()); }),
+  createCustomRole: (userId, input) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      pmEnsure();
+      const now = Date.now();
+      if (pmLetters(input.name) < PM_NAME_MIN) throw new RepositoryError('name_short');
+      if (!(PM_CUSTOM_BASES as string[]).includes(input.baseRole)) throw new RepositoryError('base_invalid');
+      if ([...PM_BUILT_IN, ...customRoles.map((c) => c.name)].some((n) => n.toLowerCase() === input.name.trim().toLowerCase())) throw new RepositoryError('name_taken');
+      const rp = pmReasonProblem(input.reason, PM_REASON_ROLE);
+      if (rp) throw new RepositoryError(rp);
+      const id = `cr-${customRoles.length + 1}`;
+      customRoles.push({ id, name: input.name.trim(), nameHi: input.nameHi.trim(), nameMr: input.nameMr.trim(), baseRole: input.baseRole, description: input.description.trim(), createdAt: new Date(now).toISOString(), createdByName: admin.name });
+      // A new role may start from what another already has: only its differences from the code's table are copied.
+      if (input.copyFromRoleId) for (const [k, d] of [...roleDecisions.entries()]) if (k.startsWith(`${input.copyFromRoleId}|`) && d === 'grant') roleDecisions.set(pmKey(id, k.split('|')[1]), 'grant');
+      pmWrite(admin, 'role_created', now, { roleId: id, roleLabel: input.name.trim(), reason: input.reason.trim() });
+      return pmRoleView(id);
+    }),
+  retireCustomRole: (userId, roleId, reason) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      pmEnsure();
+      const c = customRoles.find((x) => x.id === roleId);
+      if (!c || c.retired) throw new RepositoryError('not_found');
+      if (pmUsersOf(roleId).length > 0 || [...userRoleAssign.values()].some((l) => l.includes(roleId))) throw new RepositoryError('role_in_use');
+      const rp = pmReasonProblem(reason, PM_REASON_ROLE);
+      if (rp) throw new RepositoryError(rp);
+      const now = Date.now();
+      c.retired = { at: new Date(now).toISOString(), byName: admin.name, reason: reason.trim() };
+      for (const k of [...roleDecisions.keys()]) if (k.startsWith(`${roleId}|`)) roleDecisions.delete(k);
+      pmWrite(admin, 'role_retired', now, { roleId, roleLabel: c.name, reason: reason.trim() });
+      return pmRoleView(roleId);
+    }),
+  listPermissionUsers: (userId, q) => simulateRead(() => { intAdmin(userId); pmEnsure(); const now = Date.now(); const t = q.trim().toLowerCase(); return users.filter((u) => u.status !== 'rejected' && (!t || u.name.toLowerCase().includes(t) || u.role.includes(t) || u.phone.includes(t))).map((u) => pmUserRow(u, now)).sort((a, b) => a.name.localeCompare(b.name)); }),
+  getUserAccess: (userId, targetUserId) => simulateRead(() => { intAdmin(userId); pmEnsure(); const t = byId(users, targetUserId); if (!t) throw new RepositoryError('not_found'); return pmUserAccess(t, Date.now()); }),
+  assignUserRole: (userId, targetUserId, roleId, assign, reason) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      pmEnsure();
+      const t = byId(users, targetUserId);
+      const c = customRoles.find((x) => x.id === roleId && !x.retired);
+      if (!t || !c) throw new RepositoryError('not_found');
+      if (c.baseRole !== t.role) throw new RepositoryError('base_invalid');
+      const rp = pmReasonProblem(reason, PM_REASON_ROLE);
+      if (rp) throw new RepositoryError(rp);
+      const have = userRoleAssign.get(t.id) ?? [];
+      userRoleAssign.set(t.id, assign ? [...new Set([...have, roleId])] : have.filter((x) => x !== roleId));
+      pmWrite(admin, assign ? 'role_assigned' : 'role_unassigned', Date.now(), { roleId, roleLabel: c.name, userId: t.id, userName: t.name, reason: reason.trim() });
+      return pmUserAccess(t, Date.now());
+    }),
+  setUserOverride: (userId, input) => simulateWrite(() => { const admin = intAdmin(userId); const now = Date.now(); pmEnsure(); pmSetOverride(admin, input, now); return pmUserAccess(byId(users, input.targetUserId)!, now); }),
+  removeUserOverride: (userId, overrideId, reason) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      pmEnsure();
+      const o = userOverrides.find((x) => x.id === overrideId && !x.endedAt);
+      if (!o) throw new RepositoryError('not_found');
+      const rp = pmReasonProblem(reason, PM_REASON_ROLE);
+      if (rp) throw new RepositoryError(rp);
+      const now = Date.now();
+      o.endedAt = new Date(now).toISOString();
+      o.endedReason = 'removed';
+      o.endedByName = admin.name;
+      const t = byId(users, o.userId)!;
+      pmWrite(admin, 'override_removed', now, { userId: o.userId, userName: t.name, screenIds: [o.screenId], reason: reason.trim() });
+      return pmUserAccess(t, now);
+    }),
+  reviewUserOverride: (userId, overrideId, note) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      pmEnsure();
+      const o = userOverrides.find((x) => x.id === overrideId && !x.endedAt);
+      if (!o) throw new RepositoryError('not_found');
+      const rp = pmReasonProblem(note, PM_REASON_ROLE);
+      if (rp) throw new RepositoryError(rp);
+      const now = Date.now();
+      o.reviewedAt = new Date(now).toISOString();
+      o.reviewedByName = admin.name;
+      o.reviewNote = note.trim();
+      const t = byId(users, o.userId)!;
+      pmWrite(admin, 'override_reviewed', now, { userId: o.userId, userName: t.name, screenIds: [o.screenId], reason: note.trim() });
+      return pmUserAccess(t, now);
+    }),
+  getPermissionLog: (userId, filter) =>
+    simulateRead(() => {
+      intAdmin(userId);
+      pmEnsure();
+      const q = (filter.q ?? '').trim().toLowerCase();
+      const list = [...permissionLog].reverse().filter((e) => (!filter.kind || filter.kind === 'all' || e.kind === filter.kind) && (!filter.userId || e.userId === filter.userId) && (!filter.roleId || e.roleId === filter.roleId) && (!q || `${e.code} ${e.byName} ${e.userName ?? ''} ${e.roleLabel ?? ''} ${e.reason} ${e.screenIds.join(' ')}`.toLowerCase().includes(q)));
+      const offset = filter.offset ?? 0;
+      const limit = filter.limit === 0 ? list.length : filter.limit ?? PM_PAGE;
+      return { entries: list.slice(offset, offset + limit).map((e) => ({ ...e })), total: list.length } as PermissionLogView;
     }),
   /* 189 — integration management */
   getIntegrationManagement: (userId) => simulateRead(() => { intAdmin(userId); syncIntegrationManagement(Date.now()); return igView(Date.now()); }),

@@ -1,7 +1,9 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { AppShell } from '@/navigation/AppShell';
-import { HOME_PATH_BY_ROLE, canAccess, screenRoutes } from '@/navigation/registry';
+import { HOME_PATH_BY_ROLE, screenRoutes } from '@/navigation/registry';
+import type { ScreenRoute } from '@/navigation/registry';
+import { useAccess } from '@/features/access/AccessContext';
 import { useSession } from '@/session/SessionProvider';
 import { EmptyState, LoadingState, Screen } from '@/design-system';
 import { SettingsScreen } from '@/screens/_settings/SettingsScreen';
@@ -41,14 +43,16 @@ function RequireSession({ children }: { children: React.ReactNode }) {
 }
 
 function RoleGuard({
-  allowed,
+  route,
   children,
 }: {
-  allowed: Parameters<typeof canAccess>[0]['roles'];
+  route: Pick<ScreenRoute, 'id' | 'path' | 'roles'>;
   children: React.ReactNode;
 }) {
   const { role } = useSession();
-  if (allowed !== 'public' && (!role || !allowed.includes(role))) {
+  const { canOpen } = useAccess();
+  // Who may open a screen is decided centrally (192): the code's route table, then Admin's decisions for the role and for the person.
+  if (route.roles !== 'public' && (!role || !canOpen(route))) {
     return <Navigate to={role ? HOME_PATH_BY_ROLE[role] : '/login'} replace />;
   }
   return <>{children}</>;
@@ -93,7 +97,7 @@ export default function App() {
             key={id}
             path={path}
             element={
-              <RoleGuard allowed={roles}>
+              <RoleGuard route={{ id, path, roles }}>
                 <Component />
               </RoleGuard>
             }

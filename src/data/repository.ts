@@ -1,5 +1,6 @@
 import type { VaultKind } from '@/features/documents/vault';
 import type { BrandDraft, ContrastCheck } from '@/features/brand/brand';
+import type { Risk as AccessRisk, ScreenRef, Source as AccessSource } from '@/features/access/permissions';
 import type { CategoryRollup as SlaRollup, PauseReason as SlaPauseReason, SlaCategory, SlaStatus, TargetSignal as SlaTargetSignal, TrendDirection as SlaTrendDirection, TrendPoint as SlaTrendPoint } from '@/features/sla/consolidated';
 import type { ItemState, SignOffProblem } from '@/features/qc/mechanical';
 import type { ElecSignOffProblem, ElecState } from '@/features/qc/electrical';
@@ -138,6 +139,10 @@ import type {
   SandboxRun,
   CompanyProfileChange,
   CompanyProfileVersion,
+  CustomRole,
+  PermissionChange,
+  PermissionChangeKind,
+  UserAccessOverride,
   IntegrationSetup,
   IntegrationChange,
   ManualOverride,
@@ -7253,6 +7258,48 @@ export interface CompanyProfilePublishInput {
   accountantTold: boolean;
 }
 
+/* ------------------------------------------------------------------ User & role permissions (192) */
+
+export interface AccessGrantsView {
+  baseRole: Role;
+  customRoleIds: string[];
+  /** Only the differences from the code's own route table, for this person's role and the custom roles they hold. */
+  decisions: { roleId: string; screenId: string; effect: 'grant' | 'revoke' }[];
+  /** This person's own exceptions that are in force now. */
+  overrides: { screenId: string; effect: 'allow' | 'deny' }[];
+  /** Changes whenever anything here moves, so a client knows to look again. */
+  version: number;
+}
+export interface PermissionRoleView { id: string; name: string; nameHi: string; nameMr: string; baseRole: Role; builtIn: boolean; description: string; users: number; grants: number; revokes: number; retired: boolean; createdAt: string | null }
+export interface PermissionUserRow { id: string; name: string; role: Role; status: string; customRoleIds: string[]; overrides: number; isLastAdmin: boolean }
+export interface PermissionOverview {
+  roles: PermissionRoleView[];
+  admins: { active: number };
+  overrides: { active: number; dueForReview: number; endingSoon: number };
+  /** Signs of the model drifting from its roles. */
+  creep: { kind: 'role_diverges' | 'person_many' | 'outside_high'; roleId?: string; userId?: string; name: string; count: number }[];
+  screens: number;
+  at: string;
+}
+export interface MatrixCellView { roleId: string; allowed: boolean; source: AccessSource; locked: boolean; defaultAllowed: boolean }
+export interface MatrixRowView { id: string; path: string; titleKey: string; module: number; adminOnly: boolean; isPublic: boolean; cells: MatrixCellView[] }
+export interface PermissionMatrixFilter { q?: string; /** Screens the client already narrowed to by what they are called in the reader's language. */ ids?: string[]; module?: number | null; roleId?: string; changed?: boolean; adminOnly?: boolean; offset?: number; limit?: number }
+export interface PermissionMatrixView { rows: MatrixRowView[]; total: number; roles: PermissionRoleView[]; facets: { modules: { module: number; count: number }[]; changed: number; adminOnly: number } }
+export interface RoleChangeInput { roleId: string; screenIds: string[]; effect: 'grant' | 'revoke' | 'reset'; reason: string; confirmHighRisk: boolean }
+export interface RoleChangePreview { rows: { screenId: string; titleKey: string; was: boolean; willBe: boolean; risk: AccessRisk; locked: boolean }[]; users: number; risk: AccessRisk; refusal: string | null }
+export interface CustomRoleInput { name: string; nameHi: string; nameMr: string; baseRole: Role; description: string; copyFromRoleId?: string | null; reason: string }
+export interface UserOverrideInput { targetUserId: string; screenIds: string[]; effect: 'allow' | 'deny'; reason: string; until: string | null; confirmHighRisk: boolean }
+export interface UserAccessView {
+  user: PermissionUserRow;
+  customRoles: PermissionRoleView[];
+  /** Every screen this person may open that their base role's own default would not give them, and every one it would give them that they may not open. */
+  beyond: { screenId: string; titleKey: string; allowed: boolean; source: AccessSource }[];
+  overrides: UserAccessOverride[];
+  allowedCount: number;
+}
+export interface PermissionLogFilter { q?: string; kind?: PermissionChangeKind | 'all'; userId?: string; roleId?: string; offset?: number; limit?: number }
+export interface PermissionLogView { entries: PermissionChange[]; total: number }
+
 /* ------------------------------------------------------------------ Integration management (189) */
 
 export interface IntegrationSetupView {
@@ -8949,6 +8996,23 @@ export interface Repository {
   publishCompanyProfile(userId: string, input: CompanyProfilePublishInput): Promise<CompanyProfileView>;
   cancelScheduledProfile(userId: string, versionId: string, reason: string): Promise<CompanyProfileView>;
   confirmLegalChange(userId: string, versionId: string, note: string): Promise<CompanyProfileView>;
+  /* 192 — user & role permissions */
+  /** The app declares its own screens (and each role's home) once: the repository holds only decisions and judges them against this table. A real backend would hold it itself. */
+  setAccessCatalogue(screens: ScreenRef[], homes: Record<Role, string>): Promise<void>;
+  getMyAccess(userId: string): Promise<AccessGrantsView>;
+  getPermissionOverview(userId: string): Promise<PermissionOverview>;
+  getPermissionMatrix(userId: string, filter: PermissionMatrixFilter): Promise<PermissionMatrixView>;
+  previewRoleChange(userId: string, input: RoleChangeInput): Promise<RoleChangePreview>;
+  changeRolePermission(userId: string, input: RoleChangeInput): Promise<PermissionChange>;
+  createCustomRole(userId: string, input: CustomRoleInput): Promise<PermissionRoleView>;
+  retireCustomRole(userId: string, roleId: string, reason: string): Promise<PermissionRoleView>;
+  listPermissionUsers(userId: string, q: string): Promise<PermissionUserRow[]>;
+  getUserAccess(userId: string, targetUserId: string): Promise<UserAccessView>;
+  assignUserRole(userId: string, targetUserId: string, roleId: string, assign: boolean, reason: string): Promise<UserAccessView>;
+  setUserOverride(userId: string, input: UserOverrideInput): Promise<UserAccessView>;
+  removeUserOverride(userId: string, overrideId: string, reason: string): Promise<UserAccessView>;
+  reviewUserOverride(userId: string, overrideId: string, note: string): Promise<UserAccessView>;
+  getPermissionLog(userId: string, filter: PermissionLogFilter): Promise<PermissionLogView>;
   /* 188 — the console for forcing what a rule would not, with a reason, a preview and a confirmation; guardrails with no override are refused and the attempt kept. */
   getOverrideConsole(userId: string): Promise<OverrideConsoleView>;
   getOverrideCandidates(userId: string, kind: string, q: string): Promise<OverrideCandidate[]>;
