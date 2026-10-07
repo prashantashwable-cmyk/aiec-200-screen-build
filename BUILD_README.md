@@ -1390,3 +1390,63 @@ one), 121 technician home, 028 finance overview, 149 partner directory: all clea
 (150) still bypass the approval queue and TDS. `site_visit` / `lead_qualified` entries are seeded, not generated. A recognition prize
 gives no badge. Admin can only add to a figure from a dispute, never reduce one. The banking partner and the ID service are
 simulated. The rate-based contest metrics (conversion, QC pass) are not offered yet.
+
+## Module 18 — Customer App/Portal (`171`–`180`, checkpoint-verified)
+
+Ten screens that give the customer one window onto the same records the business runs on. Nothing here keeps a second copy of a
+fact: each screen is a read over the record that owns it, or a thin write into the owner's own path.
+
+| # | Screen | Route | What it owns |
+|---|---|---|---|
+| 171 | Customer Home | `/customer` | A summary of the project (stage, next step, payments, documents, support), honest but calm |
+| 172 | Project Status Tracker | `/project-status` | The journey as milestones, an honest next date, curated photo highlights, a pause said plainly |
+| 173 | Document Vault | `/documents` | The customer's read over the records that issued each document; newer versions never rewrite older ones |
+| 174 | Payments & Financing | `/my-payments` | What is owed and when, a disputed stage never "overdue", confirming only on real evidence |
+| 175 | Service Requests | `/service-requests` | One ticket, three views; triage by rules where confident and a person where not; an emergency path |
+| 176 | Support Chat | `/support-chat` | An assistant that answers only when sure and hands over warm with the whole picture |
+| 177 | Feedback & Rating | `/feedback` | Asked at the right moment; a weak part is never lost in a good score; feeds the performance records |
+| 178 | AMC / Maintenance Booking | `/maintenance` | Cover said first, real slots, a matched technician, live arrival on the day |
+| 179 | Referral Program | `/referrals`, `/refer/:code` | A referral is a lead; its reward is a commission entry through 163 / 164 |
+| 180 | Notification Center | `/notifications` | Everything already sent, where it stands now, and preferences that write to the opt-out record |
+
+**Decisions that shape everything else**
+
+- **Derived on read.** 171–174, 177 (the asks) and 180 compute from the real records on each read; what a customer sees cannot drift
+  from what Admin sees (172 shares 129's timeline, 174 shares 028 / 082 / 088's aging, 173 reads the issuing records).
+- **The customer is told the truth, calmly.** A disputed payment is "being looked into", never overdue; a delay says why in the
+  tactful words 129 uses; a date is promised only when it can be kept (178 would rather say "ask us to arrange it" than guess); an
+  old notice (180) opens with where things stand today.
+- **One ticket, one chat, one ledger.** A maintenance booking *is* a service ticket (175) so the technician's list, 121's card and
+  Admin's board needed no change; a support chat is a `Conversation` with `kind: 'support'`, so 057 / 053 see it; a referral reward
+  is an `approved` `CommissionEntry` from the `referral_bonus` rule, so 163 clears it and 164 sends it.
+- **People, not queues, own every promise.** New commitments: `service_ticket_respond`, `service_visit`, `service_claim_review`,
+  `service_visit_followup`, `support_chat_reply`, `feedback_outreach`, `feedback_recognition`, `referral_reward`. Alerts reuse the
+  existing vocabulary (emergency and safety words are critical `safety`).
+- **Compliance is the customer's lever, and essential notices are never dropped.** 180's SMS / WhatsApp choices append
+  `customer_request` opt-out events; `commChannelFor` is now the one rule every customer send reads, so an essential notice to
+  someone with an account falls back to the app instead of vanishing.
+- **First capture wins.** 179 uses the CRM's own duplicate rule (now shared by `findDuplicateLeads`): a person AIEC already knows is
+  said plainly to be known and no reward applies.
+
+**Checkpoint (as of this module).** All ten screens were clicked through as Rajesh (English), Meera (Marathi) and Farhan at 390 and
+1440 (and 820 per screen while building) with no horizontal overflow, no raw translation keys and no console errors, exercising the
+paths that matter: an emergency ticket and a safety-word ticket, a visit booked, moved and tracked "on the way", a chat handed to a
+person, a weak rating routed to outreach, a referral that is already known, one waiting for a site that is not ready and one that
+becomes an order (the reward appears in 163's queue and in the customer's list), and a customer who switched off both SMS and
+WhatsApp still receiving an essential notice in the app. Nothing regressed at the checkpoint; the fixes made while building (the context card's percentage, the staff-concern false positive, the seed skill gap that left no technician for the gearless lift, the CRM duplicate rule now shared, and the notice fallback) are recorded under each screen in CLAUDE.md. Earlier screens spot-checked:
+083 payment reminder run, 102 shipment tracking, 105 delay notices, 139 warranty and AMC, 121 technician home, 163 payout approval
+(a customer payee), 044 lead assignment (unassigned referral leads), 161 commission rules: all clean.
+
+**Placeholder business decisions to confirm (flagged on screen where they show)**
+
+- 171–174: the 14-day payment window, the ₹1,00,000 financing floor, the 60-day "ending soon" window.
+- 175–176: response targets by urgency, the safety words, the assistant's confidence margin, queue and wait numbers.
+- 177: the ask timings (1 / 30 days), thresholds (≤ 2 negative), weights, the minimum sample.
+- 178: 12-hour notice, 14 / 45-day horizons, the arrival speed, an indicative price per visit.
+- 179: the ₹5,000 reward (versioned in 161). 180: the 14-day "new" window, folding three or more of a kind, which kinds are essential.
+
+**Honest limits.** Videos keep only a poster frame; live arrival depends on the technician's own tap (no continuous GPS); the
+service request has no checklist or Job-level service job; Admin has no nav tab for tickets, feedback or the chat board (alerts,
+commitments and the assistant lead there); a referral reward has no payout details until Admin records them (164's "needs details"),
+no TDS is deducted for a customer payee, and a voided deal closure does not take the reward back; the notification fallback is an
+in-app copy only (there is no push), and 174's reminder list still labels an opted-out channel as skipped.
