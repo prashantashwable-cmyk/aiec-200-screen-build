@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ArrowsClockwise, Bell, CreditCard, FileText, Headset, Lifebuoy, Wrench } from '@phosphor-icons/react';
+import { ArrowsClockwise, Bell, CreditCard, Gift, FileText, Headset, Lifebuoy, Wrench } from '@phosphor-icons/react';
 import { AscensionLine, Badge, Button, Card, Chip, EmptyState, ErrorState, LoadingState, ProgressBar, Screen, ScreenHeader, formatDate, formatINR } from '@/design-system';
 import type { AscensionStep } from '@/design-system';
 import type { CustomerConcern, CustomerProjectHome, CustomerStageKey } from '@/data/repository';
@@ -188,6 +188,7 @@ function Tiles({ c, s, t, supportPhone }: { c: CustomerProjectHome; s: CustomerH
       <Tile id="support" icon={<Headset size={22} />} title={t(K.tile.support.title)} hint={t(K.tile.support.hint)} onClick={() => s.goTo('/support-chat')} />
       {handed && c.jobId && <Tile id="service" icon={<Wrench size={22} />} title={t(K.tile.service.title)} hint={t(K.tile.service.hint)} onClick={() => s.goTo(servicePath(c.jobId as string))} />}
       {handed && c.jobId && <Tile id="maintenance" icon={<Wrench size={22} />} title={t('maintenance.link.open')} hint={t('maintenance.purpose.routine.body')} onClick={() => s.goTo(`/maintenance?job=${c.jobId}`)} />}
+      <Tile id="referral" icon={<Gift size={22} />} title={t('referral.link.open')} hint={t('referral.link.hint')} onClick={() => s.goTo('/referrals')} />
     </div>
   );
 }

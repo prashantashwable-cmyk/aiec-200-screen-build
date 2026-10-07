@@ -7107,6 +7107,36 @@ export interface VisitTracking {
   at: string;
 }
 
+/* ------------------------------------------------------------------ Referral programme (179) */
+
+export type ReferralStatus = 'invited' | 'surveying' | 'surveyed' | 'converted' | 'waiting' | 'closed' | 'known';
+export interface ReferralRowView {
+  id: string;
+  code: string;
+  name: string;
+  city: string;
+  via: 'link' | 'invite';
+  createdAt: string;
+  status: ReferralStatus;
+  /** For a referral that is not ready yet (a site that is not ready): when we will look again. */
+  waitingUntil: string | null;
+  knownSince: string | null;
+  /** The reward, once the referred order is confirmed: from the same ledger every payout reads. */
+  reward: { amount: number; stage: 'projected' | 'being_checked' | 'held' | 'ready' | 'sending' | 'failed' | 'paid' | 'taken_back'; at: string } | null;
+}
+export interface ReferralDeskView {
+  code: string;
+  /** The reward as the commission rules stand today, and the same whatever the size of the order. */
+  terms: { amount: number; since: string; version: number };
+  rows: ReferralRowView[];
+  totals: { sent: number; surveyed: number; converted: number; waiting: number };
+  earned: { issued: number; paid: number; inProgress: number };
+  at: string;
+}
+export interface ReferralLandingView { valid: boolean; referrerFirstName: string | null }
+export interface ReferralInput { clientId: string; name: string; phone: string; city: string; note: string; consent: boolean }
+export interface ReferralSubmitResult { outcome: 'received' | 'known'; row: ReferralRowView | null }
+
 /* ------------------------------------------------------------------ Payout disputes (170) */
 
 export interface PayoutDisputeRow {
@@ -8436,6 +8466,11 @@ export interface Repository {
   getVaultBundle(userId: string): Promise<VaultDocument[]>;
   /** 174: the customer's payment picture for one project (the first needing attention when none is named). */
   getCustomerPayments(dealId: string | null, userId: string): Promise<CustomerPayView>;
+  /* 179 — referral programme: a personal code, the people referred and where each stands, and a reward through the commission ledger. */
+  getReferralDesk(userId: string): Promise<ReferralDeskView>;
+  inviteReferral(userId: string, input: ReferralInput): Promise<ReferralSubmitResult>;
+  getReferralLanding(code: string): Promise<ReferralLandingView>;
+  submitReferralFromLink(code: string, input: ReferralInput): Promise<ReferralSubmitResult>;
   /* 178 — maintenance booking: self-service visits with real slots, an automatically matched technician, and live arrival on the day. */
   getMaintenanceDesk(userId: string, jobId: string | null): Promise<MaintenanceDeskView>;
   bookMaintenanceVisit(userId: string, input: MaintenanceBookInput): Promise<MaintenanceBooking>;

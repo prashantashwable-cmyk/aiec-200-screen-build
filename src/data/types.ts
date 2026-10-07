@@ -196,6 +196,8 @@ export interface Lead {
   /** The contact's own language preference, captured at intake — drives
    *  which template-language variant an automated send picks. */
   preferredLanguage?: Language;
+  /** Set when a customer's referral brought this lead (179): who, with which code, and the referral record. The source is `referral_repeat`. */
+  referral?: { referralId: string; customerId: string; code: string; at: string };
 }
 
 export interface ScoreWeightingProfile {
@@ -5023,7 +5025,7 @@ export type CommitmentKind =
   | 'exit_dispute_decide'
   | 'tier_review_due'
   | 'certification_renewal'
-  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup' | 'support_chat_reply' | 'feedback_outreach' | 'feedback_recognition'
+  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup' | 'support_chat_reply' | 'feedback_outreach' | 'feedback_recognition' | 'referral_reward'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'
@@ -5531,5 +5533,32 @@ export interface CustomerFeedback {
   outreach?: { byName: string; at: string; note: string };
   clientId: string;
   createdAt: string;
+  isDemo: boolean;
+}
+
+
+/* ------------------------------------------------------------------ Referrals (179) */
+
+/** One person a customer referred. It points at the lead it created, or at the lead that already existed (then it is `already_known` and does not count as a new referral). Its status is read from that lead, never stored. */
+export interface ReferralRecord {
+  id: string;
+  /** `AIEC-RF-####`. */
+  code: string;
+  customerId: string;
+  referralCode: string;
+  name: string;
+  phone: string;
+  city: string;
+  note: string;
+  via: 'link' | 'invite';
+  clientId: string;
+  createdAt: string;
+  leadId: string | null;
+  outcome: 'new_lead' | 'already_known';
+  /** The lead (or customer) that was already known to AIEC, and since when. */
+  knownLeadId?: string;
+  knownSince?: string;
+  /** The reward entry in the commission ledger, once the referred deal is won. */
+  rewardEntryId?: string;
   isDemo: boolean;
 }

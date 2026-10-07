@@ -11,6 +11,7 @@ const translations: ScreenTranslations = {
     commission: {
       reason: {
         leadConverted: 'Lead converted to a sale',
+        referralReward: 'Referral reward',
         exitSettlement: 'Final settlement after leaving',
         contestPrize: 'Contest prize',
         payoutCorrection: 'Correction after your question',
@@ -63,6 +64,7 @@ const translations: ScreenTranslations = {
     commission: {
       reason: {
         leadConverted: 'लीड बिक्री में बदला',
+        referralReward: 'रेफ़रल इनाम',
         exitSettlement: 'छोड़ने के बाद अंतिम निपटान',
         contestPrize: 'प्रतियोगिता पुरस्कार',
         payoutCorrection: 'आपके सवाल के बाद सुधार',
@@ -115,6 +117,7 @@ const translations: ScreenTranslations = {
     commission: {
       reason: {
         leadConverted: 'लीड विक्रीत रूपांतरित झाला',
+        referralReward: 'रेफरल बक्षीस',
         exitSettlement: 'सोडल्यानंतरचा अंतिम हिशोब',
         contestPrize: 'स्पर्धा बक्षीस',
         payoutCorrection: 'तुमच्या प्रश्नानंतर दुरुस्ती',

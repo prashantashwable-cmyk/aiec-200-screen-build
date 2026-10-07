@@ -63,7 +63,7 @@ export const RULE_DEFS: RuleDef[] = [
   { id: 'site_visit', group: 'surveyor', trigger: 'site_visit_verified', ledger: 'pending', reasonKey: 'commission.reason.siteVisitVerified', params: [P.amount(100, 2000)], tierAware: false, negotiable: {} },
   { id: 'lead_qualified', group: 'surveyor', trigger: 'lead_qualified', ledger: 'pending', reasonKey: 'commission.reason.leadQualified', params: [P.amount(500, 5000)], tierAware: false, negotiable: {} },
   { id: 'conversion', group: 'surveyor', trigger: 'deal_closed', ledger: 'ledger', reasonKey: 'commission.reason.leadConverted', params: [P.pct(0.5, 3), { key: 'floor', unit: 'inr', min: 0, max: 25000, step: 500 }], tierAware: true, negotiable: { pct: 'conversionPct' } },
-  { id: 'referral_bonus', group: 'surveyor', trigger: 'referral_won', ledger: 'cost_report', reasonKey: null, params: [P.amount(1000, 25000)], tierAware: false, negotiable: {} },
+  { id: 'referral_bonus', group: 'surveyor', trigger: 'referral_won', ledger: 'ledger', reasonKey: 'commission.reason.referralReward', params: [P.amount(1000, 25000)], tierAware: false, negotiable: {} },
   { id: 'sales_close', group: 'surveyor', trigger: 'handover_issued', ledger: 'ledger', reasonKey: 'commission.reason.dealClosed', params: [P.pct(0.25, 1)], tierAware: false, negotiable: { pct: 'closePct' } },
   {
     id: 'install_pool',
@@ -98,6 +98,7 @@ export const RULE_OF_REASON: Record<string, CommissionRuleId | null> = {
   'commission.reason.leadQualified': 'lead_qualified',
   'commission.reason.leadConverted': 'conversion',
   'commission.reason.dealClosed': 'sales_close',
+  'commission.reason.referralReward': 'referral_bonus',
   'commission.reason.installationCompleted': 'install_pool',
   'commission.reason.qcCompleted': 'qc_fee',
   'commission.reason.monthlyBonus': null,

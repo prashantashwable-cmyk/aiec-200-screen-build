@@ -60,7 +60,7 @@ const translations: ScreenTranslations = {
         },
         referral_bonus: {
           name: 'Referral bonus',
-          what: 'What a won referral costs AIEC, read by the lead-source report. A lead does not record who referred it yet, so no payment entry is made from this rule.',
+          what: 'A flat reward for a customer whose referral becomes a confirmed order, the same whatever the size of the order. It is issued when the order is confirmed and goes through the same approval and payout steps as every other payment.',
         },
         sales_close: {
           name: 'Closing commission',
@@ -315,7 +315,7 @@ const translations: ScreenTranslations = {
         },
         referral_bonus: {
           name: 'रेफ़रल बोनस',
-          what: 'जीते गए रेफ़रल की AIEC को कितनी लागत है, जिसे लीड-स्रोत रिपोर्ट पढ़ती है। लीड में अभी यह दर्ज नहीं होता कि किसने रेफ़र किया, इसलिए इस नियम से कोई भुगतान-प्रविष्टि नहीं बनती।',
+          what: 'उस ग्राहक के लिए एक तय इनाम जिसका रेफ़रल पक्का ऑर्डर बन जाए, ऑर्डर कितना भी बड़ा हो, इनाम वही रहता है। यह ऑर्डर पक्का होते ही बनता है और बाकी हर भुगतान की तरह मंज़ूरी और भुगतान के उन्हीं चरणों से गुज़रता है।',
         },
         sales_close: {
           name: 'क्लोज़िंग कमीशन',
@@ -570,7 +570,7 @@ const translations: ScreenTranslations = {
         },
         referral_bonus: {
           name: 'रेफरल बोनस',
-          what: 'जिंकलेल्या रेफरलसाठी AIEC ला किती खर्च येतो, जो लीड-स्रोत अहवाल वाचतो. लीडमध्ये अजून कोणी रेफर केले ते नोंदवले जात नाही, त्यामुळे या नियमातून पेमेंट नोंद तयार होत नाही.',
+          what: 'ज्या ग्राहकाचा रेफरल पक्की ऑर्डर बनतो, त्याच्यासाठी एक ठरलेले बक्षीस; ऑर्डर कितीही मोठी असली तरी तेच राहते. ऑर्डर पक्की होताच ते तयार होते आणि इतर प्रत्येक पेमेंटप्रमाणेच मंजुरी व पेमेंटच्या त्याच टप्प्यांतून जाते.',
         },
         sales_close: {
           name: 'क्लोजिंग कमिशन',

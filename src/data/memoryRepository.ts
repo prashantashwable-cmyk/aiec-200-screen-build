@@ -298,6 +298,12 @@ import type {
   FeedbackAdminRow,
   MaintenanceBooking,
   MaintenanceDeskView,
+  ReferralDeskView,
+  ReferralInput,
+  ReferralLandingView,
+  ReferralRowView,
+  ReferralStatus,
+  ReferralSubmitResult,
   MaintenanceLiftView,
   MaintenanceSlotView,
   TechnicianProfile,
@@ -583,6 +589,7 @@ import type {
 import type {
   TicketVisit,
   CustomerFeedback,
+  ReferralRecord,
   SupportContext,
   SupportHandoffReason,
   ServiceTicket,
@@ -2701,6 +2708,7 @@ function commitmentSources(now: number): CommitmentSources {
     serviceTickets: serviceTicketSignals(now),
     supportChats: supportChatSignals(now),
     feedback: feedbackSignals(),
+    referrals: referralSignals(),
     tds: tdsObligations(Date.now()),
     exits: exitSignals(),
     handoverReviews: handoverSignals().reviews,
@@ -11423,6 +11431,165 @@ function mbDeskOf(user: User, jobId: string | null, now: number): MaintenanceDes
   return JSON.parse(JSON.stringify({ ...base, slots: offered.filter((s) => s.best).map((s) => ({ date: s.date, window: s.window, technician: profile(s.best) })), honesty, earliest })) as MaintenanceDeskView;
 }
 
+/* ------------------------------------------------------------------ Referral programme (179) */
+
+/**
+ * A customer's referral is a lead like any other, tagged `referral_repeat`, and its reward is a commission entry from the `referral_bonus` rule, so it goes
+ * through the same approval and payout steps (163 / 164) as every other payment. The status the customer sees is read from the lead, never kept separately.
+ */
+const referralRecords: ReferralRecord[] = [];
+let referralCounter = 0;
+const RF_FAR = { lat: 89, lng: 179 };
+
+/** Every lead the CRM already holds for this person: the one duplicate rule the duplicate-merge screen (and lead capture) uses. */
+function crmDuplicatesOf(candidate: { location: { lat: number; lng: number }; siteName: string; contactPhone?: string }): { lead: Lead; distanceMetres: number; reason: 'proximity' | 'phone' | 'name' }[] {
+  const matches: { lead: Lead; distanceMetres: number; reason: 'proximity' | 'phone' | 'name' }[] = [];
+  const candidateName = candidate.siteName.trim().toLowerCase();
+  for (const lead of leads) {
+    const metres = Math.round(haversineKm(candidate.location, lead.location) * 1000);
+    if (candidate.contactPhone && lead.contactPhone === candidate.contactPhone) {
+      matches.push({ lead, distanceMetres: metres, reason: 'phone' });
+    } else if (metres <= 150) {
+      matches.push({ lead, distanceMetres: metres, reason: 'proximity' });
+    } else if (candidateName && lead.siteName.trim().toLowerCase() === candidateName) {
+      matches.push({ lead, distanceMetres: metres, reason: 'name' });
+    }
+  }
+  return matches.sort((a, b) => a.distanceMetres - b.distanceMetres).slice(0, 5);
+}
+
+const rfCodeCache = new Map<string, string>();
+/** A customer's personal code: the first letters of their name and the last digits of their phone, made unique among customers. Stable for as long as the customer exists. */
+function rfCodeOf(user: User): string {
+  const cached = rfCodeCache.get(user.id);
+  if (cached) return cached;
+  const letters = user.name.replace(/[^A-Za-z]/g, '').toUpperCase().slice(0, 4).padEnd(4, 'X');
+  const digits = (user.phone ?? '').replace(/\D/g, '').slice(-3).padStart(3, '0');
+  let code = `AIEC-${letters}${digits}`;
+  let n = 2;
+  while ([...rfCodeCache.values()].includes(code)) { code = `AIEC-${letters}${digits}${n}`; n += 1; }
+  rfCodeCache.set(user.id, code);
+  return code;
+}
+function rfReferrerByCode(code: string): User | null {
+  const wanted = code.trim().toUpperCase();
+  const customers = users.filter((u) => u.role === 'customer' && u.status === 'active');
+  for (const u of customers) rfCodeOf(u);
+  return customers.find((u) => rfCodeOf(u) === wanted) ?? null;
+}
+
+const rfStageOfReward: Record<PayoutStage, NonNullable<ReferralRowView['reward']>['stage']> = { projected: 'projected', approved: 'being_checked', held: 'held', cleared: 'ready', sending: 'sending', failed: 'failed', paid: 'paid', forfeited: 'taken_back', reversed: 'taken_back' };
+
+/** Where a referral stands, read from the lead it created. A site that is not ready (a lost lead with a revisit date) stays visible as waiting. */
+function rfStatusOf(rec: ReferralRecord): { status: ReferralStatus; waitingUntil: string | null } {
+  if (rec.outcome === 'already_known') return { status: 'known', waitingUntil: null };
+  const lead = rec.leadId ? byId(leads, rec.leadId) : undefined;
+  if (!lead) return { status: 'invited', waitingUntil: null };
+  if (lead.stage === 'won') return { status: 'converted', waitingUntil: null };
+  if (lead.stage === 'lost') return lead.lostReason === 'site_not_ready' || lead.revisitReminderDate ? { status: 'waiting', waitingUntil: lead.revisitReminderDate ?? null } : { status: 'closed', waitingUntil: null };
+  if (lead.stage === 'quoted' || lead.stage === 'negotiation') return { status: 'surveyed', waitingUntil: null };
+  if (lead.stage === 'site_visit') return { status: 'surveying', waitingUntil: null };
+  return { status: 'invited', waitingUntil: null };
+}
+
+function rfReferralRow(rec: ReferralRecord): ReferralRowView {
+  const { status, waitingUntil } = rfStatusOf(rec);
+  const entry = rec.rewardEntryId ? byId(commissions, rec.rewardEntryId) : undefined;
+  const e = entry ? phEntryOf(entry) : null;
+  return {
+    id: rec.id, code: rec.code, name: rec.name, city: rec.city, via: rec.via, createdAt: rec.createdAt, status, waitingUntil, knownSince: rec.knownSince ?? null,
+    reward: entry && e ? { amount: entry.amount, stage: rfStageOfReward[e.stage], at: entry.earnedAt } : null,
+  };
+}
+
+function rfReferralDesk(user: User, now: number): ReferralDeskView {
+  const rows = referralRecords.filter((r) => r.customerId === user.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(rfReferralRow);
+  const counted = rows.filter((r) => r.status !== 'known');
+  const v = crVersionAt('referral_bonus', now);
+  const rewards = rows.flatMap((r) => (r.reward ? [r.reward] : []));
+  return JSON.parse(JSON.stringify({
+    code: rfCodeOf(user),
+    terms: { amount: v.params.amount ?? 0, since: v.effectiveFrom, version: v.version },
+    rows,
+    totals: { sent: counted.length, surveyed: counted.filter((r) => r.status === 'surveyed' || r.status === 'converted').length, converted: counted.filter((r) => r.status === 'converted').length, waiting: counted.filter((r) => r.status === 'waiting').length },
+    earned: { issued: rewards.filter((r) => r.stage !== 'taken_back').reduce((n, r) => n + r.amount, 0), paid: rewards.filter((r) => r.stage === 'paid').reduce((n, r) => n + r.amount, 0), inProgress: rewards.filter((r) => r.stage !== 'paid' && r.stage !== 'taken_back').reduce((n, r) => n + r.amount, 0) },
+    at: new Date(now).toISOString(),
+  })) as ReferralDeskView;
+}
+
+/** Everything refused here is refused the same way for the link and the in-app invitation. */
+function rfProblem(referrer: User, input: ReferralInput): string | null {
+  const phone = input.phone.replace(/\D/g, '');
+  if (input.name.trim().length < 2) return 'name_required';
+  if (phone.length < 10 || !/^[6-9]\d{9}$/.test(phone.slice(-10))) return 'phone_invalid';
+  if (vdLast10(referrer.phone) === phone.slice(-10)) return 'own_number';
+  if (!input.consent) return 'consent_required';
+  return null;
+}
+
+function rfSubmit(referrer: User, input: ReferralInput, via: ReferralRecord['via']): ReferralSubmitResult {
+  const problem = rfProblem(referrer, input);
+  if (problem) throw new RepositoryError(problem);
+  // The same send twice (a retry, a double tap) and the same person asked again by the same customer are one referral.
+  const phone = input.phone.replace(/\D/g, '').slice(-10);
+  const again = referralRecords.find((r) => r.customerId === referrer.id && (r.clientId === input.clientId || vdLast10(r.phone) === phone));
+  if (again) return { outcome: again.outcome === 'already_known' ? 'known' : 'received', row: rfReferralRow(again) };
+  const now = new Date().toISOString();
+  const home = vdDealsOf(referrer).map((d) => byId(leads, d.leadId)).find((l): l is Lead => !!l);
+  const location = home?.location ?? referrer.location ?? RF_FAR;
+  const city = input.city.trim() || home?.city || referrer.city || '';
+  // First capture wins: a lead the CRM already holds for this person, or a person who already has an account (customer or partner), is never given to the referrer.
+  const dup = crmDuplicatesOf({ location: RF_FAR, siteName: '', contactPhone: phone }).find((m) => m.reason === 'phone');
+  const customer = users.find((u) => vdLast10(u.phone) === phone) ?? null;
+  referralCounter += 1;
+  const base: ReferralRecord = { id: `rf-${referralCounter}`, code: `AIEC-RF-${1000 + referralCounter}`, customerId: referrer.id, referralCode: rfCodeOf(referrer), name: input.name.trim(), phone, city, note: input.note.trim(), via, clientId: input.clientId, createdAt: now, leadId: null, outcome: 'new_lead', isDemo: true };
+  if (dup || customer) {
+    const known = dup?.lead;
+    const rec: ReferralRecord = { ...base, outcome: 'already_known', knownLeadId: known?.id, knownSince: known?.createdAt ?? now };
+    referralRecords.push(rec);
+    if (known) pushTimelineEvent({ leadId: known.id, kind: 'note_added', actorName: nameOf(referrer.id), at: now, detail: `Referred again by ${referrer.name} (${rec.code}). This lead was captured first and stays with its owner; no referral reward applies.` });
+    logAutomatedAction({ sourceKey: 'referral.already_known', triggeringCondition: `${rec.code}: ${referrer.name} referred a person AIEC already knows`, actionTaken: 'Kept the earlier record and its owner; no lead created and no reward set', affectedRecordId: known?.id ?? rec.id, affectedRecordType: known ? 'lead' : 'other', subjectLabel: rec.code });
+    return { outcome: 'known', row: rfReferralRow(rec) };
+  }
+  leadCounter += 1;
+  const lead: Lead = {
+    id: `l-new-${leadCounter}`, code: `AIEC-L-0${leadCounter}`, stage: 'captured', surveyorId: '', originalSurveyorId: '', source: 'referral_repeat', builderName: '',
+    contactName: base.name, contactPhone: phone, siteName: `${base.name} (referred)`, address: city, city, pincode: home?.pincode ?? '', location, photos: [], estimatedValue: 0, incentiveAmount: 0, incentiveStatus: 'projected',
+    createdAt: now, updatedAt: now, stageEnteredAt: now,
+    notes: `Referred by ${referrer.name} (${base.referralCode}). The site location is the referrer's until the first visit.${base.note ? ` Note from the referrer: ${base.note}` : ''}`,
+    referral: { referralId: base.id, customerId: referrer.id, code: base.referralCode, at: now }, isDemo: true,
+  };
+  leads.unshift(lead);
+  const rec: ReferralRecord = { ...base, leadId: lead.id };
+  referralRecords.push(rec);
+  pushTimelineEvent({ leadId: lead.id, kind: 'captured', actorName: nameOf(referrer.id), at: now, detail: lead.notes });
+  raiseAlert({ titleKey: 'referral.alert.newLead', context: `${lead.code} — ${base.name}, ${city}`, severity: 'low', category: 'automation', relatedId: lead.id, sourceRoute: '/admin/leads/assignment' });
+  logAutomatedAction({ sourceKey: 'referral.lead_created', triggeringCondition: `${rec.code}: ${referrer.name} referred ${base.name}`, actionTaken: 'Created a lead with source referral and put it in the unassigned queue', affectedRecordId: lead.id, affectedRecordType: 'lead', subjectLabel: lead.code });
+  return { outcome: 'received', row: rfReferralRow(rec) };
+}
+
+/** Issued once, when the referred order is confirmed, from the rule in force that day. Called by the deal's closure; running it again changes nothing. */
+function createReferralReward(deal: Deal, lead: Lead): string | null {
+  const rec = lead.referral ? referralRecords.find((r) => r.id === lead.referral?.referralId) : undefined;
+  if (!rec || rec.rewardEntryId) return rec?.rewardEntryId ?? null;
+  const at = deal.closedAt ?? new Date().toISOString();
+  const v = crVersionAt('referral_bonus', Date.parse(at));
+  const amount = v.params.amount ?? 0;
+  if (amount <= 0) return null;
+  closureCommissionCounter += 1;
+  const entry: CommissionEntry = { id: `c-new-${closureCommissionCounter}`, userId: rec.customerId, leadId: lead.id, dealId: deal.id, reasonKey: 'commission.reason.referralReward', amount, ruleId: 'referral_bonus', ruleVersion: v.version, status: 'approved', earnedAt: at, isDemo: true };
+  commissions.push(entry);
+  rec.rewardEntryId = entry.id;
+  logAutomatedAction({ sourceKey: 'referral.reward_issued', triggeringCondition: `${rec.code}: ${rec.name}'s order was confirmed`, actionTaken: `Issued the referral reward through the commission ledger (rule version ${v.version}); it waits for Admin's payout approval`, affectedRecordId: entry.id, affectedRecordType: 'other', subjectLabel: rec.code });
+  return entry.id;
+}
+
+/** What the commitment engine sees: a customer whose reward was just issued hears it on their own list, never as work. */
+function referralSignals(): { rewards: { id: string; userId: string; friend: string; at: string }[] } {
+  const rewards = referralRecords.flatMap((r) => { const e = r.rewardEntryId ? byId(commissions, r.rewardEntryId) : undefined; return e ? [{ id: r.id, userId: r.customerId, friend: r.name.trim().split(/\s+/)[0] ?? r.name, at: e.earnedAt }] : []; });
+  return { rewards };
+}
+
 /* ------------------------------------------------------------------ Badges & milestones (166) */
 
 /**
@@ -15397,22 +15564,7 @@ export const memoryRepository: Repository = {
 
   listImportBatches: () => simulateRead(() => [...importBatches].sort((a, b) => b.importedAt.localeCompare(a.importedAt))),
 
-  findDuplicateLeads: (candidate) =>
-    simulateRead(() => {
-      const matches: Array<{ lead: Lead; distanceMetres: number; reason: 'proximity' | 'phone' | 'name' }> = [];
-      const candidateName = candidate.siteName.trim().toLowerCase();
-      for (const lead of leads) {
-        const metres = Math.round(haversineKm(candidate.location, lead.location) * 1000);
-        if (candidate.contactPhone && lead.contactPhone === candidate.contactPhone) {
-          matches.push({ lead, distanceMetres: metres, reason: 'phone' });
-        } else if (metres <= 150) {
-          matches.push({ lead, distanceMetres: metres, reason: 'proximity' });
-        } else if (candidateName && lead.siteName.trim().toLowerCase() === candidateName) {
-          matches.push({ lead, distanceMetres: metres, reason: 'name' });
-        }
-      }
-      return matches.sort((a, b) => a.distanceMetres - b.distanceMetres).slice(0, 5);
-    }),
+  findDuplicateLeads: (candidate) => simulateRead(() => crmDuplicatesOf(candidate)),
 
   /* ------------------------------------------------- Deals / jobs / money */
   listDeals: (filter) =>
@@ -17286,6 +17438,7 @@ export const memoryRepository: Repository = {
 
       const paymentRecordIds = createDealPaymentSchedule(deal, dealTerms);
       const commissionId = createOrReuseLeadConvertedCommission(deal, lead);
+      const referralRewardId = createReferralReward(deal, lead);
       const po = triggerSupplierPo(deal);
 
       dealClosureCounter += 1;
@@ -17296,7 +17449,7 @@ export const memoryRepository: Repository = {
         paymentRecordIds,
         supplierPoId: po.id,
         supplierPoFailed: po.failed,
-        commissionEntryIds: [commissionId],
+        commissionEntryIds: referralRewardId ? [commissionId, referralRewardId] : [commissionId],
         voided: false,
         isDemo: true,
       };
@@ -23945,6 +24098,12 @@ export const memoryRepository: Repository = {
       const docs = vdDocsOf(vdCustomer(userId), Date.now());
       return JSON.parse(JSON.stringify(docs.map((d) => ({ row: d.row, sections: d.sections, versions: docs.filter((x) => x.row.chainId === d.row.chainId).map((x) => x.row), issuedBy: d.issuedBy })))) as VaultDocument[];
     }),
+
+  /* --------------------------------- Referral programme (179) */
+  getReferralDesk: (userId) => simulateRead(() => rfReferralDesk(vdCustomer(userId), Date.now())),
+  inviteReferral: (userId, input) => simulateWrite(() => rfSubmit(vdCustomer(userId), input, 'invite')),
+  getReferralLanding: (code) => simulateRead((): ReferralLandingView => { const u = rfReferrerByCode(code); return { valid: !!u, referrerFirstName: u ? (u.name.trim().split(/\s+/)[0] ?? u.name) : null }; }),
+  submitReferralFromLink: (code, input) => simulateWrite(() => { const u = rfReferrerByCode(code); if (!u) throw new RepositoryError('code_unknown'); return rfSubmit(u, input, 'link'); }),
 
   /* --------------------------------- Maintenance booking (178) */
   getMaintenanceDesk: (userId, jobId) =>

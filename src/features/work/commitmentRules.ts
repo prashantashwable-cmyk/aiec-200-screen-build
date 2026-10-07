@@ -154,6 +154,8 @@ export interface CommitmentSources {
   /** Serious training feedback Admin has not dealt with, and the standing look at the routine kind (160). */
   tds: { deposits: { month: string; tds: number; due: string; done: boolean }[]; returns: { fy: string; quarter: number; due: string; done: boolean }[] };
   feedback: { outreach: { id: string; code: string; customer: string; dueAt: string; weakOnly: boolean }[]; recognitions: { id: string; userId: string; from: string; at: string }[] };
+  /** A customer's referral reward, issued when the referred order was confirmed (179). */
+  referrals: { rewards: { id: string; userId: string; friend: string; at: string }[] };
   supportChats: { waiting: { id: string; name: string; since: string; urgent: boolean }[] };
   serviceTickets: { respond: { id: string; code: string; ownerUserId: string; dueAt: string; urgency: string; site: string }[]; visits: { id: string; code: string; technicianId: string; dueAt: string; site: string; date: string; state: 'open' | 'done' | 'cancelled' }[]; claims: { id: string; code: string; since: string }[]; followups: { id: string; code: string; since: string; unsafe: boolean }[] };
   payoutQueries: { open: { id: string; code: string; partnerName: string; entryId: string; since: string }[]; answered: { id: string; code: string; userId: string; entryId: string; at: string; route?: string }[]; disputes: { id: string; code: string; partnerName: string; entryId: string; dueAt: string }[]; reviews: { id: string; code: string; since: string }[] };
@@ -2294,6 +2296,28 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
         paused: false,
         actionRoute: '/badges',
         oversightRoute: '/feedback',
+      }));
+    },
+  },
+  {
+    // A customer whose referral became an order is told the reward was issued, on their own list, for a week; it is never work (179).
+    kind: 'referral_reward',
+    nudgeBefore: days(30),
+    escalateAfter: days(365),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'payment',
+    collect(src) {
+      return src.referrals.rewards.map((x) => ({
+        ...base('referral_reward', 'lead', x.id),
+        ownerUserId: x.userId,
+        titleKey: 'work.title.referral_reward',
+        titleParams: { name: x.friend },
+        dueAt: new Date(Date.parse(x.at) + days(7)).toISOString(),
+        state: 'open' as const,
+        paused: false,
+        actionRoute: '/referrals',
+        oversightRoute: '/payout-approval',
       }));
     },
   },
