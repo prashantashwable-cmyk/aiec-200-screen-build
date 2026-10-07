@@ -4929,6 +4929,11 @@ export interface AutomationRule {
   lastRunAt: string;
   avgLatencyMs: number;
   status: 'healthy' | 'degraded' | 'failing' | 'paused';
+  /** A step of the heartbeat (181) rather than a configured rule: `runsToday` counts the runs that did something, `failuresToday` the runs that failed. */
+  scheduled?: boolean;
+  category?: string;
+  lastError?: string | null;
+  skippedRuns?: number;
   isDemo: boolean;
 }
 
@@ -4948,6 +4953,8 @@ export interface AutomatedActionLogEntry {
    *  prose — the drawer renders the action from `sourceKey` in the reader's
    *  own language. */
   subjectLabel?: string;
+  /** The heartbeat step that took the action, when one did (181): what ties an action to its category. */
+  unitId?: string;
   at: string;
   isDemo: boolean;
 }
@@ -5025,7 +5032,7 @@ export type CommitmentKind =
   | 'exit_dispute_decide'
   | 'tier_review_due'
   | 'certification_renewal'
-  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup' | 'support_chat_reply' | 'feedback_outreach' | 'feedback_recognition' | 'referral_reward'
+  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup' | 'support_chat_reply' | 'feedback_outreach' | 'feedback_recognition' | 'referral_reward' | 'automation_pause_review'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'
@@ -5577,3 +5584,20 @@ export interface NotificationPrefs {
 
 /** What a customer has seen. A message is read once its id is here; a commitment notice keeps its own `readAt`. */
 export interface NotificationSeen { userId: string; messageId: string; at: string }
+
+
+/* ------------------------------------------------------------------ Automation dashboard (181) */
+
+/** Append-only: a pause and the resume that ends it are two records, so the history of who stopped what, and why, is never edited. A unit is one step of the heartbeat. */
+export interface AutomationPause {
+  id: string;
+  scope: 'category' | 'unit';
+  target: string;
+  kind: 'paused' | 'resumed';
+  at: string;
+  byName: string;
+  reason: string;
+  /** On a resume: how many runs of what was paused did not happen meanwhile. */
+  skippedRuns?: number;
+  isDemo: boolean;
+}

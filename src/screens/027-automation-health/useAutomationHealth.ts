@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useData } from '@/data/DataProvider';
 import type { AutomationRule } from '@/data/types';
-import { DEGRADED_THRESHOLD, DOWN_THRESHOLD } from './automation-health.types';
+import { healthOf } from '@/features/automation/health';
 import type { AutomationRow, ComponentHealth, FailureLogEntry, HealthStatus } from './automation-health.types';
 
 const POLL_MS = 20_000;
@@ -17,16 +17,6 @@ interface AutomationHealthState {
 }
 
 const REASON_BY_INDEX = ['rateLimited', 'missingInput', 'timeout', 'dependencyDown'] as const;
-
-function healthOf(rule: AutomationRule): ComponentHealth {
-  if (!rule.enabled) return 'paused';
-  if (rule.status === 'failing') return 'down';
-  if (rule.status === 'degraded') return 'degraded';
-  const successRate = rule.runsToday > 0 ? 1 - rule.failuresToday / rule.runsToday : 1;
-  if (successRate < DOWN_THRESHOLD) return 'down';
-  if (successRate < DEGRADED_THRESHOLD) return 'degraded';
-  return 'healthy';
-}
 
 /**
  * Owns the single most important screen for the "one person monitors" model.

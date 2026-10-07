@@ -155,6 +155,8 @@ export interface CommitmentSources {
   tds: { deposits: { month: string; tds: number; due: string; done: boolean }[]; returns: { fy: string; quarter: number; due: string; done: boolean }[] };
   feedback: { outreach: { id: string; code: string; customer: string; dueAt: string; weakOnly: boolean }[]; recognitions: { id: string; userId: string; from: string; at: string }[] };
   /** A customer's referral reward, issued when the referred order was confirmed (179). */
+  /** A category of automation someone paused (181): a stop is not meant to be forgotten, so Admin is asked a day later whether it is still on purpose. */
+  automationPauses: { category: string; name: string; since: string; byName: string }[];
   referrals: { rewards: { id: string; userId: string; friend: string; at: string }[] };
   supportChats: { waiting: { id: string; name: string; since: string; urgent: boolean }[] };
   serviceTickets: { respond: { id: string; code: string; ownerUserId: string; dueAt: string; urgency: string; site: string }[]; visits: { id: string; code: string; technicianId: string; dueAt: string; site: string; date: string; state: 'open' | 'done' | 'cancelled' }[]; claims: { id: string; code: string; since: string }[]; followups: { id: string; code: string; since: string; unsafe: boolean }[] };
@@ -2318,6 +2320,28 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
         paused: false,
         actionRoute: '/referrals',
         oversightRoute: '/payout-approval',
+      }));
+    },
+  },
+  {
+    // An emergency pause on a category of automation (181) is a deliberate stop, not a state to forget: Admin is asked a day later whether it should still be paused.
+    kind: 'automation_pause_review',
+    nudgeBefore: hours(2),
+    escalateAfter: hours(24),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'automation',
+    collect(src) {
+      return src.automationPauses.map((x) => ({
+        ...base('automation_pause_review', 'alert', x.category),
+        ownerUserId: adminId(src),
+        titleKey: 'work.title.automation_pause_review',
+        titleParams: { category: x.name },
+        dueAt: new Date(Date.parse(x.since) + hours(24)).toISOString(),
+        state: 'open' as const,
+        paused: false,
+        actionRoute: `/automation-rules?category=${x.category}`,
+        oversightRoute: '/automation-rules',
       }));
     },
   },

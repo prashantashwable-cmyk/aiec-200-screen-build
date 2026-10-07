@@ -298,6 +298,9 @@ import type {
   FeedbackAdminRow,
   MaintenanceBooking,
   MaintenanceDeskView,
+  AutomationActivityView,
+  AutomationCategoryView,
+  AutomationOverviewView,
   NotificationCenterView,
   NotificationFilter,
   NotificationItemView,
@@ -607,6 +610,7 @@ import type {
   TicketRoute,
   Alert,
   AutomatedActionLogEntry,
+  AutomationPause,
   AutoPoRules,
   AutoPoSimulationResult,
   CategoryMatchResult,
@@ -991,6 +995,9 @@ import type { Intent as SupportIntent, Parsed as SupportParsed } from '@/feature
 import { DIMENSIONS_FOR as FEEDBACK_DIMENSIONS, MIN_SAMPLE as FEEDBACK_MIN_SAMPLE, NEGATIVE_AT as FEEDBACK_NEGATIVE_AT, OUTREACH_DUE as FEEDBACK_OUTREACH_DUE, OUTREACH_NOTE_MIN as FEEDBACK_OUTREACH_NOTE_MIN, WEAK_AT as FEEDBACK_WEAK_AT, WEAK_DUE as FEEDBACK_WEAK_DUE, availability as feedbackAvailability, blendedRating as feedbackBlendedRating, dueWindowOf as feedbackDueWindow, feedbackProblem as feedbackProblemOf, flagsOf as feedbackFlagsOf, parseRequestId as feedbackParse, requestIdOf as feedbackRequestIdOf, staffMentions as feedbackMentions } from '@/features/feedback/feedback';
 import { CATEGORIES as NC_CATEGORIES, DEFAULT_CHOICES, NEW_MS as NC_NEW_MS, PAGE as NC_PAGE, categoryOfGroup as ncCategoryOfGroup, categoryOfKind as ncCategoryOfKind, dayLabelOf as ncDayLabelOf, deliveryOf as ncDeliveryOf, essentialInAppOnly as ncEssentialInAppOnly, isEssential as ncIsEssential } from '@/features/notifications/center';
 import type { NotificationCategory, OptionalCategory, OptionalChoices } from '@/features/notifications/center';
+import { CATEGORIES as AUTO_CATEGORIES, UNITS, categoryDef, isProtectedUnit, categoryName, categoryOfRule, categoryOfSource, unitDef } from '@/features/automation/registry';
+import { healthOf as autoHealthOf, rollUp as autoRollUp } from '@/features/automation/health';
+import { foldActivity } from '@/features/automation/activity';
 import { VAULT_KINDS, validityState } from '@/features/documents/vault';
 import type { VaultKind } from '@/features/documents/vault';
 import { MONTHS_OFFERED as PH_MONTHS, PAGE as PH_PAGE, QUERY_DUE as PH_QUERY_DUE, answerProblem as phAnswerProblem, countsAsEarned as phCountsAsEarned, filterOf as phFilterOf, fyOf as phFyOf, inPeriod as phInPeriod, monthIdOf as phMonthId, periodOf as phPeriodOf, queryProblem as phQueryProblem, stageOf as phStageOf } from '@/features/payout/history';
@@ -1257,6 +1264,8 @@ const automatedActionLog: AutomatedActionLogEntry[] = [];
 /** `${paymentId}|${stepId}|${yyyy-mm-dd}` — reminder steps already fired. */
 const firedReminderKeys = new Set<string>();
 let automatedActionLogCounter = 0;
+/** The heartbeat step that is running, so what it logs says which one did it (181). */
+let currentUnitId: string | null = null;
 
 /** The one write path for "a human needs to look at this" — dedupes against
  *  any unresolved alert for the same (relatedId, titleKey). */
@@ -1272,7 +1281,7 @@ function raiseAlert(input: AttentionAlertInput): Alert {
 /** The one write path for "the automation did something on its own". */
 function logAutomatedAction(input: AutomatedActionInput): AutomatedActionLogEntry {
   automatedActionLogCounter += 1;
-  const entry = buildAutomatedActionEntry(input, `aal-${automatedActionLogCounter}`, new Date().toISOString());
+  const entry = buildAutomatedActionEntry(currentUnitId && !input.unitId ? { ...input, unitId: currentUnitId } : input, `aal-${automatedActionLogCounter}`, new Date().toISOString());
   automatedActionLog.push(entry);
   return entry;
 }
@@ -2720,6 +2729,7 @@ function commitmentSources(now: number): CommitmentSources {
     supportChats: supportChatSignals(now),
     feedback: feedbackSignals(),
     referrals: referralSignals(),
+    automationPauses: automationPauseSignals(),
     tds: tdsObligations(Date.now()),
     exits: exitSignals(),
     handoverReviews: handoverSignals().reviews,
@@ -2957,74 +2967,228 @@ function sendDueScheduledQuotations(now: number): void {
   }
 }
 
+/* ------------------------------------------------------------------ Automation units (181) */
+
+/**
+ * The heartbeat is a table of units, each with a category (`@/features/automation/registry`). Running one through `runUnit` records what it did, keeps one unit's failure from
+ * stopping the rest, and honours a pause: a paused unit does not run (and so takes no action of its own), nothing it did before is undone, and nothing a person does by hand
+ * is stopped.
+ */
+interface UnitTelemetry { runs: number; failures: number; consecutiveFailures: number; lastRunAt: string | null; lastActionAt: string | null; lastError: string | null; totalMs: number; day: string; actedToday: number; failedToday: number; skipped: number; oldestSkippedAt: string | null }
+const unitTelemetry = new Map<string, UnitTelemetry>();
+const automationPauses: AutomationPause[] = [];
+let automationPauseCounter = 0;
+const autoDayKey = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
+function telemetryOf(id: string, now: number): UnitTelemetry {
+  let t = unitTelemetry.get(id);
+  if (!t) { t = { runs: 0, failures: 0, consecutiveFailures: 0, lastRunAt: null, lastActionAt: null, lastError: null, totalMs: 0, day: autoDayKey(now), actedToday: 0, failedToday: 0, skipped: 0, oldestSkippedAt: null }; unitTelemetry.set(id, t); }
+  if (t.day !== autoDayKey(now)) { t.day = autoDayKey(now); t.actedToday = 0; t.failedToday = 0; }
+  return t;
+}
+/** The pause in force for a category or unit, if the latest word on it is a pause. */
+function autoPauseOf(scope: AutomationPause['scope'], target: string): AutomationPause | null {
+  for (let i = automationPauses.length - 1; i >= 0; i -= 1) {
+    const p = automationPauses[i];
+    if (p.scope === scope && p.target === target) return p.kind === 'paused' ? p : null;
+  }
+  return null;
+}
+const unitPauseOf = (unitId: string): AutomationPause | null => (isProtectedUnit(unitId) ? null : autoPauseOf('unit', unitId) ?? autoPauseOf('category', unitDef(unitId)?.category ?? ''));
+const autoCategoryPaused = (category: string): boolean => !!autoPauseOf('category', category);
+
+function runUnit(id: string, now: number, fn: () => void): void {
+  const t = telemetryOf(id, now);
+  const iso = new Date(now).toISOString();
+  if (unitPauseOf(id)) { t.skipped += 1; t.oldestSkippedAt ??= iso; return; }
+  const before = automatedActionLog.length;
+  const started = Date.now();
+  currentUnitId = id;
+  let failed = false;
+  try {
+    fn();
+    t.consecutiveFailures = 0;
+    t.lastError = null;
+    const open = alerts.find((a) => a.relatedId === `unit:${id}` && a.status !== 'resolved');
+    if (open) patchInPlace(alerts, open.id, { status: 'resolved', resolvedAt: iso, resolvedBy: 'system', resolutionNote: 'The step ran cleanly again.' });
+  } catch (e) {
+    failed = true;
+    t.failures += 1;
+    t.failedToday += 1;
+    t.consecutiveFailures += 1;
+    t.lastError = e instanceof Error ? e.message : String(e);
+    if (t.consecutiveFailures >= 3) raiseAlert({ titleKey: 'automationRules.alert.unitFailing', context: `${unitDef(id)?.name ?? id}: ${t.lastError}`, severity: 'high', category: 'automation', relatedId: `unit:${id}`, sourceRoute: '/admin/analytics/automation' });
+  } finally {
+    currentUnitId = null;
+    t.runs += 1;
+    t.totalMs += Date.now() - started;
+    t.lastRunAt = iso;
+    if (!failed && automatedActionLog.length > before) { t.actedToday += 1; t.lastActionAt = iso; }
+  }
+}
+
+/** One row per heartbeat step in the shape the Health Monitor (027) already reads, so 027 and the dashboard (181) are one telemetry. */
+function automationUnitRules(now: number): AutomationRule[] {
+  return UNITS.map((u): AutomationRule => {
+    const t = telemetryOf(u.id, now);
+    const paused = !!unitPauseOf(u.id);
+    return {
+      id: `u:${u.id}`, name: u.name, triggerKey: 'automation.trigger.heartbeat', actionKey: 'automation.action.scheduledCheck', enabled: !paused,
+      runsToday: t.actedToday + t.failedToday, failuresToday: t.failedToday, lastRunAt: t.lastActionAt ?? t.lastRunAt ?? new Date(now).toISOString(), avgLatencyMs: t.runs > 0 ? Math.round(t.totalMs / t.runs) : 0,
+      status: paused ? 'paused' : t.consecutiveFailures >= 3 ? 'failing' : t.consecutiveFailures >= 1 ? 'degraded' : 'healthy',
+      scheduled: true, category: u.category, lastError: t.lastError, skippedRuns: t.skipped, isDemo: true,
+    };
+  });
+}
+/** Every automation rule the system has: the configured ones (a paused category pauses them too) and the heartbeat's steps. */
+function allAutomationRules(now: number): AutomationRule[] {
+  const configured = automations.map((a): AutomationRule => (autoCategoryPaused(categoryOfRule(a)) ? { ...a, enabled: false, status: 'paused', category: categoryOfRule(a) } : { ...a, category: categoryOfRule(a) }));
+  return [...configured, ...automationUnitRules(now)];
+}
+
+const AUTO_ACTIVITY_WINDOW = 30 * 60_000;
+const AUTO_ACTIVITY_MAX = 40;
+const entryCategory = (e: AutomatedActionLogEntry): string => (e.unitId ? unitDef(e.unitId)?.category : undefined) ?? categoryOfSource(e.sourceKey);
+
+/** The rules configured in their own homes, counted by what they are (so a new kind of rule only needs a line here). */
+function autoConfiguredCount(category: string, now: number): number {
+  switch (category) {
+    case 'communications': return triggerRules.filter((r) => r.enabled).length + commSequences.filter((q) => q.isActive).length;
+    case 'payments': return paymentReminderConfig.steps.length;
+    case 'suppliers': return autoPoRules.autoDraftEnabled ? 1 : 0;
+    case 'training': return refresherCadences.length;
+    case 'rewards': return contests.filter((c) => !c.endedAt && Date.parse(c.endsAt) > now).length;
+    default: return 0;
+  }
+}
+
+function automationOverviewOf(now: number): AutomationOverviewView {
+  const rules = allAutomationRules(now);
+  const since = now - 86_400_000;
+  const log = automatedActionLog.map((e) => ({ e, category: entryCategory(e) }));
+  const ids = [...new Set([...AUTO_CATEGORIES.map((c) => c.id), ...rules.map((r) => r.category ?? 'other'), ...log.map((x) => x.category)])];
+  const categories = ids.map((id): AutomationCategoryView => {
+    const rows = rules.filter((r) => (r.category ?? 'other') === id);
+    const pause = autoPauseOf('category', id);
+    const mine = log.filter((x) => x.category === id).map((x) => x.e);
+    const latest = [...mine].sort((a, b) => (a.at < b.at ? 1 : -1))[0];
+    const scheduled = rows.filter((r) => r.scheduled);
+    const units = UNITS.filter((u) => u.category === id);
+    return {
+      id, known: !!categoryDef(id), name: categoryName(id), route: categoryDef(id)?.route ?? null, protected: !!categoryDef(id)?.protected,
+      health: pause ? 'paused' : autoRollUp(rows.map((r) => autoHealthOf(r))),
+      ruleCount: rows.filter((r) => !r.scheduled && r.enabled).length + (pause ? 0 : autoConfiguredCount(id, now)),
+      scheduledCount: scheduled.filter((r) => r.enabled).length,
+      scheduledTotal: scheduled.length,
+      configured: !pause ? autoConfiguredCount(id, now) : 0,
+      paused: pause ? { since: pause.at, byName: pause.byName, reason: pause.reason } : null,
+      skippedRuns: units.reduce((n, u) => n + (unitTelemetry.get(u.id)?.skipped ?? 0), 0),
+      oldestSkippedAt: units.map((u) => unitTelemetry.get(u.id)?.oldestSkippedAt ?? null).filter((x): x is string => !!x).sort()[0] ?? null,
+      failing: scheduled.filter((r) => r.status === 'failing' || r.status === 'degraded').map((r) => ({ name: r.name, error: r.lastError ?? null, status: r.status as 'failing' | 'degraded' })),
+      actions24h: mine.filter((e) => Date.parse(e.at) >= since).length,
+      lastActivity: latest ? { at: latest.at, sourceKey: latest.sourceKey, actionTaken: latest.actionTaken, subjectLabel: latest.subjectLabel ?? null } : null,
+    };
+  });
+  const activity: AutomationActivityView[] = foldActivity(log.filter((x) => Date.parse(x.e.at) >= since).map((x) => ({ id: x.e.id, at: x.e.at, category: x.category, sourceKey: x.e.sourceKey, actionTaken: x.e.actionTaken, subjectLabel: x.e.subjectLabel })), AUTO_ACTIVITY_WINDOW, AUTO_ACTIVITY_MAX)
+    .map((g) => ({ key: g.key, category: g.category, sourceKey: g.sourceKey, count: g.count, latestAt: g.latestAt, oldestAt: g.oldestAt, actionTaken: g.latest.actionTaken, subjectLabel: g.latest.subjectLabel ?? null }));
+  const overall = autoRollUp(rules.map((r) => autoHealthOf(r)));
+  return JSON.parse(JSON.stringify({
+    categories, activity, overall,
+    totals: { categories: categories.length, activeRules: categories.reduce((n, c) => n + c.ruleCount + c.scheduledCount, 0), paused: categories.filter((c) => c.paused).length, unhealthy: categories.filter((c) => c.health === 'down' || c.health === 'degraded').length, actions24h: categories.reduce((n, c) => n + c.actions24h, 0) },
+    at: new Date(now).toISOString(),
+  })) as AutomationOverviewView;
+}
+
+/** The pauses the commitment engine watches: someone stopped a category, and a stop is not meant to be forgotten. */
+function automationPauseSignals(): { category: string; name: string; since: string; byName: string }[] {
+  return AUTO_CATEGORIES.map((c) => c.id).concat(...[...new Set(automationPauses.filter((p) => p.scope === 'category').map((p) => p.target))].filter((id) => !categoryDef(id)))
+    .flatMap((id) => { const p = autoPauseOf('category', id); return p ? [{ category: id, name: categoryName(id), since: p.at, byName: p.byName }] : []; });
+}
+
+const heartbeatCommitments = { notifications: 0, alerts: 0 };
+const HEARTBEAT: { id: string; run: (now: number) => void }[] = [
+  { id: 'followUpTasks', run: () => reconcileFollowUpTasks() },
+  { id: 'paymentReminders', run: (now) => { runPaymentReminders(ASSISTANT_ACTOR, now); } },
+  { id: 'scheduledQuotations', run: (now) => sendDueScheduledQuotations(now) },
+  { id: 'autoDraftPurchaseOrders', run: () => autoDraftDuePurchaseOrders() },
+  { id: 'productionStalls', run: (now) => detectProductionStalls(now) },
+  { id: 'retentions', run: (now) => settleRetentions(now) },
+  { id: 'partnerFeeds', run: (now) => syncPartnerFeeds(now) },
+  { id: 'supplierPayments', run: (now) => syncSupplierPayments(now) },
+  { id: 'supplierPaymentExecution', run: (now) => executeSupplierPayments(now) },
+  { id: 'paymentAnomalies', run: (now) => syncPaymentAnomalies(now) },
+  { id: 'invoiceMismatches', run: (now) => syncInvoiceMismatches(now) },
+  { id: 'gstCompliance', run: (now) => syncGstCompliance(now) },
+  { id: 'supplierDisputes', run: (now) => syncSupplierDisputes(now) },
+  { id: 'supplierReviewFlags', run: (now) => syncSupplierReviewFlags(now) },
+  { id: 'reconciliation', run: (now) => syncReconciliation(now) },
+  { id: 'fieldSos', run: (now) => sendDueSos(now) },
+  { id: 'technicianClashes', run: (now) => syncTechnicianClashes(now) },
+  { id: 'recruitmentIntake', run: (now) => syncRecruitmentIntake(now) },
+  { id: 'partnerExits', run: (now) => syncPartnerExits(now) },
+  { id: 'assessmentAlerts', run: (now) => syncAssessmentAlerts(now) },
+  { id: 'certifications', run: (now) => syncCertifications(now) },
+  { id: 'refreshers', run: (now) => syncRefreshers(now) },
+  { id: 'compliance', run: (now) => syncCompliance(now) },
+  { id: 'sopRollouts', run: (now) => syncSopRollouts(now) },
+  { id: 'trainingFeedback', run: (now) => syncTrainingFeedback(now) },
+  { id: 'payoutSpikes', run: (now) => syncPayoutSpikes(now) },
+  { id: 'disbursements', run: (now) => syncDisbursements(now) },
+  { id: 'tds', run: (now) => syncTds(now) },
+  { id: 'payoutDisputes', run: (now) => syncPayoutDisputes(now) },
+  { id: 'serviceTickets', run: (now) => syncServiceTickets(now) },
+  { id: 'supportChats', run: (now) => syncSupportChats(now) },
+  { id: 'contests', run: (now) => syncContests(now) },
+  { id: 'badges', run: (now) => syncBadges(now) },
+  { id: 'partnerInterviews', run: (now) => syncPartnerInterviews(now) },
+  { id: 'verification', run: (now) => syncVerification(now) },
+  { id: 'offers', run: (now) => syncOffers(now) },
+  { id: 'safetyAlerts', run: (now) => syncSafetyAlerts(true, now) },
+  { id: 'issueAlerts', run: (now) => syncIssueAlerts(true, now) },
+  { id: 'materialDeviations', run: (now) => syncMaterialDeviations(true, now) },
+  { id: 'teamAlerts', run: (now) => syncTeamAlerts(true, now) },
+  { id: 'qcAssignments', run: (now) => syncQcAssignments(true, now) },
+  { id: 'qcMechAlerts', run: (now) => syncQcMechAlerts(now) },
+  { id: 'qcElecAlerts', run: (now) => syncQcElecAlerts(now) },
+  { id: 'snagAlerts', run: (now) => syncSnagAlerts(now) },
+  { id: 'warrantyReminders', run: (now) => syncWarrantyReminders(now) },
+  { id: 'leadDelegations', run: (now) => syncLeadDelegations(now) },
+  { id: 'issueHolds', run: () => { for (const j of jobs) syncIssueHold(j); } },
+  { id: 'sopHandoff', run: () => syncSopHandoff() },
+  { id: 'advanceExposure', run: (now) => syncAdvanceExposure(now) },
+  { id: 'shipments', run: (now) => advanceShipments(now) },
+  // 105: a delivery running late is noticed, and one that caught up is cleared, without anyone looking.
+  { id: 'delayCases', run: (now) => syncDelayCases(now) },
+  {
+    id: 'stageInvoices',
+    run: () => {
+      for (const deal of deals) {
+        if (payments.some((p) => p.dealId === deal.id && p.status === 'paid' && !invoices.some((inv) => inv.paymentId === p.id))) ensureStageInvoices(deal.id, deal, resolveLead(deal.leadId));
+      }
+    },
+  },
+  { id: 'commitments', run: (now) => syncCommitments(now) },
+  {
+    id: 'escalations',
+    run: (now) => {
+      const { notifications, alerts: alertsRaised } = advanceEscalations(now);
+      heartbeatCommitments.notifications = notifications;
+      heartbeatCommitments.alerts = alertsRaised;
+      // Alerts the ladder just raised are themselves owed an acknowledgement.
+      if (alertsRaised > 0) syncCommitments(now);
+    },
+  },
+];
+
 function runFollowUpEngineSync(now: number): FollowUpEngineRun {
   const actionsBefore = automatedActionLog.length;
-  reconcileFollowUpTasks();
-  runPaymentReminders(ASSISTANT_ACTOR, now);
-  sendDueScheduledQuotations(now);
-  autoDraftDuePurchaseOrders();
-  detectProductionStalls(now);
-  settleRetentions(now);
-  syncPartnerFeeds(now);
-  syncSupplierPayments(now);
-  executeSupplierPayments(now);
-  syncPaymentAnomalies(now);
-  syncInvoiceMismatches(now);
-  syncGstCompliance(now);
-  syncSupplierDisputes(now);
-  syncSupplierReviewFlags(now);
-  syncReconciliation(now);
-  sendDueSos(now);
-  syncTechnicianClashes(now);
-  syncRecruitmentIntake(now);
-  syncPartnerExits(now);
-  syncAssessmentAlerts(now);
-  syncCertifications(now);
-  syncRefreshers(now);
-  syncCompliance(now);
-  syncSopRollouts(now);
-  syncTrainingFeedback(now);
-  syncPayoutSpikes(now);
-  syncDisbursements(now);
-  syncTds(now);
-  syncPayoutDisputes(now);
-  syncServiceTickets(now);
-  syncSupportChats(now);
-  syncContests(now);
-  syncBadges(now);
-  syncPartnerInterviews(now);
-  syncVerification(now);
-  syncOffers(now);
-  syncSafetyAlerts(true, now);
-  syncIssueAlerts(true, now);
-  syncMaterialDeviations(true, now);
-  syncTeamAlerts(true, now);
-  syncQcAssignments(true, now);
-  syncQcMechAlerts(now);
-  syncQcElecAlerts(now);
-  syncSnagAlerts(now);
-  syncWarrantyReminders(now);
-  syncLeadDelegations(now);
-  for (const j of jobs) syncIssueHold(j);
-  syncSopHandoff();
-  syncAdvanceExposure(now);
-  advanceShipments(now);
-  // 105: a delivery running late is noticed, and one that caught up is cleared, without anyone looking.
-  syncDelayCases(now);
-  for (const deal of deals) {
-    if (payments.some((p) => p.dealId === deal.id && p.status === 'paid' && !invoices.some((inv) => inv.paymentId === p.id))) {
-      ensureStageInvoices(deal.id, deal, resolveLead(deal.leadId));
-    }
-  }
-  syncCommitments(now);
-  const { notifications, alerts: alertsRaised } = advanceEscalations(now);
-  // Alerts the ladder just raised are themselves owed an acknowledgement.
-  if (alertsRaised > 0) syncCommitments(now);
+  heartbeatCommitments.notifications = 0;
+  heartbeatCommitments.alerts = 0;
+  for (const unit of HEARTBEAT) runUnit(unit.id, now, () => unit.run(now));
   return {
     at: new Date(now).toISOString(),
     openCommitments: commitments.filter((c) => c.status === 'open').length,
-    notificationsSent: notifications,
-    alertsRaised,
+    notificationsSent: heartbeatCommitments.notifications,
+    alertsRaised: heartbeatCommitments.alerts,
     automatedActions: automatedActionLog.length - actionsBefore,
   };
 }
@@ -24279,6 +24443,41 @@ export const memoryRepository: Repository = {
       return JSON.parse(JSON.stringify(docs.map((d) => ({ row: d.row, sections: d.sections, versions: docs.filter((x) => x.row.chainId === d.row.chainId).map((x) => x.row), issuedBy: d.issuedBy })))) as VaultDocument[];
     }),
 
+  /* --------------------------------- Automation dashboard (181) */
+  getAutomationOverview: (userId) =>
+    simulateRead(() => {
+      if (byId(users, userId)?.role !== 'admin') throw new RepositoryError('forbidden');
+      return automationOverviewOf(Date.now());
+    }),
+  pauseAutomationCategory: (userId, category, reason) =>
+    simulateWrite(() => {
+      const admin = byId(users, userId);
+      if (admin?.role !== 'admin') throw new RepositoryError('forbidden');
+      if (!automationOverviewOf(Date.now()).categories.some((c) => c.id === category)) throw new RepositoryError('unknown_category');
+      if (categoryDef(category)?.protected) throw new RepositoryError('protected_category');
+      if (reason.replace(/[^\p{L}]/gu, '').length < 10) throw new RepositoryError('reason_short');
+      if (autoPauseOf('category', category)) throw new RepositoryError('already_paused');
+      const at = new Date().toISOString();
+      automationPauses.push({ id: `ap-${(automationPauseCounter += 1)}`, scope: 'category', target: category, kind: 'paused', at, byName: admin.name, reason: reason.trim(), isDemo: true });
+      raiseAlert({ titleKey: 'automationRules.alert.paused', context: `${categoryName(category)} — ${reason.trim()}`, severity: 'medium', category: 'automation', relatedId: `autopause:${category}`, sourceRoute: `/automation-rules?category=${category}` });
+      return automationOverviewOf(Date.now());
+    }),
+  resumeAutomationCategory: (userId, category) =>
+    simulateWrite(() => {
+      const admin = byId(users, userId);
+      if (admin?.role !== 'admin') throw new RepositoryError('forbidden');
+      if (!autoPauseOf('category', category)) throw new RepositoryError('not_paused');
+      const at = new Date().toISOString();
+      const units = UNITS.filter((u) => u.category === category);
+      const skipped = units.reduce((n, u) => n + (unitTelemetry.get(u.id)?.skipped ?? 0), 0);
+      automationPauses.push({ id: `ap-${(automationPauseCounter += 1)}`, scope: 'category', target: category, kind: 'resumed', at, byName: admin.name, reason: '', skippedRuns: skipped, isDemo: true });
+      for (const u of units) { const t = unitTelemetry.get(u.id); if (t) { t.skipped = 0; t.oldestSkippedAt = null; } }
+      const open = alerts.find((a) => a.relatedId === `autopause:${category}` && a.status !== 'resolved');
+      if (open) patchInPlace(alerts, open.id, { status: 'resolved', resolvedAt: at, resolvedBy: admin.name, resolutionNote: 'Resumed.' });
+      return automationOverviewOf(Date.now());
+    }),
+  listAutomationPauses: () => simulateRead(() => [...automationPauses].reverse()),
+
   /* --------------------------------- Notification centre (180) */
   getNotificationCenter: (userId, filter) => simulateRead(() => ncCenterOf(vdCustomer(userId), filter, Date.now())),
   markNotificationsSeen: (userId, ids) =>
@@ -27098,15 +27297,25 @@ export const memoryRepository: Repository = {
     ),
 
   /* -------------------------------------------------------- Automation */
-  listAutomations: () => simulateRead(() => [...automations]),
+  listAutomations: () => simulateRead(() => allAutomationRules(Date.now())),
 
   toggleAutomation: (id, enabled) =>
-    simulateWrite(() =>
-      patchInPlace(automations, id, {
+    simulateWrite(() => {
+      if (id.startsWith('u:')) {
+        // A heartbeat step: a pause on that step alone (a category pause is the dashboard's, 181).
+        const unit = id.slice(2);
+        if (!unitDef(unit)) throw new RepositoryError('not_found');
+        if (isProtectedUnit(unit)) return allAutomationRules(Date.now()).find((r) => r.id === id) as AutomationRule;
+        const was = !!autoPauseOf('unit', unit);
+        if (enabled === !was) return allAutomationRules(Date.now()).find((r) => r.id === id) as AutomationRule;
+        automationPauses.push({ id: `ap-${(automationPauseCounter += 1)}`, scope: 'unit', target: unit, kind: enabled ? 'resumed' : 'paused', at: new Date().toISOString(), byName: 'Admin', reason: enabled ? '' : 'Paused from the Health Monitor', isDemo: true });
+        return allAutomationRules(Date.now()).find((r) => r.id === id) as AutomationRule;
+      }
+      return patchInPlace(automations, id, {
         enabled,
         status: enabled ? 'healthy' : 'paused',
-      } as Partial<AutomationRule>),
-    ),
+      } as Partial<AutomationRule>);
+    }),
 
   /* --------------------------------------------------------- Analytics */
   getSeries: (key) => simulateRead(() => seedSeries[SERIES_KEYS[key]]),

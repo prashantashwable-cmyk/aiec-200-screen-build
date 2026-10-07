@@ -4,7 +4,8 @@ import type { AutomationRule } from '@/data/types';
 
 export type HealthStatus = 'loading' | 'ready' | 'empty' | 'error';
 
-export type ComponentHealth = 'healthy' | 'degraded' | 'down' | 'paused';
+export type { ComponentHealth } from '@/features/automation/health';
+import type { ComponentHealth } from '@/features/automation/health';
 
 export interface FailureLogEntry {
   id: string;
@@ -23,10 +24,8 @@ export interface AutomationRow {
   failures: FailureLogEntry[];
 }
 
-/** Below this success rate today, a component reads as degraded rather than healthy. */
-export const DEGRADED_THRESHOLD = 0.95;
-/** Below this, it reads as down. */
-export const DOWN_THRESHOLD = 0.5;
+/** The thresholds and the health rule are shared with the master dashboard (181): `@/features/automation/health`. */
+export { DEGRADED_THRESHOLD, DOWN_THRESHOLD } from '@/features/automation/health';
 
 export const AUTOMATION_HEALTH_KEYS = {
   title: 'automationHealth.title',

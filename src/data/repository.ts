@@ -125,6 +125,7 @@ import type {
   ActivityEvent,
   Alert,
   AutomatedActionLogEntry,
+  AutomationPause,
   AutomationRule,
   Commitment,
   BotConfig,
@@ -7108,6 +7109,40 @@ export interface VisitTracking {
   at: string;
 }
 
+/* ------------------------------------------------------------------ Master automation dashboard (181) */
+
+export interface AutomationCategoryView {
+  id: string;
+  /** False for a category nobody has named yet: it exists because something automated happened under that name. */
+  known: boolean;
+  /** English fallback name; the screen translates the ones it knows. */
+  name: string;
+  route: string | null;
+  /** Cannot be paused: it is what keeps every promise (and the reminder to resume anything paused) alive. */
+  protected: boolean;
+  health: 'healthy' | 'degraded' | 'down' | 'paused';
+  /** Rules configured in their own screens and still switched on. */
+  ruleCount: number;
+  /** Steps of the heartbeat in this category that are running / that exist. */
+  scheduledCount: number;
+  scheduledTotal: number;
+  configured: number;
+  paused: { since: string; byName: string; reason: string } | null;
+  skippedRuns: number;
+  oldestSkippedAt: string | null;
+  failing: { name: string; error: string | null; status: 'failing' | 'degraded' }[];
+  actions24h: number;
+  lastActivity: { at: string; sourceKey: string; actionTaken: string; subjectLabel: string | null } | null;
+}
+export interface AutomationActivityView { key: string; category: string; sourceKey: string; count: number; latestAt: string; oldestAt: string; actionTaken: string; subjectLabel: string | null }
+export interface AutomationOverviewView {
+  categories: AutomationCategoryView[];
+  activity: AutomationActivityView[];
+  overall: 'healthy' | 'degraded' | 'down' | 'paused';
+  totals: { categories: number; activeRules: number; paused: number; unhealthy: number; actions24h: number };
+  at: string;
+}
+
 /* ------------------------------------------------------------------ Notification centre (180) */
 
 export interface NotificationItemView {
@@ -8507,6 +8542,11 @@ export interface Repository {
   getVaultBundle(userId: string): Promise<VaultDocument[]>;
   /** 174: the customer's payment picture for one project (the first needing attention when none is named). */
   getCustomerPayments(dealId: string | null, userId: string): Promise<CustomerPayView>;
+  /* 181 — master automation dashboard: every category of automation, its health (the Health Monitor's own telemetry) and an emergency pause. */
+  getAutomationOverview(userId: string): Promise<AutomationOverviewView>;
+  pauseAutomationCategory(userId: string, category: string, reason: string): Promise<AutomationOverviewView>;
+  resumeAutomationCategory(userId: string, category: string): Promise<AutomationOverviewView>;
+  listAutomationPauses(): Promise<AutomationPause[]>;
   /* 180 — notification centre: everything the customer was sent, read state, current state of what it was about, and preferences that feed the opt-out record. */
   getNotificationCenter(userId: string, filter: NotificationFilter): Promise<NotificationCenterView>;
   markNotificationsSeen(userId: string, ids: string[] | 'all'): Promise<void>;
