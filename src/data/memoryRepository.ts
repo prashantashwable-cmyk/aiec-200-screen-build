@@ -906,7 +906,7 @@ import { buildAutomatedActionEntry } from '@/features/audit/logAutomatedAction';
 import type { AutomatedActionInput } from '@/features/audit/logAutomatedAction';
 import { computeSupplierPerformanceScore, supplierScoreBreakdown } from '@/features/suppliers/performanceScore';
 import { RATING_WINDOW, SCORE_DELTA_ORDERS, aggregateRatings, byDelivered, isOnTime, orderQuality, orderScore } from '@/features/suppliers/orderRating';
-import { RULE_BY_KIND, collectObligations, targetEscalationLevel } from '@/features/work/commitmentRules';
+import { DELAY_ACTION_TARGET, RULE_BY_KIND, collectObligations, targetEscalationLevel } from '@/features/work/commitmentRules';
 import {
   agreementState,
   canIssueNewPo,
@@ -959,7 +959,7 @@ import { ACK_EXPECTED_AFTER, DEVIATION_REASON_MIN, deviationIncreasesRisk, HANDO
 import type { ChainNodeFacts, ChainNodeKind, ChainNodeState } from '@/features/suppliers/paymentChain';
 import { RECOVERY_REASON_MIN, batchSkipReason, readAdvance, readRetention } from '@/features/suppliers/exposure';
 import type { RetentionHold } from '@/features/suppliers/exposure';
-import { DISPUTE_TARGET, NOTE_MIN, POSITION_MIN, REOPEN_WINDOW, canPartial, decisionProblem, dueAtOf, maxAmountOf, slaOf } from '@/features/suppliers/disputes';
+import { DISPUTE_TARGET, NOTE_MIN, POSITION_MIN, REOPEN_WINDOW, canPartial, decisionProblem, dueAtOf, maxAmountOf, slaOf, targetOf as slaTargetOf } from '@/features/suppliers/disputes';
 import { SOS_CANCEL_WINDOW_MS, SOS_SAME_INCIDENT } from '@/features/safety/sos';
 import { capturedAtProblem, completionProblem, isDone, missingSlots, naProblem, qcReadiness, slotsFor, stepApplies, suggestedNext, unmetDependencies, versionInForce as installVersionInForce } from '@/features/technician/installSop';
 import type { SpecFacts } from '@/features/technician/installSop';
@@ -1016,6 +1016,9 @@ import { MANY_AT as WF_MANY_AT, MAX_PER_RUN as WF_MAX_PER_RUN, conflictsOf as wf
 import type { RecordValues, RuleDraft, SubjectId as WfSubject } from '@/features/automation/customRules';
 import { CHANNELS as INT_CHANNELS, CORE_TYPES as INT_CORE, DEFAULT_URGENCY_CHANNELS as INT_DEFAULTS, NO_CHANNELS as INT_NONE, atLeast as intAtLeast, channelProblems as intChannelProblems, contentProblems as intContentProblems, fatigueOf as intFatigueOf, isBlocking as intIsBlocking, reducesReach as intReducesReach, severityFloorOf as intSeverityFloor, urgencyOfSeverity as intUrgencyOfSeverity } from '@/features/notifications/internal';
 import type { Urgency as IntUrgency } from '@/features/notifications/internal';
+import { SLA_CATEGORIES, WINDOW_DAYS as SLA_WINDOW_DAYS, elapsedMsOf as slaElapsedOf, pauseOf as slaPauseOf, ratioOf as slaRatioOf, rollupOf as slaRollupOf, statusOf as slaStatusOf, targetSignal as slaTargetSignal, trendOf as slaTrendOf, triageScore as slaTriageScore } from '@/features/sla/consolidated';
+import type { SlaItem } from '@/features/sla/consolidated';
+import type { SlaCategoryView, SlaItemView, SlaOverviewView } from './repository';
 import { BACKUP_KEYS as ESC_BACKUP_KEYS, DEMO_CONFIRM_MS as ESC_DEMO_CONFIRM_MS, DEMO_SILENCE_MS as ESC_DEMO_SILENCE_MS, DRILL_GAP_TITLE as ESC_DRILL_GAP_TITLE, ESC_CHANNELS, EXHAUSTED_TITLE as ESC_EXHAUSTED_TITLE, MAX_BACKUPS as ESC_MAX_BACKUPS, NOTE_MIN as ESC_NOTE_MIN, PRIMARY as ESC_PRIMARY, SCENARIOS as ESC_SCENARIOS, SCENARIO_NAMES as ESC_NAMES, chainProblems as escChainProblems, drillDueAt as escDrillDueAt, drillStepsOf as escDrillStepsOf, exhaustedAfterMinutes as escExhaustedAfter, offsetsOf as escOffsets, phoneProblem as escPhoneBad, railOutcome as escRailOutcome, repeatOffsets as escRepeatOffsets, scenarioDef as escDef, scenarioIdOf as escScenarioIdOf, withTierIds as escTierIds } from '@/features/escalation/matrix';
 import type { EscalationChainTier, EscalationChannel, EscalationContact, EscalationDelivery, EscalationDrill, EscalationDrillStep, EscalationLastResort, EscalationRun, EscalationScenarioConfig } from './types';
 import type { AlertEscalationView, EscalationGap, EscalationMatrixView, EscalationRunView, EscalationScenarioView } from './repository';
@@ -3525,6 +3528,112 @@ function escSignals(now: number): { drills: { id: string; name: string; dueAt: s
   };
 }
 
+const SLA_BREACH_TITLE = 'slaMonitor.alert.breach';
+const SLA_TRIAGE_SHOWN = 5;
+/* ============================================ SLA monitor (185) */
+
+/**
+ * Every SLA-governed process, read from its own record and held to its own target (never a second constant here). Nothing is stored: the same timers each process's screen shows,
+ * gathered so one place can say which is slipping. A breach whose process already raises its own alert is linked to it; one that does not gets a single alert per category.
+ */
+function slaItemsOf(): SlaItem[] {
+  const items: SlaItem[] = [];
+  // Customer replies (057 and, for the support chat, 176): the customer's message flagged for a person, until the next message from AIEC.
+  for (const m of commMessages) {
+    if (m.sender !== 'customer' || !m.requiresHumanReview) continue;
+    const convo = byId(conversations, m.conversationId);
+    const lead = convo ? resolveLead(convo.leadId) : null;
+    if (!convo || !lead) continue;
+    const reply = commMessages.filter((x) => x.conversationId === m.conversationId && x.at > m.at && x.sender !== 'customer').sort((a, b) => (a.at < b.at ? -1 : 1))[0];
+    // Answered by hand with no reply on record: counted as answered but never timed (nothing says when).
+    if (m.handled && !reply) continue;
+    items.push({ id: `reply:${m.id}`, category: 'reply', relatedId: m.id, route: convo.kind === 'support' ? `/support-chat/${convo.id}` : '/admin/comm/inbox', label: `${lead.siteName || lead.contactName}`, startedAt: m.at, targetMs: hours(1), endedAt: reply?.at ?? null });
+  }
+  for (const t of serviceTickets) {
+    if (!t.responseDueAt || t.status === 'withdrawn') continue;
+    const target = Date.parse(t.responseDueAt) - Date.parse(t.createdAt);
+    if (target <= 0) continue;
+    if (!ticketIsOpen(t.status) && !t.firstResponseAt) continue;
+    items.push({ id: `ticket:${t.id}`, category: 'service_ticket', relatedId: t.id, route: `/service-requests/${t.id}`, label: `${t.code} · ${t.siteName}`, startedAt: t.createdAt, targetMs: target, endedAt: t.firstResponseAt ?? null });
+  }
+  for (const p of payments) {
+    if (!p.disputedAt) continue;
+    const deal = byId(deals, p.dealId);
+    items.push({ id: `pdisp:${p.id}`, category: 'payment_dispute', relatedId: p.id, route: '/admin/analytics/collections/disputes', label: `${deal?.code ?? p.code}`, startedAt: p.disputedAt, targetMs: DISPUTE_SLA, endedAt: p.resolvedAt ?? null });
+  }
+  for (const q of payoutQueries) {
+    if (pdKindOf(q) !== 'dispute') continue;
+    const started = q.escalation ? q.escalation.at : pdRaisedAt(q);
+    const target = Date.parse(pdClockOf(q).resolve) - Date.parse(started);
+    if (target <= 0) continue;
+    items.push({ id: `payout:${q.id}`, category: 'payout_dispute', relatedId: q.id, route: `/payout-dispute?dispute=${q.id}`, label: `${q.code} · ${nameOf(q.partnerId)}`, startedAt: started, targetMs: target, endedAt: q.resolvedAt ?? null });
+  }
+  for (const d of supplierDisputes) {
+    const endedAt = d.status === 'resolved' ? [...d.decisions].sort((a, b) => (a.at < b.at ? 1 : -1))[0]?.at ?? null : null;
+    if (d.status === 'resolved' && !endedAt) continue;
+    items.push({ id: `sdisp:${d.id}`, category: 'supplier_dispute', relatedId: d.id, route: `/supplier-disputes?dispute=${d.id}`, label: `${d.code} · ${byId(suppliers, d.supplierId)?.name ?? ''}`, startedAt: d.roundStartedAt, targetMs: slaTargetOf(d.threatensHalt), endedAt });
+  }
+  for (const c of delayCases) {
+    if (!c.lateSince) continue;
+    const told = c.customerNotifiedAt && c.rootCause ? [c.customerNotifiedAt, c.causeTaggedAt ?? c.customerNotifiedAt].sort().pop()! : null;
+    const endedAt = c.recoveredAt ?? told;
+    const po = byId(supplierPurchaseOrders, c.poId);
+    items.push({ id: `delay:${c.id}`, category: 'delivery_delay', relatedId: c.id, route: `/delivery-delays?case=${c.id}`, label: po?.code ?? c.poId, startedAt: c.lateSince, targetMs: c.worstSeverity === 'critical' ? DELAY_ACTION_TARGET.critical : DELAY_ACTION_TARGET.normal, endedAt: endedAt ?? null });
+  }
+  return items;
+}
+
+function slaItemView(i: SlaItem, now: number): SlaItemView {
+  const ratio = slaRatioOf(i, now);
+  const status = slaStatusOf(i, now);
+  return { id: i.id, category: i.category, relatedId: i.relatedId, route: i.route, label: i.label, startedAt: i.startedAt, endedAt: i.endedAt, targetMs: i.targetMs, elapsedMs: slaElapsedOf(i, now), ratio: Math.round(ratio * 100) / 100, status, pause: slaPauseOf(i, now, null), severity: status === 'breached' || status === 'at_risk' ? severityForRatio(ratio) : null, score: Math.round(slaTriageScore(i, now) * 100) / 100 };
+}
+
+/** The target most of a process's timers are held to (some vary by case, e.g. a halt threat); null when nothing has run yet. */
+function slaCommonTarget(list: SlaItem[]): number | null {
+  const count = new Map<number, number>();
+  for (const i of list) { const k = Math.round(i.targetMs / 60_000) * 60_000; count.set(k, (count.get(k) ?? 0) + 1); }
+  return [...count.entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0]?.[0] ?? null;
+}
+
+function slaOverview(now: number): SlaOverviewView {
+  const items = slaItemsOf();
+  const since = now - days(SLA_WINDOW_DAYS);
+  const categories: SlaCategoryView[] = SLA_CATEGORIES.map((c) => ({
+    category: c.id, ownAlert: c.ownAlert, route: c.route, measure: c.measure, targetMs: slaCommonTarget(items.filter((i) => i.category === c.id)),
+    rollup: slaRollupOf(items, c.id, now, since), trend: slaTrendOf(items, c.id, now), target: slaTargetSignal(items, c.id, now, since),
+  }));
+  const open = items.filter((i) => !i.endedAt).map((i) => slaItemView(i, now)).sort((a, b) => b.score - a.score);
+  const breached = open.filter((i) => i.status === 'breached');
+  return JSON.parse(JSON.stringify({
+    categories, open, triage: breached.slice(0, SLA_TRIAGE_SHOWN),
+    totals: { open: open.length, breached: breached.length, atRisk: open.filter((i) => i.status === 'at_risk').length, categoriesBreaching: new Set(breached.map((i) => i.category)).size },
+    windowDays: SLA_WINDOW_DAYS, at: new Date(now).toISOString(),
+  })) as SlaOverviewView;
+}
+
+/** One alert per category whose process raises none of its own: how many are past target and how far. Raised again when it gets worse, resolved when none is over. Idempotent. */
+function syncSlaBreaches(now: number): void {
+  const items = slaItemsOf();
+  for (const c of SLA_CATEGORIES) {
+    if (c.ownAlert) continue;
+    const over = items.filter((i) => i.category === c.id && !i.endedAt && slaStatusOf(i, now) === 'breached');
+    const relatedId = `slacat:${c.id}`;
+    const existing = alerts.find((a) => a.titleKey === SLA_BREACH_TITLE && a.relatedId === relatedId && a.status !== 'resolved');
+    if (over.length === 0) {
+      if (existing) patchInPlace(alerts, existing.id, { status: 'resolved', resolvedBy: 'system', resolvedAt: new Date(now).toISOString(), resolutionNote: 'Nothing is past its target any more' });
+      continue;
+    }
+    const worst = over.reduce((m, i) => Math.max(m, slaRatioOf(i, now)), 0);
+    const severity = (['low', 'medium', 'high', 'critical'] as const)[Math.max(2, ['low', 'medium', 'high', 'critical'].indexOf(severityForRatio(worst)))];
+    const rank = { low: 0, medium: 1, high: 2, critical: 3 };
+    if (existing && rank[existing.severity] >= rank[severity]) continue;
+    if (existing) patchInPlace(alerts, existing.id, { status: 'resolved', resolvedBy: 'system', resolvedAt: new Date(now).toISOString(), resolutionNote: 'Raised again, now more serious' });
+    const raised = raiseAlert({ titleKey: SLA_BREACH_TITLE, context: `${c.id} · ${over.length} past target · worst ${Math.round(worst * 10) / 10}× the target`, severity, category: 'sla_breach', relatedId, sourceRoute: `/sla-monitor?category=${c.id}` });
+    logAutomatedAction({ sourceKey: 'sla.breach', triggeringCondition: `${over.length} ${c.id} timer(s) went past their target`, actionTaken: `Raised ${raised.code} for Admin`, affectedRecordId: raised.id, affectedRecordType: 'alert', subjectLabel: raised.code });
+  }
+}
+
 const heartbeatCommitments = { notifications: 0, alerts: 0 };
 const HEARTBEAT: { id: string; run: (now: number) => void }[] = [
   { id: 'followUpTasks', run: () => reconcileFollowUpTasks() },
@@ -3581,6 +3690,7 @@ const HEARTBEAT: { id: string; run: (now: number) => void }[] = [
   { id: 'delayCases', run: (now) => syncDelayCases(now) },
   { id: 'customRules', run: (now) => syncCustomRules(now) },
   { id: 'escalationMatrix', run: (now) => syncEscalationMatrix(now) },
+  { id: 'slaMonitor', run: (now) => syncSlaBreaches(now) },
   {
     id: 'stageInvoices',
     run: () => {
@@ -24868,6 +24978,8 @@ export const memoryRepository: Repository = {
 
   /* --------------------------------- Notification templates & channels (183) */
   getInternalNotifications: (userId) => simulateRead(() => { intAdmin(userId); return intOverview(Date.now()); }),
+  /* 185 — SLA monitor */
+  getSlaOverview: (userId) => simulateRead(() => { intAdmin(userId); return slaOverview(Date.now()); }),
   /* 184 — escalation matrix */
   getEscalationMatrix: (userId) => simulateRead(() => { intAdmin(userId); return escMatrixView(Date.now()); }),
   saveEscalationScenario: (userId, scenarioId, input) =>

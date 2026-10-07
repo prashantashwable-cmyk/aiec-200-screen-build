@@ -37,6 +37,7 @@ export interface UnitDef { id: string; category: string; name: string; route?: s
 export const UNITS: UnitDef[] = [
   { id: 'customRules', category: 'custom', name: 'Custom rules' },
   { id: 'escalationMatrix', category: 'commitments', name: 'Escalation matrix' },
+  { id: 'slaMonitor', category: 'commitments', name: 'SLA breach monitor' },
   { id: 'followUpTasks', category: 'commitments', name: 'Follow-up task reconciliation' },
   { id: 'paymentReminders', category: 'payments', name: 'Payment reminders' },
   { id: 'scheduledQuotations', category: 'communications', name: 'Scheduled quotation sends' },

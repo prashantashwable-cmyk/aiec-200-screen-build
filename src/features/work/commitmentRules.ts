@@ -299,6 +299,9 @@ function base(kind: CommitmentKind, type: CommitmentSubjectType, id: string) {
   return { key: `${kind}:${id}`, kind, subject: { type, id } };
 }
 
+/** How soon a late delivery's customer is told, and why it is late: sooner when the installation is what is held up. Read by the rule below and by the SLA monitor (185). */
+export const DELAY_ACTION_TARGET = { critical: hours(6), normal: hours(24) } as const;
+
 const ALERT_ACK_WINDOW: Record<AlertSeverity, number> = {
   critical: minutes(15),
   high: hours(1),
@@ -1040,7 +1043,7 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
           titleKey: 'work.title.delivery_delay_action',
           titleParams: { code: po?.code ?? '', site },
           // Sooner when the install is what is being held up.
-          dueAt: plus(c.lateSince, c.worstSeverity === 'critical' ? hours(6) : hours(24)),
+          dueAt: plus(c.lateSince, c.worstSeverity === 'critical' ? DELAY_ACTION_TARGET.critical : DELAY_ACTION_TARGET.normal),
           state: c.status === 'recovered' || (c.customerNotifiedAt && c.rootCause) ? ('done' as const) : ('open' as const),
           paused: false,
           completedAt: c.recoveredAt ?? c.customerNotifiedAt,

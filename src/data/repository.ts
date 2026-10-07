@@ -1,4 +1,5 @@
 import type { VaultKind } from '@/features/documents/vault';
+import type { CategoryRollup as SlaRollup, PauseReason as SlaPauseReason, SlaCategory, SlaStatus, TargetSignal as SlaTargetSignal, TrendDirection as SlaTrendDirection, TrendPoint as SlaTrendPoint } from '@/features/sla/consolidated';
 import type { ItemState, SignOffProblem } from '@/features/qc/mechanical';
 import type { ElecSignOffProblem, ElecState } from '@/features/qc/electrical';
 import type { DisputeDecision, SnagProblem, SnagSeverity } from '@/features/qc/snags';
@@ -7156,6 +7157,47 @@ export interface InternalNotificationsView {
 }
 export interface InternalTypeInput { urgency: InternalUrgency | null; roles: Record<string, InternalChannelSet> | null; enabled: boolean; content: Partial<Record<Language, InternalContent>> }
 
+/* ------------------------------------------------------------------ SLA monitor (185) */
+
+export interface SlaItemView {
+  id: string;
+  category: SlaCategory;
+  relatedId: string;
+  route: string;
+  label: string;
+  startedAt: string;
+  endedAt: string | null;
+  targetMs: number;
+  elapsedMs: number;
+  ratio: number;
+  status: SlaStatus;
+  pause: SlaPauseReason | null;
+  severity: AlertSeverity | null;
+  /** Consequence times how far over: how Admin is told where to start. */
+  score: number;
+}
+export interface SlaCategoryView {
+  category: SlaCategory;
+  ownAlert: boolean;
+  route: string;
+  measure: 'business' | 'calendar';
+  /** What most of its timers are held to; null before any has run. */
+  targetMs: number | null;
+  rollup: SlaRollup;
+  trend: { points: SlaTrendPoint[]; direction: SlaTrendDirection };
+  target: { signal: SlaTargetSignal; medianRatio: number | null; sample: number };
+}
+export interface SlaOverviewView {
+  categories: SlaCategoryView[];
+  /** Everything still running, the most pressing first. */
+  open: SlaItemView[];
+  /** The breaches to start with. */
+  triage: SlaItemView[];
+  totals: { open: number; breached: number; atRisk: number; categoriesBreaching: number };
+  windowDays: number;
+  at: string;
+}
+
 /* ------------------------------------------------------------------ Escalation matrix (184) */
 
 export interface EscalationBackupView { key: string; slot: number; contact: EscalationContact | null }
@@ -8666,6 +8708,8 @@ export interface Repository {
   getVaultBundle(userId: string): Promise<VaultDocument[]>;
   /** 174: the customer's payment picture for one project (the first needing attention when none is named). */
   getCustomerPayments(dealId: string | null, userId: string): Promise<CustomerPayView>;
+  /* 185 — one view over every SLA-governed process: status against target, the breaches to start with, the trend, and whether a target still fits. */
+  getSlaOverview(userId: string): Promise<SlaOverviewView>;
   /* 184 — the escalation matrix: who hears, in what order and after what delay, with a backup path and drills that prove it works. */
   getEscalationMatrix(userId: string): Promise<EscalationMatrixView>;
   saveEscalationScenario(userId: string, scenarioId: string, input: EscalationScenarioInput): Promise<EscalationScenarioView>;
