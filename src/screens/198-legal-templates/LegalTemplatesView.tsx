@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArrowsClockwise, ClipboardText, FileText, Handshake, MapPinLine, Plus, ShieldCheck, Truck, WarningCircle } from '@phosphor-icons/react';
@@ -127,7 +128,7 @@ function PropagationCard({ p, t, lang }: { p: LegalPropagation; t: T; lang: stri
             {p.items.map((i) => (
               <div key={i.contractId} className="row between wrap" style={{ gap: 8 }}>
                 <span className="t-sm">{i.siteName} <span className="t-xs t-muted">v{i.version}</span></span>
-                <span className="row gap-2" style={{ alignItems: 'center' }}><Badge tone={i.kind === 'behind' ? 'warning' : 'neutral'}>{t(`legal.prop.signature.${i.signature}`)}</Badge>{i.kind === 'behind' && <a className="t-xs" href={`/admin/deals/${i.dealId}/contract`} data-contract-link={i.dealId}>{t(K.prop.open)}</a>}</span>
+                <span className="row gap-2" style={{ alignItems: 'center' }}><Badge tone={i.kind === 'behind' ? 'warning' : 'neutral'}>{t(`legal.prop.signature.${i.signature}`)}</Badge>{i.kind === 'behind' && <Link className="t-xs" to={`/admin/deals/${i.dealId}/contract`} data-contract-link={i.dealId}>{t(K.prop.open)}</Link>}</span>
               </div>
             ))}
           </div>
@@ -453,7 +454,7 @@ function IssueCard({ r, s, t, lang, d, onCorrect }: { r: LegalReviewView; s: Leg
         <span className="t-xs">{t(K.issues.body, { days: FIX_DAYS })} {r.fixDueAt ? `(${t(K.issues.fixBy, { date: formatDate(r.fixDueAt, lang) })})` : ''}</span>
         <div className="row gap-2 wrap">
           {d.row.editable ? <Button size="sm" data-act="issue-correct" onClick={onCorrect}>{t(K.reviews.correct)}</Button> : <p className="t-xs">{t(K.reviews.correctElsewhere)}</p>}
-          {!d.row.editable && d.row.maintainedAt && <a className="ds-btn ds-btn--secondary ds-btn--sm" href={d.row.maintainedAt}>{t(K.sheet.openWhere)}</a>}
+          {!d.row.editable && d.row.maintainedAt && <Link className="ds-btn ds-btn--secondary ds-btn--sm" to={d.row.maintainedAt}>{t(K.sheet.openWhere)}</Link>}
           {!closing && <Button size="sm" variant="secondary" data-act="issue-close-open" onClick={() => setClosing(true)}>{t(K.reviews.close.open)}</Button>}
         </div>
         {closing && (
@@ -492,7 +493,7 @@ function DocSheet({ s, t, lang }: { s: LegalScreenState; t: T; lang: string }) {
             {d.row.editable ? <Line label="" value={<Badge tone="neutral">{t(K.row.written)}</Badge>} /> : (
               <>
                 <p className="t-xs t-muted">{t(K.sheet.maintained)}</p>
-                {d.row.maintainedAt && <div><a className="ds-btn ds-btn--secondary ds-btn--sm" data-maintained-link href={d.row.maintainedAt}>{t(K.sheet.openWhere)}</a></div>}
+                {d.row.maintainedAt && <div><Link className="ds-btn ds-btn--secondary ds-btn--sm" data-maintained-link to={d.row.maintainedAt}>{t(K.sheet.openWhere)}</Link></div>}
               </>
             )}
           </Section>

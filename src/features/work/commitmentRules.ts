@@ -166,6 +166,8 @@ export interface CommitmentSources {
   backups: { failures: { id: string; code: string; at: string }[]; test: { dueAt: string } | null; exports: { id: string; code: string; dueAt: string }[] };
   billing: { fixes: { id: string; name: string; dueAt: string }[]; renewals: { id: string; name: string; dueAt: string }[] };
   /** Wording a legal review found a problem with, and wording whose review is owed (198). */
+  /** Help articles that need a person (wrong, out of date, a link that no longer works) and topics people suggested (199). */
+  help: { content: { count: number; dueAt: string } | null; suggestions: { count: number; dueAt: string } | null };
   legal: { fixes: { id: string; name: string; dueAt: string }[]; reviews: { id: string; name: string; dueAt: string }[] };
   monitor: { checks: { adminId: string; day: string; dueAt: string }[]; concerns: { id: string; adminId: string; note: string; reviewAt: string }[] };
   permissions: { reviews: { id: string; name: string; screen: string; dueAt: string }[] };
@@ -2779,6 +2781,54 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
         actionRoute: `/legal-templates?doc=${encodeURIComponent(x.id)}`,
         oversightRoute: '/legal-templates?tab=reviews',
       }));
+    },
+  },
+  {
+    // Help that is wrong, out of date or points at a screen that is gone does more harm than none (199): one standing line for the whole library.
+    kind: 'help_content_attention',
+    nudgeBefore: days(2),
+    escalateAfter: days(7),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'automation',
+    collect(src) {
+      const c = src.help.content;
+      if (!c) return [];
+      return [{
+        ...base('help_content_attention', 'alert', 'help:content'),
+        ownerUserId: adminId(src),
+        titleKey: 'work.title.help_content_attention',
+        titleParams: { count: String(c.count) },
+        dueAt: c.dueAt,
+        state: 'open' as const,
+        paused: false,
+        actionRoute: '/help?tab=manage&flag=attention',
+        oversightRoute: '/help?tab=manage',
+      }];
+    },
+  },
+  {
+    // A topic someone asked for is how a content gap gets found: answered within a fortnight, even if the answer is no (199).
+    kind: 'help_suggestions_review',
+    nudgeBefore: days(2),
+    escalateAfter: days(7),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'automation',
+    collect(src) {
+      const c = src.help.suggestions;
+      if (!c) return [];
+      return [{
+        ...base('help_suggestions_review', 'alert', 'help:suggestions'),
+        ownerUserId: adminId(src),
+        titleKey: 'work.title.help_suggestions_review',
+        titleParams: { count: String(c.count) },
+        dueAt: c.dueAt,
+        state: 'open' as const,
+        paused: false,
+        actionRoute: '/help?tab=gaps',
+        oversightRoute: '/help?tab=gaps',
+      }];
     },
   },
   {

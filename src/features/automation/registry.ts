@@ -47,6 +47,7 @@ export const UNITS: UnitDef[] = [
   { id: 'privacy', category: 'commitments', name: 'Retention policy and data request deadlines' },
   { id: 'security', category: 'commitments', name: 'Session limits, second-step exceptions and recovery codes' },
   { id: 'billing', category: 'commitments', name: 'Service renewals, failed payments and card expiry' },
+  { id: 'help', category: 'customerCare', name: 'Help articles that are wrong or out of date, and suggested help topics' },
   { id: 'legal', category: 'commitments', name: 'Legal wording that takes effect, legal review findings and states with no wording yet' },
   { id: 'backups', category: 'commitments', name: 'Scheduled backups, retries, restore-point alerts and export files' },
   { id: 'followUpTasks', category: 'commitments', name: 'Follow-up task reconciliation' },

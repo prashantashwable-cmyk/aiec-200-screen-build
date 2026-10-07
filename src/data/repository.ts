@@ -1,5 +1,6 @@
 import type { VaultKind } from '@/features/documents/vault';
 import type { LegalCategory, LegalReviewState } from '@/features/legal/legal';
+import type { HelpFlag, SupportKind } from '@/features/help/help';
 import type { Advice, BillingState, TierDef, TierRow, Tradeoff } from '@/features/billing/billing';
 import type { BackupConfig, BackupConfigProblem, BackupFailure, RestoreState } from '@/features/backup/backup';
 import type { ExportProblem } from '@/features/backup/backup';
@@ -334,6 +335,8 @@ import type {
   BillingInvoice,
   TierChange,
   PaymentMethodChange,
+  HelpArticleVersion,
+  HelpText,
 } from './types';
 import type { SlotDay } from '@/features/logistics/deliverySlots';
 import type { ArrivalWindow, CapacityWeek, ReadinessStatus } from '@/features/logistics/transit';
@@ -7689,6 +7692,71 @@ export interface LegalRevisionPreview {
 export interface LegalReviewInput { docKey: string; reviewedOn: string; reviewer: string; firm: string; outcome: 'clear' | 'issues_found'; note: string; nextDueOn: string }
 export interface LegalStateInput { state: string; cities: string; authority: string; note: string }
 
+/* 199 — help, FAQ & support */
+export interface HelpRowView {
+  id: string;
+  code: string;
+  category: string;
+  roles: string[];
+  title: HelpText;
+  snippet: HelpText;
+  version: number;
+  updatedAt: string;
+  reviewedAt: string;
+  status: 'published' | 'draft' | 'retired';
+}
+export interface HelpSupportPath { kind: SupportKind; route: string | null }
+export interface HelpSearchView {
+  rows: HelpRowView[];
+  total: number;
+  categories: { id: string; count: number }[];
+  /** The roles whose help is being shown. */
+  roles: string[];
+  paths: HelpSupportPath[];
+  officePhone: string | null;
+  at: string;
+}
+export interface HelpSearchInput { q: string; category: string | null; role: string | null; offset: number; limit: number }
+export interface HelpStatsView {
+  helpful: number;
+  notHelpful: number;
+  reasons: Record<string, number>;
+  reports: number;
+  escalations: number;
+  lastFeedbackAt: string | null;
+  comments: { at: string; role: string; helpful: boolean; reason: string | null; text: string; version: number }[];
+}
+export interface HelpAdminBlock { stats: HelpStatsView; versions: HelpArticleVersion[]; status: 'published' | 'draft' | 'retired'; reviewedBy: string; reviewNote: string; flags: HelpFlag[]; relatedRoutes: string[]; brokenLinks: string[]; retiredNote: string | null }
+export interface HelpArticleView {
+  row: HelpRowView;
+  title: HelpText;
+  body: HelpText;
+  relatedRoutes: { path: string; known: boolean | null }[];
+  myFeedback: { helpful: boolean; reason: string | null; comment: string; version: number } | null;
+  paths: HelpSupportPath[];
+  officePhone: string | null;
+  admin: HelpAdminBlock | null;
+}
+export interface HelpFeedbackInput { helpful: boolean; reason: string | null; comment: string }
+export interface HelpSuggestionView { id: string; code: string; text: string; searchedFor: string; role: string; at: string; status: 'new' | 'planned' | 'done' | 'declined'; note?: string; articleId?: string; handledBy?: string; handledAt?: string }
+export interface HelpMissView { key: string; sample: string; count: number; roles: Record<string, number>; lastAt: string }
+export interface HelpAdminRow extends HelpRowView { flags: HelpFlag[]; helpful: number; notHelpful: number; reports: number; escalations: number; brokenLinks: string[]; reviewDueInDays: number }
+export interface HelpAdminFilter { q: string; flag: HelpFlag | 'attention' | 'all'; status: 'published' | 'draft' | 'retired' | 'all'; category: string | null; role: string | null; offset: number; limit: number }
+export interface HelpAdminView {
+  rows: HelpAdminRow[];
+  total: number;
+  counts: { published: number; draft: number; retired: number; attention: number; reviewDue: number; brokenLinks: number; reported: number; lowRate: number };
+  suggestions: HelpSuggestionView[];
+  misses: HelpMissView[];
+  roleCoverage: { role: string; users: number; articles: number }[];
+  roles: string[];
+  /** Names of custom roles, by id. */
+  roleNames: Record<string, string>;
+  catalogueKnown: boolean;
+  at: string;
+}
+export interface HelpArticleInput { id: string | null; category: string; roles: string[]; relatedRoutes: string[]; title: { en: string; hi: string; mr: string }; body: { en: string; hi: string; mr: string }; changeNote: string; publish: boolean }
+
 export interface TierChangeInput { tierId: string; when: 'renewal' | 'now'; reason: string; accepted: string[] }
 export interface TierChangePreview { fromTier: string; toTier: string; costFrom: number; costTo: number; avgDelta: number; tradeoffs: Tradeoff[]; lost: string[]; needConfirm: boolean; problems: string[]; effectiveAt: string }
 export interface PaymentMethodInput { last4: string; expiry: string }
@@ -9494,6 +9562,19 @@ export interface Repository {
   recordLegalReview(userId: string, input: LegalReviewInput): Promise<LegalDocDetail>;
   closeLegalIssue(userId: string, reviewId: string, note: string): Promise<LegalDocDetail>;
   saveLegalState(userId: string, input: LegalStateInput): Promise<LegalOverview>;
+  /* 199 — help, FAQ & support */
+  searchHelp(userId: string, input: HelpSearchInput): Promise<HelpSearchView>;
+  getHelpArticle(userId: string, articleId: string): Promise<HelpArticleView>;
+  rateHelpArticle(userId: string, articleId: string, input: HelpFeedbackInput): Promise<HelpArticleView>;
+  logHelpSearchMiss(userId: string, q: string): Promise<void>;
+  suggestHelpTopic(userId: string, text: string, searchedFor: string): Promise<void>;
+  trackHelpEscalation(userId: string, articleId: string | null, kind: SupportKind): Promise<void>;
+  getHelpAdmin(userId: string, filter: HelpAdminFilter): Promise<HelpAdminView>;
+  saveHelpArticle(userId: string, input: HelpArticleInput): Promise<HelpArticleView>;
+  reviewHelpArticle(userId: string, articleId: string, note: string): Promise<HelpArticleView>;
+  setHelpArticleStatus(userId: string, articleId: string, status: 'published' | 'draft' | 'retired', note: string): Promise<HelpArticleView>;
+  handleHelpSuggestion(userId: string, suggestionId: string, status: 'planned' | 'done' | 'declined', note: string, articleId: string | null): Promise<void>;
+  handleHelpMiss(userId: string, key: string, note: string): Promise<void>;
   /** Before a sign-in code is accepted: is this account's sign-in paused after repeated failures? */
   precheckSignIn(userId: string): Promise<{ paused: boolean; until: string | null }>;
   recordLoginFailure(userId: string): Promise<{ paused: boolean; until: string | null; recent: number }>;

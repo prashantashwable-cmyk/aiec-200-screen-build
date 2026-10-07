@@ -1033,7 +1033,7 @@ import type { OverrideKind, OverrideProblem } from '@/features/override/rules';
 import { GENESIS as AUDIT_GENESIS, codeOf as auditCodeOf, hashOf as auditHashOf, verifyChain as auditVerify } from '@/features/audit/chain';
 import { BOT_DRIFT_POINTS as HC_BOT_DRIFT, BOT_MIN_SAMPLE as HC_BOT_MIN, ENGINE_DOWN_MS as HC_ENGINE_DOWN, INTEGRATIONS as HC_INTEGRATIONS, MAX_PROBES as HC_MAX_PROBES, STATUS_WINDOW_MS as HC_STATUS_WINDOW, NOTE_MIN as HC_NOTE_MIN, PROBE_EVERY_MS as HC_PROBE_EVERY, WINDOW_MS as HC_WINDOW, agreementOf as hcAgreement, causeOf as hcCause, integrationDef as hcDef, isHttpUrl as hcIsUrl, judge as hcJudge, recovered as hcRecovered, sharedCauseOf as hcShared, uptimeOf as hcUptime } from '@/features/health/system';
 import type { IntegrationDef as HcDef, Observation as HcObservation, TechStatus } from '@/features/health/system';
-import type { AccessPackageView, ConsentRegisterFilter, ConsentRegisterView, DataRequestFilter, DataRequestListView, DataRequestView, DeletionPlanResult, FulfilInput, PrivacyPolicyView, RetentionPreview, RetentionView, SubjectDetailView, SubjectRowView, MonitorAbsenceInput, MonitorBackupCandidate, MonitorCheckInput, MonitorConfigInput, MonitorPanelView, MonitorSignalView, AccessGrantsView, CustomRoleInput, MatrixRowView, PermissionLogFilter, PermissionLogView, PermissionMatrixFilter, PermissionMatrixView, PermissionOverview, PermissionRoleView, PermissionUserRow, RoleChangeInput, RoleChangePreview, UserAccessView, UserOverrideInput, BrandView, CompanyProfilePreview, CompanyProfilePublishInput, CompanyProfileVersionView, CompanyProfileView, CompanyUsage, SandboxRunView, SandboxPromotionPreview, SandboxPromotionRow, SandboxRuleRef, SandboxScenarioView, SandboxView, IntegrationManagementView, IntegrationSetupView, IsolationCheckView, OverrideCandidate, OverrideConsoleView, OverridePreviewView, AuditDetailView, AuditExportView, AuditFilter, AuditRowView, AuditSearchView, BotHealthView, SystemHealthIntegrationView, SystemHealthView, SecurityOverview, SecurityRoleRow, SecurityAttentionItem, AccountSecurityRow, AccountListView, AuthSessionView, AccountRecoveryView, AccountSecurityView, SecurityEventsView, SecurityConfigPreview, TwoFactorExceptionList, SessionCheck, GateStep, SessionContextInput, BackupOverview, ExportPreview, ExportInput, ExportListView, BillingOverview, BillingServiceView, BillingServiceDetail, BillingMonthView, TierChangePreview, LegalDocDetail, LegalDocRow, LegalOverview, LegalPropagation, LegalPropagationItem, LegalReviewInput, LegalReviewView, LegalRevisionInput, LegalRevisionPreview, LegalRevisionView, LegalStateInput, LegalStateRow } from './repository';
+import type { AccessPackageView, ConsentRegisterFilter, ConsentRegisterView, DataRequestFilter, DataRequestListView, DataRequestView, DeletionPlanResult, FulfilInput, PrivacyPolicyView, RetentionPreview, RetentionView, SubjectDetailView, SubjectRowView, MonitorAbsenceInput, MonitorBackupCandidate, MonitorCheckInput, MonitorConfigInput, MonitorPanelView, MonitorSignalView, AccessGrantsView, CustomRoleInput, MatrixRowView, PermissionLogFilter, PermissionLogView, PermissionMatrixFilter, PermissionMatrixView, PermissionOverview, PermissionRoleView, PermissionUserRow, RoleChangeInput, RoleChangePreview, UserAccessView, UserOverrideInput, BrandView, CompanyProfilePreview, CompanyProfilePublishInput, CompanyProfileVersionView, CompanyProfileView, CompanyUsage, SandboxRunView, SandboxPromotionPreview, SandboxPromotionRow, SandboxRuleRef, SandboxScenarioView, SandboxView, IntegrationManagementView, IntegrationSetupView, IsolationCheckView, OverrideCandidate, OverrideConsoleView, OverridePreviewView, AuditDetailView, AuditExportView, AuditFilter, AuditRowView, AuditSearchView, BotHealthView, SystemHealthIntegrationView, SystemHealthView, SecurityOverview, SecurityRoleRow, SecurityAttentionItem, AccountSecurityRow, AccountListView, AuthSessionView, AccountRecoveryView, AccountSecurityView, SecurityEventsView, SecurityConfigPreview, TwoFactorExceptionList, SessionCheck, GateStep, SessionContextInput, BackupOverview, ExportPreview, ExportInput, ExportListView, BillingOverview, BillingServiceView, BillingServiceDetail, BillingMonthView, TierChangePreview, LegalDocDetail, LegalDocRow, LegalOverview, LegalPropagation, LegalPropagationItem, LegalReviewInput, LegalReviewView, LegalRevisionInput, LegalRevisionPreview, LegalRevisionView, LegalStateInput, LegalStateRow, HelpAdminFilter, HelpAdminView, HelpArticleInput, HelpArticleView, HelpFeedbackInput, HelpRowView, HelpSearchInput, HelpSearchView, HelpStatsView, HelpSupportPath } from './repository';
 import { SLA_CATEGORIES, WINDOW_DAYS as SLA_WINDOW_DAYS, elapsedMsOf as slaElapsedOf, pauseOf as slaPauseOf, ratioOf as slaRatioOf, rollupOf as slaRollupOf, statusOf as slaStatusOf, targetSignal as slaTargetSignal, trendOf as slaTrendOf, triageScore as slaTriageScore } from '@/features/sla/consolidated';
 import type { SlaItem } from '@/features/sla/consolidated';
 import type { SlaCategoryView, SlaItemView, SlaOverviewView } from './repository';
@@ -1061,7 +1061,14 @@ import {
   rereviewDueAt as LG_REREVIEW, reviewProblem as LG_REVIEW_PROBLEM, reviewStateOf as LG_REVIEW_STATE, revisionProblem as LG_REVISION_PROBLEM, stateProblem as LG_STATE_PROBLEM,
 } from '@/features/legal/legal';
 import type { LegalCategory } from '@/features/legal/legal';
-import type { LegalRevision, LegalReview, LegalState, ServiceSubscription, BillingInvoice, UsageMonth, TierChange, PaymentMethodChange, BackupRun, BackupConfigVersion, RestoreTest, ExportJob, AuthSession, SecurityEvent, TwoFactorEnrolment, TwoFactorException, AccountLock, AccountRecovery, SecurityPolicyVersion, TrustedPlace, GeoPoint, ConsentRecord, DataRequest, PrivacyPolicyVersion, RetentionPolicyVersion, RetentionRun, MonitorAbsence, MonitorCheck, MonitorConcern, MonitorConfig, CompanyProfileVersion, Role, CustomRole, PermissionChange, PermissionChangeKind, UserAccessOverride, SandboxBaseline, SandboxRun, SandboxScenario, IntegrationChange, IntegrationCredentialView, IntegrationSetup, AuditExportRecord, LeadStage, ManualOverride, IntegrationConfig, IntegrationIncident, IntegrationProbe, MessageStatus } from './types';
+import {
+  BUILT_IN_HELP_ROLES, COMMENT_MAX as HP_COMMENT_MAX, HELP_CATEGORIES as HP_CATS, HELP_REASONS as HP_REASONS, MISS_LIST_MIN as HP_MISS_LIST_MIN, NOTE_MIN as HP_NOTE_MIN, REVIEW_EVERY_DAYS as HP_REVIEW_DAYS, SUGGESTION_DUE_DAYS as HP_SUGGEST_DAYS,
+  SUGGEST_MAX as HP_SUGGEST_MAX, SUGGEST_MIN as HP_SUGGEST_MIN, SUGGEST_PER_DAY as HP_SUGGEST_PER_DAY, articleProblem as HP_ARTICLE_PROBLEM, flagsOf as HP_FLAGS, isForRole as HP_FOR_ROLE, loggableQuery as HP_LOGGABLE,
+  matchScore as HP_SCORE, normalizeQuery as HP_NORMALIZE, routeKnown as HP_ROUTE_KNOWN, supportPathsFor as HP_PATHS,
+} from '@/features/help/help';
+import type { HelpFlag } from '@/features/help/help';
+import { seedHelpArticles } from './helpSeed';
+import type { HelpArticle, HelpArticleVersion, HelpEscalation, HelpFeedback, HelpSearchMiss, HelpSuggestion, HelpText, LegalRevision, LegalReview, LegalState, ServiceSubscription, BillingInvoice, UsageMonth, TierChange, PaymentMethodChange, BackupRun, BackupConfigVersion, RestoreTest, ExportJob, AuthSession, SecurityEvent, TwoFactorEnrolment, TwoFactorException, AccountLock, AccountRecovery, SecurityPolicyVersion, TrustedPlace, GeoPoint, ConsentRecord, DataRequest, PrivacyPolicyVersion, RetentionPolicyVersion, RetentionRun, MonitorAbsence, MonitorCheck, MonitorConcern, MonitorConfig, CompanyProfileVersion, Role, CustomRole, PermissionChange, PermissionChangeKind, UserAccessOverride, SandboxBaseline, SandboxRun, SandboxScenario, IntegrationChange, IntegrationCredentialView, IntegrationSetup, AuditExportRecord, LeadStage, ManualOverride, IntegrationConfig, IntegrationIncident, IntegrationProbe, MessageStatus } from './types';
 import type { EscalationChainTier, EscalationChannel, EscalationContact, EscalationDelivery, EscalationDrill, EscalationDrillStep, EscalationLastResort, EscalationRun, EscalationScenarioConfig } from './types';
 import type { AlertEscalationView, EscalationGap, EscalationMatrixView, EscalationRunView, EscalationScenarioView } from './repository';
 import { VAULT_KINDS, validityState } from '@/features/documents/vault';
@@ -2918,6 +2925,7 @@ function commitmentSources(now: number): CommitmentSources {
     backups: bkSignals(now),
     billing: blSignals(now),
     legal: lgSignals(now),
+    help: hpSignals(now),
     tds: tdsObligations(Date.now()),
     exits: exitSignals(),
     handoverReviews: handoverSignals().reviews,
@@ -6171,6 +6179,162 @@ function lgRevisionPreview(input: LegalRevisionInput, now: number): LegalRevisio
   return { problem, immediate: LG_IMMEDIATE(input.effectiveFrom, now), previous, behind: affected.filter((a) => a.item.kind === 'behind').length, signedOlder: affected.filter((a) => a.item.kind === 'signed_older').length, sample: affected.map((a) => a.item).slice(0, 8), token: LG_HASH(t.id, input.state, ri) };
 }
 
+/* ------------------------------------------------------------------ 199 — help, FAQ & support */
+
+const helpArticles: HelpArticle[] = [];
+const helpFeedback: HelpFeedback[] = [];
+const helpSuggestions: HelpSuggestion[] = [];
+const helpMisses: HelpSearchMiss[] = [];
+const helpEscalations: HelpEscalation[] = [];
+const hpN = { art: 0, fb: 0, sg: 0, es: 0, seeded: false };
+const hpDay = 86_400_000;
+const hpIso = (ms: number): string => new Date(ms).toISOString();
+const hpCurrent = (a: HelpArticle): HelpArticleVersion => a.versions[a.versions.length - 1];
+const hpLetters = (s: string): number => s.replace(/[^\p{L}\p{N}]/gu, '').length;
+
+/** Seeds, built the first time they are needed. The articles are first drafts for the owner to check; the feedback and searches stand in for what people would have said. */
+function hpEnsure(): void {
+  if (hpN.seeded) return;
+  hpN.seeded = true;
+  const now = Date.now();
+  for (const s of seedHelpArticles) {
+    hpN.art += 1;
+    const at = hpIso(now - (s.reviewedDaysAgo + 20) * hpDay);
+    helpArticles.push({ id: s.id, code: `AIEC-HA-${1000 + hpN.art}`, category: s.category, roles: [...s.roles], relatedRoutes: [...s.routes], status: 'published', versions: [{ version: 1, title: { ...s.title }, body: { ...s.body }, changeNote: 'First version', byName: 'Prashant Vasant Wable', at }], reviewedAt: hpIso(now - s.reviewedDaysAgo * hpDay), reviewedBy: 'Prashant Vasant Wable', reviewNote: 'Checked against the screens', createdAt: at });
+  }
+  const fb = (articleId: string, helpful: boolean, role: string, reason: HelpFeedback['reason'], daysAgo: number, comment?: string): void => { hpN.fb += 1; helpFeedback.push({ id: `hf-${hpN.fb}`, articleId, version: 1, userId: `seed-${hpN.fb}`, role, helpful, ...(reason ? { reason } : {}), ...(comment ? { comment } : {}), at: hpIso(now - daysAgo * hpDay) }); };
+  for (let i = 0; i < 7; i += 1) fb('ha-3', true, 'customer', undefined, 3 + i);
+  fb('ha-3', false, 'customer', 'unclear', 4, 'I could not find the Pay button.');
+  fb('ha-4', false, 'customer', 'outdated', 6, 'The page it links to does not exist any more.');
+  fb('ha-4', false, 'customer', 'outdated', 5);
+  fb('ha-4', false, 'customer', 'wrong', 2, 'It took two days, not one.');
+  fb('ha-4', true, 'customer', undefined, 9);
+  for (let i = 0; i < 4; i += 1) fb('ha-8', true, 'surveyor', undefined, 5 + i);
+  const esc = (articleId: string | null, role: string, kind: HelpEscalation['kind'], daysAgo: number): void => { hpN.es += 1; helpEscalations.push({ id: `he-${hpN.es}`, articleId, role, kind, at: hpIso(now - daysAgo * hpDay) }); };
+  esc('ha-4', 'customer', 'chat', 5); esc('ha-4', 'customer', 'ticket', 3); esc('ha-4', 'customer', 'chat', 2); esc('ha-3', 'customer', 'call', 4);
+  hpN.sg += 1;
+  helpSuggestions.push({ id: 'hs-1', code: `AIEC-HS-${1000 + hpN.sg}`, text: 'How do I change the mobile number on my account?', searchedFor: 'change number', role: 'customer', userId: 'seed-1', at: hpIso(now - 4 * hpDay), status: 'new' });
+  helpMisses.push({ key: 'hotline number', sample: 'hotline number', count: 3, roles: { customer: 3 }, firstAt: hpIso(now - 12 * hpDay), lastAt: hpIso(now - 1 * hpDay) });
+  helpMisses.push({ key: 'gst invoice', sample: 'GST invoice', count: 2, roles: { customer: 1, supplier: 1 }, firstAt: hpIso(now - 9 * hpDay), lastAt: hpIso(now - 3 * hpDay) });
+}
+
+const hpKnownRoles = (): string[] => [...BUILT_IN_HELP_ROLES, ...customRoles.filter((c) => !c.retired).map((c) => c.id)];
+const hpRolesOf = (u: User): string[] => [u.role, ...(userRoleAssign.get(u.id) ?? [])];
+const hpPublic = (u: User): User => { const x = byId(users, u.id); if (!x) throw new RepositoryError('forbidden'); return x; };
+const hpUser = (userId: string): User => { const u = byId(users, userId); if (!u) throw new RepositoryError('forbidden'); return u; };
+const hpAdmin = (userId: string): User => { const u = byId(users, userId); if (u?.role !== 'admin') throw new RepositoryError('forbidden'); return u; };
+const hpOffice = (): string | null => users.find((x) => x.role === 'admin' && x.status === 'active')?.phone ?? null;
+const hpKnownRoute = (path: string): boolean | null => (accessCatalogue.length === 0 ? null : HP_ROUTE_KNOWN(path, accessCatalogue.map((r) => r.path)));
+const hpSince = (a: HelpArticle): string => (hpCurrent(a).at > a.reviewedAt ? hpCurrent(a).at : a.reviewedAt);
+
+function hpStats(a: HelpArticle): HelpStatsView {
+  const mine = helpFeedback.filter((f) => f.articleId === a.id);
+  const cur = mine.filter((f) => f.version === hpCurrent(a).version);
+  const since = hpSince(a);
+  const reasons: Record<string, number> = {};
+  for (const f of cur.filter((x) => !x.helpful && x.reason)) reasons[f.reason as string] = (reasons[f.reason as string] ?? 0) + 1;
+  return {
+    helpful: cur.filter((f) => f.helpful).length, notHelpful: cur.filter((f) => !f.helpful).length, reasons,
+    reports: cur.filter((f) => !f.helpful && (f.reason === 'wrong' || f.reason === 'outdated') && f.at > since).length,
+    escalations: helpEscalations.filter((e) => e.articleId === a.id).length,
+    lastFeedbackAt: mine.map((f) => f.at).sort().pop() ?? null,
+    comments: mine.filter((f) => f.comment).sort((x, y) => (x.at < y.at ? 1 : -1)).slice(0, 8).map((f) => ({ at: f.at, role: f.role, helpful: f.helpful, reason: f.reason ?? null, text: f.comment as string, version: f.version })),
+  };
+}
+function hpBrokenLinks(a: HelpArticle): string[] { return a.relatedRoutes.filter((r) => hpKnownRoute(r) === false); }
+function hpFlags(a: HelpArticle, now: number): HelpFlag[] {
+  const st = hpStats(a);
+  return HP_FLAGS({ status: a.status, reviewedAt: a.reviewedAt, reviewEveryDays: HP_REVIEW_DAYS, brokenLinks: hpBrokenLinks(a).length, reports: st.reports, helpful: st.helpful, total: st.helpful + st.notHelpful }, now);
+}
+const hpSnip = (t: HelpText): HelpText => { const cut = (s: string | undefined): string | undefined => (s === undefined ? undefined : s.length > 150 ? `${s.slice(0, 150).trimEnd()}…` : s); return { en: cut(t.en) as string, ...(t.hi ? { hi: cut(t.hi) } : {}), ...(t.mr ? { mr: cut(t.mr) } : {}) }; };
+function hpRow(a: HelpArticle): HelpRowView {
+  const v = hpCurrent(a);
+  return { id: a.id, code: a.code, category: a.category, roles: [...a.roles], title: { ...v.title }, snippet: hpSnip(v.body), version: v.version, updatedAt: v.at, reviewedAt: a.reviewedAt, status: a.status };
+}
+const hpPaths = (u: User): HelpSupportPath[] => HP_PATHS(u.role);
+
+function hpArticleView(a: HelpArticle, u: User, now: number): HelpArticleView {
+  const v = hpCurrent(a);
+  const mine = helpFeedback.find((f) => f.articleId === a.id && f.userId === u.id && f.version === v.version);
+  const isAdmin = u.role === 'admin';
+  return JSON.parse(JSON.stringify({
+    row: hpRow(a), title: v.title, body: v.body,
+    relatedRoutes: a.relatedRoutes.map((p) => ({ path: p, known: hpKnownRoute(p) })),
+    myFeedback: mine ? { helpful: mine.helpful, reason: mine.reason ?? null, comment: mine.comment ?? '', version: mine.version } : null,
+    paths: hpPaths(u), officePhone: hpOffice(),
+    admin: isAdmin ? { stats: hpStats(a), versions: [...a.versions].reverse(), status: a.status, reviewedBy: a.reviewedBy, reviewNote: a.reviewNote, flags: hpFlags(a, now), relatedRoutes: [...a.relatedRoutes], brokenLinks: hpBrokenLinks(a), retiredNote: a.retiredNote ?? null } : null,
+  })) as HelpArticleView;
+}
+
+function hpVisible(u: User, role: string | null): HelpArticle[] {
+  hpEnsure();
+  const roles = u.role === 'admin' && role ? (role === '*' ? null : [role]) : hpRolesOf(u);
+  return helpArticles.filter((a) => a.status === 'published' && (roles === null || HP_FOR_ROLE(a.roles, roles)));
+}
+function hpSearch(u: User, input: HelpSearchInput): { all: HelpArticle[]; matched: { a: HelpArticle; score: number }[] } {
+  const all = hpVisible(u, input.role);
+  const q = input.q.trim();
+  const matched = all.map((a) => {
+    const v = hpCurrent(a);
+    const score = q ? Math.max(...(['en', 'hi', 'mr'] as const).map((l) => HP_SCORE(v.title[l] ?? '', v.body[l] ?? '', q))) : 1;
+    return { a, score };
+  }).filter((x) => x.score > 0);
+  return { all, matched };
+}
+
+function hpAdminView(filter: HelpAdminFilter, now: number): HelpAdminView {
+  hpEnsure();
+  const needle = filter.q.trim().toLowerCase();
+  const all = helpArticles.map((a) => ({ a, flags: hpFlags(a, now), st: hpStats(a) }));
+  const published = all.filter((x) => x.a.status === 'published');
+  const rows = all.filter(({ a, flags }) => (filter.status === 'all' || a.status === filter.status)
+    && (!filter.category || a.category === filter.category)
+    && (!filter.role || a.roles.includes(filter.role))
+    && (filter.flag === 'all' || (filter.flag === 'attention' ? flags.some((f) => f !== 'draft') : flags.includes(filter.flag)))
+    && (!needle || JSON.stringify(hpCurrent(a)).toLowerCase().includes(needle) || a.code.toLowerCase().includes(needle)))
+    .sort((x, y) => (y.flags.filter((f) => f !== 'draft').length - x.flags.filter((f) => f !== 'draft').length) || (x.a.code < y.a.code ? -1 : 1));
+  const known = hpKnownRoles();
+  const userRoles = (r: string): number => users.filter((u) => u.status === 'active' && hpRolesOf(u).includes(r)).length;
+  return JSON.parse(JSON.stringify({
+    rows: rows.slice(filter.offset, filter.offset + filter.limit).map(({ a, flags, st }) => ({ ...hpRow(a), flags, helpful: st.helpful, notHelpful: st.notHelpful, reports: st.reports, escalations: st.escalations, brokenLinks: hpBrokenLinks(a), reviewDueInDays: Math.round((Date.parse(a.reviewedAt) + HP_REVIEW_DAYS * hpDay - now) / hpDay) })),
+    total: rows.length,
+    counts: { published: published.length, draft: all.filter((x) => x.a.status === 'draft').length, retired: all.filter((x) => x.a.status === 'retired').length, attention: published.filter((x) => x.flags.length > 0).length, reviewDue: published.filter((x) => x.flags.includes('review_due')).length, brokenLinks: published.filter((x) => x.flags.includes('broken_link')).length, reported: published.filter((x) => x.flags.includes('reported')).length, lowRate: published.filter((x) => x.flags.includes('low_rate')).length },
+    suggestions: [...helpSuggestions].sort((a, b) => (a.status === 'new' ? 0 : 1) - (b.status === 'new' ? 0 : 1) || (a.at < b.at ? 1 : -1)).map((s) => ({ id: s.id, code: s.code, text: s.text, searchedFor: s.searchedFor, role: s.role, at: s.at, status: s.status, ...(s.note ? { note: s.note } : {}), ...(s.articleId ? { articleId: s.articleId } : {}), ...(s.handledBy ? { handledBy: s.handledBy, handledAt: s.handledAt } : {}) })),
+    misses: helpMisses.filter((m) => !m.handled && m.count >= HP_MISS_LIST_MIN).sort((a, b) => b.count - a.count).map((m) => ({ key: m.key, sample: m.sample, count: m.count, roles: m.roles, lastAt: m.lastAt })),
+    roleCoverage: ['admin', ...known.filter((r) => r !== 'admin')].map((r) => ({ role: r, users: userRoles(r), articles: published.filter((x) => HP_FOR_ROLE(x.a.roles, [r])).length })),
+    roles: known, roleNames: Object.fromEntries(customRoles.map((c) => [c.id, c.name])), catalogueKnown: accessCatalogue.length > 0, at: hpIso(now),
+  })) as HelpAdminView;
+}
+
+function hpAlerts(now: number): void {
+  hpEnsure();
+  const done = (rel: string, note: string): void => { const a = alerts.find((x) => x.relatedId === rel && x.status !== 'resolved'); if (a) patchInPlace(alerts, a.id, { status: 'resolved', resolvedBy: 'system', resolvedAt: hpIso(now), resolutionNote: note }); };
+  for (const a of helpArticles) {
+    const flags = hpFlags(a, now);
+    const title = hpCurrent(a).title.en;
+    if (flags.includes('reported')) raiseAlert({ titleKey: 'help.alert.reported', context: `${a.code} ${title}: people say it is wrong or out of date`, severity: 'medium', category: 'automation', relatedId: `help:rep:${a.id}`, sourceRoute: `/help?tab=manage&article=${a.id}` }); else done(`help:rep:${a.id}`, 'The article was changed or reviewed');
+    if (flags.includes('broken_link')) raiseAlert({ titleKey: 'help.alert.brokenLink', context: `${a.code} ${title}: it points at a screen that no longer exists (${hpBrokenLinks(a).join(', ')})`, severity: 'low', category: 'automation', relatedId: `help:link:${a.id}`, sourceRoute: `/help?tab=manage&article=${a.id}` }); else done(`help:link:${a.id}`, 'Every link works again');
+  }
+  const open = helpSuggestions.filter((s) => s.status === 'new').length;
+  if (open > 0) raiseAlert({ titleKey: 'help.alert.suggestions', context: `${open} suggested help topic${open === 1 ? '' : 's'} waiting`, severity: 'low', category: 'automation', relatedId: 'help:suggestions', sourceRoute: '/help?tab=gaps' }); else done('help:suggestions', 'No suggestion is waiting');
+}
+const syncHelp = (now: number): void => hpAlerts(now);
+
+function hpSignals(now: number): { content: { count: number; dueAt: string } | null; suggestions: { count: number; dueAt: string } | null } {
+  hpEnsure();
+  const flagged = helpArticles.filter((a) => hpFlags(a, now).some((f) => f !== 'draft'));
+  const dueOf = (a: HelpArticle): number => {
+    const flags = hpFlags(a, now);
+    if (flags.includes('review_due')) return Date.parse(a.reviewedAt) + (HP_REVIEW_DAYS + 7) * hpDay;
+    return Date.parse(hpSince(a)) + 7 * hpDay;
+  };
+  const newSug = helpSuggestions.filter((s) => s.status === 'new');
+  return {
+    content: flagged.length ? { count: flagged.length, dueAt: hpIso(Math.min(...flagged.map(dueOf))) } : null,
+    suggestions: newSug.length ? { count: newSug.length, dueAt: hpIso(Math.min(...newSug.map((s) => Date.parse(s.at))) + HP_SUGGEST_DAYS * hpDay) } : null,
+  };
+}
+
 const heartbeatCommitments = { notifications: 0, alerts: 0 };
 const HEARTBEAT: { id: string; run: (now: number) => void }[] = [
   { id: 'followUpTasks', run: () => reconcileFollowUpTasks() },
@@ -6239,6 +6403,7 @@ const HEARTBEAT: { id: string; run: (now: number) => void }[] = [
   { id: 'backups', run: (now) => syncBackups(now) },
   { id: 'billing', run: (now) => syncBilling(now) },
   { id: 'legal', run: (now) => syncLegal(now) },
+  { id: 'help', run: (now) => syncHelp(now) },
   {
     id: 'stageInvoices',
     run: () => {
@@ -28744,6 +28909,154 @@ export const memoryRepository: Repository = {
       }
       lgAlerts(now);
       return lgOverview(now);
+    }),
+
+  /* 199 — help, FAQ & support */
+  searchHelp: (userId, input) =>
+    simulateRead(() => {
+      const u = hpUser(userId);
+      const { matched } = hpSearch(u, input);
+      const inCat = input.category ? matched.filter((x) => x.a.category === input.category) : matched;
+      const sorted = [...inCat].sort((x, y) => y.score - x.score || HP_CATS.indexOf(x.a.category as (typeof HP_CATS)[number]) - HP_CATS.indexOf(y.a.category as (typeof HP_CATS)[number]) || (x.a.code < y.a.code ? -1 : 1));
+      const roles = u.role === 'admin' && input.role ? (input.role === '*' ? hpKnownRoles() : [input.role]) : hpRolesOf(u);
+      return JSON.parse(JSON.stringify({ rows: sorted.slice(input.offset, input.offset + input.limit).map((x) => hpRow(x.a)), total: sorted.length, categories: HP_CATS.map((id) => ({ id, count: matched.filter((x) => x.a.category === id).length })).filter((c) => c.count > 0), roles, paths: hpPaths(u), officePhone: hpOffice(), at: hpIso(Date.now()) })) as HelpSearchView;
+    }),
+  getHelpArticle: (userId, articleId) =>
+    simulateRead(() => {
+      const u = hpUser(userId);
+      hpEnsure();
+      const a = byId(helpArticles, articleId);
+      if (!a || (u.role !== 'admin' && !(a.status === 'published' && HP_FOR_ROLE(a.roles, hpRolesOf(u))))) throw new RepositoryError('not_found');
+      return hpArticleView(a, u, Date.now());
+    }),
+  rateHelpArticle: (userId, articleId, input) =>
+    simulateWrite(() => {
+      const u = hpUser(userId);
+      hpEnsure();
+      const a = byId(helpArticles, articleId);
+      if (!a || (u.role !== 'admin' && !(a.status === 'published' && HP_FOR_ROLE(a.roles, hpRolesOf(u))))) throw new RepositoryError('not_found');
+      if (!input.helpful && !input.reason) throw new RepositoryError('reason_required');
+      if (!input.helpful && !HP_REASONS.includes(input.reason as HelpFeedback['reason'] & string)) throw new RepositoryError('reason_unknown');
+      const comment = input.comment.trim();
+      if (comment.length > HP_COMMENT_MAX) throw new RepositoryError('comment_long');
+      const now = Date.now();
+      const version = hpCurrent(a).version;
+      const have = helpFeedback.find((f) => f.articleId === a.id && f.userId === u.id && f.version === version);
+      const rec = { helpful: input.helpful, ...(input.helpful ? {} : { reason: input.reason as HelpFeedback['reason'] }), ...(comment ? { comment } : {}), at: hpIso(now) };
+      if (have) { const i = helpFeedback.indexOf(have); helpFeedback[i] = { id: have.id, articleId: a.id, version, userId: u.id, role: u.role, ...rec }; } else { hpN.fb += 1; helpFeedback.push({ id: `hf-${hpN.fb}`, articleId: a.id, version, userId: u.id, role: u.role, ...rec }); }
+      hpAlerts(now);
+      return hpArticleView(a, u, now);
+    }),
+  logHelpSearchMiss: (userId, q) =>
+    simulateWrite(() => {
+      const u = hpUser(userId);
+      if (!HP_LOGGABLE(q)) return;
+      if (hpSearch(u, { q, category: null, role: null, offset: 0, limit: 1 }).matched.length > 0) return;
+      const key = HP_NORMALIZE(q);
+      const at = hpIso(Date.now());
+      const have = helpMisses.find((m) => m.key === key);
+      if (have) { have.count += 1; have.roles[u.role] = (have.roles[u.role] ?? 0) + 1; have.lastAt = at; if (have.handled) delete have.handled; } else helpMisses.push({ key, sample: q.trim(), count: 1, roles: { [u.role]: 1 }, firstAt: at, lastAt: at });
+    }),
+  suggestHelpTopic: (userId, text, searchedFor) =>
+    simulateWrite(() => {
+      const u = hpUser(userId);
+      hpEnsure();
+      const t = text.trim();
+      if (hpLetters(t) < HP_SUGGEST_MIN) throw new RepositoryError('text_short');
+      if (t.length > HP_SUGGEST_MAX) throw new RepositoryError('text_long');
+      const now = Date.now();
+      if (helpSuggestions.filter((s) => s.userId === u.id && now - Date.parse(s.at) < hpDay).length >= HP_SUGGEST_PER_DAY) throw new RepositoryError('too_many');
+      hpN.sg += 1;
+      helpSuggestions.push({ id: `hs-${hpN.sg}`, code: `AIEC-HS-${1000 + hpN.sg}`, text: t, searchedFor: searchedFor.trim().slice(0, 60), role: u.role, userId: u.id, at: hpIso(now), status: 'new' });
+      hpAlerts(now);
+    }),
+  trackHelpEscalation: (userId, articleId, kind) =>
+    simulateWrite(() => {
+      const u = hpUser(userId);
+      hpEnsure();
+      if (!['chat', 'ticket', 'call', 'messages', 'safety'].includes(kind)) throw new RepositoryError('kind_unknown');
+      if (articleId && !byId(helpArticles, articleId)) throw new RepositoryError('not_found');
+      hpN.es += 1;
+      helpEscalations.push({ id: `he-${hpN.es}`, articleId, role: u.role, kind, at: hpIso(Date.now()) });
+    }),
+  getHelpAdmin: (userId, filter) => simulateRead(() => { hpAdmin(userId); return hpAdminView(filter, Date.now()); }),
+  saveHelpArticle: (userId, input) =>
+    simulateWrite(() => {
+      const admin = hpAdmin(userId);
+      hpEnsure();
+      const now = Date.now();
+      const existing = input.id ? byId(helpArticles, input.id) : undefined;
+      if (input.id && !existing) throw new RepositoryError('not_found');
+      const clean = (t: { en: string; hi: string; mr: string }): { en: string; hi: string; mr: string } => ({ en: t.en.trim(), hi: t.hi.trim(), mr: t.mr.trim() });
+      const title = clean(input.title);
+      const body = clean(input.body);
+      const cur = existing ? hpCurrent(existing) : null;
+      const textChanged = !cur || JSON.stringify([cur.title.en, cur.title.hi ?? '', cur.title.mr ?? '', cur.body.en, cur.body.hi ?? '', cur.body.mr ?? '']) !== JSON.stringify([title.en, title.hi, title.mr, body.en, body.hi, body.mr]);
+      const problem = HP_ARTICLE_PROBLEM({ category: input.category, roles: input.roles, relatedRoutes: input.relatedRoutes, title, body, changeNote: input.changeNote }, hpKnownRoles(), textChanged);
+      if (problem) throw new RepositoryError(problem);
+      const toText = (t: { en: string; hi: string; mr: string }): HelpText => ({ en: t.en, ...(t.hi ? { hi: t.hi } : {}), ...(t.mr ? { mr: t.mr } : {}) });
+      const roles = [...new Set(input.roles)];
+      const routes = [...new Set(input.relatedRoutes.map((r) => r.trim()).filter(Boolean))];
+      if (!existing) {
+        hpN.art += 1;
+        const a: HelpArticle = { id: `ha-${hpN.art}`, code: `AIEC-HA-${1000 + hpN.art}`, category: input.category, roles, relatedRoutes: routes, status: input.publish ? 'published' : 'draft', versions: [{ version: 1, title: toText(title), body: toText(body), changeNote: input.changeNote.trim(), byName: admin.name, at: hpIso(now) }], reviewedAt: hpIso(now), reviewedBy: admin.name, reviewNote: 'Written and checked by the author', createdAt: hpIso(now) };
+        helpArticles.push(a);
+        hpAlerts(now);
+        return hpArticleView(a, admin, now);
+      }
+      const versions = textChanged ? [...existing.versions, { version: (cur as HelpArticleVersion).version + 1, title: toText(title), body: toText(body), changeNote: input.changeNote.trim(), byName: admin.name, at: hpIso(now) }] : existing.versions;
+      const saved = patchInPlace(helpArticles, existing.id, { category: input.category, roles, relatedRoutes: routes, versions });
+      hpAlerts(now);
+      return hpArticleView(saved, admin, now);
+    }),
+  reviewHelpArticle: (userId, articleId, note) =>
+    simulateWrite(() => {
+      const admin = hpAdmin(userId);
+      hpEnsure();
+      const a = byId(helpArticles, articleId);
+      if (!a) throw new RepositoryError('not_found');
+      if (hpLetters(note) < HP_NOTE_MIN) throw new RepositoryError('note_short');
+      const now = Date.now();
+      const saved = patchInPlace(helpArticles, a.id, { reviewedAt: hpIso(now), reviewedBy: admin.name, reviewNote: note.trim() });
+      hpAlerts(now);
+      return hpArticleView(saved, admin, now);
+    }),
+  setHelpArticleStatus: (userId, articleId, status, note) =>
+    simulateWrite(() => {
+      const admin = hpAdmin(userId);
+      hpEnsure();
+      const a = byId(helpArticles, articleId);
+      if (!a) throw new RepositoryError('not_found');
+      if (!['published', 'draft', 'retired'].includes(status)) throw new RepositoryError('status_unknown');
+      if (status === a.status) throw new RepositoryError('no_change');
+      if (status !== 'draft' && hpLetters(note) < HP_NOTE_MIN) throw new RepositoryError('note_short');
+      const now = Date.now();
+      const saved = patchInPlace(helpArticles, a.id, { status, ...(status === 'retired' ? { retiredNote: note.trim() } : {}), ...(status === 'published' ? { reviewedAt: hpIso(now), reviewedBy: admin.name, reviewNote: note.trim() } : {}) });
+      hpAlerts(now);
+      return hpArticleView(saved, admin, now);
+    }),
+  handleHelpSuggestion: (userId, suggestionId, status, note, articleId) =>
+    simulateWrite(() => {
+      const admin = hpAdmin(userId);
+      hpEnsure();
+      const sg = byId(helpSuggestions, suggestionId);
+      if (!sg) throw new RepositoryError('not_found');
+      if (!['planned', 'done', 'declined'].includes(status)) throw new RepositoryError('status_unknown');
+      if (hpLetters(note) < HP_NOTE_MIN) throw new RepositoryError('note_short');
+      if (status === 'done' && !articleId) throw new RepositoryError('article_required');
+      if (articleId && !byId(helpArticles, articleId)) throw new RepositoryError('not_found');
+      const now = Date.now();
+      patchInPlace(helpSuggestions, sg.id, { status, note: note.trim(), ...(articleId ? { articleId } : {}), handledBy: admin.name, handledAt: hpIso(now) });
+      hpAlerts(now);
+    }),
+  handleHelpMiss: (userId, key, note) =>
+    simulateWrite(() => {
+      const admin = hpAdmin(userId);
+      hpEnsure();
+      const m = helpMisses.find((x) => x.key === key);
+      if (!m) throw new RepositoryError('not_found');
+      if (hpLetters(note) < HP_NOTE_MIN) throw new RepositoryError('note_short');
+      m.handled = { byName: admin.name, at: hpIso(Date.now()), note: note.trim() };
     }),
 
   /* 189 — integration management */

@@ -5060,7 +5060,7 @@ export type CommitmentKind =
   | 'exit_dispute_decide'
   | 'tier_review_due'
   | 'certification_renewal'
-  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup' | 'support_chat_reply' | 'feedback_outreach' | 'feedback_recognition' | 'referral_reward' | 'automation_pause_review' | 'escalation_drill_due' | 'escalation_gap_fix' | 'integration_followup' | 'integration_credential_rotation' | 'sandbox_promotion_pending' | 'sandbox_library_review' | 'company_profile_legal_verify' | 'permission_override_review' | 'monitor_daily_check' | 'monitor_concern_followup' | 'privacy_request_respond' | 'privacy_policy_notice' | 'privacy_retention_review' | 'security_place_review' | 'security_2fa_exception_decide' | 'security_2fa_exception_review' | 'security_account_recovery' | 'backup_failure_followup' | 'backup_restore_test' | 'export_collect' | 'billing_payment_fix' | 'billing_renewal_due' | 'legal_issue_fix' | 'legal_review_due'
+  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup' | 'support_chat_reply' | 'feedback_outreach' | 'feedback_recognition' | 'referral_reward' | 'automation_pause_review' | 'escalation_drill_due' | 'escalation_gap_fix' | 'integration_followup' | 'integration_credential_rotation' | 'sandbox_promotion_pending' | 'sandbox_library_review' | 'company_profile_legal_verify' | 'permission_override_review' | 'monitor_daily_check' | 'monitor_concern_followup' | 'privacy_request_respond' | 'privacy_policy_notice' | 'privacy_retention_review' | 'security_place_review' | 'security_2fa_exception_decide' | 'security_2fa_exception_review' | 'security_account_recovery' | 'backup_failure_followup' | 'backup_restore_test' | 'export_collect' | 'billing_payment_fix' | 'billing_renewal_due' | 'legal_issue_fix' | 'legal_review_due' | 'help_content_attention' | 'help_suggestions_review'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'
@@ -6341,3 +6341,32 @@ export interface LegalState {
   note: string;
   events: { at: string; byName: string; kind: 'added' | 'cities_added' | 'authority_changed'; note: string }[];
 }
+
+/* ------------------------------------------------------------------ Help, FAQ & support (199) */
+
+export interface HelpText { en: string; hi?: string; mr?: string }
+export interface HelpArticleVersion { version: number; title: HelpText; body: HelpText; changeNote: string; byName: string; at: string }
+/**
+ * One self-service help article (199). Role-tagged by free strings (a built-in role, a custom role's id, or `all`) so a role added later needs no change here;
+ * the text is versioned and never edited in place, and the article is looked at again on its own rhythm and whenever people say it is wrong.
+ */
+export interface HelpArticle {
+  id: string;
+  code: string;
+  category: string;
+  roles: string[];
+  relatedRoutes: string[];
+  status: 'published' | 'draft' | 'retired';
+  versions: HelpArticleVersion[];
+  reviewedAt: string;
+  reviewedBy: string;
+  reviewNote: string;
+  createdAt: string;
+  retiredNote?: string;
+}
+export type HelpReason = 'wrong' | 'outdated' | 'unclear' | 'missing_steps' | 'other';
+export interface HelpFeedback { id: string; articleId: string; version: number; userId: string; role: string; helpful: boolean; reason?: HelpReason; comment?: string; at: string }
+export interface HelpSuggestion { id: string; code: string; text: string; searchedFor: string; role: string; userId: string; at: string; status: 'new' | 'planned' | 'done' | 'declined'; note?: string; articleId?: string; handledBy?: string; handledAt?: string }
+/** A search that found nothing, kept without who searched: the content gaps people actually hit. */
+export interface HelpSearchMiss { key: string; sample: string; count: number; roles: Record<string, number>; firstAt: string; lastAt: string; handled?: { byName: string; at: string; note: string } }
+export interface HelpEscalation { id: string; articleId: string | null; role: string; kind: 'chat' | 'ticket' | 'call' | 'messages' | 'safety'; at: string }
