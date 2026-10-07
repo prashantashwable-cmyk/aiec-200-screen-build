@@ -1016,6 +1016,8 @@ import { MANY_AT as WF_MANY_AT, MAX_PER_RUN as WF_MAX_PER_RUN, conflictsOf as wf
 import type { RecordValues, RuleDraft, SubjectId as WfSubject } from '@/features/automation/customRules';
 import { CHANNELS as INT_CHANNELS, CORE_TYPES as INT_CORE, DEFAULT_URGENCY_CHANNELS as INT_DEFAULTS, NO_CHANNELS as INT_NONE, atLeast as intAtLeast, channelProblems as intChannelProblems, contentProblems as intContentProblems, fatigueOf as intFatigueOf, isBlocking as intIsBlocking, reducesReach as intReducesReach, severityFloorOf as intSeverityFloor, urgencyOfSeverity as intUrgencyOfSeverity } from '@/features/notifications/internal';
 import type { Urgency as IntUrgency } from '@/features/notifications/internal';
+import { DEFAULT_TOKENS as CP_DEFAULT_TOKENS, REASON_MIN_COSMETIC as CP_REASON_COSMETIC, REASON_MIN_LEGAL as CP_REASON_LEGAL, NOTE_MIN as CP_NOTE_MIN, addressLine as cpAddressLine, changesOf as cpChangesOf, contrastChecks as cpContrast, draftHash as cpDraftHash, effectiveProblem as cpEffectiveProblem, kindOf as cpKindOf, lettersOf as cpLetters, profileProblems as cpProfileProblems, stateOfGstin as cpStateOfGstin, statusOf as cpStatusOf, verifyDueAt as cpVerifyDueAt, versionAt as cpVersionAt } from '@/features/brand/brand';
+import type { BrandDraft } from '@/features/brand/brand';
 import { BUILT_IN as SB_BUILT_IN, ENGINES as SB_ENGINES, EXPECT_SCHEMA as SB_EXPECT, NOTE_MIN as SB_NOTE_MIN, PROMOTE_NUDGE_DAYS as SB_PROMOTE_NUDGE, REVIEW_EVERY_DAYS as SB_REVIEW_EVERY, compareOutcome as sbCompare, hashText as SB_HASH, promotionStatus as sbPromotionStatus, reviewDue as sbReviewDue, reviewDueAt as sbReviewDueAt, scenarioProblem as SB_SCENARIO_PROBLEM, statusOfComparisons as sbStatus } from '@/features/sandbox/testing';
 import type { Engine, Facts, Outcome } from '@/features/sandbox/testing';
 import { MANAGED_IDS as IG_MANAGED, REASON_MIN as IG_REASON_MIN, ROTATION_MS as IG_ROTATION_MS, ageDaysOf as igAge, credentialProblem as igCredentialProblem, dueForRotation as igDue, endpointFor as igEndpointFor, isManaged as igIsManaged, last4Of as igLast4, maskOf as igMask, modeProblem as igModeProblem, rotationDueAt as igDueAt, sandboxInProduction as igSandboxInProd } from '@/features/integrations/management';
@@ -1025,12 +1027,12 @@ import type { OverrideKind, OverrideProblem } from '@/features/override/rules';
 import { GENESIS as AUDIT_GENESIS, codeOf as auditCodeOf, hashOf as auditHashOf, verifyChain as auditVerify } from '@/features/audit/chain';
 import { BOT_DRIFT_POINTS as HC_BOT_DRIFT, BOT_MIN_SAMPLE as HC_BOT_MIN, ENGINE_DOWN_MS as HC_ENGINE_DOWN, INTEGRATIONS as HC_INTEGRATIONS, MAX_PROBES as HC_MAX_PROBES, STATUS_WINDOW_MS as HC_STATUS_WINDOW, NOTE_MIN as HC_NOTE_MIN, PROBE_EVERY_MS as HC_PROBE_EVERY, WINDOW_MS as HC_WINDOW, agreementOf as hcAgreement, causeOf as hcCause, integrationDef as hcDef, isHttpUrl as hcIsUrl, judge as hcJudge, recovered as hcRecovered, sharedCauseOf as hcShared, uptimeOf as hcUptime } from '@/features/health/system';
 import type { IntegrationDef as HcDef, Observation as HcObservation, TechStatus } from '@/features/health/system';
-import type { SandboxRunView, SandboxPromotionPreview, SandboxPromotionRow, SandboxRuleRef, SandboxScenarioView, SandboxView, IntegrationManagementView, IntegrationSetupView, IsolationCheckView, OverrideCandidate, OverrideConsoleView, OverridePreviewView, AuditDetailView, AuditExportView, AuditFilter, AuditRowView, AuditSearchView, BotHealthView, SystemHealthIntegrationView, SystemHealthView } from './repository';
+import type { BrandView, CompanyProfilePreview, CompanyProfilePublishInput, CompanyProfileVersionView, CompanyProfileView, CompanyUsage, SandboxRunView, SandboxPromotionPreview, SandboxPromotionRow, SandboxRuleRef, SandboxScenarioView, SandboxView, IntegrationManagementView, IntegrationSetupView, IsolationCheckView, OverrideCandidate, OverrideConsoleView, OverridePreviewView, AuditDetailView, AuditExportView, AuditFilter, AuditRowView, AuditSearchView, BotHealthView, SystemHealthIntegrationView, SystemHealthView } from './repository';
 import { SLA_CATEGORIES, WINDOW_DAYS as SLA_WINDOW_DAYS, elapsedMsOf as slaElapsedOf, pauseOf as slaPauseOf, ratioOf as slaRatioOf, rollupOf as slaRollupOf, statusOf as slaStatusOf, targetSignal as slaTargetSignal, trendOf as slaTrendOf, triageScore as slaTriageScore } from '@/features/sla/consolidated';
 import type { SlaItem } from '@/features/sla/consolidated';
 import type { SlaCategoryView, SlaItemView, SlaOverviewView } from './repository';
 import { BACKUP_KEYS as ESC_BACKUP_KEYS, DEMO_CONFIRM_MS as ESC_DEMO_CONFIRM_MS, DEMO_SILENCE_MS as ESC_DEMO_SILENCE_MS, DRILL_GAP_TITLE as ESC_DRILL_GAP_TITLE, ESC_CHANNELS, EXHAUSTED_TITLE as ESC_EXHAUSTED_TITLE, MAX_BACKUPS as ESC_MAX_BACKUPS, NOTE_MIN as ESC_NOTE_MIN, PRIMARY as ESC_PRIMARY, SCENARIOS as ESC_SCENARIOS, SCENARIO_NAMES as ESC_NAMES, chainProblems as escChainProblems, drillDueAt as escDrillDueAt, drillStepsOf as escDrillStepsOf, exhaustedAfterMinutes as escExhaustedAfter, offsetsOf as escOffsets, phoneProblem as escPhoneBad, railOutcome as escRailOutcome, repeatOffsets as escRepeatOffsets, scenarioDef as escDef, scenarioIdOf as escScenarioIdOf, withTierIds as escTierIds } from '@/features/escalation/matrix';
-import type { SandboxBaseline, SandboxRun, SandboxScenario, IntegrationChange, IntegrationCredentialView, IntegrationSetup, AuditExportRecord, LeadStage, ManualOverride, IntegrationConfig, IntegrationIncident, IntegrationProbe, MessageStatus } from './types';
+import type { CompanyProfileVersion, SandboxBaseline, SandboxRun, SandboxScenario, IntegrationChange, IntegrationCredentialView, IntegrationSetup, AuditExportRecord, LeadStage, ManualOverride, IntegrationConfig, IntegrationIncident, IntegrationProbe, MessageStatus } from './types';
 import type { EscalationChainTier, EscalationChannel, EscalationContact, EscalationDelivery, EscalationDrill, EscalationDrillStep, EscalationLastResort, EscalationRun, EscalationScenarioConfig } from './types';
 import type { AlertEscalationView, EscalationGap, EscalationMatrixView, EscalationRunView, EscalationScenarioView } from './repository';
 import { VAULT_KINDS, validityState } from '@/features/documents/vault';
@@ -2092,9 +2094,25 @@ function buildReminderTimeline(payment: Payment, lead: Lead, config: PaymentRemi
  *  something even with only one row today. */
 const FINANCING_PARTNER_NAME = 'Suvidha Finance Ltd';
 
-/** AIEC's own GSTIN — real invoice data, so it's a plain constant, not a
- *  translated UI string; every invoice 087 issues carries it. */
-const AIEC_GSTIN = '27AABCA1234B1Z5';
+/** AIEC's identity, legal details and look (191): append-only versions, each applying from a day onward. Every invoice, quotation and contract is read back against the version in force
+ *  on the day it was issued, so a later change never re-dresses what was already sent. The values are placeholders for the owner to confirm (flagged on the screen). */
+const cpIso = (daysBack: number): string => new Date(Date.now() - daysBack * 86_400_000).toISOString();
+const companyProfiles: CompanyProfileVersion[] = [
+  {
+    id: 'cp-1', version: 1, effectiveFrom: cpIso(2400), createdAt: cpIso(2400), createdByName: 'Prashant Vasant Wable', reason: 'The company as first registered.', kind: 'initial', changes: [],
+    companyName: 'All India Elevators Company', nameHi: 'ऑल इंडिया एलिवेटर्स कंपनी', nameMr: 'ऑल इंडिया एलिव्हेटर्स कंपनी', ownerName: 'Mr. Prashant Vasant Wable', logo: null,
+    gstin: '27AABCA1234B1Z5', address: { line1: 'Shop 4, Lakshmi Arcade, Kothrud', city: 'Pune', state: 'Maharashtra', pincode: '411038' }, tokens: { ...CP_DEFAULT_TOKENS },
+  },
+  {
+    id: 'cp-2', version: 2, effectiveFrom: cpIso(420), createdAt: cpIso(430), createdByName: 'Prashant Vasant Wable', reason: 'The registered office moved to the new premises; the GST registration was amended to match.', kind: 'legal',
+    changes: [{ field: 'address', group: 'legal', from: 'Shop 4, Lakshmi Arcade, Kothrud, Pune, Maharashtra 411038', to: 'Office No. 12, Ascension Plaza, Baner Road, Pune, Maharashtra 411045' }],
+    companyName: 'All India Elevators Company', nameHi: 'ऑल इंडिया एलिवेटर्स कंपनी', nameMr: 'ऑल इंडिया एलिव्हेटर्स कंपनी', ownerName: 'Mr. Prashant Vasant Wable', logo: null,
+    gstin: '27AABCA1234B1Z5', address: { line1: 'Office No. 12, Ascension Plaza, Baner Road', city: 'Pune', state: 'Maharashtra', pincode: '411045' }, tokens: { ...CP_DEFAULT_TOKENS },
+    announcedAt: cpIso(420), legal: { confirmedAt: cpIso(415), confirmedByName: 'Prashant Vasant Wable', note: 'Checked the first invoice and told the accountant.', stateFrom: 'Maharashtra', stateTo: 'Maharashtra' },
+  },
+];
+/** The version in force at an instant. */
+const cpAt = (ms: number): CompanyProfileVersion => cpVersionAt(companyProfiles, ms) ?? companyProfiles[0];
 
 /** Screen 090's own SLA target for resolving a payment dispute — 5 days,
  *  a reasonable ceiling for a financial-trust issue per the spec's own
@@ -2140,7 +2158,7 @@ function ensureStageInvoices(dealId: string, deal: Deal, lead: Lead | null): voi
       customerName: deal.customerId ? nameOf(deal.customerId) : (lead?.contactName ?? ''),
       customerAddress: customerAddressOf(lead),
       customerGstin: deal.customerGstin,
-      aiecGstin: AIEC_GSTIN,
+      aiecGstin: cpAt(Date.parse(payment.paidAt ?? new Date().toISOString())).gstin,
       taxableValue,
       gstPercent: deal.gstPercent,
       gstAmount,
@@ -2857,6 +2875,7 @@ function commitmentSources(now: number): CommitmentSources {
     escalation: escSignals(now),
     integrations: { ...hcSignals(), ...igSignals(now) },
     sandbox: sbSignals(now),
+    companyProfile: cpSignals(now),
     tds: tdsObligations(Date.now()),
     exits: exitSignals(),
     handoverReviews: handoverSignals().reviews,
@@ -4338,6 +4357,102 @@ function sbSignals(now: number): { promotions: { id: string; name: string; since
   void now;
 }
 
+/* ============================================ Company profile & branding (191) */
+
+const cpDraftOf = (v: CompanyProfileVersion): BrandDraft => ({ companyName: v.companyName, nameHi: v.nameHi, nameMr: v.nameMr, ownerName: v.ownerName, logo: v.logo ? { ...v.logo } : null, gstin: v.gstin, address: { ...v.address }, tokens: { ...v.tokens } });
+const cpBrandView = (v: CompanyProfileVersion): BrandView => ({
+  version: v.version, effectiveFrom: v.effectiveFrom, companyName: v.companyName, nameHi: v.nameHi, nameMr: v.nameMr, ownerName: v.ownerName, logo: v.logo ? { dataUrl: v.logo.dataUrl, fileName: v.logo.fileName } : null,
+  gstin: v.gstin, address: { ...v.address }, addressLine: cpAddressLine(v.address), tokens: { ...v.tokens },
+});
+/** Everything issued before an instant, by kind: what a change starting then leaves exactly as it was. */
+function cpIssuedBetween(from: number, to: number): CompanyUsage {
+  const within = (iso: string | undefined): boolean => !!iso && Date.parse(iso) >= from && Date.parse(iso) < to;
+  return { invoices: invoices.filter((i) => within(i.issuedAt)).length, quotations: quotations.filter((q) => within(q.sentAt)).length, contracts: contracts.filter((c) => within(c.generatedAt)).length };
+}
+function cpView(now: number): CompanyProfileView {
+  const live = companyProfiles.filter((v) => !v.cancelled).sort((a, b) => a.version - b.version);
+  const view = (v: CompanyProfileVersion): CompanyProfileVersionView => {
+    const next = live.find((x) => x.version > v.version);
+    const from = Date.parse(v.effectiveFrom);
+    const to = next ? Date.parse(next.effectiveFrom) : Infinity;
+    return { ...JSON.parse(JSON.stringify(v)), status: cpStatusOf(v, companyProfiles, now), usage: v.cancelled ? { invoices: 0, quotations: 0, contracts: 0 } : cpIssuedBetween(from, Math.min(to, Math.max(now, from) + 1)) } as CompanyProfileVersionView;
+  };
+  const all = [...companyProfiles].sort((a, b) => b.version - a.version).map(view);
+  const current = all.find((v) => v.status === 'current') ?? all[all.length - 1];
+  const scheduled = all.find((v) => v.status === 'scheduled') ?? null;
+  const open = companyProfiles.find((v) => v.kind === 'legal' && !v.cancelled && !v.legal?.confirmedAt && Date.parse(v.effectiveFrom) <= now);
+  return { current, scheduled, versions: all, verifyOpen: open ? { versionId: open.id, version: open.version, dueAt: cpVerifyDueAt(open.effectiveFrom) } : null, at: new Date(now).toISOString() };
+}
+
+function cpPreview(draft: BrandDraft, effectiveFrom: string | null, now: number): CompanyProfilePreview {
+  const base = cpAt(now);
+  const changes = cpChangesOf(cpDraftOf(base), draft);
+  const kind = cpKindOf(changes);
+  const { blocking, warn } = cpProfileProblems(draft);
+  const startsAt = Math.max(now, effectiveFrom ? Date.parse(effectiveFrom) : now);
+  let legalImpact: CompanyProfilePreview['legalImpact'] = null;
+  const gstinChange = changes.find((c) => c.field === 'gstin');
+  if (gstinChange) {
+    const flips = deals.filter((d) => !!d.customerGstin && supplyType(d.customerGstin, base.gstin) !== supplyType(d.customerGstin, draft.gstin.trim().toUpperCase()));
+    const flipIds = new Set(flips.map((d) => d.id));
+    legalImpact = {
+      stateFrom: cpStateOfGstin(base.gstin), stateTo: cpStateOfGstin(draft.gstin), considered: deals.filter((d) => !!d.customerGstin).length, dealsFlip: flips.length,
+      stagesFlip: payments.filter((p) => flipIds.has(p.dealId) && isOutstanding(p)).length,
+    };
+  }
+  return {
+    token: cpDraftHash(draft, effectiveFrom), kind, changes, blocking, warn, contrast: cpContrast(draft.tokens), effectiveProblem: cpEffectiveProblem(effectiveFrom, kind, now),
+    keeps: cpIssuedBetween(0, startsAt), legalImpact,
+  };
+}
+
+function cpPublish(admin: User, input: CompanyProfilePublishInput, now: number): void {
+  if (companyProfiles.some((v) => !v.cancelled && Date.parse(v.effectiveFrom) > now)) throw new RepositoryError('scheduled_pending');
+  const base = cpAt(now);
+  const draft = { ...input.draft, gstin: input.draft.gstin.trim().toUpperCase() };
+  const pv = cpPreview(draft, input.effectiveFrom, now);
+  if (pv.blocking.length > 0) throw new RepositoryError(pv.blocking[0]);
+  if (pv.kind === 'none') throw new RepositoryError('no_changes');
+  if (pv.effectiveProblem) throw new RepositoryError(pv.effectiveProblem);
+  if (input.token !== cpDraftHash(input.draft, input.effectiveFrom)) throw new RepositoryError('preview_stale');
+  if (!input.confirmPreview) throw new RepositoryError('preview_unseen');
+  if (cpLetters(input.reason) < (pv.kind === 'legal' ? CP_REASON_LEGAL : CP_REASON_COSMETIC)) throw new RepositoryError('reason_short');
+  if (pv.kind === 'legal') {
+    if (!input.registrationChecked) throw new RepositoryError('registration_unchecked');
+    if (!input.accountantTold) throw new RepositoryError('accountant_unconfirmed');
+  }
+  const next: CompanyProfileVersion = {
+    id: `cp-${Math.max(...companyProfiles.map((v) => v.version)) + 1}`, version: Math.max(...companyProfiles.map((v) => v.version)) + 1,
+    // A version never starts before it was made: nothing issued earlier today is re-dressed.
+    effectiveFrom: new Date(Math.max(now, input.effectiveFrom ? Date.parse(input.effectiveFrom) : now)).toISOString(), createdAt: new Date(now).toISOString(), createdByName: admin.name, reason: input.reason.trim(),
+    kind: pv.kind === 'legal' ? 'legal' : 'cosmetic', changes: pv.changes, companyName: draft.companyName.trim(), nameHi: draft.nameHi.trim(), nameMr: draft.nameMr.trim(), ownerName: draft.ownerName.trim(),
+    logo: draft.logo ? { ...draft.logo } : null, gstin: draft.gstin, address: { line1: draft.address.line1.trim(), city: draft.address.city.trim(), state: draft.address.state, pincode: draft.address.pincode.trim() }, tokens: { ...draft.tokens },
+    ...(pv.kind === 'legal' ? { legal: { stateFrom: cpStateOfGstin(base.gstin) ?? '', stateTo: cpStateOfGstin(draft.gstin) ?? '' } } : {}),
+  };
+  companyProfiles.push(next);
+}
+
+/** A scheduled version that has reached its day is announced once: logged as the automation it is, and for a legal change an alert asks someone to check the first documents. Idempotent. */
+function syncCompanyProfile(now: number): void {
+  for (const v of companyProfiles) {
+    if (v.cancelled || v.kind === 'initial' || Date.parse(v.effectiveFrom) > now) continue;
+    const alertKey = `cp:${v.id}`;
+    if (!v.announcedAt) {
+      v.announcedAt = new Date(now).toISOString();
+      logAutomatedAction({ sourceKey: 'company_profile.effective', triggeringCondition: `Version ${v.version} of the company profile reached its start day`, actionTaken: v.kind === 'legal' ? 'Started using the new GSTIN and registered address on new documents; asked for the first documents to be checked' : 'Started using the new branding on new documents and screens', affectedRecordId: v.id, affectedRecordType: 'other', subjectLabel: `Company profile v${v.version}` });
+      if (v.kind === 'legal') raiseAlert({ titleKey: 'companyProfile.alert.legalEffective', context: `v${v.version}: ${cpAddressLine(v.address)} · ${v.gstin}`, severity: 'medium', category: 'automation', relatedId: alertKey, sourceRoute: `/company-profile?version=${v.id}` });
+    }
+    if (v.kind === 'legal' && v.legal?.confirmedAt) {
+      const open = alerts.find((a) => a.relatedId === alertKey && a.status !== 'resolved');
+      if (open) patchInPlace(alerts, open.id, { status: 'resolved', resolvedBy: 'system', resolvedAt: new Date(now).toISOString(), resolutionNote: 'The change was checked and recorded' });
+    }
+  }
+}
+function cpSignals(now: number): { verify: { id: string; version: number; dueAt: string }[] } {
+  void now;
+  return { verify: companyProfiles.filter((v) => v.kind === 'legal' && !v.cancelled && !v.legal?.confirmedAt).map((v) => ({ id: v.id, version: v.version, dueAt: cpVerifyDueAt(v.effectiveFrom) })) };
+}
+
 const heartbeatCommitments = { notifications: 0, alerts: 0 };
 const HEARTBEAT: { id: string; run: (now: number) => void }[] = [
   { id: 'followUpTasks', run: () => reconcileFollowUpTasks() },
@@ -4399,6 +4514,7 @@ const HEARTBEAT: { id: string; run: (now: number) => void }[] = [
   { id: 'auditChain', run: (now) => syncAuditChain(now) },
   { id: 'overridePatterns', run: (now) => syncOverridePatterns(now) },
   { id: 'integrationManagement', run: (now) => syncIntegrationManagement(now) },
+  { id: 'companyProfile', run: (now) => syncCompanyProfile(now) },
   {
     id: 'stageInvoices',
     run: () => {
@@ -6629,7 +6745,7 @@ function gstDocumentsOf(now: number): GstDocument[] {
     if (!risks.has(supplier.id)) risks.set(supplier.id, gstRiskOf(supplier, now));
     const taxable = inv.lines.reduce((n, l) => n + l.quantity * l.unitPrice, 0);
     const gst = gstOn(taxable, inv.gstPercent);
-    const supply = supplyType(supplier.gstin, AIEC_GSTIN);
+    const supply = supplyType(supplier.gstin, cpAt(Date.parse(inv.invoiceDate)).gstin);
     out.push({
       id: inv.id,
       side: 'input',
@@ -6740,7 +6856,7 @@ function gstComplianceOf(periodIn: string | null, now: number): GstComplianceVie
   return {
     period,
     periods: [...new Set([...recentPeriods(now, 6), ...known.filter((p) => p <= periodOf(now))])].sort().reverse().slice(0, 12),
-    aiecGstin: AIEC_GSTIN,
+    aiecGstin: cpAt(now).gstin,
     output: f.output,
     input: f.input,
     net: f.net,
@@ -10856,7 +10972,7 @@ function tdsCertificateOf(fy: string, quarter: 0 | TdsQuarter, userId: string, n
   const ret = q ? tdsReturns.find((x) => x.fy === fy && x.quarter === q) : null;
   const short = userId.replace(/[^A-Za-z0-9]/g, '').slice(-6).toUpperCase();
   return JSON.parse(JSON.stringify({
-    number: `AIEC-TDS-${short}-${fy.slice(3)}-${q ? `Q${q}` : 'A'}`, status: filed ? 'final' : 'provisional', fy, quarter, deductor: 'ALL INDIA ELEVATORS COMPANY', person: { name: v.person.name, role: v.person.role }, pan: tdsPanOf(userId), section: v.section,
+    number: `AIEC-TDS-${short}-${fy.slice(3)}-${q ? `Q${q}` : 'A'}`, status: filed ? 'final' : 'provisional', fy, quarter, deductor: cpAt(Date.now()).companyName.toUpperCase(), person: { name: v.person.name, role: v.person.role }, pan: tdsPanOf(userId), section: v.section,
     gross: items.reduce((a, x) => a + x.amount, 0), tds: rows.reduce((a, d) => a + d.amount, 0), rows: rows.map(tdsRowOf), returnAck: ret?.ack ?? null, filedAt: ret?.filedAt ?? null, generatedAt: tdsIso(now),
   })) as TdsCertificateView;
 }
@@ -12121,7 +12237,7 @@ function vdDocsOf(user: User, now: number): VdDoc[] {
       while (rootInv.supersedesInvoiceId) { const prev = byId(invoices, rootInv.supersedesInvoiceId); if (!prev) break; rootInv = prev; }
       push(row({ id: `invoice:${inv.id}`, kind: 'invoice', subKind: inv.type, code: inv.code, version: null, issuedAt: inv.issuedAt, status: replacedBy ? 'superseded' : 'current', supersededByCode: replacedBy?.code ?? null, chainId: `invoice:${rootInv.id}`, validity: null, route: `/deals/${deal.id}/invoices` }), [
         { headingKey: 'documentVault.section.document', fields: [...vdF('documentVault.field.number', vdText(inv.code)), ...vdF('documentVault.field.issued', vdDate(inv.issuedAt)), ...vdF('documentVault.field.forStage', inv.stage ? vdKey(`documentVault.stage.${inv.stage}`) : null), ...vdF('documentVault.field.reason', inv.reissueReason ? vdText(inv.reissueReason) : inv.creditNoteReason ? vdText(inv.creditNoteReason) : null), ...vdF('documentVault.field.against', inv.referencesInvoiceId ? vdText(byId(invoices, inv.referencesInvoiceId)?.code ?? '') : null)] },
-        { headingKey: 'documentVault.section.parties', fields: [...vdF('documentVault.field.billedTo', vdText(inv.customerName)), ...vdF('documentVault.field.address', inv.customerAddress ? vdText(inv.customerAddress) : null), ...vdF('documentVault.field.yourGstin', inv.customerGstin ? vdText(inv.customerGstin) : null), ...vdF('documentVault.field.aiecGstin', vdText(inv.aiecGstin))] },
+        { headingKey: 'documentVault.section.parties', fields: [...vdF('documentVault.field.billedTo', vdText(inv.customerName)), ...vdF('documentVault.field.address', inv.customerAddress ? vdText(inv.customerAddress) : null), ...vdF('documentVault.field.yourGstin', inv.customerGstin ? vdText(inv.customerGstin) : null), ...vdF('documentVault.field.issuer', vdText(cpAt(Date.parse(inv.issuedAt)).companyName)), ...vdF('documentVault.field.issuerAddress', vdText(cpAddressLine(cpAt(Date.parse(inv.issuedAt)).address))), ...vdF('documentVault.field.aiecGstin', vdText(inv.aiecGstin))] },
         { headingKey: 'documentVault.section.amounts', fields: [...vdF('documentVault.field.taxable', vdMoney(inv.taxableValue)), ...vdF('documentVault.field.gstPercent', vdNum(inv.gstPercent)), ...vdF('documentVault.field.gstAmount', vdMoney(inv.gstAmount)), ...vdF('documentVault.field.totalInclGst', vdMoney(inv.totalAmount))] },
       ], inv.issuedBy);
     }
@@ -17479,7 +17595,7 @@ export const memoryRepository: Repository = {
         customerName: deal.customerId ? nameOf(deal.customerId) : (lead?.contactName ?? ''),
         customerAddress: customerAddressOf(lead),
         customerGstin: deal.customerGstin,
-        aiecGstin: AIEC_GSTIN,
+        aiecGstin: cpAt(Date.now()).gstin,
         agreedPrice: deal.agreedPrice,
         gstPercent: deal.gstPercent,
         allStagesPaid,
@@ -17508,7 +17624,7 @@ export const memoryRepository: Repository = {
         customerName: deal.customerId ? nameOf(deal.customerId) : (lead?.contactName ?? ''),
         customerAddress: customerAddressOf(lead),
         customerGstin: deal.customerGstin,
-        aiecGstin: AIEC_GSTIN,
+        aiecGstin: cpAt(Date.now()).gstin,
         taxableValue,
         gstPercent: deal.gstPercent,
         gstAmount,
@@ -25776,6 +25892,35 @@ export const memoryRepository: Repository = {
       wfEvent(r, 'simulated', admin.name, 'Passed its standard scenarios in the sandbox');
       wfActivate(admin, r, options, now);
       return sbView(now);
+    }),
+  /* 191 — company profile & branding */
+  getBrand: (at) => simulateRead(() => cpBrandView(cpAt(at ? Date.parse(at) : Date.now()))),
+  getCompanyProfile: (userId) => simulateRead(() => { intAdmin(userId); syncCompanyProfile(Date.now()); return cpView(Date.now()); }),
+  previewCompanyProfile: (userId, draft, effectiveFrom) => simulateRead(() => { intAdmin(userId); return cpPreview({ ...draft, gstin: draft.gstin.trim().toUpperCase() }, effectiveFrom, Date.now()); }),
+  publishCompanyProfile: (userId, input) => simulateWrite(() => { const admin = intAdmin(userId); const now = Date.now(); cpPublish(admin, input, now); syncCompanyProfile(now); return cpView(now); }),
+  cancelScheduledProfile: (userId, versionId, reason) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      const now = Date.now();
+      const v = companyProfiles.find((x) => x.id === versionId);
+      if (!v) throw new RepositoryError('not_found');
+      if (v.cancelled || Date.parse(v.effectiveFrom) <= now) throw new RepositoryError('not_scheduled');
+      if (cpLetters(reason) < CP_REASON_COSMETIC) throw new RepositoryError('reason_short');
+      v.cancelled = { at: new Date(now).toISOString(), byName: admin.name, reason: reason.trim() };
+      return cpView(now);
+    }),
+  confirmLegalChange: (userId, versionId, note) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      const now = Date.now();
+      const v = companyProfiles.find((x) => x.id === versionId);
+      if (!v) throw new RepositoryError('not_found');
+      if (v.kind !== 'legal' || v.cancelled) throw new RepositoryError('not_legal');
+      if (Date.parse(v.effectiveFrom) > now) throw new RepositoryError('not_in_effect');
+      if (cpLetters(note) < CP_NOTE_MIN) throw new RepositoryError('note_short');
+      v.legal = { ...(v.legal ?? {}), confirmedAt: new Date(now).toISOString(), confirmedByName: admin.name, note: note.trim() };
+      syncCompanyProfile(now);
+      return cpView(now);
     }),
   /* 189 — integration management */
   getIntegrationManagement: (userId) => simulateRead(() => { intAdmin(userId); syncIntegrationManagement(Date.now()); return igView(Date.now()); }),

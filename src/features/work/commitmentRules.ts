@@ -161,6 +161,7 @@ export interface CommitmentSources {
   /** What a recovered outage left behind that still needs a person (186). */
   integrations: { followUps: { id: string; name: string; since: string; count: number }[]; rotations: { id: string; name: string; dueAt: string }[] };
   /** A rule that passed its sandbox tests and is still not live, and a scenario library nobody has reviewed in a while (190). */
+  companyProfile: { verify: { id: string; version: number; dueAt: string }[] };
   sandbox: { promotions: { id: string; name: string; since: string }[]; review: { dueAt: string } | null };
   escalation: { drills: { id: string; name: string; dueAt: string }[]; gaps: { id: string; scenarioId: string; name: string; since: string }[] };
   referrals: { rewards: { id: string; userId: string; friend: string; at: string }[] };
@@ -2461,6 +2462,28 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
         paused: false,
         actionRoute: `/automation-sandbox?rule=${x.id}`,
         oversightRoute: '/automation-sandbox',
+      }));
+    },
+  },
+  {
+    // A change of GSTIN or registered address is checked after it takes effect (191): the first documents, the GST portal and the accountant.
+    kind: 'company_profile_legal_verify',
+    nudgeBefore: days(2),
+    escalateAfter: days(7),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'automation',
+    collect(src) {
+      return src.companyProfile.verify.map((x) => ({
+        ...base('company_profile_legal_verify', 'alert', x.id),
+        ownerUserId: adminId(src),
+        titleKey: 'work.title.company_profile_legal_verify',
+        titleParams: { version: String(x.version) },
+        dueAt: x.dueAt,
+        state: 'open' as const,
+        paused: false,
+        actionRoute: `/company-profile?version=${x.id}`,
+        oversightRoute: '/company-profile',
       }));
     },
   },

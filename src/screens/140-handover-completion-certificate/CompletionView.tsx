@@ -5,6 +5,9 @@ import { ActionBar, AscensionLine, Badge, Button, Card, Checkbox, Chip, EmptySta
 import type { CompletionPayoutLineView, CompletionView } from '@/data/repository';
 import type { CompletionMilestone } from '@/data/types';
 import { JUDGEMENT_DECISIONS, judgementProblem } from '@/features/commission/finalPayout';
+import { IssuerBlock } from '@/features/brand/IssuerBlock';
+import { useBrandAt } from '@/features/brand/BrandProvider';
+import { displayName } from '@/features/brand/brand';
 import { useCompletion } from './useCompletion';
 import type { ActionResult, CompletionState } from './useCompletion';
 import { COMPLETION_KEYS as K, boardPath, walkthroughPath, warrantyPath } from './completion.types';
@@ -106,13 +109,14 @@ function Detail({ s, v, t }: { s: CompletionState; v: CompletionView; t: T }) {
   const sm = v.summary;
   const showBar = v.issued || v.actions.issue;
   const amc = sm.warranty?.amc ?? null;
+  const issuer = useBrandAt(v.issuedAt ?? null);
   return (
     <Screen width="narrow" className={showBar ? 'pb-action-bar' : undefined}>
       <ScreenHeader title={t(K.title)} subtitle={`${sm.siteName} · ${sm.jobCode}`} action={<span data-status={v.status}><Badge tone={v.issued ? 'success' : v.status === 'ready' ? 'accent' : 'neutral'} dot>{t(K.status[v.status])}</Badge></span>} />
 
       <Card className="mb-3">
         <div className="stack gap-3" data-hero style={{ borderTop: '2px solid var(--color-accent-primary)', paddingTop: 'var(--space-3)' }}>
-          <span className="t-xs t-muted" style={{ letterSpacing: '0.08em', textTransform: 'uppercase' }}>{t(K.hero.brand)}</span>
+          <IssuerBlock at={v.issuedAt ?? null} />
           <div className="row gap-2" style={{ alignItems: 'center' }}>
             <Certificate size={26} aria-hidden="true" color="var(--color-accent-primary)" />
             <strong className="t-lg">{t(K.hero.heading)}</strong>
@@ -247,7 +251,7 @@ function Detail({ s, v, t }: { s: CompletionState; v: CompletionView; t: T }) {
         <ActionBar>
           <div className="stack gap-1" style={{ width: '100%' }}>
             {v.issued ? (
-              <Button style={{ width: '100%' }} icon={<DownloadSimple size={18} aria-hidden="true" />} data-download onClick={() => download(v, t, lang)}>{t(K.download.button)}</Button>
+              <Button style={{ width: '100%' }} icon={<DownloadSimple size={18} aria-hidden="true" />} data-download onClick={() => download(v, t, lang, issuer ? `${displayName(issuer, lang)} · ${issuer.addressLine} · GSTIN ${issuer.gstin}` : t(K.hero.brand))}>{t(K.download.button)}</Button>
             ) : (
               <Button style={{ width: '100%' }} data-issue onClick={() => setConfirm(true)}>{t(K.issue.button)}</Button>
             )}
@@ -455,7 +459,7 @@ const statusKey = (st: string) => (st === 'paid' ? K.payout.statusPaid : st === 
 const esc = (x: string) => x.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string);
 
 /** A standalone copy the customer can keep, print or hand to a regulator or buyer. It takes its colours from the active theme's own tokens. */
-function download(v: CompletionView, t: T, lang: string) {
+function download(v: CompletionView, t: T, lang: string, issuerLine: string) {
   const css = getComputedStyle(document.documentElement);
   const tok = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
   const sm = v.summary;
@@ -466,7 +470,7 @@ function download(v: CompletionView, t: T, lang: string) {
   const docs = v.documents.map((d) => `<li>${esc(t(K.docs.doc[d.id]))}${d.ref ? ` · ${esc(d.ref)}` : ''}${d.at ? ` · ${esc(formatDate(d.at, lang))}` : ''}</li>`).join('');
   const comp = sm.compliance ? `<p>${esc(t(K.project.compliance))}: ${esc(standardLabel(t, sm.compliance.standard))} · ${esc(sm.compliance.code)} · ${esc(formatDate(sm.compliance.issuedAt, lang))}</p><p class="n">${esc(t(K.project.complianceNote))}</p>` : '';
   const war = sm.warranty ? `<p>${esc(t(K.project.warrantyLine, { from: formatDate(day(sm.warranty.startsOn), lang), to: formatDate(day(sm.warranty.serviceEndsOn), lang), count: sm.warranty.partsCount }))}</p>` : '';
-  const html = `<!doctype html><html lang="${esc(lang)}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(t(K.download.file, { no: v.certificateNo ?? '' }))}</title><style>body{font-family:sans-serif;max-width:820px;margin:24px auto;padding:0 16px;background:${tok('--color-bg', 'transparent')};color:${tok('--color-text-primary', 'inherit')}}h1{border-top:3px solid ${tok('--color-accent-primary', 'currentColor')};padding-top:12px}table{border-collapse:collapse;width:100%}td,th{border:1px solid ${tok('--color-border', '#ccc')};padding:6px 8px;text-align:left}.n{color:${tok('--color-text-secondary', 'inherit')};font-size:.9em}</style></head><body><p class="n">${esc(t(K.hero.brand))}</p><h1>${esc(t(K.hero.heading))}</h1><p><strong>${esc(v.certificateNo ?? '')}</strong> · ${esc(v.issuedAt ? t(K.hero.issued, { date: formatDate(v.issuedAt, lang), name: v.issuedByName ?? '' }) : '')}</p><p>${esc(t(K.hero.statement, { site: sm.siteName }))}</p><p>${esc(t(K.hero.customer, { name: sm.customerName }))} · ${esc(sm.address)}</p><h2>${esc(t(K.lifecycle.heading))}</h2><table>${rows}</table><h2>${esc(t(K.project.heading))}</h2>${comp}${war}<h2>${esc(t(K.team.heading))}</h2><ul>${team}</ul><h2>${esc(t(K.docs.heading))}</h2><ul>${docs}</ul><p class="n">${esc(t(K.download.footer))}</p></body></html>`;
+  const html = `<!doctype html><html lang="${esc(lang)}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(t(K.download.file, { no: v.certificateNo ?? '' }))}</title><style>body{font-family:sans-serif;max-width:820px;margin:24px auto;padding:0 16px;background:${tok('--color-bg', 'transparent')};color:${tok('--color-text-primary', 'inherit')}}h1{border-top:3px solid ${tok('--color-accent-primary', 'currentColor')};padding-top:12px}table{border-collapse:collapse;width:100%}td,th{border:1px solid ${tok('--color-border', '#ccc')};padding:6px 8px;text-align:left}.n{color:${tok('--color-text-secondary', 'inherit')};font-size:.9em}</style></head><body><p class="n">${esc(issuerLine)}</p><h1>${esc(t(K.hero.heading))}</h1><p><strong>${esc(v.certificateNo ?? '')}</strong> · ${esc(v.issuedAt ? t(K.hero.issued, { date: formatDate(v.issuedAt, lang), name: v.issuedByName ?? '' }) : '')}</p><p>${esc(t(K.hero.statement, { site: sm.siteName }))}</p><p>${esc(t(K.hero.customer, { name: sm.customerName }))} · ${esc(sm.address)}</p><h2>${esc(t(K.lifecycle.heading))}</h2><table>${rows}</table><h2>${esc(t(K.project.heading))}</h2>${comp}${war}<h2>${esc(t(K.team.heading))}</h2><ul>${team}</ul><h2>${esc(t(K.docs.heading))}</h2><ul>${docs}</ul><p class="n">${esc(t(K.download.footer))}</p></body></html>`;
   const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
   const a = document.createElement('a');
   a.href = url;

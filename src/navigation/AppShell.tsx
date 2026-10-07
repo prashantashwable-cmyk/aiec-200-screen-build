@@ -1,4 +1,5 @@
 import { SandboxBanner } from '@/features/integrations/SandboxBanner';
+import { useBrand } from '@/features/brand/BrandProvider';
 import { useEffect, useRef, useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -14,6 +15,7 @@ import { screenRoutes } from './registry';
  */
 export function AppShell() {
   const { t } = useTranslation();
+  const { brand } = useBrand();
   const { user, role, isDemo, signOut } = useSession();
   const location = useLocation();
   // The app's one clock, and every role's assistant — see features/work.
@@ -84,11 +86,12 @@ export function AppShell() {
         {role === 'admin' && user && <SandboxBanner userId={user.id} tick={heartbeat.tick} />}
         <div className="shell__topbar">
           <span className="row gap-2">
+            {brand?.logo ? <img className="shell__brand-logo" src={brand.logo.dataUrl} alt="" aria-hidden="true" /> : (
             <span className="brand-shaft" aria-hidden="true">
               <span className="brand-shaft__floor brand-shaft__floor--lit" />
               <span className="brand-shaft__floor brand-shaft__floor--lit" />
               <span className="brand-shaft__floor" />
-            </span>
+            </span>)}
             <span className="shell__brand-mark">{t('app.name')}</span>
           </span>
           <AssistantBell variant="topbar" unread={heartbeat.unread} onClick={() => setAssistantOpen(true)} />
@@ -98,11 +101,12 @@ export function AppShell() {
       <div className="shell__body">
         <nav className="shell__sidebar" aria-label={t('nav.menu')}>
           <div className="shell__brand">
+            {brand?.logo ? <img className="shell__brand-logo" src={brand.logo.dataUrl} alt="" aria-hidden="true" /> : (
             <span className="brand-shaft" aria-hidden="true">
               <span className="brand-shaft__floor brand-shaft__floor--lit" />
               <span className="brand-shaft__floor brand-shaft__floor--lit" />
               <span className="brand-shaft__floor" />
-            </span>
+            </span>)}
             <span className="shell__brand-mark">{t('app.name')}</span>
           </div>
           <AssistantBell variant="sidebar" unread={heartbeat.unread} onClick={() => setAssistantOpen(true)} />

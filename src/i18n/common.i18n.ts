@@ -20,6 +20,9 @@ const common: ScreenTranslations = {
       tagline: 'Every floor, handled.',
       owner: 'Mr. Prashant Vasant Wable',
     },
+    brand: {
+      issuer: { gstin: 'GSTIN', label: 'Issued by' },
+    },
     role: {
       admin: 'Admin',
       surveyor: 'Surveyor',
@@ -369,6 +372,7 @@ const common: ScreenTranslations = {
         integration_credential_rotation: 'Rotate the credential for {{name}}',
         sandbox_promotion_pending: 'Passed its tests, not live yet: {{name}}',
         sandbox_library_review: 'Review the standard test scenarios',
+        company_profile_legal_verify: 'Check the new GSTIN and registered address (version {{version}})',
         payout_rule_review: '{{code}} pointed at the commission rules: review them so others are not short',
         tds_return: 'File the TDS return for financial year {{fy}} quarter {{quarter}} and record it',
         commission_notice_site_visit: 'From {{date}}: your site-visit bonus changes, {{from}} to {{to}}',
@@ -483,6 +487,9 @@ const common: ScreenTranslations = {
       fullName: 'ऑल इंडिया एलिवेटर्स कंपनी',
       tagline: 'हर मंज़िल, हमारी ज़िम्मेदारी।',
       owner: 'श्री प्रशांत वसंत वाबळे',
+    },
+    brand: {
+      issuer: { gstin: 'जीएसटीआईएन', label: 'जारीकर्ता' },
     },
     role: {
       admin: 'प्रशासक',
@@ -833,6 +840,7 @@ const common: ScreenTranslations = {
         integration_credential_rotation: '{{name}} का क्रेडेंशियल बदलें',
         sandbox_promotion_pending: 'जाँच पास, अभी लाइव नहीं: {{name}}',
         sandbox_library_review: 'मानक जाँच परिदृश्यों की समीक्षा करें',
+        company_profile_legal_verify: 'नया GSTIN और पंजीकृत पता जाँचें (संस्करण {{version}})',
         payout_rule_review: '{{code}} ने कमीशन नियमों की ओर इशारा किया: उन्हें जाँचें ताकि दूसरों का भुगतान कम न रहे',
         tds_return: 'वित्त वर्ष {{fy}} तिमाही {{quarter}} का TDS रिटर्न दाखिल करें और दर्ज करें',
         commission_notice_site_visit: '{{date}} से: आपका साइट-विज़िट बोनस बदलेगा, {{from}} से {{to}}',
@@ -948,6 +956,9 @@ const common: ScreenTranslations = {
       fullName: 'ऑल इंडिया एलिव्हेटर्स कंपनी',
       tagline: 'प्रत्येक मजला, आमची जबाबदारी.',
       owner: 'श्री. प्रशांत वसंत वाबळे',
+    },
+    brand: {
+      issuer: { gstin: 'जीएसटीआयएन', label: 'जारी करणारे' },
     },
     role: {
       admin: 'प्रशासक',
@@ -1298,6 +1309,7 @@ const common: ScreenTranslations = {
         integration_credential_rotation: '{{name}} चे क्रेडेन्शियल बदला',
         sandbox_promotion_pending: 'चाचणी उत्तीर्ण, अजून लाइव्ह नाही: {{name}}',
         sandbox_library_review: 'मानक चाचणी परिस्थितींचे पुनरावलोकन करा',
+        company_profile_legal_verify: 'नवीन GSTIN आणि नोंदणीकृत पत्ता तपासा (आवृत्ती {{version}})',
         payout_rule_review: '{{code}} ने कमिशन नियमांकडे बोट दाखवले: ते तपासा म्हणजे इतरांना कमी पैसे मिळणार नाहीत',
         tds_return: 'आर्थिक वर्ष {{fy}} तिमाही {{quarter}} चे TDS रिटर्न दाखल करा आणि नोंदवा',
         commission_notice_site_visit: '{{date}} पासून: तुमचा साइट-भेट बोनस बदलेल, {{from}} वरून {{to}}',

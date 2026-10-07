@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { IssuerBlock } from '@/features/brand/IssuerBlock';
 import { useNavigate } from 'react-router-dom';
 import { CheckCircle, Clock, Eye } from '@phosphor-icons/react';
 import {
@@ -108,6 +109,10 @@ export function QuotationPreviewView() {
   return (
     <Screen>
       <ScreenHeader title={view.leadSiteName} subtitle={view.code} action={<Badge tone="accent">{t(`quotationStatus.${view.effectiveStatus}`)}</Badge>} />
+
+      <Card className="mb-4">
+        <IssuerBlock at={view.sentAt ?? null} />
+      </Card>
 
       <Card className="mb-4">
         <StatTile label={t(K.finalPriceLabel)} value={<span className="num">{formatINR(view.finalPrice)}</span>} large caption={t(K.gstInclusiveNote, { pct: view.gstPercent })} />

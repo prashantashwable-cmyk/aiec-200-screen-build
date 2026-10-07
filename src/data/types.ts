@@ -5056,7 +5056,7 @@ export type CommitmentKind =
   | 'exit_dispute_decide'
   | 'tier_review_due'
   | 'certification_renewal'
-  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup' | 'support_chat_reply' | 'feedback_outreach' | 'feedback_recognition' | 'referral_reward' | 'automation_pause_review' | 'escalation_drill_due' | 'escalation_gap_fix' | 'integration_followup' | 'integration_credential_rotation' | 'sandbox_promotion_pending' | 'sandbox_library_review'
+  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup' | 'support_chat_reply' | 'feedback_outreach' | 'feedback_recognition' | 'referral_reward' | 'automation_pause_review' | 'escalation_drill_due' | 'escalation_gap_fix' | 'integration_followup' | 'integration_credential_rotation' | 'sandbox_promotion_pending' | 'sandbox_library_review' | 'company_profile_legal_verify'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'
@@ -5935,4 +5935,36 @@ export interface SandboxBaseline {
   acceptedAt: string;
   byName: string;
   note?: string;
+}
+
+/* ------------------------------------------------------------------ Company profile & branding (191) */
+
+export interface CompanyProfileChange { field: string; group: 'identity' | 'legal' | 'theme'; from: string; to: string }
+/**
+ * One version of AIEC's identity, legal details and look. Append-only: a change is a new version that applies from `effectiveFrom` onward, never an edit, so anything issued
+ * under an earlier version (an invoice, a quotation, a contract) is read back against the version in force on the day it was issued.
+ */
+export interface CompanyProfileVersion {
+  id: string;
+  version: number;
+  effectiveFrom: string;
+  createdAt: string;
+  createdByName: string;
+  /** Why: kept with the version. */
+  reason: string;
+  kind: 'initial' | 'cosmetic' | 'legal';
+  changes: CompanyProfileChange[];
+  companyName: string;
+  nameHi: string;
+  nameMr: string;
+  ownerName: string;
+  logo: { dataUrl: string; fileName: string; sizeBytes: number } | null;
+  gstin: string;
+  address: { line1: string; city: string; state: string; pincode: string };
+  tokens: { accentPrimary: string; accentSecondary: string; headingFont: 'fraunces' | 'martel' | 'jakarta' };
+  /** Called off before it took effect: kept, never deleted. */
+  cancelled?: { at: string; byName: string; reason: string };
+  /** A legal change is checked after it takes effect: the first documents, the GST portal, the accountant. */
+  announcedAt?: string;
+  legal?: { confirmedAt?: string; confirmedByName?: string; note?: string; stateFrom?: string; stateTo?: string };
 }

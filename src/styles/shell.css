@@ -240,3 +240,11 @@
 .brand-shaft__floor--lit {
   background: var(--color-accent-primary);
 }
+
+/* The logo AIEC has set in Company Profile (191) stands where the floor indicator does. */
+.shell__brand-logo {
+  height: 24px;
+  width: auto;
+  max-width: 56px;
+  object-fit: contain;
+}

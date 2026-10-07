@@ -6,6 +6,7 @@ import { DataProvider } from '@/data/DataProvider';
 import { SessionProvider } from '@/session/SessionProvider';
 import { ToastProvider } from '@/design-system';
 import { CaptureDraftProvider } from '@/features/leadCapture/CaptureDraftProvider';
+import { BrandProvider } from '@/features/brand/BrandProvider';
 
 // Order matters: tokens define the variables everything else consumes.
 import 'leaflet/dist/leaflet.css';
@@ -29,6 +30,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
       <DataProvider>
+        <BrandProvider>
         <SessionProvider>
           <ToastProvider>
             <CaptureDraftProvider>
@@ -36,6 +38,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             </CaptureDraftProvider>
           </ToastProvider>
         </SessionProvider>
+        </BrandProvider>
       </DataProvider>
     </BrowserRouter>
   </React.StrictMode>,

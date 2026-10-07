@@ -1,4 +1,5 @@
 import type { VaultKind } from '@/features/documents/vault';
+import type { BrandDraft, ContrastCheck } from '@/features/brand/brand';
 import type { CategoryRollup as SlaRollup, PauseReason as SlaPauseReason, SlaCategory, SlaStatus, TargetSignal as SlaTargetSignal, TrendDirection as SlaTrendDirection, TrendPoint as SlaTrendPoint } from '@/features/sla/consolidated';
 import type { ItemState, SignOffProblem } from '@/features/qc/mechanical';
 import type { ElecSignOffProblem, ElecState } from '@/features/qc/electrical';
@@ -135,6 +136,8 @@ import type {
   EscalationContact,
   SandboxScenario,
   SandboxRun,
+  CompanyProfileChange,
+  CompanyProfileVersion,
   IntegrationSetup,
   IntegrationChange,
   ManualOverride,
@@ -7197,6 +7200,59 @@ export interface SandboxView {
 export interface SandboxRunInput { engine: string; ruleRef: string; scenarioIds: string[]; /** Declared by hand for one scenario; omit to compare with the accepted baseline. */ expected?: Record<string, string | number | boolean> | null }
 export interface SandboxScenarioInput { id?: string; engine: string; name: string; facts: Record<string, string | number | boolean> }
 
+/* ------------------------------------------------------------------ Company profile & branding (191) */
+
+/** The brand as the app and its documents read it: public (the name and the look are on every page), so any signed-in role or the login screen may ask. */
+export interface BrandView {
+  version: number;
+  effectiveFrom: string;
+  companyName: string;
+  nameHi: string;
+  nameMr: string;
+  ownerName: string;
+  logo: { dataUrl: string; fileName: string } | null;
+  gstin: string;
+  address: { line1: string; city: string; state: string; pincode: string };
+  addressLine: string;
+  tokens: { accentPrimary: string; accentSecondary: string; headingFont: 'fraunces' | 'martel' | 'jakarta' };
+}
+export interface CompanyUsage { invoices: number; quotations: number; contracts: number }
+export interface CompanyProfileVersionView extends CompanyProfileVersion { status: 'current' | 'scheduled' | 'past' | 'cancelled'; usage: CompanyUsage }
+export interface CompanyProfileView {
+  current: CompanyProfileVersionView;
+  scheduled: CompanyProfileVersionView | null;
+  versions: CompanyProfileVersionView[];
+  /** A legal change that has taken effect and still waits for someone to check it. */
+  verifyOpen: { versionId: string; version: number; dueAt: string } | null;
+  at: string;
+}
+export interface CompanyProfilePreview {
+  /** What this preview was made for: a publish must carry it, so a draft edited after the preview cannot be published unseen. */
+  token: string;
+  kind: 'none' | 'cosmetic' | 'legal';
+  changes: CompanyProfileChange[];
+  blocking: string[];
+  warn: string[];
+  contrast: ContrastCheck[];
+  effectiveProblem: string | null;
+  /** What stays exactly as it was issued: documents dated before the change takes effect. */
+  keeps: CompanyUsage;
+  /** Only for a legal change that moves the registration to another state: which customers' tax treatment would flip from the day it starts. */
+  legalImpact: { stateFrom: string | null; stateTo: string | null; considered: number; dealsFlip: number; stagesFlip: number } | null;
+}
+export interface CompanyProfilePublishInput {
+  draft: BrandDraft;
+  /** null = take effect now (a brand change only). */
+  effectiveFrom: string | null;
+  reason: string;
+  token: string;
+  /** "I have seen the combined preview." */
+  confirmPreview: boolean;
+  /** Legal changes only: the registration certificate was checked, and the accountant has been told. */
+  registrationChecked: boolean;
+  accountantTold: boolean;
+}
+
 /* ------------------------------------------------------------------ Integration management (189) */
 
 export interface IntegrationSetupView {
@@ -8885,6 +8941,14 @@ export interface Repository {
   setAppEnvironment(userId: string, env: 'demo' | 'production', input: { reason: string; confirmed: boolean }): Promise<IntegrationManagementView>;
   verifyDemoIsolation(userId: string): Promise<IntegrationManagementView>;
   getSandboxWarning(userId: string): Promise<{ environment: 'demo' | 'production'; ids: string[] }>;
+  /* 191 — company profile & branding */
+  /** The brand in force at an instant (now when omitted). Open to every role: it is what every page and document shows. */
+  getBrand(at?: string): Promise<BrandView>;
+  getCompanyProfile(userId: string): Promise<CompanyProfileView>;
+  previewCompanyProfile(userId: string, draft: BrandDraft, effectiveFrom: string | null): Promise<CompanyProfilePreview>;
+  publishCompanyProfile(userId: string, input: CompanyProfilePublishInput): Promise<CompanyProfileView>;
+  cancelScheduledProfile(userId: string, versionId: string, reason: string): Promise<CompanyProfileView>;
+  confirmLegalChange(userId: string, versionId: string, note: string): Promise<CompanyProfileView>;
   /* 188 — the console for forcing what a rule would not, with a reason, a preview and a confirmation; guardrails with no override are refused and the attempt kept. */
   getOverrideConsole(userId: string): Promise<OverrideConsoleView>;
   getOverrideCandidates(userId: string, kind: string, q: string): Promise<OverrideCandidate[]>;

@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { IssuerBlock } from '@/features/brand/IssuerBlock';
 import { Printer, Receipt, WarningCircle } from '@phosphor-icons/react';
 import { ActionBar, Badge, Button, Card, EmptyState, ErrorState, Input, ListRow, LoadingState, Screen, ScreenHeader, Sheet, TextArea, formatDate, formatINR, useToast } from '@/design-system';
 import type { BadgeTone } from '@/design-system';
@@ -155,6 +156,11 @@ export function InvoiceGeneratorView() {
               {selected.type === 'credit_note' && t(K.detail.creditNoteLine, { code: view.invoices.find((l) => l.invoice.id === selected.referencesInvoiceId)?.invoice.code ?? '' })}
               {selected.type === 'reissue' && t(K.detail.reissueLine, { code: view.invoices.find((l) => l.invoice.id === selected.supersedesInvoiceId)?.invoice.code ?? '' })}
             </p>
+
+            <div className="stack gap-1">
+              <span className="label">{t('brand.issuer.label')}</span>
+              <IssuerBlock at={selected.issuedAt} />
+            </div>
 
             <div className="stack gap-1">
               <span className="label">{t(K.detail.billedTo)}</span>

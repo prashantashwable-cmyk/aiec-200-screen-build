@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { IssuerBlock } from '@/features/brand/IssuerBlock';
 import { ClockCounterClockwise, FileText, Note, PenNib, WarningCircle } from '@phosphor-icons/react';
 import {
   ActionBar,
@@ -76,6 +77,12 @@ export function ContractGeneratorView() {
       {contract && (
         <div className="stack gap-4 mb-4">
           <p className="t-xs t-muted">{t(K.generatedOn, { date: formatDate(contract.generatedAt, i18n.language) })}</p>
+          <Card>
+            <div className="stack gap-1">
+              <span className="label">{t('brand.issuer.label')}</span>
+              <IssuerBlock at={contract.generatedAt} />
+            </div>
+          </Card>
 
           {contract.usedStateClauseFallback && (
             <Card>

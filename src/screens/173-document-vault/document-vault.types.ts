@@ -157,6 +157,8 @@ export const DOCUMENT_KEYS = {
     address: 'documentVault.field.address',
     yourGstin: 'documentVault.field.yourGstin',
     aiecGstin: 'documentVault.field.aiecGstin',
+    issuer: 'documentVault.field.issuer',
+    issuerAddress: 'documentVault.field.issuerAddress',
     taxable: 'documentVault.field.taxable',
     gstPercent: 'documentVault.field.gstPercent',
     received: 'documentVault.field.received',
