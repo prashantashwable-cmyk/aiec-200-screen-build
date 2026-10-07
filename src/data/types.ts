@@ -2696,6 +2696,8 @@ export interface ApplicationForm {
 export interface PartnerApplication {
   id: string;
   code: string;
+  /** Set when the personal details were erased under the retention policy or at the person's request (194): the record stays as a bare fact. */
+  erasedAt?: string;
   interestId: string;
   /** What the applicant's own link carries: there is no account yet. */
   accessKey: string;
@@ -5056,7 +5058,7 @@ export type CommitmentKind =
   | 'exit_dispute_decide'
   | 'tier_review_due'
   | 'certification_renewal'
-  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup' | 'support_chat_reply' | 'feedback_outreach' | 'feedback_recognition' | 'referral_reward' | 'automation_pause_review' | 'escalation_drill_due' | 'escalation_gap_fix' | 'integration_followup' | 'integration_credential_rotation' | 'sandbox_promotion_pending' | 'sandbox_library_review' | 'company_profile_legal_verify' | 'permission_override_review' | 'monitor_daily_check' | 'monitor_concern_followup'
+  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup' | 'support_chat_reply' | 'feedback_outreach' | 'feedback_recognition' | 'referral_reward' | 'automation_pause_review' | 'escalation_drill_due' | 'escalation_gap_fix' | 'integration_followup' | 'integration_credential_rotation' | 'sandbox_promotion_pending' | 'sandbox_library_review' | 'company_profile_legal_verify' | 'permission_override_review' | 'monitor_daily_check' | 'monitor_concern_followup' | 'privacy_request_respond' | 'privacy_policy_notice' | 'privacy_retention_review'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'
@@ -6044,3 +6046,36 @@ export interface MonitorCheck {
 export interface MonitorConcern { id: string; adminId: string; note: string; createdAt: string; reviewAt: string; resolvedAt?: string; resolution?: string }
 /** The Admin is away: a chosen backup may look at a limited, read-only panel until the day they are back. The access itself is one of 192's time-limited exceptions. */
 export interface MonitorAbsence { id: string; adminId: string; from: string; until: string; backupUserId: string; backupName: string; reason: string; overrideId: string; endedAt?: string; endedReason?: string }
+
+/* ------------------------------------------------------------------ Data privacy & consent (194) */
+
+export interface ConsentRecord { id: string; phone10: string; purpose: 'sms' | 'whatsapp' | 'recruitment_contact' | 'location_tracking'; status: 'granted' | 'withdrawn'; source: 'request' | 'admin' | 'onboarding'; at: string; byName: string; note: string; requestId?: string }
+export interface PrivacyPlanRow { category: string; count: number; action: 'erase' | 'anonymise' | 'retain'; reason: string; until: string | null; executable: boolean }
+export interface DataRequestEvent { id: string; at: string; byName: string; kind: 'received' | 'identity_verified' | 'plan_reviewed' | 'fulfilled' | 'refused' | 'withdrawn' | 'note'; note: string }
+/** A person asking about their own data. Nothing is dropped: it is answered, partly answered with the reasons, or refused with one. */
+export interface DataRequest {
+  id: string;
+  code: string;
+  /** The last ten digits of the person's phone: one person, however many roles they have held. */
+  subjectId: string;
+  subjectName: string;
+  subjectKinds: string[];
+  type: 'access' | 'correction' | 'deletion' | 'consent_withdrawal';
+  channel: 'phone' | 'email' | 'whatsapp' | 'in_person' | 'in_app' | 'letter';
+  receivedAt: string;
+  receivedByName: string;
+  note: string;
+  purpose?: 'sms' | 'whatsapp' | 'recruitment_contact' | 'location_tracking';
+  status: 'received' | 'in_progress' | 'completed' | 'partially_completed' | 'refused' | 'withdrawn';
+  verified?: { method: 'call_back' | 'otp' | 'in_person' | 'id_document'; note: string; at: string; byName: string };
+  dueAt: string;
+  closedAt?: string;
+  plan?: { rows: PrivacyPlanRow[]; at: string };
+  result?: { erased: { category: string; count: number }[]; retained: { category: string; count: number; reason: string; until: string | null }[]; accessCategories?: Record<string, number>; correctionNote?: string };
+  response?: { via: string; note: string; at: string; byName: string };
+  refusal?: string;
+  events: DataRequestEvent[];
+}
+export interface RetentionPolicyVersion { id: string; version: number; effectiveFrom: string; createdAt: string; byName: string; reason: string; rules: Record<string, { days: number | null; action: 'erase' | 'anonymise' | 'review' | 'retain' }>; appliedToExisting: boolean }
+export interface RetentionRun { id: string; code: string; at: string; policyVersion: number; actions: { category: string; action: string; count: number }[]; remaining: number; capped: boolean }
+export interface PrivacyPolicyVersion { id: string; version: number; effectiveFrom: string; createdAt: string; byName: string; summary: string; material: boolean; text: { en: string; hi: string; mr: string }; noticeAt?: string; noticeBy?: string; noticeHow?: string; noticeNote?: string }

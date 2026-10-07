@@ -1,5 +1,6 @@
 import type { VaultKind } from '@/features/documents/vault';
 import type { BrandDraft, ContrastCheck } from '@/features/brand/brand';
+import type { ConsentStatus, Purpose as PrivacyPurpose, RequestChannel as PrivacyChannel, RequestType as PrivacyRequestType, RetentionRules as PrivacyRules, SlaState as PrivacySla, SubjectKind, PlanRow as PrivacyPlanView, VerifyMethod as PrivacyVerifyMethod } from '@/features/privacy/privacy';
 import type { CheckKind as MonitorCheckKind, Direction as MonitorDirection, MonitorGroup, MonitorStatus, MonitorUnit } from '@/features/monitor/signals';
 import type { Risk as AccessRisk, ScreenRef, Source as AccessSource } from '@/features/access/permissions';
 import type { CategoryRollup as SlaRollup, PauseReason as SlaPauseReason, SlaCategory, SlaStatus, TargetSignal as SlaTargetSignal, TrendDirection as SlaTrendDirection, TrendPoint as SlaTrendPoint } from '@/features/sla/consolidated';
@@ -140,6 +141,11 @@ import type {
   SandboxRun,
   CompanyProfileChange,
   CompanyProfileVersion,
+  ConsentRecord,
+  DataRequest,
+  PrivacyPolicyVersion,
+  RetentionPolicyVersion,
+  RetentionRun,
   MonitorAbsence,
   MonitorCheck,
   MonitorConcern,
@@ -7357,6 +7363,56 @@ export interface MonitorConfigInput { signalIds: string[]; preset: string | null
 export interface MonitorCheckInput { kind: MonitorCheckKind; note: string; hash: string }
 export interface MonitorAbsenceInput { until: string; backupUserId: string; reason: string }
 
+/* ------------------------------------------------------------------ Data privacy & consent (194) */
+
+export interface SubjectRowView {
+  id: string;
+  name: string;
+  phoneMasked: string;
+  kinds: SubjectKind[];
+  consents: { purpose: PrivacyPurpose; status: ConsentStatus; at: string | null; source: string | null }[];
+  openRequests: number;
+}
+export interface ConsentRegisterFilter { q?: string; kind?: SubjectKind | 'all'; purpose?: PrivacyPurpose | null; status?: ConsentStatus | null; offset?: number; limit?: number }
+export interface ConsentRegisterView {
+  rows: SubjectRowView[];
+  total: number;
+  subjects: number;
+  summary: { purpose: PrivacyPurpose; granted: number; withdrawn: number; notRecorded: number }[];
+  kinds: { kind: SubjectKind; count: number }[];
+  policy: { version: number; effectiveFrom: string } | null;
+}
+export interface SubjectDetailView extends SubjectRowView {
+  names: string[];
+  phone: string;
+  /** What is held about this person, by category. */
+  counts: Record<string, number>;
+  history: ConsentRecord[];
+  requests: DataRequestView[];
+}
+export interface DataRequestView extends DataRequest { sla: { state: PrivacySla; ratio: number; daysLeft: number }; ackLate: boolean }
+export interface DataRequestFilter { status?: 'open' | 'closed' | 'all'; type?: PrivacyRequestType | 'all'; q?: string; offset?: number; limit?: number }
+export interface DataRequestListView { rows: DataRequestView[]; total: number; counts: { open: number; late: number; close: number; closed: number } }
+export interface DataRequestInput { subjectId: string; type: PrivacyRequestType; channel: PrivacyChannel; receivedAt: string | null; note: string; purpose?: PrivacyPurpose }
+export interface DeletionPlanResult { rows: PrivacyPlanView[]; outcome: 'completed' | 'partially_completed' }
+export interface AccessPackageView { generatedAt: string; subjectName: string; sections: { category: string; rows: { label: string; detail: string }[] }[] }
+export interface FulfilInput { confirm: boolean; responseVia: PrivacyChannel; responseNote: string; correctionNote?: string }
+export interface RetentionCategoryView { id: string; rule: { days: number | null; action: 'erase' | 'anonymise' | 'review' | 'retain' }; enforced: boolean; statutoryYears: number | null; /** Records already older than the period. */ dueNow: number; held: number }
+export interface RetentionView {
+  current: RetentionPolicyVersion;
+  scheduled: RetentionPolicyVersion | null;
+  versions: RetentionPolicyVersion[];
+  categories: RetentionCategoryView[];
+  runs: RetentionRun[];
+  lastRunAt: string | null;
+  at: string;
+}
+export interface RetentionPreviewRow { category: string; current: { days: number | null; action: string }; proposed: { days: number | null; action: string }; dueNowCurrent: number; dueNowProposed: number; enforced: boolean; held: number }
+export interface RetentionPreview { rows: RetentionPreviewRow[]; problems: string[]; /** Records already past the proposed limit that the policy will act on once it takes effect. */ actionable: number; /** Records past the proposed limit that a person must decide on (the build does not remove them itself). */ forReview: number; effectiveProblem: string | null; token: string }
+export interface RetentionSaveInput { rules: PrivacyRules; effectiveFrom: string | null; reason: string; confirmExisting: boolean; token: string }
+export interface PrivacyPolicyView { current: PrivacyPolicyVersion | null; scheduled: PrivacyPolicyVersion | null; versions: PrivacyPolicyVersion[]; noticeOpen: { versionId: string; version: number; dueAt: string } | null; reach: { customers: number; partners: number }; at: string }
+export interface PrivacyPolicyInput { text: { en: string; hi: string; mr: string }; summary: string; material: boolean; effectiveFrom: string | null }
+
 /* ------------------------------------------------------------------ Integration management (189) */
 
 export interface IntegrationSetupView {
@@ -9078,6 +9134,25 @@ export interface Repository {
   resolveMonitorConcern(userId: string, concernId: string, note: string): Promise<MonitorPanelView>;
   setMonitorAbsence(userId: string, input: MonitorAbsenceInput): Promise<MonitorPanelView>;
   endMonitorAbsence(userId: string, reason: string): Promise<MonitorPanelView>;
+  /* 194 — data privacy & consent */
+  getConsentRegister(userId: string, filter: ConsentRegisterFilter): Promise<ConsentRegisterView>;
+  getPrivacySubject(userId: string, subjectId: string): Promise<SubjectDetailView>;
+  recordConsent(userId: string, input: { subjectId: string; purpose: PrivacyPurpose; status: 'granted' | 'withdrawn'; note: string }): Promise<SubjectDetailView>;
+  listDataRequests(userId: string, filter: DataRequestFilter): Promise<DataRequestListView>;
+  getDataRequest(userId: string, id: string): Promise<DataRequestView>;
+  createDataRequest(userId: string, input: DataRequestInput): Promise<DataRequestView>;
+  verifyDataRequest(userId: string, id: string, method: PrivacyVerifyMethod, note: string): Promise<DataRequestView>;
+  planDataRequest(userId: string, id: string): Promise<DeletionPlanResult>;
+  getAccessPackage(userId: string, id: string): Promise<AccessPackageView>;
+  fulfilDataRequest(userId: string, id: string, input: FulfilInput): Promise<DataRequestView>;
+  refuseDataRequest(userId: string, id: string, reason: string): Promise<DataRequestView>;
+  withdrawDataRequest(userId: string, id: string, note: string): Promise<DataRequestView>;
+  getRetention(userId: string): Promise<RetentionView>;
+  previewRetention(userId: string, rules: PrivacyRules, effectiveFrom: string | null): Promise<RetentionPreview>;
+  saveRetentionPolicy(userId: string, input: RetentionSaveInput): Promise<RetentionView>;
+  getPrivacyPolicy(userId: string): Promise<PrivacyPolicyView>;
+  publishPrivacyPolicy(userId: string, input: PrivacyPolicyInput): Promise<PrivacyPolicyView>;
+  recordPolicyNotice(userId: string, versionId: string, how: PrivacyChannel, note: string): Promise<PrivacyPolicyView>;
   /* 188 — the console for forcing what a rule would not, with a reason, a preview and a confirmation; guardrails with no override are refused and the attempt kept. */
   getOverrideConsole(userId: string): Promise<OverrideConsoleView>;
   getOverrideCandidates(userId: string, kind: string, q: string): Promise<OverrideCandidate[]>;

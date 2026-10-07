@@ -161,6 +161,7 @@ export interface CommitmentSources {
   /** What a recovered outage left behind that still needs a person (186). */
   integrations: { followUps: { id: string; name: string; since: string; count: number }[]; rotations: { id: string; name: string; dueAt: string }[] };
   /** A rule that passed its sandbox tests and is still not live, and a scenario library nobody has reviewed in a while (190). */
+  privacy: { requests: { id: string; name: string; type: string; dueAt: string }[]; notices: { id: string; version: number; dueAt: string }[]; reviews: { id: string; count: number; since: string }[] };
   monitor: { checks: { adminId: string; day: string; dueAt: string }[]; concerns: { id: string; adminId: string; note: string; reviewAt: string }[] };
   permissions: { reviews: { id: string; name: string; screen: string; dueAt: string }[] };
   companyProfile: { verify: { id: string; version: number; dueAt: string }[] };
@@ -2464,6 +2465,72 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
         paused: false,
         actionRoute: `/automation-sandbox?rule=${x.id}`,
         oversightRoute: '/automation-sandbox',
+      }));
+    },
+  },
+  {
+    // A person's request about their own data is a legal obligation with a clock (194): answered, partly answered with the reasons, or refused with one, within the target.
+    kind: 'privacy_request_respond',
+    nudgeBefore: days(7),
+    escalateAfter: days(3),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'automation',
+    collect(src) {
+      return src.privacy.requests.map((x) => ({
+        ...base('privacy_request_respond', 'alert', x.id),
+        ownerUserId: adminId(src),
+        titleKey: 'work.title.privacy_request_respond',
+        titleParams: { name: x.name, type: x.type },
+        dueAt: x.dueAt,
+        state: 'open' as const,
+        paused: false,
+        actionRoute: `/privacy?tab=requests&request=${x.id}`,
+        oversightRoute: '/privacy?tab=requests',
+      }));
+    },
+  },
+  {
+    // A material change to the privacy policy is told to the people it affects before it takes effect (194).
+    kind: 'privacy_policy_notice',
+    nudgeBefore: days(3),
+    escalateAfter: days(7),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'automation',
+    collect(src) {
+      return src.privacy.notices.map((x) => ({
+        ...base('privacy_policy_notice', 'alert', x.id),
+        ownerUserId: adminId(src),
+        titleKey: 'work.title.privacy_policy_notice',
+        titleParams: { version: String(x.version) },
+        dueAt: x.dueAt,
+        state: 'open' as const,
+        paused: false,
+        actionRoute: '/privacy?tab=policy',
+        oversightRoute: '/privacy?tab=policy',
+      }));
+    },
+  },
+  {
+    // Records past a retention period that this build does not remove itself are decided by a person (194).
+    kind: 'privacy_retention_review',
+    nudgeBefore: days(3),
+    escalateAfter: days(14),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'automation',
+    collect(src) {
+      return src.privacy.reviews.map((x) => ({
+        ...base('privacy_retention_review', 'alert', x.id),
+        ownerUserId: adminId(src),
+        titleKey: 'work.title.privacy_retention_review',
+        titleParams: { category: x.id, count: String(x.count) },
+        dueAt: new Date(Date.parse(x.since) + days(30)).toISOString(),
+        state: 'open' as const,
+        paused: false,
+        actionRoute: '/privacy?tab=retention',
+        oversightRoute: '/privacy?tab=retention',
       }));
     },
   },

@@ -1016,6 +1016,8 @@ import { MANY_AT as WF_MANY_AT, MAX_PER_RUN as WF_MAX_PER_RUN, conflictsOf as wf
 import type { RecordValues, RuleDraft, SubjectId as WfSubject } from '@/features/automation/customRules';
 import { CHANNELS as INT_CHANNELS, CORE_TYPES as INT_CORE, DEFAULT_URGENCY_CHANNELS as INT_DEFAULTS, NO_CHANNELS as INT_NONE, atLeast as intAtLeast, channelProblems as intChannelProblems, contentProblems as intContentProblems, fatigueOf as intFatigueOf, isBlocking as intIsBlocking, reducesReach as intReducesReach, severityFloorOf as intSeverityFloor, urgencyOfSeverity as intUrgencyOfSeverity } from '@/features/notifications/internal';
 import type { Urgency as IntUrgency } from '@/features/notifications/internal';
+import { ACK_DAYS as PV_ACK_DAYS, CATEGORIES as PV_CATEGORIES, MAX_RUN as PV_MAX_RUN, NOTE_MIN as PV_NOTE_MIN, POLICY_MIN as PV_POLICY_MIN, PURPOSES as PV_PURPOSES, REFUSE_MIN as PV_REFUSE_MIN, REQUEST_CHANNELS as PV_CHANNELS, REQUEST_TYPES as PV_TYPES, VERIFY_METHODS as PV_VERIFY, WARN_AT as PV_WARN_AT, ackDueAt as pvAckDueAt, categoryDef as pvCategoryDef, defaultRules as pvDefaultRules, dueAtOf as pvDueAtOf, isOpenRequest as pvIsOpen, last10 as pvLast10, lettersOf as pvLetters, maskPhone as pvMask, outcomeOfPlan as pvOutcome, planDeletion as pvPlan, policyEffectiveProblem as pvPolicyEffective, purposesFor as pvPurposesFor, retentionProblems as pvRetentionProblems, slaOf as pvSlaOf } from '@/features/privacy/privacy';
+import type { ConsentStatus as PvStatus, Purpose as PvPurpose, RetentionRules as PvRules, SubjectFacts as PvFacts, SubjectKind as PvKind } from '@/features/privacy/privacy';
 import { ABSENCE_MAX_DAYS as MN_ABSENCE_MAX, CONCERN_DAYS_MAX as MN_CONCERN_MAX, CONVERSION_WATCH as MN_CONVERSION_WATCH, DEFAULT_CHECK_DAYS as MN_DEFAULT_DAYS, DEFAULT_CHECK_TIME as MN_DEFAULT_TIME, DEFAULT_PRESET as MN_DEFAULT_PRESET, NOTE_MIN as MN_NOTE_MIN, OVERDUE_ACT_DAYS as MN_OVERDUE_ACT, PRESETS as MN_PRESETS, QUOTE_EXPIRY_DAYS as MN_QUOTE_EXPIRY, SIGNALS as MN_SIGNALS, checkProblem as mnCheckProblem, configProblem as mnConfigProblem, dayKey as mnDayKey, isCriticalFlag as mnIsCritical, panelIds as mnPanelIds, signalDef as mnSignalDef, snapshotHash as mnSnapshotHash, statusOfAlerts as mnStatusOfAlerts, streakOf as mnStreakOf, todayAt as mnTodayAt, trendOf as mnTrendOf } from '@/features/monitor/signals';
 import type { MonitorStatus as MnStatus } from '@/features/monitor/signals';
 import { BUILT_IN_ROLES as PM_BUILT_IN, CREEP_OVERRIDES as PM_CREEP, CUSTOM_BASES as PM_CUSTOM_BASES, MAX_SCREENS_PER_CHANGE as PM_MAX_SCREENS, NAME_MIN as PM_NAME_MIN, PAGE as PM_PAGE, REASON_MIN_OVERRIDE as PM_REASON_OVERRIDE, REASON_MIN_ROLE as PM_REASON_ROLE, accessFor as pmAccessFor, adminOnly as pmAdminOnly, cellOf as pmCellOf, decisionKey as pmKey, defaultAllows as pmDefaultAllows, isExpired as pmIsExpired, lettersOf as pmLetters, lockedFor as pmLockedFor, moduleOf as pmModuleOf, overrideDueAt as pmOverrideDueAt, reasonProblem as pmReasonProblem, riskOf as pmRiskOf, untilProblem as pmUntilProblem, worstRisk as pmWorstRisk } from '@/features/access/permissions';
@@ -1031,12 +1033,12 @@ import type { OverrideKind, OverrideProblem } from '@/features/override/rules';
 import { GENESIS as AUDIT_GENESIS, codeOf as auditCodeOf, hashOf as auditHashOf, verifyChain as auditVerify } from '@/features/audit/chain';
 import { BOT_DRIFT_POINTS as HC_BOT_DRIFT, BOT_MIN_SAMPLE as HC_BOT_MIN, ENGINE_DOWN_MS as HC_ENGINE_DOWN, INTEGRATIONS as HC_INTEGRATIONS, MAX_PROBES as HC_MAX_PROBES, STATUS_WINDOW_MS as HC_STATUS_WINDOW, NOTE_MIN as HC_NOTE_MIN, PROBE_EVERY_MS as HC_PROBE_EVERY, WINDOW_MS as HC_WINDOW, agreementOf as hcAgreement, causeOf as hcCause, integrationDef as hcDef, isHttpUrl as hcIsUrl, judge as hcJudge, recovered as hcRecovered, sharedCauseOf as hcShared, uptimeOf as hcUptime } from '@/features/health/system';
 import type { IntegrationDef as HcDef, Observation as HcObservation, TechStatus } from '@/features/health/system';
-import type { MonitorAbsenceInput, MonitorBackupCandidate, MonitorCheckInput, MonitorConfigInput, MonitorPanelView, MonitorSignalView, AccessGrantsView, CustomRoleInput, MatrixRowView, PermissionLogFilter, PermissionLogView, PermissionMatrixFilter, PermissionMatrixView, PermissionOverview, PermissionRoleView, PermissionUserRow, RoleChangeInput, RoleChangePreview, UserAccessView, UserOverrideInput, BrandView, CompanyProfilePreview, CompanyProfilePublishInput, CompanyProfileVersionView, CompanyProfileView, CompanyUsage, SandboxRunView, SandboxPromotionPreview, SandboxPromotionRow, SandboxRuleRef, SandboxScenarioView, SandboxView, IntegrationManagementView, IntegrationSetupView, IsolationCheckView, OverrideCandidate, OverrideConsoleView, OverridePreviewView, AuditDetailView, AuditExportView, AuditFilter, AuditRowView, AuditSearchView, BotHealthView, SystemHealthIntegrationView, SystemHealthView } from './repository';
+import type { AccessPackageView, ConsentRegisterFilter, ConsentRegisterView, DataRequestFilter, DataRequestListView, DataRequestView, DeletionPlanResult, FulfilInput, PrivacyPolicyView, RetentionPreview, RetentionView, SubjectDetailView, SubjectRowView, MonitorAbsenceInput, MonitorBackupCandidate, MonitorCheckInput, MonitorConfigInput, MonitorPanelView, MonitorSignalView, AccessGrantsView, CustomRoleInput, MatrixRowView, PermissionLogFilter, PermissionLogView, PermissionMatrixFilter, PermissionMatrixView, PermissionOverview, PermissionRoleView, PermissionUserRow, RoleChangeInput, RoleChangePreview, UserAccessView, UserOverrideInput, BrandView, CompanyProfilePreview, CompanyProfilePublishInput, CompanyProfileVersionView, CompanyProfileView, CompanyUsage, SandboxRunView, SandboxPromotionPreview, SandboxPromotionRow, SandboxRuleRef, SandboxScenarioView, SandboxView, IntegrationManagementView, IntegrationSetupView, IsolationCheckView, OverrideCandidate, OverrideConsoleView, OverridePreviewView, AuditDetailView, AuditExportView, AuditFilter, AuditRowView, AuditSearchView, BotHealthView, SystemHealthIntegrationView, SystemHealthView } from './repository';
 import { SLA_CATEGORIES, WINDOW_DAYS as SLA_WINDOW_DAYS, elapsedMsOf as slaElapsedOf, pauseOf as slaPauseOf, ratioOf as slaRatioOf, rollupOf as slaRollupOf, statusOf as slaStatusOf, targetSignal as slaTargetSignal, trendOf as slaTrendOf, triageScore as slaTriageScore } from '@/features/sla/consolidated';
 import type { SlaItem } from '@/features/sla/consolidated';
 import type { SlaCategoryView, SlaItemView, SlaOverviewView } from './repository';
 import { BACKUP_KEYS as ESC_BACKUP_KEYS, DEMO_CONFIRM_MS as ESC_DEMO_CONFIRM_MS, DEMO_SILENCE_MS as ESC_DEMO_SILENCE_MS, DRILL_GAP_TITLE as ESC_DRILL_GAP_TITLE, ESC_CHANNELS, EXHAUSTED_TITLE as ESC_EXHAUSTED_TITLE, MAX_BACKUPS as ESC_MAX_BACKUPS, NOTE_MIN as ESC_NOTE_MIN, PRIMARY as ESC_PRIMARY, SCENARIOS as ESC_SCENARIOS, SCENARIO_NAMES as ESC_NAMES, chainProblems as escChainProblems, drillDueAt as escDrillDueAt, drillStepsOf as escDrillStepsOf, exhaustedAfterMinutes as escExhaustedAfter, offsetsOf as escOffsets, phoneProblem as escPhoneBad, railOutcome as escRailOutcome, repeatOffsets as escRepeatOffsets, scenarioDef as escDef, scenarioIdOf as escScenarioIdOf, withTierIds as escTierIds } from '@/features/escalation/matrix';
-import type { MonitorAbsence, MonitorCheck, MonitorConcern, MonitorConfig, CompanyProfileVersion, Role, CustomRole, PermissionChange, PermissionChangeKind, UserAccessOverride, SandboxBaseline, SandboxRun, SandboxScenario, IntegrationChange, IntegrationCredentialView, IntegrationSetup, AuditExportRecord, LeadStage, ManualOverride, IntegrationConfig, IntegrationIncident, IntegrationProbe, MessageStatus } from './types';
+import type { GeoPoint, ConsentRecord, DataRequest, PrivacyPolicyVersion, RetentionPolicyVersion, RetentionRun, MonitorAbsence, MonitorCheck, MonitorConcern, MonitorConfig, CompanyProfileVersion, Role, CustomRole, PermissionChange, PermissionChangeKind, UserAccessOverride, SandboxBaseline, SandboxRun, SandboxScenario, IntegrationChange, IntegrationCredentialView, IntegrationSetup, AuditExportRecord, LeadStage, ManualOverride, IntegrationConfig, IntegrationIncident, IntegrationProbe, MessageStatus } from './types';
 import type { EscalationChainTier, EscalationChannel, EscalationContact, EscalationDelivery, EscalationDrill, EscalationDrillStep, EscalationLastResort, EscalationRun, EscalationScenarioConfig } from './types';
 import type { AlertEscalationView, EscalationGap, EscalationMatrixView, EscalationRunView, EscalationScenarioView } from './repository';
 import { VAULT_KINDS, validityState } from '@/features/documents/vault';
@@ -2882,6 +2884,7 @@ function commitmentSources(now: number): CommitmentSources {
     companyProfile: cpSignals(now),
     permissions: pmSignals(now),
     monitor: mnSignalsForCommitments(now),
+    privacy: pvSignals(now),
     tds: tdsObligations(Date.now()),
     exits: exitSignals(),
     handoverReviews: handoverSignals().reviews,
@@ -4820,6 +4823,319 @@ function mnSignalsForCommitments(now: number): { checks: { adminId: string; day:
   return { checks, concerns: monitorConcerns.filter((c) => !c.resolvedAt).map((c) => ({ id: c.id, adminId: c.adminId, note: c.note, reviewAt: c.reviewAt })) };
 }
 
+/* ============================================ Data privacy & consent (194) */
+
+const consentRecords: ConsentRecord[] = [];
+const dataRequests: DataRequest[] = [];
+const retentionPolicies: RetentionPolicyVersion[] = [];
+const retentionRuns: RetentionRun[] = [];
+const privacyPolicies: PrivacyPolicyVersion[] = [];
+let pvSeeded = false;
+let pvLastRunDay = '';
+let pvLastRunVersion = 0;
+const PV_REDACTED = '[Removed under the data policy]';
+const pvDay = 86_400_000;
+
+/** A person who has withdrawn consent to location tracking is not tracked: the places a position is written to ask first. */
+function pvLocationAllowed(userId: string): boolean {
+  const u = byId(users, userId);
+  if (!u) return true;
+  const latest = consentRecords.filter((c) => c.phone10 === pvLast10(u.phone) && c.purpose === 'location_tracking').sort((a, b) => (a.at < b.at ? 1 : -1))[0];
+  return !latest || latest.status === 'granted';
+}
+const pvLoc = (userId: string, location?: GeoPoint | null): { location?: GeoPoint } => (location && pvLocationAllowed(userId) ? { location } : {});
+
+interface PvPerson { id: string; names: Set<string>; kinds: Set<PvKind>; userIds: string[] }
+function pvPeople(): Map<string, PvPerson> {
+  const out = new Map<string, PvPerson>();
+  const get = (phone: string, name: string, kind: PvKind): PvPerson | null => {
+    const id = pvLast10(phone);
+    if (id.length < 10) return null;
+    let p = out.get(id);
+    if (!p) { p = { id, names: new Set(), kinds: new Set(), userIds: [] }; out.set(id, p); }
+    if (name) p.names.add(name);
+    p.kinds.add(kind);
+    return p;
+  };
+  const exited = new Set(partnerExits.filter((e) => e.status === 'completed').map((e) => e.partnerId));
+  for (const u of users) {
+    if (u.role === 'admin' || u.status === 'rejected') continue;
+    const former = u.role !== 'customer' && (u.status === 'suspended' || exited.has(u.id));
+    const p = get(u.phone, u.name, u.role === 'customer' ? 'customer' : former ? 'former_partner' : 'partner');
+    p?.userIds.push(u.id);
+  }
+  for (const l of leads) get(l.contactPhone, l.contactName, 'contact');
+  for (const i of recruitmentInterests) get(i.phone, i.name, 'applicant');
+  for (const a of partnerApplications) get(a.form.personal.phone, a.form.personal.fullName, 'applicant');
+  for (const e of optOutEvents) get(e.contactPhone, e.contactName, 'contact');
+  // A person who holds an account is not also listed as a bare contact or applicant.
+  for (const p of out.values()) {
+    if (p.kinds.has('partner') || p.kinds.has('customer') || p.kinds.has('former_partner')) { p.kinds.delete('contact'); p.kinds.delete('applicant'); }
+    else if (p.kinds.has('applicant')) p.kinds.delete('contact');
+  }
+  return out;
+}
+
+function pvConsent(p: PvPerson, purpose: PvPurpose): { status: PvStatus; at: string | null; source: string | null } {
+  if (purpose === 'sms' || purpose === 'whatsapp') {
+    const ev = optOutEvents.filter((e) => pvLast10(e.contactPhone) === p.id && (e.channel === purpose || e.channel === 'all')).sort((a, b) => (a.at < b.at ? 1 : -1))[0];
+    return ev ? { status: ev.type === 'opted_out' ? 'withdrawn' : 'granted', at: ev.at, source: ev.source } : { status: 'not_recorded', at: null, source: null };
+  }
+  const rec = consentRecords.filter((c) => c.phone10 === p.id && c.purpose === purpose).sort((a, b) => (a.at < b.at ? 1 : -1))[0];
+  if (rec) return { status: rec.status, at: rec.at, source: rec.source };
+  if (purpose === 'recruitment_contact') { const i = recruitmentInterests.filter((x) => pvLast10(x.phone) === p.id).sort((a, b) => (a.interestedAt < b.interestedAt ? 1 : -1))[0]; if (i) return { status: i.contactConsent ? 'granted' : 'withdrawn', at: i.interestedAt, source: 'onboarding' }; }
+  return { status: 'not_recorded', at: null, source: null };
+}
+
+interface PvRecords {
+  leadIds: string[]; msgs: CommMessage[]; userIds: string[]; dealIds: string[]; checkIns: SiteCheckIn[]; apps: PartnerApplication[]; interests: RecruitmentInterest[]; jobsOf: Job[];
+  counts: Record<string, number>; facts: PvFacts;
+}
+function pvRecords(p: PvPerson, now: number): PvRecords {
+  const leadIds = leads.filter((l) => pvLast10(l.contactPhone) === p.id).map((l) => l.id);
+  const convIds = new Set(conversations.filter((c) => leadIds.includes(c.leadId)).map((c) => c.id));
+  const msgs = commMessages.filter((m) => convIds.has(m.conversationId));
+  const userIds = users.filter((u) => pvLast10(u.phone) === p.id).map((u) => u.id);
+  const dealIds = deals.filter((d) => leadIds.includes(d.leadId) || (!!d.customerId && userIds.includes(d.customerId))).map((d) => d.id);
+  const checkIns = siteCheckIns.filter((c) => userIds.includes(c.userId));
+  const apps = partnerApplications.filter((a) => pvLast10(a.form.personal.phone) === p.id);
+  const interests = recruitmentInterests.filter((i) => pvLast10(i.phone) === p.id);
+  const jobsOf = jobs.filter((j) => dealIds.includes(j.dealId));
+  const jobIds = new Set(jobsOf.map((j) => j.id));
+  const dealPay = payments.filter((x) => dealIds.includes(x.dealId));
+  const invs = invoices.filter((x) => dealIds.includes(x.dealId));
+  const cons = contracts.filter((x) => dealIds.includes(x.dealId));
+  const comm = commissions.filter((c) => userIds.includes(c.userId));
+  const tickets = serviceTickets.filter((t) => userIds.includes(t.customerId));
+  const warranties = warrantyRegistrations.filter((w) => jobIds.has(w.jobId));
+  const counts: Record<string, number> = {
+    communications: msgs.filter((m) => m.body !== PV_REDACTED).length,
+    location_trail: checkIns.filter((c) => c.checkInLocation !== null || c.checkOutLocation).length + userIds.filter((id) => !!byId(users, id)?.location).length,
+    applicant_records: apps.filter((a) => !a.erasedAt).length + interests.filter((i) => !i.phone.startsWith('del')).length,
+    prospect_records: leadIds.filter((id) => !deals.some((d) => d.leadId === id)).length + quotations.filter((q) => leadIds.includes(q.leadId)).length,
+    contracts_invoices: invs.length + cons.length,
+    payments_tax: dealPay.length,
+    partner_payouts: comm.length,
+    installation_safety: jobsOf.length,
+    warranty_service: tickets.length + warranties.length,
+    partner_profile: userIds.filter((id) => byId(users, id)?.role !== 'customer').length,
+    consent_records: optOutEvents.filter((e) => pvLast10(e.contactPhone) === p.id).length + consentRecords.filter((c) => c.phone10 === p.id).length,
+  };
+  const latest = (xs: (string | undefined)[]): string | null => xs.filter((x): x is string => !!x).sort().pop() ?? null;
+  const kind: PvKind = p.kinds.has('partner') ? 'partner' : p.kinds.has('customer') ? 'customer' : p.kinds.has('former_partner') ? 'former_partner' : p.kinds.has('applicant') ? 'applicant' : 'contact';
+  const facts: PvFacts = {
+    kind, openWork: jobsOf.some((j) => j.status !== 'completed') || dealIds.some((id) => { const d = byId(deals, id); return !!d && d.status === 'approved'; }),
+    activeWarranty: warranties.some((w) => Date.parse(w.startsOn) + 36 * 30 * pvDay > now), unpaid: dealPay.some((x) => isOutstanding(x)),
+    lastMoneyAt: latest([...invs.map((i) => i.issuedAt), ...dealPay.map((x) => x.paidAt ?? x.dueDate), ...comm.map((c) => c.earnedAt)]),
+    lastSafetyAt: latest(jobsOf.map((j) => j.completedAt ?? j.startedAt ?? j.scheduledFor)),
+  };
+  return { leadIds, msgs, userIds, dealIds, checkIns, apps, interests, jobsOf, counts, facts };
+}
+
+function pvEraseApplication(a: PartnerApplication, now: number): void {
+  a.form = { ...a.form, personal: { ...a.form.personal, fullName: 'Removed', phone: '', city: '', address: '', dob: '' }, experience: { ...a.form.experience, summary: '' }, identity: { aadhaarNumber: '', aadhaarDoc: null, panNumber: '', panDoc: null, gstin: '', gstDoc: null }, references: [] };
+  a.erasedAt = new Date(now).toISOString();
+}
+function pvEraseInterest(i: RecruitmentInterest): void { i.name = 'Removed'; i.phone = `del${i.id}`; }
+const pvEraseCheckIn = (c: SiteCheckIn): void => { c.checkInLocation = null; c.checkOutLocation = null; };
+const pvEraseUserLocation = (userId: string): void => { const u = byId(users, userId); if (u?.location) patchInPlace(users, userId, { location: undefined, lastSeenAt: undefined }); };
+
+/** The records older than a period, by category, for the categories whose date this build can read. */
+function pvDueIn(category: string, days: number | null, now: number): { count: number; held: number } {
+  const cut = days === null ? -Infinity : now - days * pvDay;
+  const old = (iso: string | undefined | null): boolean => !!iso && Date.parse(iso) < cut;
+  switch (category) {
+    case 'communications': { const live = commMessages.filter((m) => m.body !== PV_REDACTED); return { count: live.filter((m) => old(m.at)).length, held: live.length }; }
+    case 'location_trail': { const live = siteCheckIns.filter((c) => c.checkInLocation !== null || !!c.checkOutLocation); return { count: live.filter((c) => old(c.checkInAt)).length, held: live.length }; }
+    case 'applicant_records': { const live = partnerApplications.filter((a) => !a.erasedAt && (a.status === 'rejected' || a.status === 'withdrawn')); return { count: live.filter((a) => old(a.updatedAt)).length, held: live.length }; }
+    case 'prospect_records': { const live = leads.filter((l) => !deals.some((d) => d.leadId === l.id)); return { count: live.filter((l) => old(l.createdAt)).length, held: live.length }; }
+    case 'contracts_invoices': return { count: invoices.filter((i) => old(i.issuedAt)).length + contracts.filter((c) => old(c.generatedAt)).length, held: invoices.length + contracts.length };
+    case 'payments_tax': return { count: payments.filter((x) => old(x.paidAt ?? x.dueDate)).length, held: payments.length };
+    case 'partner_payouts': return { count: commissions.filter((c) => old(c.earnedAt)).length, held: commissions.length };
+    case 'installation_safety': return { count: jobs.filter((j) => j.status === 'completed' && old(j.completedAt)).length, held: jobs.length };
+    case 'warranty_service': return { count: serviceTickets.filter((t) => old(t.createdAt)).length, held: serviceTickets.length + warrantyRegistrations.length };
+    case 'consent_records': return { count: optOutEvents.filter((e) => old(e.at)).length, held: optOutEvents.length + consentRecords.length };
+    default: return { count: 0, held: 0 };
+  }
+}
+const pvPolicyAt = (now: number): RetentionPolicyVersion => [...retentionPolicies].filter((v) => Date.parse(v.effectiveFrom) <= now).sort((a, b) => b.version - a.version)[0] ?? retentionPolicies[0];
+const pvRulesOf = (v: RetentionPolicyVersion): PvRules => JSON.parse(JSON.stringify(v.rules)) as PvRules;
+const pvPolicyTextAt = (now: number): PrivacyPolicyVersion | null => [...privacyPolicies].filter((v) => Date.parse(v.effectiveFrom) <= now).sort((a, b) => b.version - a.version)[0] ?? null;
+
+function pvEnsure(): void {
+  if (pvSeeded) return;
+  pvSeeded = true;
+  const now = Date.now();
+  const iso = (d: number) => new Date(now - d * pvDay).toISOString();
+  retentionPolicies.push({ id: 'rp-1', version: 1, effectiveFrom: iso(400), createdAt: iso(400), byName: 'Prashant Vasant Wable', reason: 'The starting policy: the periods the data model itself implies, for the owner\'s adviser to review.', rules: pvDefaultRules(), appliedToExisting: true });
+  privacyPolicies.push({ id: 'pp-1', version: 1, effectiveFrom: iso(400), createdAt: iso(400), byName: 'Prashant Vasant Wable', summary: 'The first privacy policy.', material: false, text: {
+    en: 'AIEC collects the details you give us (your name, phone, address and, for partners, identity documents and your location while you work) to run your project or your work with us, to keep you safe on site, to send you the messages you have asked for and to meet our legal duties. We keep each kind of record only as long as we need it or as long as the law requires, and you can ask to see it, correct it or have it deleted. Where the law requires us to keep a record, such as an invoice, we will tell you what we keep and why. This is a starting draft for the owner\'s adviser to review.',
+    hi: 'AIEC वे विवरण एकत्र करता है जो आप हमें देते हैं (आपका नाम, फ़ोन, पता और, पार्टनरों के लिए, पहचान दस्तावेज़ और काम के दौरान आपका स्थान) ताकि आपका प्रोजेक्ट या हमारे साथ आपका काम चल सके, साइट पर आपकी सुरक्षा रहे, आपके माँगे संदेश भेजे जा सकें और हम अपने कानूनी कर्तव्य निभा सकें। हम हर प्रकार का रिकॉर्ड केवल तब तक रखते हैं जब तक हमें ज़रूरत है या कानून की माँग है, और आप उसे देखने, सुधारने या हटवाने का अनुरोध कर सकते हैं। जहाँ कानून हमसे कोई रिकॉर्ड, जैसे चालान, रखवाता है, वहाँ हम बताएँगे कि हम क्या रखते हैं और क्यों। यह मालिक के सलाहकार द्वारा समीक्षा के लिए एक शुरुआती मसौदा है।',
+    mr: 'AIEC तुम्ही आम्हाला दिलेले तपशील (तुमचे नाव, फोन, पत्ता आणि, भागीदारांसाठी, ओळख दस्तऐवज आणि काम करताना तुमचे स्थान) गोळा करते, जेणेकरून तुमचा प्रकल्प किंवा आमच्यासोबतचे तुमचे काम चालावे, साइटवर तुमची सुरक्षा राहावी, तुम्ही मागितलेले संदेश पाठवता यावेत आणि आम्ही आमची कायदेशीर कर्तव्ये पूर्ण करू शकू. आम्ही प्रत्येक प्रकारची नोंद फक्त तोपर्यंत ठेवतो जोपर्यंत आम्हाला गरज आहे किंवा कायद्याची मागणी आहे, आणि तुम्ही ती पाहण्याची, दुरुस्त करण्याची किंवा हटवण्याची विनंती करू शकता. जेथे कायदा आम्हाला एखादी नोंद, जसे बिल, ठेवायला लावतो, तेथे आम्ही काय ठेवतो आणि का ते सांगू. हा मालकाच्या सल्लागाराने आढावा घेण्यासाठी सुरुवातीचा मसुदा आहे.',
+  } });
+  const meera = users.find((u) => u.role === 'customer' && /meera/i.test(u.name));
+  const appl = partnerApplications.find((a) => a.status === 'rejected' && !a.erasedAt && a.form.personal.phone) ?? partnerApplications.find((a) => !a.erasedAt && a.form.personal.phone);
+  const mk = (n: number, subjectId: string, name: string, kinds: string[], type: DataRequest['type'], channel: DataRequest['channel'], daysAgo: number, note: string, verifiedAgo: number | null): void => {
+    const receivedAt = iso(daysAgo);
+    dataRequests.push({ id: `dr-${n}`, code: `AIEC-DSR-${1000 + n}`, subjectId, subjectName: name, subjectKinds: kinds, type, channel, receivedAt, receivedByName: 'Prashant Vasant Wable', note, status: verifiedAgo === null ? 'received' : 'in_progress', ...(verifiedAgo !== null ? { verified: { method: 'call_back' as const, note: 'Called back on the number held and confirmed the request.', at: iso(verifiedAgo), byName: 'Prashant Vasant Wable' } } : {}), dueAt: pvDueAtOf(receivedAt), events: [{ id: `dre-${n}-1`, at: receivedAt, byName: 'Prashant Vasant Wable', kind: 'received', note }, ...(verifiedAgo !== null ? [{ id: `dre-${n}-2`, at: iso(verifiedAgo), byName: 'Prashant Vasant Wable', kind: 'identity_verified' as const, note: 'Called back on the number held and confirmed the request.' }] : [])] });
+  };
+  if (meera) mk(1, pvLast10(meera.phone), meera.name, ['customer'], 'access', 'phone', 6, 'Asked on the phone for a copy of everything held about her.', 5);
+  if (appl) mk(2, pvLast10(appl.form.personal.phone), appl.form.personal.fullName, ['applicant'], 'deletion', 'whatsapp', 26, 'Asked on WhatsApp for her application and documents to be deleted.', null);
+}
+
+function pvRequestView(r: DataRequest, now: number): DataRequestView {
+  const sla = pvSlaOf(r.receivedAt, r.closedAt ?? null, now);
+  return { ...(JSON.parse(JSON.stringify(r)) as DataRequest), sla, ackLate: !r.verified && !r.closedAt && now > Date.parse(pvAckDueAt(r.receivedAt)) };
+}
+const pvSubjectRow = (p: PvPerson): SubjectRowView => {
+  const kinds = [...p.kinds];
+  return { id: p.id, name: [...p.names][0] ?? p.id, phoneMasked: pvMask(p.id), kinds, consents: pvPurposesFor(kinds).map((purpose) => ({ purpose, ...pvConsent(p, purpose) })), openRequests: dataRequests.filter((r) => r.subjectId === p.id && pvIsOpen(r.status)).length };
+};
+
+function pvRegister(filter: ConsentRegisterFilter): ConsentRegisterView {
+  pvEnsure();
+  const people = [...pvPeople().values()];
+  const q = (filter.q ?? '').trim().toLowerCase();
+  const rows = people.map(pvSubjectRow);
+  const base = rows.filter((r) => !q || r.name.toLowerCase().includes(q) || r.id.endsWith(q.replace(/\D/g, '')) && q.replace(/\D/g, '').length >= 3);
+  const shown = base.filter((r) => (!filter.kind || filter.kind === 'all' || r.kinds.includes(filter.kind)) && (!filter.purpose || r.consents.some((c) => c.purpose === filter.purpose && (!filter.status || c.status === filter.status))) && (!filter.status || filter.purpose || r.consents.some((c) => c.status === filter.status)));
+  shown.sort((a, b) => a.name.localeCompare(b.name));
+  const offset = filter.offset ?? 0;
+  const limit = filter.limit === 0 ? shown.length : filter.limit ?? 25;
+  const summary = PV_PURPOSES.map((pu) => { const rel = rows.filter((r) => r.consents.some((c) => c.purpose === pu.id)); const st = (s: PvStatus) => rel.filter((r) => r.consents.find((c) => c.purpose === pu.id)!.status === s).length; return { purpose: pu.id, granted: st('granted'), withdrawn: st('withdrawn'), notRecorded: st('not_recorded') }; });
+  const kinds = (['customer', 'partner', 'former_partner', 'applicant', 'contact'] as PvKind[]).map((kind) => ({ kind, count: rows.filter((r) => r.kinds.includes(kind)).length }));
+  const pol = pvPolicyTextAt(Date.now());
+  return { rows: shown.slice(offset, offset + limit), total: shown.length, subjects: rows.length, summary, kinds, policy: pol ? { version: pol.version, effectiveFrom: pol.effectiveFrom } : null };
+}
+function pvSubject(id: string, now: number): { person: PvPerson; rec: PvRecords } {
+  pvEnsure();
+  const person = pvPeople().get(id);
+  if (!person) throw new RepositoryError('not_found');
+  return { person, rec: pvRecords(person, now) };
+}
+
+function pvAccessPackage(r: DataRequest, now: number): AccessPackageView {
+  const { person, rec } = pvSubject(r.subjectId, now);
+  const d = (iso: string | undefined | null): string => (iso ? iso.slice(0, 10) : '');
+  const sections: AccessPackageView['sections'] = [];
+  const kindsNow = [...person.kinds];
+  sections.push({ category: 'people', rows: [{ label: 'name', detail: [...person.names].join(', ') }, { label: 'phone', detail: person.id }, { label: 'relationship', detail: kindsNow.join(', ') }] });
+  sections.push({ category: 'consent_records', rows: pvPurposesFor(kindsNow).map((pu) => { const c = pvConsent(person, pu); return { label: pu, detail: `${c.status}${c.at ? ` · ${d(c.at)}` : ''}${c.source ? ` · ${c.source}` : ''}` }; }) });
+  sections.push({ category: 'communications', rows: rec.msgs.filter((m) => m.body !== PV_REDACTED).slice(-30).map((m) => ({ label: `${d(m.at)} · ${m.channel} · ${m.sender}`, detail: m.body || (m.botKey?.key ?? '') })) });
+  sections.push({ category: 'prospect_records', rows: [...leads.filter((l) => rec.leadIds.includes(l.id)).map((l) => ({ label: l.code, detail: `${l.stage} · ${d(l.createdAt)} · ${l.siteName}` })), ...quotations.filter((q) => rec.leadIds.includes(q.leadId)).map((q) => ({ label: q.code, detail: `v${q.version} · ${q.status}` }))] });
+  sections.push({ category: 'contracts_invoices', rows: [...invoices.filter((i) => rec.dealIds.includes(i.dealId)).map((i) => ({ label: i.code, detail: `${d(i.issuedAt)} · ₹${i.totalAmount}` })), ...contracts.filter((c) => rec.dealIds.includes(c.dealId)).map((c) => ({ label: `Contract v${c.version}`, detail: d(c.generatedAt) }))] });
+  sections.push({ category: 'payments_tax', rows: payments.filter((x) => rec.dealIds.includes(x.dealId)).map((x) => ({ label: `${x.stage}`, detail: `₹${x.amount} · ${x.status} · ${d(x.paidAt ?? x.dueDate)}` })) });
+  sections.push({ category: 'partner_payouts', rows: commissions.filter((c) => rec.userIds.includes(c.userId)).map((c) => ({ label: d(c.earnedAt), detail: `₹${c.amount} · ${c.status}` })) });
+  sections.push({ category: 'installation_safety', rows: rec.jobsOf.map((j) => ({ label: j.code, detail: `${j.status} · ${j.siteName}` })) });
+  sections.push({ category: 'warranty_service', rows: serviceTickets.filter((t) => rec.userIds.includes(t.customerId)).map((t) => ({ label: t.code, detail: `${t.category} · ${t.status} · ${d(t.createdAt)}` })) });
+  sections.push({ category: 'location_trail', rows: [{ label: 'check-ins with a position', detail: String(rec.checkIns.filter((c) => c.checkInLocation !== null).length) }, ...rec.userIds.map((id) => byId(users, id)).filter((u): u is User => !!u && !!u.location).map((u) => ({ label: 'last known position', detail: `${u.location!.lat.toFixed(4)}, ${u.location!.lng.toFixed(4)} · ${d(u.lastSeenAt)}` }))] });
+  sections.push({ category: 'applicant_records', rows: rec.apps.filter((a) => !a.erasedAt).map((a) => ({ label: a.code, detail: `${a.status} · ${a.role} · ${d(a.updatedAt)}` })) });
+  return { generatedAt: new Date(now).toISOString(), subjectName: [...person.names][0] ?? person.id, sections: sections.filter((x) => x.rows.length > 0) };
+}
+
+/** Carries out the executable rows of a deletion plan on one person's records. */
+function pvExecute(p: PvPerson, rec: PvRecords, rows: { category: string; action: string; executable: boolean }[], now: number): { category: string; count: number }[] {
+  const done: { category: string; count: number }[] = [];
+  for (const row of rows) {
+    if (!row.executable || row.action === 'retain') continue;
+    let n = 0;
+    if (row.category === 'communications') { for (const m of rec.msgs) if (m.body !== PV_REDACTED) { m.body = PV_REDACTED; delete m.botKey; n += 1; } }
+    else if (row.category === 'location_trail') { for (const c of rec.checkIns) if (c.checkInLocation !== null || c.checkOutLocation) { pvEraseCheckIn(c); n += 1; } for (const id of rec.userIds) if (byId(users, id)?.location) { pvEraseUserLocation(id); n += 1; } }
+    else if (row.category === 'applicant_records') { for (const a of rec.apps) if (!a.erasedAt) { pvEraseApplication(a, now); n += 1; } for (const i of rec.interests) if (!i.phone.startsWith('del')) { pvEraseInterest(i); n += 1; } }
+    else if (row.category === 'prospect_records') { for (const id of rec.leadIds) { const l = byId(leads, id); if (l && !deals.some((d) => d.leadId === id) && !l.contactPhone.startsWith('del')) { patchInPlace(leads, id, { contactName: 'Removed', contactPhone: `del-${id}` }); n += 1; } } }
+    if (n > 0) done.push({ category: row.category, count: n });
+  }
+  void p;
+  return done;
+}
+
+function pvRetentionRun(now: number, force = false): RetentionRun | null {
+  pvEnsure();
+  const policy = pvPolicyAt(now);
+  const day = new Date(now).toISOString().slice(0, 10);
+  if (!force && pvLastRunDay === day && pvLastRunVersion === policy.version) return null;
+  pvLastRunDay = day;
+  pvLastRunVersion = policy.version;
+  let budget = PV_MAX_RUN;
+  const actions: RetentionRun['actions'] = [];
+  let remaining = 0;
+  for (const cat of PV_CATEGORIES.filter((c) => c.enforced)) {
+    const rule = policy.rules[cat.id];
+    if (!rule || rule.days === null || (rule.action !== 'erase' && rule.action !== 'anonymise')) continue;
+    const cut = now - rule.days * pvDay;
+    let n = 0;
+    const take = <T,>(list: T[], act: (x: T) => void): void => { for (const x of list) { if (budget <= 0) { remaining += 1; continue; } act(x); budget -= 1; n += 1; } };
+    if (cat.id === 'communications') take(commMessages.filter((m) => m.body !== PV_REDACTED && Date.parse(m.at) < cut), (m) => { m.body = PV_REDACTED; delete m.botKey; });
+    else if (cat.id === 'location_trail') take(siteCheckIns.filter((c) => (c.checkInLocation !== null || !!c.checkOutLocation) && Date.parse(c.checkInAt) < cut), pvEraseCheckIn);
+    else if (cat.id === 'applicant_records') take(partnerApplications.filter((a) => !a.erasedAt && (a.status === 'rejected' || a.status === 'withdrawn') && Date.parse(a.updatedAt) < cut), (a) => { pvEraseApplication(a, now); for (const i of recruitmentInterests.filter((x) => x.id === a.interestId)) pvEraseInterest(i); });
+    if (n > 0) actions.push({ category: cat.id, action: rule.action, count: n });
+  }
+  if (actions.length === 0 && remaining === 0) return null;
+  const run: RetentionRun = { id: `rr-${retentionRuns.length + 1}`, code: `AIEC-RR-${1000 + retentionRuns.length + 1}`, at: new Date(now).toISOString(), policyVersion: policy.version, actions, remaining, capped: remaining > 0 };
+  retentionRuns.push(run);
+  logAutomatedAction({ sourceKey: 'retention.applied', triggeringCondition: `Records were older than the retention policy (version ${policy.version}) allows`, actionTaken: actions.map((a) => `${a.action} ${a.count} ${a.category}`).join('; ') + (run.capped ? `; ${remaining} more wait for the next run` : ''), affectedRecordId: run.id, affectedRecordType: 'other', subjectLabel: run.code });
+  return run;
+}
+
+function pvRetentionView(now: number): RetentionView {
+  pvEnsure();
+  const cur = pvPolicyAt(now);
+  const scheduled = retentionPolicies.find((v) => Date.parse(v.effectiveFrom) > now) ?? null;
+  return {
+    current: JSON.parse(JSON.stringify(cur)) as RetentionPolicyVersion, scheduled: scheduled ? (JSON.parse(JSON.stringify(scheduled)) as RetentionPolicyVersion) : null,
+    versions: [...retentionPolicies].sort((a, b) => b.version - a.version).map((v) => JSON.parse(JSON.stringify(v)) as RetentionPolicyVersion),
+    categories: PV_CATEGORIES.map((c) => { const rule = cur.rules[c.id] ?? { days: c.defaultDays, action: c.defaultAction }; const d = pvDueIn(c.id, rule.days, now); return { id: c.id, rule: { ...rule }, enforced: c.enforced, statutoryYears: c.statutoryYears, dueNow: d.count, held: d.held }; }),
+    runs: [...retentionRuns].reverse().slice(0, 10).map((r) => ({ ...r, actions: r.actions.map((a) => ({ ...a })) })), lastRunAt: retentionRuns.length ? retentionRuns[retentionRuns.length - 1].at : null, at: new Date(now).toISOString(),
+  };
+}
+function pvRetentionPreview(rules: PvRules, effectiveFrom: string | null, now: number): RetentionPreview {
+  const cur = pvPolicyAt(now);
+  const problems = pvRetentionProblems(rules, cur.rules as PvRules);
+  const rows = PV_CATEGORIES.map((c) => {
+    const proposed = rules[c.id] ?? cur.rules[c.id];
+    const a = pvDueIn(c.id, cur.rules[c.id]?.days ?? null, now);
+    const b = pvDueIn(c.id, proposed?.days ?? null, now);
+    return { category: c.id, current: { days: cur.rules[c.id]?.days ?? null, action: cur.rules[c.id]?.action ?? 'retain' }, proposed: { days: proposed?.days ?? null, action: proposed?.action ?? 'retain' }, dueNowCurrent: a.count, dueNowProposed: b.count, enforced: c.enforced, held: b.held };
+  });
+  const changed = rows.filter((r) => r.current.days !== r.proposed.days || r.current.action !== r.proposed.action);
+  const actionable = changed.filter((r) => r.enforced && (r.proposed.action === 'erase' || r.proposed.action === 'anonymise')).reduce((n, r) => n + r.dueNowProposed, 0);
+  const forReview = changed.filter((r) => !r.enforced && r.proposed.action === 'review').reduce((n, r) => n + r.dueNowProposed, 0);
+  let effectiveProblem: string | null = null;
+  if (effectiveFrom !== null) { const at = Date.parse(effectiveFrom); const start = new Date(now); start.setHours(0, 0, 0, 0); if (!Number.isFinite(at) || at < start.getTime() || at > now + 90 * pvDay) effectiveProblem = 'effective_invalid'; }
+  const token = pvHashText(JSON.stringify([Object.keys(rules).sort().map((k) => [k, rules[k].days, rules[k].action]), effectiveFrom]));
+  return { rows, problems, actionable, forReview, effectiveProblem, token };
+}
+const pvHashText = (t: string): string => { let h = 5381; for (let i = 0; i < t.length; i += 1) h = ((h << 5) + h + t.charCodeAt(i)) | 0; return (h >>> 0).toString(16).padStart(8, '0'); };
+function pvPolicyView(now: number): PrivacyPolicyView {
+  const cur = pvPolicyTextAt(now);
+  const scheduled = privacyPolicies.find((v) => Date.parse(v.effectiveFrom) > now) ?? null;
+  const open = privacyPolicies.find((v) => v.material && !v.noticeAt);
+  const people = [...pvPeople().values()];
+  return { current: cur ? (JSON.parse(JSON.stringify(cur)) as PrivacyPolicyVersion) : null, scheduled: scheduled ? (JSON.parse(JSON.stringify(scheduled)) as PrivacyPolicyVersion) : null, versions: [...privacyPolicies].sort((a, b) => b.version - a.version).map((v) => JSON.parse(JSON.stringify(v)) as PrivacyPolicyVersion), noticeOpen: open ? { versionId: open.id, version: open.version, dueAt: new Date(Math.max(now, Date.parse(open.effectiveFrom) - 7 * pvDay)).toISOString() } : null, reach: { customers: people.filter((p) => p.kinds.has('customer')).length, partners: people.filter((p) => p.kinds.has('partner')).length }, at: new Date(now).toISOString() };
+}
+
+function syncPrivacy(now: number): void {
+  pvEnsure();
+  pvRetentionRun(now);
+  for (const r of dataRequests) {
+    const key = `dsr:${r.id}`;
+    const open = alerts.find((a) => a.relatedId === key && a.status !== 'resolved');
+    if (!pvIsOpen(r.status)) { if (open) patchInPlace(alerts, open.id, { status: 'resolved', resolvedBy: 'system', resolvedAt: new Date(now).toISOString(), resolutionNote: 'The request was answered' }); continue; }
+    const sla = pvSlaOf(r.receivedAt, null, now);
+    if (sla.ratio >= PV_WARN_AT) raiseAlert({ titleKey: 'privacy.alert.requestDue', context: `${r.code} · ${r.subjectName} · ${r.type}`, severity: severityForRatio(sla.ratio), category: 'automation', relatedId: key, sourceRoute: `/privacy?tab=requests&request=${r.id}` });
+  }
+}
+function pvSignals(now: number): { requests: { id: string; name: string; type: string; dueAt: string }[]; notices: { id: string; version: number; dueAt: string }[]; reviews: { id: string; count: number; since: string }[] } {
+  pvEnsure();
+  const pol = pvPolicyAt(now);
+  const reviews = PV_CATEGORIES.filter((c) => !c.enforced && pol.rules[c.id]?.action === 'review' && pol.rules[c.id].days !== null).map((c) => ({ id: c.id, count: pvDueIn(c.id, pol.rules[c.id].days, now).count, since: pol.effectiveFrom })).filter((x) => x.count > 0);
+  return {
+    requests: dataRequests.filter((r) => pvIsOpen(r.status)).map((r) => ({ id: r.id, name: r.subjectName, type: r.type, dueAt: r.dueAt })),
+    notices: privacyPolicies.filter((v) => v.material && !v.noticeAt).map((v) => ({ id: v.id, version: v.version, dueAt: new Date(Math.max(now, Date.parse(v.effectiveFrom) - 7 * pvDay)).toISOString() })),
+    reviews,
+  };
+}
+
 const heartbeatCommitments = { notifications: 0, alerts: 0 };
 const HEARTBEAT: { id: string; run: (now: number) => void }[] = [
   { id: 'followUpTasks', run: () => reconcileFollowUpTasks() },
@@ -4883,6 +5199,7 @@ const HEARTBEAT: { id: string; run: (now: number) => void }[] = [
   { id: 'integrationManagement', run: (now) => syncIntegrationManagement(now) },
   { id: 'companyProfile', run: (now) => syncCompanyProfile(now) },
   { id: 'permissions', run: (now) => syncPermissions(now) },
+  { id: 'privacy', run: (now) => syncPrivacy(now) },
   {
     id: 'stageInvoices',
     run: () => {
@@ -26481,6 +26798,229 @@ export const memoryRepository: Repository = {
       a.endedReason = reason.trim();
       return mnPanelFor(admin, now);
     }),
+  /* 194 — data privacy & consent */
+  getConsentRegister: (userId, filter) => simulateRead(() => { intAdmin(userId); return pvRegister(filter); }),
+  getPrivacySubject: (userId, subjectId) =>
+    simulateRead(() => {
+      intAdmin(userId);
+      const now = Date.now();
+      const { person, rec } = pvSubject(subjectId, now);
+      const row = pvSubjectRow(person);
+      return { ...row, names: [...person.names], phone: person.id, counts: rec.counts, history: consentRecords.filter((c) => c.phone10 === person.id).sort((a, b) => (a.at < b.at ? 1 : -1)).map((c) => ({ ...c })), requests: dataRequests.filter((r) => r.subjectId === person.id).sort((a, b) => (a.receivedAt < b.receivedAt ? 1 : -1)).map((r) => pvRequestView(r, now)) } as SubjectDetailView;
+    }),
+  recordConsent: (userId, input) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      const now = Date.now();
+      const { person } = pvSubject(input.subjectId, now);
+      if (!pvPurposesFor([...person.kinds]).includes(input.purpose)) throw new RepositoryError('purpose_not_applicable');
+      if (pvLetters(input.note) < PV_NOTE_MIN) throw new RepositoryError('note_short');
+      const cur = pvConsent(person, input.purpose);
+      if (cur.status === input.status) throw new RepositoryError('no_change');
+      if (input.purpose === 'sms' || input.purpose === 'whatsapp') {
+        if (input.status === 'granted' && cur.source === 'dnd_registry') throw new RepositoryError('dnd_locked');
+        optOutEvents.unshift({ id: `oo-new-${(optOutCounter += 1)}`, contactPhone: person.id, contactName: [...person.names][0] ?? person.id, channel: input.purpose, type: input.status === 'withdrawn' ? 'opted_out' : 'opted_in', source: 'manual_entry', reason: input.note.trim(), at: new Date(now).toISOString(), recordedBy: admin.name, isDemo: true });
+      } else {
+        consentRecords.push({ id: `cn-${consentRecords.length + 1}`, phone10: person.id, purpose: input.purpose, status: input.status, source: 'admin', at: new Date(now).toISOString(), byName: admin.name, note: input.note.trim() });
+        // Withdrawing location tracking stops the tracking: what is held of the position is cleared too.
+        if (input.purpose === 'location_tracking' && input.status === 'withdrawn') for (const id of pvRecords(person, now).userIds) pvEraseUserLocation(id);
+      }
+      const p2 = pvPeople().get(person.id)!;
+      const rec = pvRecords(p2, now);
+      return { ...pvSubjectRow(p2), names: [...p2.names], phone: p2.id, counts: rec.counts, history: consentRecords.filter((c) => c.phone10 === p2.id).sort((a, b) => (a.at < b.at ? 1 : -1)).map((c) => ({ ...c })), requests: dataRequests.filter((r) => r.subjectId === p2.id).map((r) => pvRequestView(r, now)) } as SubjectDetailView;
+    }),
+  listDataRequests: (userId, filter) =>
+    simulateRead(() => {
+      intAdmin(userId);
+      pvEnsure();
+      const now = Date.now();
+      const all = dataRequests.map((r) => pvRequestView(r, now));
+      const q = (filter.q ?? '').trim().toLowerCase();
+      const st = filter.status ?? 'open';
+      const list = all.filter((r) => (st === 'all' || (st === 'open') === pvIsOpen(r.status)) && (!filter.type || filter.type === 'all' || r.type === filter.type) && (!q || `${r.code} ${r.subjectName}`.toLowerCase().includes(q))).sort((a, b) => (pvIsOpen(a.status) ? a.dueAt : b.receivedAt) < (pvIsOpen(b.status) ? b.dueAt : a.receivedAt) ? (pvIsOpen(a.status) ? -1 : 1) : (pvIsOpen(a.status) ? 1 : -1));
+      const open = all.filter((r) => pvIsOpen(r.status));
+      const offset = filter.offset ?? 0;
+      const limit = filter.limit === 0 ? list.length : filter.limit ?? 25;
+      return { rows: list.slice(offset, offset + limit), total: list.length, counts: { open: open.length, late: open.filter((r) => r.sla.state === 'late').length, close: open.filter((r) => r.sla.state === 'close').length, closed: all.length - open.length } } as DataRequestListView;
+    }),
+  getDataRequest: (userId, id) => simulateRead(() => { intAdmin(userId); pvEnsure(); const r = dataRequests.find((x) => x.id === id); if (!r) throw new RepositoryError('not_found'); return pvRequestView(r, Date.now()); }),
+  createDataRequest: (userId, input) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      const now = Date.now();
+      const { person } = pvSubject(input.subjectId, now);
+      if (!(PV_TYPES as string[]).includes(input.type)) throw new RepositoryError('type_invalid');
+      if (!(PV_CHANNELS as readonly string[]).includes(input.channel)) throw new RepositoryError('channel_invalid');
+      if (pvLetters(input.note) < PV_NOTE_MIN) throw new RepositoryError('note_short');
+      const received = input.receivedAt ? Date.parse(input.receivedAt) : now;
+      if (!Number.isFinite(received) || received > now || received < now - 365 * pvDay) throw new RepositoryError('received_invalid');
+      if (input.type === 'consent_withdrawal' && (!input.purpose || !pvPurposesFor([...person.kinds]).includes(input.purpose))) throw new RepositoryError('purpose_not_applicable');
+      if (dataRequests.some((r) => r.subjectId === person.id && r.type === input.type && pvIsOpen(r.status))) throw new RepositoryError('already_open');
+      const n = dataRequests.length + 1;
+      const receivedAt = new Date(received).toISOString();
+      const r: DataRequest = { id: `dr-${n}`, code: `AIEC-DSR-${1000 + n}`, subjectId: person.id, subjectName: [...person.names][0] ?? person.id, subjectKinds: [...person.kinds], type: input.type, channel: input.channel, receivedAt, receivedByName: admin.name, note: input.note.trim(), ...(input.purpose ? { purpose: input.purpose } : {}), status: 'received', dueAt: pvDueAtOf(receivedAt), events: [{ id: `dre-${n}-1`, at: new Date(now).toISOString(), byName: admin.name, kind: 'received', note: input.note.trim() }] };
+      dataRequests.push(r);
+      return pvRequestView(r, now);
+    }),
+  verifyDataRequest: (userId, id, method, note) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      pvEnsure();
+      const r = dataRequests.find((x) => x.id === id);
+      if (!r) throw new RepositoryError('not_found');
+      if (!pvIsOpen(r.status)) throw new RepositoryError('closed');
+      if (!(PV_VERIFY as readonly string[]).includes(method)) throw new RepositoryError('method_invalid');
+      if (pvLetters(note) < PV_NOTE_MIN) throw new RepositoryError('note_short');
+      const now = Date.now();
+      r.verified = { method, note: note.trim(), at: new Date(now).toISOString(), byName: admin.name };
+      r.status = 'in_progress';
+      r.events.push({ id: `dre-${r.id}-${r.events.length + 1}`, at: r.verified.at, byName: admin.name, kind: 'identity_verified', note: note.trim() });
+      return pvRequestView(r, now);
+    }),
+  planDataRequest: (userId, id) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      pvEnsure();
+      const r = dataRequests.find((x) => x.id === id);
+      if (!r) throw new RepositoryError('not_found');
+      if (r.type !== 'deletion') throw new RepositoryError('not_deletion');
+      const now = Date.now();
+      const { rec } = pvSubject(r.subjectId, now);
+      const rows = pvPlan(rec.facts, rec.counts);
+      r.plan = { rows, at: new Date(now).toISOString() };
+      if (!r.events.some((e) => e.kind === 'plan_reviewed')) r.events.push({ id: `dre-${r.id}-${r.events.length + 1}`, at: r.plan.at, byName: admin.name, kind: 'plan_reviewed', note: `${rows.filter((x) => x.action === 'retain').length} category(ies) must be kept, ${rows.filter((x) => x.action !== 'retain').length} can be removed` });
+      return { rows, outcome: pvOutcome(rows) } as DeletionPlanResult;
+    }),
+  getAccessPackage: (userId, id) => simulateRead(() => { intAdmin(userId); pvEnsure(); const r = dataRequests.find((x) => x.id === id); if (!r) throw new RepositoryError('not_found'); if (r.type !== 'access' || !r.verified) throw new RepositoryError('identity_unverified'); return pvAccessPackage(r, Date.now()); }),
+  fulfilDataRequest: (userId, id, input) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      pvEnsure();
+      const r = dataRequests.find((x) => x.id === id);
+      if (!r) throw new RepositoryError('not_found');
+      if (!pvIsOpen(r.status)) throw new RepositoryError('closed');
+      if (!r.verified) throw new RepositoryError('identity_unverified');
+      if (!(PV_CHANNELS as readonly string[]).includes(input.responseVia)) throw new RepositoryError('channel_invalid');
+      if (pvLetters(input.responseNote) < PV_NOTE_MIN) throw new RepositoryError('note_short');
+      const now = Date.now();
+      const { person, rec } = pvSubject(r.subjectId, now);
+      let status: DataRequest['status'] = 'completed';
+      if (r.type === 'deletion') {
+        if (!input.confirm) throw new RepositoryError('confirm_required');
+        if (!r.plan) throw new RepositoryError('plan_required');
+        // The plan is made again at the moment of acting: what the person holds can have changed since it was drawn up.
+        const rows = pvPlan(rec.facts, rec.counts);
+        const erased = pvExecute(person, rec, rows, now);
+        const after = pvRecords(person, now);
+        const kept = pvPlan(after.facts, after.counts).filter((x) => x.action === 'retain' || !x.executable || x.count > 0);
+        const retained = kept.filter((x) => x.action === 'retain' || (!x.executable && x.count > 0)).map((x) => ({ category: x.category, count: x.count, reason: x.reason, until: x.until }));
+        r.result = { erased, retained };
+        status = retained.length > 0 ? 'partially_completed' : 'completed';
+        r.plan = { rows: pvPlan(after.facts, after.counts), at: new Date(now).toISOString() };
+      } else if (r.type === 'access') {
+        const pkg = pvAccessPackage(r, now);
+        r.result = { erased: [], retained: [], accessCategories: Object.fromEntries(pkg.sections.map((x) => [x.category, x.rows.length])) };
+      } else if (r.type === 'consent_withdrawal') {
+        if (!r.purpose) throw new RepositoryError('purpose_not_applicable');
+        const cur = pvConsent(person, r.purpose);
+        if (cur.status !== 'withdrawn') {
+          if (r.purpose === 'sms' || r.purpose === 'whatsapp') optOutEvents.unshift({ id: `oo-new-${(optOutCounter += 1)}`, contactPhone: person.id, contactName: r.subjectName, channel: r.purpose, type: 'opted_out', source: 'customer_request', reason: `Data request ${r.code}`, at: new Date(now).toISOString(), recordedBy: admin.name, isDemo: true });
+          else { consentRecords.push({ id: `cn-${consentRecords.length + 1}`, phone10: person.id, purpose: r.purpose, status: 'withdrawn', source: 'request', at: new Date(now).toISOString(), byName: admin.name, note: `Data request ${r.code}`, requestId: r.id }); if (r.purpose === 'location_tracking') for (const uid of rec.userIds) pvEraseUserLocation(uid); }
+        }
+        r.result = { erased: [], retained: [] };
+      } else {
+        if (pvLetters(input.correctionNote ?? '') < PV_NOTE_MIN) throw new RepositoryError('correction_note_short');
+        r.result = { erased: [], retained: [], correctionNote: (input.correctionNote ?? '').trim() };
+      }
+      const at = new Date(now).toISOString();
+      r.status = status;
+      r.closedAt = at;
+      r.response = { via: input.responseVia, note: input.responseNote.trim(), at, byName: admin.name };
+      r.events.push({ id: `dre-${r.id}-${r.events.length + 1}`, at, byName: admin.name, kind: 'fulfilled', note: input.responseNote.trim() });
+      syncPrivacy(now);
+      return pvRequestView(r, now);
+    }),
+  refuseDataRequest: (userId, id, reason) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      pvEnsure();
+      const r = dataRequests.find((x) => x.id === id);
+      if (!r) throw new RepositoryError('not_found');
+      if (!pvIsOpen(r.status)) throw new RepositoryError('closed');
+      if (pvLetters(reason) < PV_REFUSE_MIN) throw new RepositoryError('refusal_short');
+      const now = Date.now();
+      r.status = 'refused';
+      r.closedAt = new Date(now).toISOString();
+      r.refusal = reason.trim();
+      r.events.push({ id: `dre-${r.id}-${r.events.length + 1}`, at: r.closedAt, byName: admin.name, kind: 'refused', note: reason.trim() });
+      syncPrivacy(now);
+      return pvRequestView(r, now);
+    }),
+  withdrawDataRequest: (userId, id, note) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      pvEnsure();
+      const r = dataRequests.find((x) => x.id === id);
+      if (!r) throw new RepositoryError('not_found');
+      if (!pvIsOpen(r.status)) throw new RepositoryError('closed');
+      if (pvLetters(note) < PV_NOTE_MIN) throw new RepositoryError('note_short');
+      const now = Date.now();
+      r.status = 'withdrawn';
+      r.closedAt = new Date(now).toISOString();
+      r.events.push({ id: `dre-${r.id}-${r.events.length + 1}`, at: r.closedAt, byName: admin.name, kind: 'withdrawn', note: note.trim() });
+      syncPrivacy(now);
+      return pvRequestView(r, now);
+    }),
+  getRetention: (userId) => simulateRead(() => { intAdmin(userId); const now = Date.now(); syncPrivacy(now); return pvRetentionView(now); }),
+  previewRetention: (userId, rules, effectiveFrom) => simulateRead(() => { intAdmin(userId); pvEnsure(); return pvRetentionPreview(rules, effectiveFrom, Date.now()); }),
+  saveRetentionPolicy: (userId, input) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      pvEnsure();
+      const now = Date.now();
+      if (retentionPolicies.some((v) => Date.parse(v.effectiveFrom) > now)) throw new RepositoryError('scheduled_pending');
+      const pv = pvRetentionPreview(input.rules, input.effectiveFrom, now);
+      if (pv.problems.length > 0) throw new RepositoryError(pv.problems[0]);
+      if (pv.effectiveProblem) throw new RepositoryError(pv.effectiveProblem);
+      if (input.token !== pv.token) throw new RepositoryError('preview_stale');
+      if (pvLetters(input.reason) < 20) throw new RepositoryError('reason_short');
+      if (pv.actionable + pv.forReview > 0 && !input.confirmExisting) throw new RepositoryError('existing_unconfirmed');
+      const version = Math.max(...retentionPolicies.map((v) => v.version)) + 1;
+      retentionPolicies.push({ id: `rp-${version}`, version, effectiveFrom: new Date(Math.max(now, input.effectiveFrom ? Date.parse(input.effectiveFrom) : now)).toISOString(), createdAt: new Date(now).toISOString(), byName: admin.name, reason: input.reason.trim(), rules: pvRulesOf({ rules: input.rules } as RetentionPolicyVersion), appliedToExisting: true });
+      syncPrivacy(now);
+      return pvRetentionView(now);
+    }),
+  getPrivacyPolicy: (userId) => simulateRead(() => { intAdmin(userId); pvEnsure(); return pvPolicyView(Date.now()); }),
+  publishPrivacyPolicy: (userId, input) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      pvEnsure();
+      const now = Date.now();
+      if (privacyPolicies.some((v) => Date.parse(v.effectiveFrom) > now)) throw new RepositoryError('scheduled_pending');
+      if (pvLetters(input.summary) < 20) throw new RepositoryError('summary_short');
+      if (input.text.en.trim().length < PV_POLICY_MIN) throw new RepositoryError('body_short');
+      const eff = pvPolicyEffective(input.effectiveFrom, now);
+      if (eff) throw new RepositoryError(eff);
+      const cur = pvPolicyTextAt(now);
+      if (cur && cur.text.en.trim() === input.text.en.trim() && cur.text.hi.trim() === input.text.hi.trim() && cur.text.mr.trim() === input.text.mr.trim()) throw new RepositoryError('no_changes');
+      const version = Math.max(0, ...privacyPolicies.map((v) => v.version)) + 1;
+      privacyPolicies.push({ id: `pp-${version}`, version, effectiveFrom: new Date(Math.max(now, input.effectiveFrom ? Date.parse(input.effectiveFrom) : now)).toISOString(), createdAt: new Date(now).toISOString(), byName: admin.name, summary: input.summary.trim(), material: input.material, text: { en: input.text.en.trim(), hi: input.text.hi.trim(), mr: input.text.mr.trim() } });
+      return pvPolicyView(now);
+    }),
+  recordPolicyNotice: (userId, versionId, how, note) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      pvEnsure();
+      const v = privacyPolicies.find((x) => x.id === versionId);
+      if (!v || !v.material) throw new RepositoryError('not_found');
+      if (!(PV_CHANNELS as readonly string[]).includes(how)) throw new RepositoryError('channel_invalid');
+      if (pvLetters(note) < PV_NOTE_MIN) throw new RepositoryError('note_short');
+      v.noticeAt = new Date().toISOString();
+      v.noticeBy = admin.name;
+      v.noticeHow = how;
+      v.noticeNote = note.trim();
+      return pvPolicyView(Date.now());
+    }),
   /* 189 — integration management */
   getIntegrationManagement: (userId) => simulateRead(() => { intAdmin(userId); syncIntegrationManagement(Date.now()); return igView(Date.now()); }),
   saveIntegrationCredential: (userId, id, input) => simulateWrite(() => { const admin = intAdmin(userId); igRotate(admin, id, input, Date.now()); return igView(Date.now()); }),
@@ -27066,7 +27606,7 @@ export const memoryRepository: Repository = {
       if (t.visit.onTheWayAt) return tkViewOf(t, tech, now);
       const at = new Date(now).toISOString();
       t.visit.onTheWayAt = at;
-      if (location) { t.visit.onTheWayLocation = location; patchInPlace(users, tech.id, { location, lastSeenAt: at, onDuty: true }); }
+      if (location) { t.visit.onTheWayLocation = location; patchInPlace(users, tech.id, { ...pvLoc(tech.id, location), lastSeenAt: at, onDuty: true }); }
       tkEvent(t, { at, kind: 'on_the_way', audience: 'customer', byRole: 'technician', byName: tech.name });
       return tkViewOf(t, tech, now);
     }),
@@ -28012,7 +28552,7 @@ export const memoryRepository: Repository = {
         isDemo: user.isDemo,
       };
       siteCheckIns.push(created);
-      patchInPlace(users, user.id, { onDuty: true, lastSeenAt: at, ...(input.location ? { location: input.location } : {}) });
+      patchInPlace(users, user.id, { onDuty: true, lastSeenAt: at, ...pvLoc(user.id, input.location) });
       // Borderline is recorded and left alone (no alert fatigue). A fix that cannot be explained, or none at all, is Admin's to know.
       if (read.verdict === 'mismatch' || read.verdict === 'unverified') {
         raiseAlert({
@@ -28052,7 +28592,7 @@ export const memoryRepository: Repository = {
         ...(note ? { leaveNote: note } : {}),
         ...(openSteps.length > 0 ? { openStepIds: openSteps.map((st) => st.id) } : {}),
       });
-      patchInPlace(users, user.id, { lastSeenAt: at, ...(input.location ? { location: input.location } : {}) });
+      patchInPlace(users, user.id, { lastSeenAt: at, ...pvLoc(user.id, input.location) });
       // Leaving with steps open is told to Admin, and how loudly depends on why and on whether a safety step was in hand.
       if (openSteps.length > 0 && input.leaveReason) {
         const safety = openSteps.some((st) => st.current && st.safetyCritical);
@@ -28089,7 +28629,7 @@ export const memoryRepository: Repository = {
       const now = Date.now();
       const open = siteCheckIns.find((v) => v.userId === technicianId && !v.checkOutAt && !isStale(v, now));
       if (!open || !byId(users, technicianId)) return;
-      patchInPlace(users, technicianId, { location: point, lastSeenAt: siteTimeOrThrow(at, now) });
+      patchInPlace(users, technicianId, { ...pvLoc(technicianId, point), lastSeenAt: siteTimeOrThrow(at, now) });
     }),
 
   /* --------------------------------- Auto-reconciliation (120) */
