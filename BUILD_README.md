@@ -1519,3 +1519,71 @@ receives a secret. The heartbeat runs only while someone has the app open, the a
 and Admin has no nav entry for most of these screens (the alerts, commitments and the assistant lead there; 190 and 188 are reached
 by their routes). 190 tests rules against today's settings only; escalation and commission cannot be "promoted", and a scenario for
 a rule that waits N days then acts cannot exist because 182 has no chaining.
+
+## Module 20 — Settings, Security, Compliance & Super Admin (`191`–`200`, checkpoint-verified)
+
+The governance layer under everything else. Every screen here is Admin's (192 / 195 / 199 / 200 reach other roles too) and every
+one follows the same discipline: a change that weakens something is previewed, reasoned and confirmed; history is append-only; a
+number or limit that is a business decision is flagged on screen; and where the app cannot really do something (send an SMS,
+restore a backup, pay a provider, enforce a rule on a server) the stand-in says so rather than pretending.
+
+- **191 Company profile & branding.** One governed source for who AIEC is, as versioned, effective-dated `CompanyProfileVersion`s: a
+  document is read back against the version in force on its own issue day, so nothing issued is re-dressed. A legal change (GSTIN,
+  address) is not a styling change: it starts on a stated day, shows the tax impact and is verified afterwards. `BrandProvider`
+  applies accent colours and heading font in the light-toned themes only, after a readability floor.
+- **192 Users & permissions.** The router asks a permission table before it renders a screen; the code's own route table is the default
+  and Admin's decisions are only ever a difference from it. A lockout is impossible by design (essential screens), custom roles grow
+  without a rebuild, an exception for one person needs a reason and ends, and risk is derived. Screen-level only: actions inside a
+  screen still check roles in the data layer (said on screen).
+- **193 Single-person monitor.** A synthesis of the beacons the dedicated screens already raise, never a second source; nothing critical
+  can be hidden; "everything is fine" is only recorded when it is true; a backup viewer gets a limited read-only panel.
+- **194 Data privacy & consent.** A register over what already exists, plus the requests people make about their own data as a workflow
+  with a clock (identity first, a plan before a deletion, outcomes that say what was kept and why); retention is a versioned policy
+  applied to data that exists.
+- **195 Security & sessions.** The first record of who is signed in where and the one place the app enforces it (`SecurityGate`): a
+  second step, unusual-place confirmation, remote revoke, lock and recovery that is not "forgot password", and a documented path for
+  a person who cannot comply. Sign-in itself is by one-time code; the second-step code is a demo value.
+- **196 Backups & exports.** The backup service is a stand-in (a run records what it would hold, with a checksum), but failure is loud,
+  restore points and tests are recorded, and exports are real: purpose-limited, personal columns need a justification, built in
+  chunks, expiring.
+- **197 Software costs & renewals.** What AIEC pays to keep its own software running: usage that explains cost, plan advice that shows
+  trade-offs (a cheaper plan that cannot carry the busiest minute is never a saving), and quiet failure made loud (cards, renewals).
+- **198 Legal & contract wording.** A register over the wording the generators actually read: contract and state-clause wording is
+  written here as append-only, effective-dated revisions applied through the quotation template (previewed against live contracts),
+  the rest is listed read-through with its own screen; a state's sites find its wording by city; a legal review that finds a problem
+  in wording in use is a critical alert and a commitment, not information. Not legal advice (said on screen).
+- **199 Help & support.** Role-tagged (free strings, so new roles need no change), versioned articles with real en / hi / mr text;
+  helpful / not-helpful per version; paths to a person by role; a suggest-a-topic path and searches that found nothing kept without
+  who searched; stale help (overdue review, links to screens that no longer exist, reported wrong) is detected and raised.
+- **200 App version & ideas.** Plain-language release history with changes that affect how someone works shown apart, an update prompt
+  that explains what is new for the person's role and is honest about the device (too old is said, unknown is said), adoption for
+  Admin, and general product feedback that groups close suggestions and shows others only what Admin chose to publish.
+
+**Cross-cutting facts added by this module.** Two new heartbeat units are protected (`commitments`): `security`, `backups`, `billing`,
+`legal`; `help` and `appInfo` sit with customer care. The Chip component does not forward `data-*` (tests wrap chips in a span).
+Links between screens must use the router, not `<a href>`, because a reload wipes the in-memory repository (198 had this and was fixed
+in 199). `ds-badge--wrap` was added to the design system for long labels.
+
+**Checkpoint (as of this module).** All ten screens were opened as Admin at 390, 820 and 1440 with no raw translation keys and no
+console errors; one real defect surfaced: 194's register let a long consent label push the page wider than the viewport at 820 and
+1440 (fixed with a wrapping badge). The alerts and commitments these screens raise (198 / 199 / 200) show translated titles. Each
+screen's paths were exercised while it was built (194 requests and retention, 195 the gate and recovery, 196 failing backups and
+async exports, 197 the tier trade-offs and failed card, 198 propagation to a live contract and the review-issue urgency, 199 role
+scoping and feedback loops for each role, 200 the update prompt with an old browser). Customer, technician, surveyor and supplier
+home screens and Settings were spot-checked with the new gate and access guard active and loaded clean; earlier-module Admin screens
+019, 029, 186, 187 and 181 loaded clean.
+
+**Placeholder business decisions to confirm (flagged on screen where they show)**
+
+- 191: effective-day windows (90 / 30 days), contrast floors. 192: reason lengths, 90 / 365 days, "many" thresholds. 193: the 30-day
+  overdue line, 15% conversion, the 3-day quote window. 194: 2 / 30-day request clocks, 80% "close", 200 records a run.
+- 195: five wrong codes in 15 minutes, session limits per role, 90-day exception maximum. 196: backup rhythm, retries, 90-day restore
+  test, 7-day export keep. 197: every plan, price and limit (all seeded). 198: 365-day review, 3 days to fix a finding.
+- 199: 180-day article review, 5 answers before a rate, 3 reports flag an article. 200: half the words = "the same idea", 5 ideas a day,
+  the minimum browser versions.
+
+**Honest limits.** Gateways, providers, the backup service, the second-step code and the update are stand-ins: nothing real is sent,
+paid, restored or downloaded. Access is enforced at the screen, not on every action. The heartbeat runs only while someone has the app
+open and every store is in memory. Most of these screens have no nav entry (alerts, commitments, the assistant and the Settings tab
+lead there). Release notes, help articles, legal wording and review records seeded here are drafts and examples for the owner to
+replace with the real ones.

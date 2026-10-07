@@ -60,7 +60,7 @@ export function DataPrivacyConsentScreen() {
 /* ------------------------------------------------------------------ consent register */
 
 function ConsentChip({ status, label }: { status: ConsentStatus; label: string }) {
-  return <Badge tone={STATUS_TONE[status]}>{status === 'granted' ? <Check size={11} aria-hidden="true" /> : status === 'withdrawn' ? <X size={11} aria-hidden="true" /> : null}{label}</Badge>;
+  return <Badge tone={STATUS_TONE[status]} className="ds-badge--wrap">{status === 'granted' ? <Check size={11} aria-hidden="true" /> : status === 'withdrawn' ? <X size={11} aria-hidden="true" /> : null}{label}</Badge>;
 }
 
 function RegisterTab({ s, t, lang }: { s: PrivacyState; t: T; lang: string }) {

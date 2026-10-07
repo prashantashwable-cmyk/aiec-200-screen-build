@@ -248,6 +248,10 @@
   background: var(--color-accent-primary-soft);
   color: var(--color-accent-primary);
 }
+.ds-badge--wrap {
+  white-space: normal;
+  max-width: 100%;
+}
 .ds-badge--success {
   background: var(--color-success-soft);
   color: var(--color-success);
