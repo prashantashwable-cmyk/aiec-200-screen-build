@@ -1016,15 +1016,17 @@ import { MANY_AT as WF_MANY_AT, MAX_PER_RUN as WF_MAX_PER_RUN, conflictsOf as wf
 import type { RecordValues, RuleDraft, SubjectId as WfSubject } from '@/features/automation/customRules';
 import { CHANNELS as INT_CHANNELS, CORE_TYPES as INT_CORE, DEFAULT_URGENCY_CHANNELS as INT_DEFAULTS, NO_CHANNELS as INT_NONE, atLeast as intAtLeast, channelProblems as intChannelProblems, contentProblems as intContentProblems, fatigueOf as intFatigueOf, isBlocking as intIsBlocking, reducesReach as intReducesReach, severityFloorOf as intSeverityFloor, urgencyOfSeverity as intUrgencyOfSeverity } from '@/features/notifications/internal';
 import type { Urgency as IntUrgency } from '@/features/notifications/internal';
+import { OVERRIDE_KINDS as MO_KINDS, PATTERN_DAYS as MO_PATTERN_DAYS, PROTECTED_KINDS as MO_PROTECTED, PROTECTED_ROUTE as MO_PROTECTED_ROUTE, RULE_ROUTE as MO_RULE_ROUTE, STUCK_DAYS as MO_STUCK_DAYS, commitmentProtected as moProtectedCommitment, isBackwards as moBackwards, isProtected as moIsProtected, leadStageProblem as moLeadStageProblem, patternsOf as moPatterns, reasonProblem as moReasonProblem, skippedStages as moSkipped, untilProblem as moUntilProblem } from '@/features/override/rules';
+import type { OverrideKind, OverrideProblem } from '@/features/override/rules';
 import { GENESIS as AUDIT_GENESIS, codeOf as auditCodeOf, hashOf as auditHashOf, verifyChain as auditVerify } from '@/features/audit/chain';
 import { BOT_DRIFT_POINTS as HC_BOT_DRIFT, BOT_MIN_SAMPLE as HC_BOT_MIN, ENGINE_DOWN_MS as HC_ENGINE_DOWN, INTEGRATIONS as HC_INTEGRATIONS, MAX_PROBES as HC_MAX_PROBES, STATUS_WINDOW_MS as HC_STATUS_WINDOW, NOTE_MIN as HC_NOTE_MIN, PROBE_EVERY_MS as HC_PROBE_EVERY, WINDOW_MS as HC_WINDOW, agreementOf as hcAgreement, causeOf as hcCause, integrationDef as hcDef, isHttpUrl as hcIsUrl, judge as hcJudge, recovered as hcRecovered, sharedCauseOf as hcShared, uptimeOf as hcUptime } from '@/features/health/system';
 import type { IntegrationDef as HcDef, Observation as HcObservation, TechStatus } from '@/features/health/system';
-import type { AuditDetailView, AuditExportView, AuditFilter, AuditRowView, AuditSearchView, BotHealthView, SystemHealthIntegrationView, SystemHealthView } from './repository';
+import type { OverrideCandidate, OverrideConsoleView, OverridePreviewView, AuditDetailView, AuditExportView, AuditFilter, AuditRowView, AuditSearchView, BotHealthView, SystemHealthIntegrationView, SystemHealthView } from './repository';
 import { SLA_CATEGORIES, WINDOW_DAYS as SLA_WINDOW_DAYS, elapsedMsOf as slaElapsedOf, pauseOf as slaPauseOf, ratioOf as slaRatioOf, rollupOf as slaRollupOf, statusOf as slaStatusOf, targetSignal as slaTargetSignal, trendOf as slaTrendOf, triageScore as slaTriageScore } from '@/features/sla/consolidated';
 import type { SlaItem } from '@/features/sla/consolidated';
 import type { SlaCategoryView, SlaItemView, SlaOverviewView } from './repository';
 import { BACKUP_KEYS as ESC_BACKUP_KEYS, DEMO_CONFIRM_MS as ESC_DEMO_CONFIRM_MS, DEMO_SILENCE_MS as ESC_DEMO_SILENCE_MS, DRILL_GAP_TITLE as ESC_DRILL_GAP_TITLE, ESC_CHANNELS, EXHAUSTED_TITLE as ESC_EXHAUSTED_TITLE, MAX_BACKUPS as ESC_MAX_BACKUPS, NOTE_MIN as ESC_NOTE_MIN, PRIMARY as ESC_PRIMARY, SCENARIOS as ESC_SCENARIOS, SCENARIO_NAMES as ESC_NAMES, chainProblems as escChainProblems, drillDueAt as escDrillDueAt, drillStepsOf as escDrillStepsOf, exhaustedAfterMinutes as escExhaustedAfter, offsetsOf as escOffsets, phoneProblem as escPhoneBad, railOutcome as escRailOutcome, repeatOffsets as escRepeatOffsets, scenarioDef as escDef, scenarioIdOf as escScenarioIdOf, withTierIds as escTierIds } from '@/features/escalation/matrix';
-import type { AuditExportRecord, IntegrationConfig, IntegrationIncident, IntegrationProbe, MessageStatus } from './types';
+import type { AuditExportRecord, LeadStage, ManualOverride, IntegrationConfig, IntegrationIncident, IntegrationProbe, MessageStatus } from './types';
 import type { EscalationChainTier, EscalationChannel, EscalationContact, EscalationDelivery, EscalationDrill, EscalationDrillStep, EscalationLastResort, EscalationRun, EscalationScenarioConfig } from './types';
 import type { AlertEscalationView, EscalationGap, EscalationMatrixView, EscalationRunView, EscalationScenarioView } from './repository';
 import { VAULT_KINDS, validityState } from '@/features/documents/vault';
@@ -1941,7 +1943,7 @@ function sendReminderMessage(payment: Payment, lead: Lead, byName: string, chann
   return message;
 }
 
-const activeDealPause = (dealId: string) => paymentReminderPauses.find((p) => p.dealId === dealId && p.paused);
+const activeDealPause = (dealId: string) => paymentReminderPauses.find((p) => p.dealId === dealId && p.paused && (!p.until || Date.parse(`${p.until}T23:59:59`) >= Date.now()));
 
 /** How far back a missed reminder step is still worth sending. Past this,
  *  089's escalation queue owns the payment — a week-old "friendly nudge"
@@ -2931,7 +2933,9 @@ function notifyWork(userId: string, commitment: Commitment, kind: WorkNotificati
 function syncCommitments(now: number): void {
   const at = new Date(now).toISOString();
   const seen = new Set<string>();
-  for (const ob of collectObligations(commitmentSources(now))) {
+  for (const raw of collectObligations(commitmentSources(now))) {
+    // An obligation Admin waived by hand (188) stops being chased, whatever its source still says.
+    const ob = commitmentWaivers.has(raw.key) && raw.state === 'open' ? { ...raw, state: 'cancelled' as const } : raw;
     seen.add(ob.key);
     const existing = commitmentByKey.get(ob.key);
     const derived = {
@@ -3289,7 +3293,7 @@ function autoConfiguredCount(category: string, now: number): number {
 function automationOverviewOf(now: number): AutomationOverviewView {
   const rules = allAutomationRules(now);
   const since = now - 86_400_000;
-  const log = automatedActionLog.map((e) => ({ e, category: entryCategory(e) }));
+  const log = automatedActionLog.filter((e) => !e.manual).map((e) => ({ e, category: entryCategory(e) }));
   const ids = [...new Set([...AUTO_CATEGORIES.map((c) => c.id), ...rules.map((r) => r.category ?? 'other'), ...log.map((x) => x.category)])];
   const categories = ids.map((id): AutomationCategoryView => {
     const rows = rules.filter((r) => (r.category ?? 'other') === id);
@@ -3848,7 +3852,7 @@ function auditRecordRoute(type: string, id: string): string | null {
 }
 function auditRowOf(e: AutomatedActionLogEntry): AuditRowView {
   return {
-    id: e.id, seq: e.seq ?? 0, code: auditCodeOf(e.seq ?? 0), at: e.at, sourceKey: e.sourceKey, sourceName: humanise(e.sourceKey.replace(/\./g, ' ')), category: entryCategory(e), unitId: e.unitId ?? null, unitName: e.unitId ? unitDef(e.unitId)?.name ?? null : null,
+    id: e.id, seq: e.seq ?? 0, code: auditCodeOf(e.seq ?? 0), at: e.at, sourceKey: e.sourceKey, sourceName: humanise(e.sourceKey.replace(/\./g, ' ')), category: e.manual ? 'overrides' : entryCategory(e), manual: e.manual ? { ...e.manual } : null, unitId: e.unitId ?? null, unitName: e.unitId ? unitDef(e.unitId)?.name ?? null : null,
     triggeringCondition: e.triggeringCondition, actionTaken: e.actionTaken, affectedRecordId: e.affectedRecordId, affectedRecordType: e.affectedRecordType, subjectLabel: e.subjectLabel ?? null, route: auditRecordRoute(e.affectedRecordType, e.affectedRecordId), hash: e.hash ?? '', prevHash: e.prevHash ?? '',
   };
 }
@@ -3859,7 +3863,7 @@ function auditText(e: AutomatedActionLogEntry): string {
 }
 function auditMatches(e: AutomatedActionLogEntry, f: AuditFilter, skip?: 'category' | 'source'): boolean {
   if (f.q) { const hay = auditText(e); for (const tok of f.q.toLowerCase().split(/\s+/).filter(Boolean)) if (!hay.includes(tok)) return false; }
-  if (skip !== 'category' && f.category && entryCategory(e) !== f.category) return false;
+  if (skip !== 'category' && f.category && (e.manual ? 'overrides' : entryCategory(e)) !== f.category) return false;
   if (skip !== 'source' && f.source && e.sourceKey !== f.source) return false;
   if (f.record) { const r = f.record.toLowerCase().trim(); if (!(e.affectedRecordId.toLowerCase().includes(r) || (e.subjectLabel ?? '').toLowerCase().includes(r))) return false; }
   if (f.from && e.at < `${f.from}T00:00:00`) return false;
@@ -3885,7 +3889,7 @@ function auditSearch(f: AuditFilter, now: number): AuditSearchView {
   const chain = auditVerify(automatedActionLog);
   return JSON.parse(JSON.stringify({
     rows: newestFirst.slice(offset, offset + limit).map(auditRowOf), total: matching.length, all: automatedActionLog.length,
-    categories: count(forCat, (e) => entryCategory(e)), sources: count(forSrc, (e) => e.sourceKey).slice(0, 40), perDay: days,
+    categories: count(forCat, (e) => (e.manual ? 'overrides' : entryCategory(e))), sources: count(forSrc, (e) => e.sourceKey).slice(0, 40), perDay: days,
     chain: { ok: chain.ok, count: chain.count, headHash: chain.headHash, brokenAtSeq: chain.brokenAtSeq },
     exports: [...auditExports].reverse().slice(0, 8), at: new Date(now).toISOString(),
   })) as AuditSearchView;
@@ -3897,6 +3901,175 @@ function syncAuditChain(now: number): void {
   const open = alerts.find((a) => a.titleKey === 'auditLog.alert.chainBroken' && a.status !== 'resolved');
   if (!chain.ok && !open) raiseAlert({ titleKey: 'auditLog.alert.chainBroken', context: `Entry ${chain.brokenAtSeq ?? '?'} no longer matches what was written`, severity: 'critical', category: 'safety', relatedId: 'audit-chain', sourceRoute: '/audit-log' });
   void now;
+}
+
+/* ============================================ Manual override console (188) */
+
+/**
+ * The few places Admin may force what a rule would not, with a reason, a preview of what follows and a confirmation: every override is written to the same chained audit log as the automation's own
+ * actions, tagged as a person's, and a guardrail built to have no override is refused here structurally (and the attempt kept). Four kinds are overridable; the rest are listed as absolute.
+ */
+const manualOverrides: ManualOverride[] = [];
+const commitmentWaivers = new Map<string, string>();
+let manualOverrideCounter = 0;
+
+type MoEffect = { key: string; params?: Record<string, string | number> };
+interface MoPreview { target: { id: string; label: string }; before: string; after: string; effects: MoEffect[]; blocked: OverrideProblem | null; flags: string[] }
+
+function moPreview(kind: OverrideKind, targetId: string, params: { stage?: string; until?: string }, now: number): MoPreview {
+  if (kind === 'lead_stage') {
+    const lead = byId(leads, targetId);
+    if (!lead) throw new RepositoryError('not_found');
+    const to = (params.stage ?? '') as LeadStage;
+    const label = `${lead.siteName || lead.contactName} · ${lead.contactName}`;
+    const blocked = moLeadStageProblem(lead.stage, to);
+    const open = followUpTasks.filter((t) => t.leadId === lead.id && t.status !== 'done');
+    const quotes = quotations.filter((q) => q.leadId === lead.id && q.status !== 'superseded' && q.status !== 'accepted');
+    const effects: MoEffect[] = [{ key: 'stage', params: { from: lead.stage, to } }];
+    if (!blocked) {
+      const skipped = moSkipped(lead.stage, to);
+      if (skipped.length > 0) effects.push({ key: 'skipped', params: { stages: skipped.join(', ') } });
+      if (moBackwards(lead.stage, to)) effects.push({ key: 'backwards' });
+      effects.push({ key: 'followUps', params: { count: open.length } }, { key: 'quotes', params: { count: quotes.length } }, { key: 'rescored' });
+    }
+    return { target: { id: lead.id, label }, before: lead.stage, after: to || lead.stage, effects, blocked, flags: [] };
+  }
+  if (kind === 'payout_clear') {
+    const e = byId(commissions, targetId);
+    if (!e) throw new RepositoryError('not_found');
+    const row = paRowOf(e, now, paContext());
+    const label = `${row.partnerName} · ${formatINR(e.amount)}`;
+    let blocked: OverrideProblem | null = null;
+    if (e.status !== 'approved' || e.disbursement || row.state === 'cleared') blocked = 'not_overridable_state';
+    else if (e.jobId && snagBlockingOf(e.jobId) > 0) blocked = 'safety_critical_open';
+    const effects: MoEffect[] = [{ key: 'payout', params: { amount: e.amount, partner: row.partnerName, state: row.state } }];
+    if (!blocked) {
+      if (row.flags.length > 0) effects.push({ key: 'flagsSeen', params: { count: row.flags.length, flags: row.flags.join(', ') } });
+      if (row.state === 'held') effects.push({ key: 'releasesHold' });
+      effects.push({ key: 'nextRun' }, { key: 'tds' });
+    }
+    return { target: { id: e.id, label }, before: row.state, after: 'cleared', effects, blocked, flags: row.flags };
+  }
+  if (kind === 'stop_reminders') {
+    const deal = byId(deals, targetId);
+    if (!deal) throw new RepositoryError('not_found');
+    const lead = resolveLead(deal.leadId);
+    const label = `${deal.code} · ${lead?.siteName ?? ''}`;
+    const blocked: OverrideProblem | null = activeDealPause(deal.id) ? 'not_overridable_state' : moUntilProblem(params.until ?? '', now);
+    const owing = payments.filter((p) => p.dealId === deal.id && isOutstanding(p));
+    const effects: MoEffect[] = [{ key: 'reminders', params: { until: params.until ?? '' } }];
+    if (!blocked) effects.push({ key: 'owing', params: { count: owing.length, amount: owing.reduce((n, p) => n + remainingBalance(p), 0) } }, { key: 'queue' }, { key: 'resumes' });
+    return { target: { id: deal.id, label }, before: 'active', after: params.until ? `paused until ${params.until}` : 'paused', effects, blocked, flags: [] };
+  }
+  const c = commitments.find((x) => x.id === targetId);
+  if (!c) throw new RepositoryError('not_found');
+  const label = `${c.kind} · ${Object.values(c.titleParams)[0] ?? c.subject.id}`;
+  const blocked: OverrideProblem | null = moProtectedCommitment(c.kind) ? 'no_override_path' : c.status !== 'open' ? 'not_overridable_state' : null;
+  const effects: MoEffect[] = [{ key: 'waive', params: { owner: nameOf(c.ownerUserId), level: c.escalationLevel } }];
+  if (!blocked) effects.push({ key: 'stopsChasing' }, { key: 'sourceUnchanged' });
+  return { target: { id: c.id, label }, before: 'open', after: 'waived', effects, blocked, flags: [] };
+}
+
+function moRecord(admin: User, kind: string, targetId: string, label: string, reason: string, status: ManualOverride['status'], refusal: string | undefined, pv: Pick<MoPreview, 'before' | 'after' | 'effects'>): ManualOverride {
+  manualOverrideCounter += 1;
+  const at = new Date().toISOString();
+  const id = `mo-${manualOverrideCounter}`;
+  let auditSeq: number | null = null;
+  if (status === 'applied') {
+    const entry = logAutomatedAction({ sourceKey: `override.${kind}`, triggeringCondition: `${admin.name} overrode it by hand. Reason: ${reason.trim()}`, actionTaken: `${label}: ${pv.before} → ${pv.after}`, affectedRecordId: targetId, affectedRecordType: kind === 'lead_stage' ? 'lead' : kind === 'commitment_waive' ? 'commitment' : kind === 'payout_clear' ? 'payment' : 'other', subjectLabel: label, manual: { byName: admin.name, overrideId: id } });
+    auditSeq = entry.seq ?? null;
+  }
+  const rec: ManualOverride = Object.freeze({ id, code: `AIEC-MO-${1000 + manualOverrideCounter}`, kind, targetId, targetLabel: label, reason: reason.trim(), byId: admin.id, byName: admin.name, at, status, ...(refusal ? { refusal } : {}), before: pv.before, after: pv.after, effects: pv.effects, auditSeq }) as ManualOverride;
+  manualOverrides.push(rec);
+  return rec;
+}
+
+function moApply(admin: User, input: { kind: string; targetId: string; stage?: string; until?: string; reason: string; confirmed: boolean }, now: number): ManualOverride {
+  const none = { before: '', after: '', effects: [] as MoEffect[] };
+  if (moIsProtected(input.kind)) {
+    // Structurally absolute: refused whatever the reason, and the attempt is kept.
+    moRecord(admin, input.kind, input.targetId, input.targetId, input.reason, 'refused', 'no_override_path', none);
+    throw new RepositoryError('no_override_path');
+  }
+  if (!(MO_KINDS as string[]).includes(input.kind)) throw new RepositoryError('not_found');
+  const kind = input.kind as OverrideKind;
+  const pv = moPreview(kind, input.targetId, { stage: input.stage, until: input.until }, now);
+  const problem = moReasonProblem(input.reason);
+  if (problem) throw new RepositoryError(problem);
+  if (!input.confirmed) throw new RepositoryError('confirm_required');
+  if (pv.blocked) {
+    moRecord(admin, kind, input.targetId, pv.target.label, input.reason, 'refused', pv.blocked, pv);
+    throw new RepositoryError(pv.blocked);
+  }
+  const at = new Date(now).toISOString();
+  if (kind === 'lead_stage') {
+    const lead = byId(leads, input.targetId)!;
+    patchInPlace(leads, lead.id, { stage: input.stage as LeadStage, stageEnteredAt: at, updatedAt: at });
+    pushTimelineEvent({ leadId: lead.id, kind: 'stage_changed', actorName: `${admin.name} (override)`, at, fromValue: lead.stage, toValue: input.stage, detail: input.reason.trim() });
+    recomputeActiveScores(scoreWeightingProfile);
+  } else if (kind === 'payout_clear') {
+    const e = byId(commissions, input.targetId)!;
+    const row = paRowOf(e, now, paContext());
+    if (row.state === 'held') { patchInPlace(commissions, e.id, { payoutApproval: undefined }); paDecide({ entryId: e.id, kind: 'released', at, byName: admin.name }); }
+    patchInPlace(commissions, e.id, { payoutApproval: { status: 'approved', at, byName: admin.name, amount: e.amount } });
+    paDecide({ entryId: e.id, kind: 'approved', at, byName: admin.name, reason: `Manual override: ${input.reason.trim()}`, acknowledged: row.flags });
+    syncCommitments(now);
+  } else if (kind === 'stop_reminders') {
+    const existing = paymentReminderPauses.find((p) => p.dealId === input.targetId);
+    const patch = { paused: true, reason: input.reason.trim(), pausedBy: admin.name, pausedAt: at, until: input.until };
+    if (existing) patchInPlace(paymentReminderPauses, existing.id, patch);
+    else { reminderPauseCounter += 1; paymentReminderPauses.push({ id: `rrp-new-${reminderPauseCounter}`, dealId: input.targetId, ...patch, isDemo: true }); }
+  } else {
+    const c = commitments.find((x) => x.id === input.targetId)!;
+    commitmentWaivers.set(c.key, `override`);
+    putCommitment({ ...c, status: 'cancelled' });
+    syncCommitments(now);
+  }
+  return moRecord(admin, kind, input.targetId, pv.target.label, input.reason, 'applied', undefined, pv);
+}
+
+function moCandidates(kind: OverrideKind, q: string, now: number): OverrideCandidate[] {
+  const term = q.trim().toLowerCase();
+  const hit = (...parts: (string | undefined)[]) => !term || parts.join(' ').toLowerCase().includes(term);
+  if (kind === 'lead_stage') {
+    return leads.filter((l) => l.stage !== 'won' && l.stage !== 'lost' && hit(l.siteName, l.contactName, l.stage, l.id))
+      .map((l) => ({ id: l.id, label: `${l.siteName || l.contactName} · ${l.contactName}`, detail: l.stage, days: Math.floor((now - Date.parse(l.stageEnteredAt ?? l.updatedAt ?? l.createdAt)) / 86_400_000), highlight: false, blocked: false }))
+      .map((c) => ({ ...c, highlight: (c.days ?? 0) >= MO_STUCK_DAYS })).sort((a, b) => (b.days ?? 0) - (a.days ?? 0)).slice(0, 30);
+  }
+  if (kind === 'payout_clear') {
+    const ctx = paContext();
+    return commissions.filter((e) => e.status === 'approved' && !e.disbursement).map((e) => ({ e, row: paRowOf(e, now, ctx) })).filter((x) => x.row.state !== 'cleared' && hit(x.row.partnerName, x.row.dealCode ?? '', x.row.reasonKey))
+      .map((x) => ({ id: x.e.id, label: `${x.row.partnerName} · ${formatINR(x.e.amount)}`, detail: x.row.state, days: x.row.ageDays, highlight: x.row.state === 'held', blocked: !!(x.e.jobId && snagBlockingOf(x.e.jobId) > 0) })).slice(0, 30);
+  }
+  if (kind === 'stop_reminders') {
+    return deals.filter((d) => payments.some((p) => p.dealId === d.id && isOutstanding(p)) && !activeDealPause(d.id) && hit(d.code, resolveLead(d.leadId)?.siteName))
+      .map((d) => { const owing = payments.filter((p) => p.dealId === d.id && isOutstanding(p)); return { id: d.id, label: `${d.code} · ${resolveLead(d.leadId)?.siteName ?? ''}`, detail: formatINR(owing.reduce((n, p) => n + remainingBalance(p), 0)), days: null, highlight: false, blocked: false }; }).slice(0, 30);
+  }
+  return commitments.filter((c) => c.status === 'open' && hit(c.kind, Object.values(c.titleParams).join(' ')))
+    .map((c) => ({ id: c.id, label: `${c.kind} · ${Object.values(c.titleParams)[0] ?? c.subject.id}`, detail: nameOf(c.ownerUserId), days: Math.floor((now - Date.parse(c.dueAt)) / 86_400_000), highlight: c.escalationLevel >= 3, blocked: moProtectedCommitment(c.kind) }))
+    .sort((a, b) => Number(a.blocked) - Number(b.blocked) || (b.days ?? 0) - (a.days ?? 0)).slice(0, 30);
+}
+
+function moConsole(now: number): OverrideConsoleView {
+  const patterns = moPatterns(manualOverrides, now);
+  return JSON.parse(JSON.stringify({
+    kinds: MO_KINDS.map((k) => ({ kind: k, ruleRoute: MO_RULE_ROUTE[k], recent: manualOverrides.filter((o) => o.kind === k && o.status === 'applied' && Date.parse(o.at) >= now - MO_PATTERN_DAYS * 86_400_000).length })),
+    protectedKinds: MO_PROTECTED.map((k) => ({ kind: k, route: MO_PROTECTED_ROUTE[k], attempts: manualOverrides.filter((o) => o.kind === k).length })),
+    recent: [...manualOverrides].reverse().slice(0, 30), patterns: patterns.map((p) => ({ ...p, ruleRoute: MO_RULE_ROUTE[p.kind as OverrideKind] ?? null })), at: new Date(now).toISOString(),
+  })) as OverrideConsoleView;
+}
+
+/** A kind Admin keeps overriding is raised once as a rule to fix; resolved when it stops. Idempotent. */
+function syncOverridePatterns(now: number): void {
+  const patterns = moPatterns(manualOverrides, now);
+  for (const kind of MO_KINDS) {
+    const p = patterns.find((x) => x.kind === kind);
+    const open = alerts.find((a) => a.titleKey === 'manualOverride.alert.pattern' && a.relatedId === `override-pattern:${kind}` && a.status !== 'resolved');
+    if (p && !open) {
+      const a = raiseAlert({ titleKey: 'manualOverride.alert.pattern', context: `${kind} · ${p.count} overrides in ${MO_PATTERN_DAYS} days: the rule may need changing`, severity: 'medium', category: 'automation', relatedId: `override-pattern:${kind}`, sourceRoute: `/override-console?kind=${kind}` });
+      logAutomatedAction({ sourceKey: 'override.pattern', triggeringCondition: `${p.count} overrides of the same kind (${kind}) within ${MO_PATTERN_DAYS} days`, actionTaken: `Raised ${a.code}: the rule behind it is the likelier fix`, affectedRecordId: a.id, affectedRecordType: 'alert', subjectLabel: a.code });
+    } else if (!p && open) patchInPlace(alerts, open.id, { status: 'resolved', resolvedBy: 'system', resolvedAt: new Date(now).toISOString(), resolutionNote: 'Overrides of this kind have stopped' });
+  }
 }
 
 const heartbeatCommitments = { notifications: 0, alerts: 0 };
@@ -3958,6 +4131,7 @@ const HEARTBEAT: { id: string; run: (now: number) => void }[] = [
   { id: 'slaMonitor', run: (now) => syncSlaBreaches(now) },
   { id: 'integrationHealth', run: (now) => syncIntegrationHealth(now) },
   { id: 'auditChain', run: (now) => syncAuditChain(now) },
+  { id: 'overridePatterns', run: (now) => syncOverridePatterns(now) },
   {
     id: 'stageInvoices',
     run: () => {
@@ -25247,6 +25421,17 @@ export const memoryRepository: Repository = {
 
   /* --------------------------------- Notification templates & channels (183) */
   getInternalNotifications: (userId) => simulateRead(() => { intAdmin(userId); return intOverview(Date.now()); }),
+  /* 188 — manual override console */
+  getOverrideConsole: (userId) => simulateRead(() => { intAdmin(userId); return moConsole(Date.now()); }),
+  getOverrideCandidates: (userId, kind, q) => simulateRead(() => { intAdmin(userId); if (!(MO_KINDS as string[]).includes(kind)) throw new RepositoryError('not_found'); return moCandidates(kind as OverrideKind, q, Date.now()); }),
+  previewOverride: (userId, input) =>
+    simulateRead((): OverridePreviewView => {
+      intAdmin(userId);
+      if (moIsProtected(input.kind)) return { target: { id: input.targetId, label: input.targetId }, before: '', after: '', effects: [], blocked: 'no_override_path', flags: [] };
+      if (!(MO_KINDS as string[]).includes(input.kind)) throw new RepositoryError('not_found');
+      return JSON.parse(JSON.stringify(moPreview(input.kind as OverrideKind, input.targetId, { stage: input.stage, until: input.until }, Date.now()))) as OverridePreviewView;
+    }),
+  applyOverride: (userId, input) => simulateWrite((): ManualOverride => JSON.parse(JSON.stringify(moApply(intAdmin(userId), input, Date.now()))) as ManualOverride),
   /* 187 — audit log of automated actions */
   searchAutomatedActions: (userId, filter) => simulateRead(() => { intAdmin(userId); return auditSearch(filter, Date.now()); }),
   getAutomatedActionDetail: (userId, id) =>
@@ -28380,7 +28565,7 @@ export const memoryRepository: Repository = {
       };
     }),
 
-  listAutomatedActions: (limit = 20) => simulateRead(() => [...automatedActionLog].reverse().slice(0, limit)),
+  listAutomatedActions: (limit = 20) => simulateRead(() => automatedActionLog.filter((e) => !e.manual).reverse().slice(0, limit)),
 
   acknowledgePurchaseOrder: (poId, byUserId) => simulateWrite(() => acknowledgePurchaseOrderSync(poId, byUserId)),
 

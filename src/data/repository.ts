@@ -133,6 +133,7 @@ import type {
   InternalChannel,
   InternalChannelSet,
   EscalationContact,
+  ManualOverride,
   AuditExportRecord,
   IntegrationConfig,
   IntegrationIncident,
@@ -7160,6 +7161,19 @@ export interface InternalNotificationsView {
 }
 export interface InternalTypeInput { urgency: InternalUrgency | null; roles: Record<string, InternalChannelSet> | null; enabled: boolean; content: Partial<Record<Language, InternalContent>> }
 
+/* ------------------------------------------------------------------ Manual override console (188) */
+
+export interface OverrideCandidate { id: string; label: string; detail: string; days: number | null; highlight: boolean; /** Something about it makes it refuse: shown, not hidden. */ blocked: boolean }
+export interface OverridePreviewView { target: { id: string; label: string }; before: string; after: string; effects: ManualOverride['effects']; blocked: string | null; flags: string[] }
+export interface OverrideConsoleView {
+  kinds: { kind: string; ruleRoute: string; recent: number }[];
+  protectedKinds: { kind: string; route: string; attempts: number }[];
+  recent: ManualOverride[];
+  patterns: { kind: string; count: number; ruleRoute: string | null }[];
+  at: string;
+}
+export interface OverrideInput { kind: string; targetId: string; stage?: string; until?: string; reason: string; /** The "I understand what this does" confirmation. */ confirmed: boolean }
+
 /* ------------------------------------------------------------------ Audit log of automated actions (187) */
 
 export interface AuditFilter { q?: string; category?: string; source?: string; record?: string; from?: string; to?: string; offset?: number; /** 0 = everything that matches (for an export). */ limit?: number }
@@ -7179,6 +7193,8 @@ export interface AuditRowView {
   affectedRecordType: string;
   subjectLabel: string | null;
   route: string | null;
+  /** Set when a person did this by hand (188), not an automation. */
+  manual: { byName: string; overrideId: string } | null;
   hash: string;
   prevHash: string;
 }
@@ -8785,6 +8801,11 @@ export interface Repository {
   getVaultBundle(userId: string): Promise<VaultDocument[]>;
   /** 174: the customer's payment picture for one project (the first needing attention when none is named). */
   getCustomerPayments(dealId: string | null, userId: string): Promise<CustomerPayView>;
+  /* 188 — the console for forcing what a rule would not, with a reason, a preview and a confirmation; guardrails with no override are refused and the attempt kept. */
+  getOverrideConsole(userId: string): Promise<OverrideConsoleView>;
+  getOverrideCandidates(userId: string, kind: string, q: string): Promise<OverrideCandidate[]>;
+  previewOverride(userId: string, input: Omit<OverrideInput, 'reason' | 'confirmed'>): Promise<OverridePreviewView>;
+  applyOverride(userId: string, input: OverrideInput): Promise<ManualOverride>;
   /* 187 — the permanent, chained record of everything the automation did on its own initiative: searched, read in full, and exported with a note of who took it. */
   searchAutomatedActions(userId: string, filter: AuditFilter): Promise<AuditSearchView>;
   getAutomatedActionDetail(userId: string, id: string): Promise<AuditDetailView>;

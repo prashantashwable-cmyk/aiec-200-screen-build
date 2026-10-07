@@ -95,6 +95,14 @@ const translations: ScreenTranslations = {
       alert: {
         chainBroken: 'The audit log no longer matches what was written',
       },
+      category: {
+        overrides: 'Manual overrides',
+      },
+      manual: {
+        badge: 'By hand',
+        by: 'Done by hand by {{name}}: a person\'s override, not an automation.',
+        open: 'Open the override console',
+      },
       link: {
         open: 'Audit log',
       },
@@ -193,6 +201,14 @@ const translations: ScreenTranslations = {
       alert: {
         chainBroken: 'ऑडिट लॉग अब वैसा नहीं जैसा लिखा गया था',
       },
+      category: {
+        overrides: 'मैनुअल ओवरराइड',
+      },
+      manual: {
+        badge: 'हाथ से',
+        by: '{{name}} ने हाथ से किया: किसी व्यक्ति का ओवरराइड, ऑटोमेशन नहीं।',
+        open: 'ओवरराइड कंसोल खोलें',
+      },
       link: {
         open: 'ऑडिट लॉग',
       },
@@ -290,6 +306,14 @@ const translations: ScreenTranslations = {
       },
       alert: {
         chainBroken: 'ऑडिट लॉग आता जसे लिहिले होते तसे नाही',
+      },
+      category: {
+        overrides: 'मॅन्युअल ओव्हरराइड',
+      },
+      manual: {
+        badge: 'हाताने',
+        by: '{{name}} यांनी हाताने केले: व्यक्तीचा ओव्हरराइड, ऑटोमेशन नाही.',
+        open: 'ओव्हरराइड कन्सोल उघडा',
       },
       link: {
         open: 'ऑडिट लॉग',

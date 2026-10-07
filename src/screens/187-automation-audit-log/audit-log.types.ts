@@ -94,6 +94,14 @@ export const AUDIT_LOG_KEYS = {
   alert: {
     chainBroken: 'auditLog.alert.chainBroken',
   },
+  category: {
+    overrides: 'auditLog.category.overrides',
+  },
+  manual: {
+    badge: 'auditLog.manual.badge',
+    by: 'auditLog.manual.by',
+    open: 'auditLog.manual.open',
+  },
   link: {
     open: 'auditLog.link.open',
   },

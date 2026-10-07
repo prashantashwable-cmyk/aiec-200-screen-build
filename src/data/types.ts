@@ -4400,6 +4400,8 @@ export interface PaymentReminderPause {
   pausedAt: string;
   resumedBy?: string;
   resumedAt?: string;
+  /** A stop that ends by itself on this day (188); unset means until someone resumes it. */
+  until?: string;
   isDemo: boolean;
 }
 
@@ -4961,6 +4963,8 @@ export interface AutomatedActionLogEntry {
   /** The fingerprint of the entry before it, and of this one: a chain that makes later tampering visible. */
   prevHash?: string;
   hash?: string;
+  /** Set when the action was a person's override, not an automation's own: who, and the override it belongs to (188). */
+  manual?: { byName: string; overrideId: string };
   isDemo: boolean;
 }
 
@@ -5825,4 +5829,30 @@ export interface IntegrationIncident {
   /** Work the outage left behind (messages that did not go, payouts that failed): counted when it recovered, closed only by a person. */
   followUp?: { kind: 'messages' | 'payouts' | 'statements'; count: number; route: string | null; done?: { at: string; byName: string; note: string } };
   alertId?: string;
+}
+
+/* ------------------------------------------------------------------ Manual overrides (188) */
+
+/** One time Admin forced something a rule would not, or tried to force something nothing may override. Append-only. */
+export interface ManualOverride {
+  id: string;
+  /** `AIEC-MO-####`. */
+  code: string;
+  kind: string;
+  targetId: string;
+  targetLabel: string;
+  reason: string;
+  byId: string;
+  byName: string;
+  at: string;
+  status: 'applied' | 'refused';
+  /** Why a refused one was refused. */
+  refusal?: string;
+  /** The value before and after, as plain tokens the screen can translate. */
+  before: string;
+  after: string;
+  /** What the preview said would follow, kept as it read when Admin confirmed. */
+  effects: { key: string; params?: Record<string, string | number> }[];
+  /** The place in the audit log this override was written to. */
+  auditSeq: number | null;
 }

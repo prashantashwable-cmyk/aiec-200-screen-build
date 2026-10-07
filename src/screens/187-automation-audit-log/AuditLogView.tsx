@@ -12,7 +12,7 @@ import { useAuditLog } from './useAuditLog';
 import type { AuditLogState } from './useAuditLog';
 
 type T = ReturnType<typeof useTranslation>['t'];
-const catName = (t: T, id: string): string => t(`automationRules.category.${id}.name`, { defaultValue: categoryName(id) });
+const catName = (t: T, id: string): string => (id === 'overrides' ? t(K.category.overrides) : t(`automationRules.category.${id}.name`, { defaultValue: categoryName(id) }));
 const short = (h: string): string => (h ? `${h.slice(0, 12)}…` : '—');
 const CSV_COLUMNS = ['audit_entry_id', 'sequence', 'recorded_at', 'automation_source', 'automation_type', 'triggering_condition', 'action_taken', 'affected_record_id', 'affected_record_type', 'record_label', 'fingerprint', 'previous_fingerprint'];
 const download = (name: string, type: string, body: string) => {
@@ -109,7 +109,7 @@ function Row({ r, onOpen, t, lang }: { r: AuditRowView; onOpen: () => void; t: T
     <button type="button" onClick={onOpen} data-row={r.id} className="row" style={{ background: 'none', border: 0, borderBottom: '1px solid var(--color-border)', padding: '12px 0', width: '100%', textAlign: 'start', cursor: 'pointer', color: 'inherit', gap: 12, alignItems: 'flex-start' }}>
       <ListChecks size={20} aria-hidden="true" style={{ color: 'var(--color-accent-secondary)', flexShrink: 0, marginTop: 2 }} />
       <span className="stack gap-0 grow" style={{ minWidth: 0 }}>
-        <span className="t-sm t-semibold">{r.sourceName}{r.subjectLabel ? ` · ${r.subjectLabel}` : ''}</span>
+        <span className="t-sm t-semibold row gap-2" style={{ alignItems: 'center', flexWrap: 'wrap' }}>{r.sourceName}{r.subjectLabel ? ` · ${r.subjectLabel}` : ''}{r.manual && <Badge tone="warning" data-manual>{t(K.manual.badge)}</Badge>}</span>
         <span className="t-xs" style={{ overflowWrap: 'anywhere' }}>{r.actionTaken}</span>
         <span className="t-xs t-muted">{catName(t, r.category)}</span>
       </span>
@@ -166,6 +166,7 @@ function Detail({ s, t, lang }: { s: AuditLogState; t: T; lang: string }) {
         <div className="stack gap-2" data-which>
           <span className="t-sm t-semibold">{t(K.detail.which)}</span>
           <Field2 label={t(K.detail.source)}><span style={{ fontFamily: 'var(--font-mono)' }}>{r.sourceKey}</span> · {catName(t, r.category)}</Field2>
+          {r.manual && <div className="stack gap-1" data-manual-note><p className="t-xs" style={{ color: 'var(--color-warning)' }}>{t(K.manual.by, { name: r.manual.byName })}</p><div><Button size="sm" variant="ghost" onClick={() => nav('/override-console')}>{t(K.manual.open)} <ArrowRight size={14} /></Button></div></div>}
           {r.unitName && <Field2 label={t(K.detail.step)}>{r.unitName}</Field2>}
           {d.rule && <Field2 label={t(K.detail.rule)}>{d.rule.name}</Field2>}
           {d.ruleChangedSince && <p className="t-xs" data-rule-changed style={{ color: 'var(--color-warning)' }}>{t(K.detail.ruleChanged)}</p>}
