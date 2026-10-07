@@ -6,6 +6,7 @@
  * well-formed, not that it belongs to the person holding it — that needs a
  * real KYC provider, and every caller says so in its own copy.
  */
+import { isIndianMobile, isPincode } from '@/features/validation/india';
 
 /** Permanent Account Number: AAAAA9999A. */
 export const isValidPan = (value: string): boolean =>
@@ -70,10 +71,10 @@ export const isValidGstin = (value: string): boolean =>
 /** The PAN embedded in a GSTIN — used to cross-check the two against each other. */
 export const panFromGstin = (gstin: string): string => gstin.trim().toUpperCase().slice(2, 12);
 
-export const isValidIndianMobile = (value: string): boolean =>
-  /^[6-9]\d{9}$/.test(value.replace(/\D/g, ''));
+/** The shared rule (`@/features/validation/india`), under the name the onboarding screens use. */
+export const isValidIndianMobile = isIndianMobile;
 
-export const isValidPincode = (value: string): boolean => /^[1-9]\d{5}$/.test(value.trim());
+export const isValidPincode = isPincode;
 
 /** 0-4, with the reasons that dragged it down, for the reset-password meter. */
 export interface PasswordStrength {

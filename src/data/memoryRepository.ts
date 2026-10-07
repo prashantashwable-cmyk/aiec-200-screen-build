@@ -1006,6 +1006,7 @@ import type { Triage } from '@/features/service/tickets';
 import { ADHOC_NOTE_MIN as BOOKING_ADHOC_NOTE_MIN, FAR_DAYS, FRESH_LOCATION as BOOKING_FRESH_LOCATION, MIN_NOTICE as BOOKING_MIN_NOTICE, OFFER_DAYS, amcStateOf, bestFor as bookingBestFor, bookingProblem as bookingProblemOf, chargeableOf as bookingChargeableOf, etaMinutesOf as bookingEtaMinutes, honestyOf as bookingHonestyOf, phaseOf as bookingPhaseOf, slotsOf as bookingSlotsOf, visitPriceOf } from '@/features/service/booking';
 import type { Candidate as BookingCandidate } from '@/features/service/booking';
 import { DRIVE_SKILL } from '@/features/training/skills';
+import { isEmail, isIndianMobile, isPincode } from '@/features/validation/india';
 import { addDays } from '@/features/qc/inspectors';
 import { HUMAN_HOLD as SUPPORT_HUMAN_HOLD, MAX_MESSAGE as SUPPORT_MAX_MESSAGE, QUEUE_BUSY as SUPPORT_QUEUE_BUSY, REPLY_TARGET_MIN as SUPPORT_REPLY_TARGET_MIN, decide as supportDecide, handlingOf as supportHandlingOf, intentOf as supportIntentOf, queueOf as supportQueueOf } from '@/features/support/chat';
 import type { Intent as SupportIntent, Parsed as SupportParsed } from '@/features/support/chat';
@@ -15042,7 +15043,7 @@ function rfReferralDesk(user: User, now: number): ReferralDeskView {
 function rfProblem(referrer: User, input: ReferralInput): string | null {
   const phone = input.phone.replace(/\D/g, '');
   if (input.name.trim().length < 2) return 'name_required';
-  if (phone.length < 10 || !/^[6-9]\d{9}$/.test(phone.slice(-10))) return 'phone_invalid';
+  if (phone.length < 10 || !isIndianMobile(phone.slice(-10))) return 'phone_invalid';
   if (vdLast10(referrer.phone) === phone.slice(-10)) return 'own_number';
   if (!input.consent) return 'consent_required';
   return null;
@@ -20067,7 +20068,7 @@ export const memoryRepository: Repository = {
       const phone = input.phone.replace(/\D/g, '').slice(-10);
       const city = input.city.trim();
       if (input.role !== 'surveyor' && input.role !== 'technician') throw new RepositoryError('invalid_input');
-      if (name.length < 3 || !/^[6-9]\d{9}$/.test(phone) || !city) throw new RepositoryError('invalid_input');
+      if (name.length < 3 || !isIndianMobile(phone) || !city) throw new RepositoryError('invalid_input');
       // Only the last four digits may ever reach AIEC; anything longer is refused rather than trimmed, so a caller cannot send the whole number by mistake.
       if (input.aadhaarLast4 !== undefined && !/^\d{4}$/.test(input.aadhaarLast4)) throw new RepositoryError('invalid_input');
       const pan = input.panNumber?.trim().toUpperCase();
@@ -20208,10 +20209,10 @@ export const memoryRepository: Repository = {
       if (!lead) throw new RepositoryError('not_found');
       const name = input.name.trim();
       const phone = input.phone.replace(/\D/g, '').slice(-10);
-      if (name.length < 3 || !/^[6-9]\d{9}$/.test(phone)) throw new RepositoryError('invalid_input');
-      if (input.pincode.trim() && !/^[1-9]\d{5}$/.test(input.pincode.trim())) throw new RepositoryError('invalid_input');
+      if (name.length < 3 || !isIndianMobile(phone)) throw new RepositoryError('invalid_input');
+      if (input.pincode.trim() && !isPincode(input.pincode)) throw new RepositoryError('invalid_input');
       const email = input.email?.trim();
-      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new RepositoryError('invalid_input');
+      if (email && !isEmail(email)) throw new RepositoryError('invalid_input');
       const samePhone = users.filter((u) => vdLast10(u.phone) === phone);
       if (samePhone.some((u) => u.role !== 'customer')) throw new RepositoryError('phone_taken');
       const now = new Date().toISOString();

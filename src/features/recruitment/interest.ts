@@ -5,6 +5,7 @@
  *
  * The intake thresholds are AIEC's own placeholder business decisions, kept in one place and flagged where they are shown.
  */
+import { isIndianMobile } from '@/features/validation/india';
 import { hours } from '@/features/sla/clock';
 
 export const RECRUIT_ROLES = ['surveyor', 'technician', 'supplier'] as const;
@@ -41,7 +42,7 @@ export function normalisePhone(value: string): string {
   const d = value.replace(/\D/g, '');
   return d.length > 10 ? d.slice(-10) : d;
 }
-export const isMobile = (value: string): boolean => /^[6-9]\d{9}$/.test(normalisePhone(value));
+export const isMobile = (value: string): boolean => isIndianMobile(value);
 
 export type InterestProblem = 'name_required' | 'phone_invalid' | 'role_required' | 'consent_required' | 'already_partner' | 'invalid_input';
 export const NAME_MIN = 3;

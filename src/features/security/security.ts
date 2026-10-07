@@ -3,6 +3,7 @@
  * the person, and how an account is recovered after a lost device. Pure: the screen, the sign-in gate and the repository judge with the same rules.
  * Every number below is a placeholder business decision flagged on the screen.
  */
+import { isIndianMobile } from '@/features/validation/india';
 export type SecRole = 'admin' | 'surveyor' | 'technician' | 'customer' | 'supplier';
 export const SEC_ROLES: SecRole[] = ['admin', 'surveyor', 'technician', 'supplier', 'customer'];
 
@@ -168,7 +169,7 @@ export const lettersOf = (s: string): number => (s.match(/[\p{L}\p{N}]/gu) ?? []
 export const digitsOf = (s: string): string => s.replace(/\D/g, '');
 export const last10 = (s: string): string => digitsOf(s).slice(-10);
 export const maskPhone = (p: string): string => { const d = digitsOf(p); return d.length >= 4 ? `••••••${d.slice(-4)}` : '••••'; };
-export const isValidPhone = (p: string): boolean => /^(\+?91)?[6-9]\d{9}$/.test(p.replace(/[\s-]/g, ''));
+export const isValidPhone = (p: string): boolean => isIndianMobile(p);
 
 /** A fast non-cryptographic hash: the recovery code is never stored as typed. A real backend would use a slow salted hash. */
 export function hashCode(s: string): string {

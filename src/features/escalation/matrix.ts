@@ -2,6 +2,7 @@
  * The escalation matrix (184): who is told, in what order and after what delay, when something nobody has acknowledged or resolved is left standing. Pure: the screen, the heartbeat
  * and the drill read the same rules, so what Admin sees configured is exactly what runs. Every number here is a placeholder business decision flagged on the screen.
  */
+import { isIndianMobile } from '@/features/validation/india';
 import type { Alert } from '@/data/types';
 
 export const ESC_CHANNELS = ['inApp', 'sms', 'call'] as const;
@@ -181,5 +182,5 @@ export const railOutcome = (rail: RailState): 'confirms' | 'fails' | 'silent' =>
 export const drillDueAt = (lastDrillAt: string | null, configuredAt: string, everyDays: number): string => new Date(Date.parse(lastDrillAt ?? configuredAt) + everyDays * 86_400_000).toISOString();
 
 /** A phone number that can be rung or texted: 10 digits, optionally with a country code. */
-export const phoneProblem = (p: string): boolean => !/^(\+?91)?[6-9]\d{9}$/.test(p.replace(/[\s-]/g, ''));
+export const phoneProblem = (p: string): boolean => !isIndianMobile(p);
 export const maskPhone = (p: string): string => { const d = p.replace(/\D/g, ''); return d.length >= 4 ? `••••••${d.slice(-4)}` : '••••'; };

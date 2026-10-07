@@ -58,6 +58,6 @@ export const LOGIN_KEYS = {
 } as const;
 
 /** Indian mobile numbers: 10 digits, never starting 0-5. */
-export const isValidIndianMobile = (value: string): boolean => /^[6-9]\d{9}$/.test(value.trim());
+export { isIndianMobile as isValidIndianMobile } from '@/features/validation/india';
 
 export const isValidEmail = (value: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value.trim());
