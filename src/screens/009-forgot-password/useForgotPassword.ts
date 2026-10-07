@@ -1,8 +1,10 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useData } from '@/data/DataProvider';
 import { scorePassword } from '@/features/onboarding/validators';
 import type { PasswordStrength } from '@/features/onboarding/validators';
 import type { User } from '@/data/types';
+import { passwordProblems } from '@/features/security/security';
+import type { PasswordPolicy } from '@/features/security/security';
 import {
   DEMO_RESET_CODE,
   MAX_RESET_REQUESTS,
@@ -33,6 +35,8 @@ interface ForgotPasswordState {
   confirmPassword: string;
   setConfirmPassword: (value: string) => void;
   strength: PasswordStrength;
+  /** The shortest password the security settings (195) allow. */
+  minLength: number;
   requestCode: () => Promise<void>;
   verifyCode: () => void;
   submitPassword: () => Promise<void>;
@@ -144,10 +148,15 @@ export function useForgotPassword(): ForgotPasswordState {
     setPhase('password');
   }, [code]);
 
-  const strength = scorePassword(newPassword);
+  // The rules for a password are the ones Admin set in the security settings (195), not a number written into this screen.
+  const [policy, setPolicy] = useState<PasswordPolicy | null>(null);
+  useEffect(() => { let live = true; void repository.getPasswordPolicy().then((p) => { if (live) setPolicy(p); }).catch(() => undefined); return () => { live = false; }; }, [repository]);
+  const minLength = policy?.minLength ?? 8;
+  const base = scorePassword(newPassword);
+  const strength: PasswordStrength = { ...base, hasLength: newPassword.length >= minLength };
 
   const submitPassword = useCallback(async () => {
-    if (strength.score < 3) {
+    if (strength.score < 3 || (policy && passwordProblems(policy, newPassword).length > 0)) {
       setError('weakPassword');
       return;
     }
@@ -168,13 +177,14 @@ export function useForgotPassword(): ForgotPasswordState {
       await new Promise((resolve) => setTimeout(resolve, 700));
       // Every other device is signed out. The count is what makes that
       // promise visible rather than merely claimed.
-      setSessionsClosed(2);
+      const done = account ? await repository.recordPasswordReset(account.id) : { sessionsEnded: 0 };
+      setSessionsClosed(done.sessionsEnded);
       setPhase('done');
     } catch {
       setError('network');
       setPhase('password');
     }
-  }, [strength.score, newPassword, confirmPassword, account]);
+  }, [strength.score, newPassword, confirmPassword, account, policy, repository]);
 
   const reset = useCallback(() => {
     setPhase('identify');
@@ -199,6 +209,7 @@ export function useForgotPassword(): ForgotPasswordState {
     confirmPassword,
     setConfirmPassword,
     strength,
+    minLength,
     requestCode,
     verifyCode,
     submitPassword,

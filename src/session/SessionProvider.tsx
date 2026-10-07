@@ -3,6 +3,8 @@ import type { ReactNode } from 'react';
 import { applyLanguage } from '@/i18n';
 import { useData } from '@/data/DataProvider';
 import type { Language, Role, ThemePreference, User } from '@/data/types';
+import { deviceLabelOf } from '@/features/security/security';
+import { readAuthSessionId, readSecondFactorAt, writeAuthSessionId, writeSecondFactorAt } from '@/features/security/sessionKeys';
 
 /**
  * Who is signed in, in what mode, in what language, in what theme.
@@ -62,6 +64,9 @@ const VALID_THEMES: ThemePreference[] = [
   'system',
 ];
 
+/** What the browser can say about itself. Its address and place are not known here: a real backend records both on the server. */
+const sessionContext = () => { const d = deviceLabelOf(typeof navigator === 'undefined' ? '' : navigator.userAgent); return { deviceLabel: d.label, platform: d.platform }; };
+
 function readStoredTheme(): ThemePreference {
   const saved = localStorage.getItem(STORAGE_KEY_THEME) as ThemePreference | null;
   return saved && VALID_THEMES.includes(saved) ? saved : 'light';
@@ -118,6 +123,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             return;
           }
           applyLanguage(user.preferredLanguage);
+          // A recorded session is taken up again after a reload; demo sessions are never recorded (they have no real account to protect).
+          if (parsed.kind === 'authenticated') {
+            const known = readAuthSessionId();
+            const ctx = { ...sessionContext(), secondFactorAt: readSecondFactorAt() ?? undefined };
+            void (known ? repository.resumeAuthSession(user.id, known, ctx) : repository.openAuthSession(user.id, ctx)).then((r) => writeAuthSessionId(r.sessionId)).catch(() => undefined);
+          }
           setState((s) => ({
             ...s,
             kind: parsed.kind,
@@ -136,6 +147,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [repository]);
 
   const adopt = useCallback((user: User, kind: SessionKind) => {
+    // A real sign-in is a recorded session Admin can see and end (195); a demo one is not.
+    writeSecondFactorAt(null);
+    if (kind === 'authenticated') void repository.openAuthSession(user.id, sessionContext()).then((r) => writeAuthSessionId(r.sessionId)).catch(() => writeAuthSessionId(null));
+    else writeAuthSessionId(null);
     setState((s) => ({
       ...s,
       kind,
@@ -149,7 +164,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     applyLanguage(user.preferredLanguage);
     applyTheme(user.themePreference);
     sessionStorage.setItem(STORAGE_KEY_SESSION, JSON.stringify({ kind, userId: user.id }));
-  }, []);
+  }, [repository]);
 
   const enterDemo = useCallback(
     async (role: Role) => {
@@ -171,6 +186,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(() => {
     // Full teardown — nothing from the previous session carries over.
+    const recorded = readAuthSessionId();
+    if (recorded) void repository.endAuthSession(recorded).catch(() => undefined);
+    writeAuthSessionId(null);
+    writeSecondFactorAt(null);
     sessionStorage.removeItem(STORAGE_KEY_SESSION);
     setState((s) => ({
       kind: 'anonymous',
@@ -181,7 +200,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       theme: s.theme,
       restoring: false,
     }));
-  }, []);
+  }, [repository]);
 
   const setLanguage = useCallback(
     (lang: Language) => {

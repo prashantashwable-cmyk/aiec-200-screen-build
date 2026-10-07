@@ -135,11 +135,25 @@ export function useOtp(): OtpState {
         setPhase('entering');
         return;
       }
+      // Repeated failures pause an account's sign-in for the time the security settings say (195): a paused account is not told whether the code was right.
+      const paused = await repository.precheckSignIn(user.id);
+      if (paused.paused && paused.until) {
+        setCodeState('');
+        setCooldownIn(Math.max(1, Math.ceil((Date.parse(paused.until) - Date.now()) / 1000)));
+        setPhase('cooldown');
+        return;
+      }
       if (code !== DEMO_OTP) {
         const attempts = wrongAttempts + 1;
         setWrongAttempts(attempts);
         setError('wrongCode');
         setCodeState('');
+        const failed = await repository.recordLoginFailure(user.id);
+        if (failed.paused && failed.until) {
+          setCooldownIn(Math.max(1, Math.ceil((Date.parse(failed.until) - Date.now()) / 1000)));
+          setPhase('cooldown');
+          return;
+        }
         if (attempts >= WRONG_ATTEMPTS_BEFORE_ESCALATION) {
           setCooldownIn(ESCALATED_COOLDOWN_S);
           setPhase('cooldown');

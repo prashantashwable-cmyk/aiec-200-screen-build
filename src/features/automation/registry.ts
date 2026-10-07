@@ -45,6 +45,7 @@ export const UNITS: UnitDef[] = [
   { id: 'companyProfile', category: 'commitments', name: 'Company profile changes taking effect' },
   { id: 'permissions', category: 'commitments', name: 'Access exceptions reaching their end' },
   { id: 'privacy', category: 'commitments', name: 'Retention policy and data request deadlines' },
+  { id: 'security', category: 'commitments', name: 'Session limits, second-step exceptions and recovery codes' },
   { id: 'followUpTasks', category: 'commitments', name: 'Follow-up task reconciliation' },
   { id: 'paymentReminders', category: 'payments', name: 'Payment reminders' },
   { id: 'scheduledQuotations', category: 'communications', name: 'Scheduled quotation sends' },

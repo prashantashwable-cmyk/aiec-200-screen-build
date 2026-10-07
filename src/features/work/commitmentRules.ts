@@ -162,6 +162,7 @@ export interface CommitmentSources {
   integrations: { followUps: { id: string; name: string; since: string; count: number }[]; rotations: { id: string; name: string; dueAt: string }[] };
   /** A rule that passed its sandbox tests and is still not live, and a scenario library nobody has reviewed in a while (190). */
   privacy: { requests: { id: string; name: string; type: string; dueAt: string }[]; notices: { id: string; version: number; dueAt: string }[]; reviews: { id: string; count: number; since: string }[] };
+  security: { places: { id: string; userId: string; name: string; dueAt: string }[]; requests: { id: string; name: string; dueAt: string }[]; exceptions: { id: string; name: string; until: string }[]; locks: { id: string; userId: string; name: string; dueAt: string }[] };
   monitor: { checks: { adminId: string; day: string; dueAt: string }[]; concerns: { id: string; adminId: string; note: string; reviewAt: string }[] };
   permissions: { reviews: { id: string; name: string; screen: string; dueAt: string }[] };
   companyProfile: { verify: { id: string; version: number; dueAt: string }[] };
@@ -2531,6 +2532,94 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
         paused: false,
         actionRoute: '/privacy?tab=retention',
         oversightRoute: '/privacy?tab=retention',
+      }));
+    },
+  },
+  {
+    // A sign-in from somewhere new is asked about: the person confirms it in one tap, or Admin does after speaking to them (195). Not a lockout, but not left open either.
+    kind: 'security_place_review',
+    nudgeBefore: hours(4),
+    escalateAfter: hours(24),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'automation',
+    collect(src) {
+      return src.security.places.map((x) => ({
+        ...base('security_place_review', 'alert', x.id),
+        ownerUserId: adminId(src),
+        titleKey: 'work.title.security_place_review',
+        titleParams: { name: x.name },
+        dueAt: x.dueAt,
+        state: 'open' as const,
+        paused: false,
+        actionRoute: `/security?tab=accounts&account=${x.userId}`,
+        oversightRoute: '/security?tab=accounts',
+      }));
+    },
+  },
+  {
+    // A person who cannot use the second step has asked to be excused: a documented answer, not a silent one (195).
+    kind: 'security_2fa_exception_decide',
+    nudgeBefore: hours(12),
+    escalateAfter: days(2),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'automation',
+    collect(src) {
+      return src.security.requests.map((x) => ({
+        ...base('security_2fa_exception_decide', 'alert', x.id),
+        ownerUserId: adminId(src),
+        titleKey: 'work.title.security_2fa_exception_decide',
+        titleParams: { name: x.name },
+        dueAt: x.dueAt,
+        state: 'open' as const,
+        paused: false,
+        actionRoute: `/security?tab=exceptions&exception=${x.id}`,
+        oversightRoute: '/security?tab=exceptions',
+      }));
+    },
+  },
+  {
+    // An exception to the second step has an end date: it is looked at before it lapses, extended on purpose or let go (195).
+    kind: 'security_2fa_exception_review',
+    nudgeBefore: days(7),
+    escalateAfter: days(3),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'automation',
+    collect(src) {
+      return src.security.exceptions.map((x) => ({
+        ...base('security_2fa_exception_review', 'alert', x.id),
+        ownerUserId: adminId(src),
+        titleKey: 'work.title.security_2fa_exception_review',
+        titleParams: { name: x.name },
+        dueAt: x.until,
+        state: 'open' as const,
+        paused: false,
+        actionRoute: `/security?tab=exceptions&exception=${x.id}`,
+        oversightRoute: '/security?tab=exceptions',
+      }));
+    },
+  },
+  {
+    // A locked account is a person who cannot work: Admin owes them a verified way back within a day (195).
+    kind: 'security_account_recovery',
+    nudgeBefore: hours(4),
+    escalateAfter: hours(12),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'automation',
+    collect(src) {
+      return src.security.locks.map((x) => ({
+        ...base('security_account_recovery', 'alert', x.id),
+        ownerUserId: adminId(src),
+        titleKey: 'work.title.security_account_recovery',
+        titleParams: { name: x.name },
+        dueAt: x.dueAt,
+        state: 'open' as const,
+        paused: false,
+        actionRoute: `/security?tab=accounts&account=${x.userId}`,
+        oversightRoute: '/security?tab=accounts',
       }));
     },
   },

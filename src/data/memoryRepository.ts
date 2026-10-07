@@ -1033,12 +1033,19 @@ import type { OverrideKind, OverrideProblem } from '@/features/override/rules';
 import { GENESIS as AUDIT_GENESIS, codeOf as auditCodeOf, hashOf as auditHashOf, verifyChain as auditVerify } from '@/features/audit/chain';
 import { BOT_DRIFT_POINTS as HC_BOT_DRIFT, BOT_MIN_SAMPLE as HC_BOT_MIN, ENGINE_DOWN_MS as HC_ENGINE_DOWN, INTEGRATIONS as HC_INTEGRATIONS, MAX_PROBES as HC_MAX_PROBES, STATUS_WINDOW_MS as HC_STATUS_WINDOW, NOTE_MIN as HC_NOTE_MIN, PROBE_EVERY_MS as HC_PROBE_EVERY, WINDOW_MS as HC_WINDOW, agreementOf as hcAgreement, causeOf as hcCause, integrationDef as hcDef, isHttpUrl as hcIsUrl, judge as hcJudge, recovered as hcRecovered, sharedCauseOf as hcShared, uptimeOf as hcUptime } from '@/features/health/system';
 import type { IntegrationDef as HcDef, Observation as HcObservation, TechStatus } from '@/features/health/system';
-import type { AccessPackageView, ConsentRegisterFilter, ConsentRegisterView, DataRequestFilter, DataRequestListView, DataRequestView, DeletionPlanResult, FulfilInput, PrivacyPolicyView, RetentionPreview, RetentionView, SubjectDetailView, SubjectRowView, MonitorAbsenceInput, MonitorBackupCandidate, MonitorCheckInput, MonitorConfigInput, MonitorPanelView, MonitorSignalView, AccessGrantsView, CustomRoleInput, MatrixRowView, PermissionLogFilter, PermissionLogView, PermissionMatrixFilter, PermissionMatrixView, PermissionOverview, PermissionRoleView, PermissionUserRow, RoleChangeInput, RoleChangePreview, UserAccessView, UserOverrideInput, BrandView, CompanyProfilePreview, CompanyProfilePublishInput, CompanyProfileVersionView, CompanyProfileView, CompanyUsage, SandboxRunView, SandboxPromotionPreview, SandboxPromotionRow, SandboxRuleRef, SandboxScenarioView, SandboxView, IntegrationManagementView, IntegrationSetupView, IsolationCheckView, OverrideCandidate, OverrideConsoleView, OverridePreviewView, AuditDetailView, AuditExportView, AuditFilter, AuditRowView, AuditSearchView, BotHealthView, SystemHealthIntegrationView, SystemHealthView } from './repository';
+import type { AccessPackageView, ConsentRegisterFilter, ConsentRegisterView, DataRequestFilter, DataRequestListView, DataRequestView, DeletionPlanResult, FulfilInput, PrivacyPolicyView, RetentionPreview, RetentionView, SubjectDetailView, SubjectRowView, MonitorAbsenceInput, MonitorBackupCandidate, MonitorCheckInput, MonitorConfigInput, MonitorPanelView, MonitorSignalView, AccessGrantsView, CustomRoleInput, MatrixRowView, PermissionLogFilter, PermissionLogView, PermissionMatrixFilter, PermissionMatrixView, PermissionOverview, PermissionRoleView, PermissionUserRow, RoleChangeInput, RoleChangePreview, UserAccessView, UserOverrideInput, BrandView, CompanyProfilePreview, CompanyProfilePublishInput, CompanyProfileVersionView, CompanyProfileView, CompanyUsage, SandboxRunView, SandboxPromotionPreview, SandboxPromotionRow, SandboxRuleRef, SandboxScenarioView, SandboxView, IntegrationManagementView, IntegrationSetupView, IsolationCheckView, OverrideCandidate, OverrideConsoleView, OverridePreviewView, AuditDetailView, AuditExportView, AuditFilter, AuditRowView, AuditSearchView, BotHealthView, SystemHealthIntegrationView, SystemHealthView, SecurityOverview, SecurityRoleRow, SecurityAttentionItem, AccountSecurityRow, AccountListView, AuthSessionView, AccountRecoveryView, AccountSecurityView, SecurityEventsView, SecurityConfigPreview, TwoFactorExceptionList, SessionCheck, GateStep, SessionContextInput } from './repository';
 import { SLA_CATEGORIES, WINDOW_DAYS as SLA_WINDOW_DAYS, elapsedMsOf as slaElapsedOf, pauseOf as slaPauseOf, ratioOf as slaRatioOf, rollupOf as slaRollupOf, statusOf as slaStatusOf, targetSignal as slaTargetSignal, trendOf as slaTrendOf, triageScore as slaTriageScore } from '@/features/sla/consolidated';
 import type { SlaItem } from '@/features/sla/consolidated';
 import type { SlaCategoryView, SlaItemView, SlaOverviewView } from './repository';
 import { BACKUP_KEYS as ESC_BACKUP_KEYS, DEMO_CONFIRM_MS as ESC_DEMO_CONFIRM_MS, DEMO_SILENCE_MS as ESC_DEMO_SILENCE_MS, DRILL_GAP_TITLE as ESC_DRILL_GAP_TITLE, ESC_CHANNELS, EXHAUSTED_TITLE as ESC_EXHAUSTED_TITLE, MAX_BACKUPS as ESC_MAX_BACKUPS, NOTE_MIN as ESC_NOTE_MIN, PRIMARY as ESC_PRIMARY, SCENARIOS as ESC_SCENARIOS, SCENARIO_NAMES as ESC_NAMES, chainProblems as escChainProblems, drillDueAt as escDrillDueAt, drillStepsOf as escDrillStepsOf, exhaustedAfterMinutes as escExhaustedAfter, offsetsOf as escOffsets, phoneProblem as escPhoneBad, railOutcome as escRailOutcome, repeatOffsets as escRepeatOffsets, scenarioDef as escDef, scenarioIdOf as escScenarioIdOf, withTierIds as escTierIds } from '@/features/escalation/matrix';
-import type { GeoPoint, ConsentRecord, DataRequest, PrivacyPolicyVersion, RetentionPolicyVersion, RetentionRun, MonitorAbsence, MonitorCheck, MonitorConcern, MonitorConfig, CompanyProfileVersion, Role, CustomRole, PermissionChange, PermissionChangeKind, UserAccessOverride, SandboxBaseline, SandboxRun, SandboxScenario, IntegrationChange, IntegrationCredentialView, IntegrationSetup, AuditExportRecord, LeadStage, ManualOverride, IntegrationConfig, IntegrationIncident, IntegrationProbe, MessageStatus } from './types';
+import {
+  DECIDE_DAYS as SEC_DECIDE_DAYS, DEFAULT_CONFIG as SEC_DEFAULT, DEMO_SECOND_CODE as SEC_DEMO_CODE, EVENTS_PAGE as SEC_EVENTS_PAGE, EVENT_GROUPS as SEC_GROUPS, EXCEPTION_NUDGE_DAYS as SEC_EXCEPTION_NUDGE_DAYS, EXCUSED_MAX_HOURS as SEC_EXCUSED_MAX_HOURS,
+  LOCATION_REVIEW_H as SEC_LOCATION_REVIEW_H, METHODS as SEC_METHODS, NOTE_MIN as SEC_NOTE_MIN, REASON_MIN as SEC_REASON_MIN, RECOVERY_CODE_LENGTH as SEC_RECOVERY_LEN, RECOVERY_MAX_TRIES as SEC_RECOVERY_TRIES, RECOVERY_TTL_H as SEC_RECOVERY_TTL_H,
+  SEC_ROLES, SEVERITY_OF as SEC_SEVERITY_OF, TRUST_DAYS as SEC_TRUST_DAYS, TWOFA_TRIES as SEC_TWOFA_TRIES, configProblems as secConfigProblems, exceptionProblem as secExceptionProblem, expiryOf as secExpiry, hashCode as secHash, isValidPhone as secValidPhone,
+  last10 as secLast10, lettersOf as secLetters, locationVerdict as secLocationVerdict, maskPhone as secMaskPhone, pauseOf as secPauseState, twoFactorStateOf as secTwoFactorState, weakenings as secWeakenings,
+} from '@/features/security/security';
+import type { FailureLine, SecRole, SecondFactorMethod, SecurityConfig, SecurityEventKind, TwoFactorState } from '@/features/security/security';
+import type { AuthSession, SecurityEvent, TwoFactorEnrolment, TwoFactorException, AccountLock, AccountRecovery, SecurityPolicyVersion, TrustedPlace, GeoPoint, ConsentRecord, DataRequest, PrivacyPolicyVersion, RetentionPolicyVersion, RetentionRun, MonitorAbsence, MonitorCheck, MonitorConcern, MonitorConfig, CompanyProfileVersion, Role, CustomRole, PermissionChange, PermissionChangeKind, UserAccessOverride, SandboxBaseline, SandboxRun, SandboxScenario, IntegrationChange, IntegrationCredentialView, IntegrationSetup, AuditExportRecord, LeadStage, ManualOverride, IntegrationConfig, IntegrationIncident, IntegrationProbe, MessageStatus } from './types';
 import type { EscalationChainTier, EscalationChannel, EscalationContact, EscalationDelivery, EscalationDrill, EscalationDrillStep, EscalationLastResort, EscalationRun, EscalationScenarioConfig } from './types';
 import type { AlertEscalationView, EscalationGap, EscalationMatrixView, EscalationRunView, EscalationScenarioView } from './repository';
 import { VAULT_KINDS, validityState } from '@/features/documents/vault';
@@ -2885,6 +2892,7 @@ function commitmentSources(now: number): CommitmentSources {
     permissions: pmSignals(now),
     monitor: mnSignalsForCommitments(now),
     privacy: pvSignals(now),
+    security: secSignals(now),
     tds: tdsObligations(Date.now()),
     exits: exitSignals(),
     handoverReviews: handoverSignals().reviews,
@@ -5136,6 +5144,364 @@ function pvSignals(now: number): { requests: { id: string; name: string; type: s
   };
 }
 
+/* ------------------------------------------------------------------ 195 — security & session management */
+const authSessions: AuthSession[] = [];
+const securityEvents: SecurityEvent[] = [];
+const twoFactorEnrolments: TwoFactorEnrolment[] = [];
+const twoFactorExceptions: TwoFactorException[] = [];
+const accountLocks: AccountLock[] = [];
+const accountRecoveries: AccountRecovery[] = [];
+const securityPolicies: SecurityPolicyVersion[] = [];
+const trustedPlaces: TrustedPlace[] = [];
+let secSeeded = false;
+let secN = { session: 0, event: 0, exception: 0, recovery: 0, lock: 0 };
+const secDay = 86_400_000;
+const secIso = (ms: number): string => new Date(ms).toISOString();
+
+function secPolicyAt(now: number): SecurityPolicyVersion { return [...securityPolicies].filter((v) => Date.parse(v.effectiveFrom) <= now).sort((a, b) => b.version - a.version)[0] ?? securityPolicies[0]; }
+const secConfig = (now: number): SecurityConfig => secPolicyAt(now).config;
+const secUserName = (id: string | null): string => (id ? byId(users, id)?.name ?? id : '—');
+
+function secEvent(input: { kind: SecurityEventKind; userId: string | null; at?: string; session?: AuthSession | null; detail?: string; byName?: string; flagged?: boolean; city?: string | null; deviceLabel?: string; ipMasked?: string | null }): SecurityEvent {
+  secN.event += 1;
+  const u = input.userId ? byId(users, input.userId) : null;
+  const e: SecurityEvent = {
+    id: `se-${secN.event}`, at: input.at ?? new Date().toISOString(), kind: input.kind, severity: SEC_SEVERITY_OF[input.kind], userId: input.userId, userName: u?.name ?? '—', role: u?.role, phoneMasked: u ? secMaskPhone(u.phone) : null,
+    sessionId: input.session?.id, deviceLabel: input.deviceLabel ?? input.session?.deviceLabel, ipMasked: input.ipMasked ?? input.session?.ipMasked ?? null, city: input.city ?? input.session?.city ?? null,
+    detail: input.detail, byName: input.byName, flagged: input.flagged || undefined,
+  };
+  securityEvents.push(e);
+  return e;
+}
+const secResolveEvents = (match: (e: SecurityEvent) => boolean, byName: string, note: string): void => {
+  for (const e of securityEvents) if (e.flagged && !e.resolved && match(e)) e.resolved = { at: new Date().toISOString(), byName, note };
+};
+
+function secUsualPlaces(userId: string, now: number): string[] {
+  const u = byId(users, userId);
+  const set = new Set<string>();
+  if (u?.city) set.add(u.city);
+  for (const s of authSessions) if (s.userId === userId && s.city && (s.place === 'usual' || s.place === 'confirmed')) set.add(s.city);
+  for (const t of trustedPlaces) if (t.userId === userId && Date.parse(t.until) > now) set.add(t.city);
+  return [...set];
+}
+
+type SecTwoFactor = { state: TwoFactorState; graceEnds: string | null; method: SecondFactorMethod | null; enrolment: TwoFactorEnrolment | null; exception: TwoFactorException | null; requested: TwoFactorException | null };
+function secTwoFactor(user: User, now: number): SecTwoFactor {
+  const pol = secPolicyAt(now);
+  const role = user.role as SecRole;
+  const rule = pol.config.twoFactor[role];
+  const enrolment = twoFactorEnrolments.find((x) => x.userId === user.id) ?? null;
+  const exception = twoFactorExceptions.find((x) => x.userId === user.id && x.status === 'active' && !!x.until && Date.parse(x.until) > now) ?? null;
+  const requested = twoFactorExceptions.find((x) => x.userId === user.id && x.status === 'requested') ?? null;
+  const r = secTwoFactorState({ required: rule.required, graceDays: rule.graceDays, requiredSince: pol.twoFactorSince[role] ?? null, enrolled: !!enrolment, exceptionUntil: exception?.until ?? null }, now);
+  return { state: r.state, graceEnds: r.graceEnds, method: enrolment?.method ?? null, enrolment, exception, requested };
+}
+
+function secSessionLimit(s: AuthSession, user: User | null, now: number): { idleMinutes: number; maxHours: number } {
+  const base = secConfig(now).sessions[s.role as SecRole];
+  // A person excused from the second step has a shorter leash: that is the compensating control for the exception.
+  const excused = user ? secTwoFactor(user, now).state === 'excepted' : false;
+  return excused ? { idleMinutes: base.idleMinutes, maxHours: Math.min(base.maxHours, SEC_EXCUSED_MAX_HOURS) } : base;
+}
+
+function secEnd(s: AuthSession, status: 'revoked' | 'expired' | 'signed_out', by: string, reason: string, now: number): void {
+  s.status = status; s.endedAt = secIso(now); s.endedBy = by; s.endReason = reason;
+}
+
+function secOpenSession(userId: string, ctx: SessionContextInput, opts: { id?: string; simulated?: boolean; secondFactorAt?: string; at?: number } = {}): AuthSession {
+  secEnsure();
+  const user = byId(users, userId);
+  if (!user) throw new RepositoryError('not_found');
+  const now = opts.at ?? Date.now();
+  secN.session += 1;
+  const verdict = secLocationVerdict(ctx.city ?? null, secUsualPlaces(userId, now));
+  const s: AuthSession = {
+    id: opts.id ?? `as-${secN.session}`, userId, role: user.role, deviceLabel: ctx.deviceLabel, platform: ctx.platform, ipMasked: null, city: ctx.city ?? null, openedAt: secIso(now), lastActiveAt: secIso(now), status: 'active',
+    secondFactorAt: opts.secondFactorAt, place: verdict, simulated: opts.simulated || undefined,
+  };
+  authSessions.push(s);
+  secEvent({ kind: 'login_success', userId, session: s, at: s.openedAt });
+  if (verdict === 'new') {
+    secEvent({ kind: 'new_location', userId, session: s, at: s.openedAt, flagged: true, detail: ctx.city ?? undefined });
+    raiseAlert({ titleKey: 'security.alert.newPlace', context: `${user.name} · ${ctx.city} · ${ctx.deviceLabel}`, severity: user.role === 'admin' ? 'high' : 'medium', category: 'automation', relatedId: `place:${s.id}`, sourceRoute: `/security?tab=accounts&account=${userId}` });
+  }
+  return s;
+}
+
+function secFailureLines(userId: string): FailureLine[] {
+  return securityEvents.filter((e) => e.userId === userId && (e.kind === 'login_failed' || e.kind === 'login_success')).map((e) => ({ at: e.at, kind: e.kind as FailureLine['kind'] }));
+}
+const secPauseOf = (userId: string, now: number) => secPauseState(secFailureLines(userId), secConfig(now).signIn, now);
+
+function secRecordFailure(u: User, now: number): { paused: boolean; until: string | null; recent: number } {
+  const before = secPauseOf(u.id, now);
+  secEvent({ kind: 'login_failed', userId: u.id });
+  const p = secPauseOf(u.id, now);
+  if (p.paused && !before.paused) {
+    secEvent({ kind: 'login_paused', userId: u.id, flagged: true, detail: p.until ?? undefined });
+    raiseAlert({ titleKey: 'security.alert.failedLogins', context: `${u.name} · ${p.recent} wrong codes in a row`, severity: u.role === 'admin' ? 'high' : 'medium', category: 'automation', relatedId: `fail:${u.id}`, sourceRoute: `/security?tab=events&account=${u.id}` });
+  }
+  return { paused: p.paused, until: p.until, recent: p.recent };
+}
+
+function secLockOf(userId: string): AccountLock | null { return accountLocks.find((l) => l.userId === userId && l.status === 'locked') ?? null; }
+function secOpenRecovery(lockId: string): AccountRecovery | null { return accountRecoveries.find((r) => r.lockId === lockId && r.status === 'issued') ?? null; }
+
+function secCheck(sessionId: string, touch: boolean): SessionCheck {
+  secEnsure();
+  const now = Date.now();
+  const at = secIso(now);
+  const s = authSessions.find((x) => x.id === sessionId);
+  if (!s) return { status: 'unknown', step: 'none', method: null, graceEnds: null, exception: 'none', at };
+  const user = byId(users, s.userId);
+  const base = { method: null, graceEnds: null, exception: 'none' as const, at };
+  if (s.status !== 'active') return { status: s.status, end: { reason: s.endReason ?? '', by: s.endedBy ?? 'system', at: s.endedAt ?? at }, step: 'none', ...base };
+  if (!user || user.status === 'suspended') { secEnd(s, 'revoked', 'system', 'account_suspended', now); return { status: 'revoked', end: { reason: 'account_suspended', by: 'system', at }, step: 'none', ...base }; }
+  const over = secExpiry(s, secSessionLimit(s, user, now), now);
+  if (over) {
+    secEnd(s, 'expired', 'system', over, now);
+    secEvent({ kind: 'session_expired', userId: s.userId, session: s, detail: over });
+    logAutomatedAction({ sourceKey: 'security.session_expired', triggeringCondition: `A session was ${over === 'idle' ? 'unused for longer' : 'open for longer'} than its role allows`, actionTaken: `Ended the session on ${s.deviceLabel}`, affectedRecordId: s.id, affectedRecordType: 'other', subjectLabel: user.name });
+    return { status: 'expired', end: { reason: over, by: 'system', at }, step: 'none', ...base };
+  }
+  if (touch) s.lastActiveAt = at;
+  const tf = secTwoFactor(user, now);
+  const exception: SessionCheck['exception'] = tf.state === 'excepted' ? 'active' : tf.requested ? 'requested' : twoFactorExceptions.some((x) => x.userId === user.id && x.status === 'declined' && now - Date.parse(x.decidedAt ?? at) < 30 * secDay) ? 'declined' : 'none';
+  const lock = secLockOf(user.id);
+  if (lock) {
+    const rec = secOpenRecovery(lock.id);
+    return { status: 'ok', step: 'locked', method: tf.method, graceEnds: null, exception, lock: { reason: lock.reason, since: lock.since, recovery: rec ? 'issued' : 'none', expiresAt: rec?.expiresAt }, at };
+  }
+  let step: GateStep = 'none';
+  if (tf.state === 'enrolled' && !s.secondFactorAt) step = 'second_factor';
+  else if (tf.state === 'blocked') step = tf.requested ? 'waiting_admin' : 'enrol';
+  else if (s.place === 'new') step = tf.state === 'excepted' ? 'waiting_admin' : 'place';
+  return { status: 'ok', step, method: tf.method, graceEnds: tf.state === 'grace' ? tf.graceEnds : null, place: s.place === 'new' && s.city ? { city: s.city } : undefined, exception, at };
+}
+
+function secRequireSession(sessionId: string): { s: AuthSession; user: User } {
+  const s = authSessions.find((x) => x.id === sessionId);
+  if (!s || s.status !== 'active') throw new RepositoryError('session_ended');
+  const user = byId(users, s.userId);
+  if (!user) throw new RepositoryError('not_found');
+  return { s, user };
+}
+
+const secSessionView = (s: AuthSession, currentId: string | null | undefined): AuthSessionView => ({ ...s, isCurrent: !!currentId && s.id === currentId });
+
+function secRowOf(u: User, now: number): AccountSecurityRow {
+  const mine = authSessions.filter((s) => s.userId === u.id);
+  const active = mine.filter((s) => s.status === 'active');
+  const tf = secTwoFactor(u, now);
+  const lock = secLockOf(u.id);
+  return {
+    userId: u.id, name: u.name, role: u.role, phoneMasked: secMaskPhone(u.phone), active: active.length, lastActiveAt: mine.map((s) => s.lastActiveAt).sort().reverse()[0] ?? null, twoFactor: tf.state, method: tf.method, locked: !!lock,
+    flagged: securityEvents.filter((e) => e.userId === u.id && e.flagged && !e.resolved).length, lockedSince: lock?.since,
+  };
+}
+
+function secAccountView(accountId: string, currentSessionId: string | null | undefined, viewerId: string, now: number): AccountSecurityView {
+  const u = byId(users, accountId);
+  if (!u) throw new RepositoryError('not_found');
+  const lock = secLockOf(u.id) ?? [...accountLocks].filter((l) => l.userId === u.id).sort((a, b) => (a.since < b.since ? 1 : -1))[0] ?? null;
+  const rec = lock ? [...accountRecoveries].filter((r) => r.lockId === lock.id).sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1))[0] ?? null : null;
+  const tf = secTwoFactor(u, now);
+  const pause = secPauseOf(u.id, now);
+  const strip = (r: AccountRecovery): AccountRecoveryView => { const { codeHash: _h, ...rest } = r; return rest; };
+  return JSON.parse(JSON.stringify({
+    ...secRowOf(u, now), city: u.city ?? null,
+    sessions: authSessions.filter((s) => s.userId === u.id).sort((a, b) => (a.status === 'active' ? 0 : 1) - (b.status === 'active' ? 0 : 1) || (a.lastActiveAt < b.lastActiveAt ? 1 : -1)).map((s) => secSessionView(s, currentSessionId)),
+    enrolment: tf.enrolment, graceEnds: tf.graceEnds, exceptions: twoFactorExceptions.filter((x) => x.userId === u.id).sort((a, b) => (a.requestedAt < b.requestedAt ? 1 : -1)),
+    lock, recovery: rec ? strip(rec) : null, trusted: trustedPlaces.filter((t) => t.userId === u.id && Date.parse(t.until) > now).map((t) => ({ city: t.city, until: t.until })),
+    events: securityEvents.filter((e) => e.userId === u.id).sort((a, b) => (a.at < b.at ? 1 : -1)).slice(0, 20), failures: { recent: pause.recent, paused: pause.paused, until: pause.until }, isSelf: u.id === viewerId,
+  })) as AccountSecurityView;
+}
+
+function secOverview(now: number): SecurityOverview {
+  secEnsure();
+  const pol = secPolicyAt(now);
+  const staff = users.filter((u) => u.status !== 'suspended' && u.status !== 'rejected');
+  const roles: SecurityRoleRow[] = SEC_ROLES.map((role) => {
+    const mine = staff.filter((u) => u.role === role);
+    const states = mine.map((u) => secTwoFactor(u, now).state);
+    return { role, required: pol.config.twoFactor[role].required, graceDays: pol.config.twoFactor[role].graceDays, since: pol.twoFactorSince[role] ?? null, total: mine.length, enrolled: states.filter((x) => x === 'enrolled').length, inGrace: states.filter((x) => x === 'grace').length, excepted: states.filter((x) => x === 'excepted').length, blocked: states.filter((x) => x === 'blocked').length };
+  });
+  const attention: SecurityAttentionItem[] = [];
+  for (const s of authSessions) if (s.status === 'active' && s.place === 'new') attention.push({ kind: 'place', id: s.id, userId: s.userId, name: secUserName(s.userId), at: s.openedAt });
+  for (const l of accountLocks) if (l.status === 'locked') attention.push({ kind: 'locked', id: l.id, userId: l.userId, name: secUserName(l.userId), at: l.since });
+  for (const x of twoFactorExceptions) {
+    if (x.status === 'requested') attention.push({ kind: 'request', id: x.id, userId: x.userId, name: x.userName, at: x.requestedAt });
+    if (x.status === 'active' && x.until && Date.parse(x.until) - now <= SEC_EXCEPTION_NUDGE_DAYS * secDay) attention.push({ kind: 'exception_ending', id: x.id, userId: x.userId, name: x.userName, at: x.until });
+  }
+  for (const u of staff) { const p = secPauseOf(u.id, now); if (p.paused) attention.push({ kind: 'failures', id: u.id, userId: u.id, name: u.name, at: p.until ?? secIso(now) }); }
+  return JSON.parse(JSON.stringify({
+    config: pol.config, version: pol.version, effectiveFrom: pol.effectiveFrom, byName: pol.byName, reason: pol.reason, roles,
+    counts: {
+      activeSessions: authSessions.filter((s) => s.status === 'active').length, accounts: staff.length, failures24h: securityEvents.filter((e) => e.kind === 'login_failed' && now - Date.parse(e.at) <= secDay).length,
+      placesOpen: attention.filter((a) => a.kind === 'place').length, locked: accountLocks.filter((l) => l.status === 'locked').length, exceptionsActive: twoFactorExceptions.filter((x) => x.status === 'active' && !!x.until && Date.parse(x.until) > now).length,
+      requestsOpen: twoFactorExceptions.filter((x) => x.status === 'requested').length, recoveriesOpen: accountRecoveries.filter((r) => r.status === 'issued').length,
+    },
+    attention: attention.sort((a, b) => (a.at < b.at ? -1 : 1)),
+    history: [...securityPolicies].sort((a, b) => b.version - a.version).map((v) => ({ id: v.id, version: v.version, effectiveFrom: v.effectiveFrom, byName: v.byName, reason: v.reason, weakened: v.weakened })), at: secIso(now),
+  })) as SecurityOverview;
+}
+
+function secExceptionList(state: 'open' | 'all', now: number): TwoFactorExceptionList {
+  secEnsure();
+  const all = [...twoFactorExceptions].sort((a, b) => (a.requestedAt < b.requestedAt ? 1 : -1));
+  const rows = (state === 'all' ? all : all.filter((x) => x.status === 'requested' || (x.status === 'active' && !!x.until && Date.parse(x.until) > now)));
+  return JSON.parse(JSON.stringify({ rows, counts: { requested: all.filter((x) => x.status === 'requested').length, active: all.filter((x) => x.status === 'active' && !!x.until && Date.parse(x.until) > now).length, ending: all.filter((x) => x.status === 'active' && !!x.until && Date.parse(x.until) - now <= SEC_EXCEPTION_NUDGE_DAYS * secDay).length } })) as TwoFactorExceptionList;
+}
+
+function secPreview(next: SecurityConfig, now: number): SecurityConfigPreview {
+  const pol = secPolicyAt(now);
+  const problems = secConfigProblems(next);
+  const weak = secWeakenings(pol.config, next);
+  const staff = users.filter((u) => u.status !== 'suspended' && u.status !== 'rejected');
+  const roleEffects = SEC_ROLES.filter((r) => next.twoFactor[r].required && !pol.config.twoFactor[r].required).map((role) => {
+    const mine = staff.filter((u) => u.role === role);
+    return { role, newlyRequired: true, people: mine.length, notEnrolled: mine.filter((u) => !twoFactorEnrolments.some((e) => e.userId === u.id)).length, blockedAfter: secIso(now + next.twoFactor[role].graceDays * secDay) };
+  });
+  let ending = 0;
+  for (const s of authSessions) { if (s.status !== 'active') continue; if (secExpiry(s, next.sessions[s.role as SecRole], now)) ending += 1; }
+  const changed = JSON.stringify(next) !== JSON.stringify(pol.config);
+  return { problems, weakenings: weak, roleEffects, sessionsEnding: ending, changed, token: secHash(`${pol.version}:${JSON.stringify(next)}`) };
+}
+
+function secClearLock(lock: AccountLock, byName: string, note: string, now: number): void {
+  lock.status = 'cleared'; lock.clearedAt = secIso(now);
+  const al = alerts.find((a) => a.relatedId === `lock:${lock.id}` && a.status !== 'resolved');
+  if (al) patchInPlace(alerts, al.id, { status: 'resolved', resolvedBy: byName, resolvedAt: secIso(now), resolutionNote: note });
+  secResolveEvents((e) => e.userId === lock.userId && (e.kind === 'device_lost' || e.kind === 'account_locked'), byName, note);
+}
+
+function secEnsure(): void {
+  if (secSeeded) return;
+  secSeeded = true;
+  const now = Date.now();
+  const H = 3_600_000;
+  const t = (ms: number): number => now - ms;
+  securityPolicies.push({
+    id: 'sp-1', version: 1, effectiveFrom: secIso(t(365 * secDay)), createdAt: secIso(t(365 * secDay)), byName: 'Prashant Vasant Wable', reason: 'The starting security settings: a second step for Admin, the rest for the owner and his adviser to review.',
+    config: JSON.parse(JSON.stringify(SEC_DEFAULT)) as SecurityConfig, twoFactorSince: { admin: secIso(t(365 * secDay)), surveyor: null, technician: null, supplier: null, customer: null }, weakened: [],
+  });
+  const v2 = JSON.parse(JSON.stringify(SEC_DEFAULT)) as SecurityConfig;
+  v2.twoFactor.technician = { required: true, graceDays: 14 };
+  securityPolicies.push({
+    id: 'sp-2', version: 2, effectiveFrom: secIso(t(1 * secDay)), createdAt: secIso(t(1 * secDay)), byName: 'Prashant Vasant Wable', reason: 'Technicians carry customers\' addresses and site records on their phones: a second step protects them if a phone is lost.',
+    config: v2, twoFactorSince: { admin: secIso(t(365 * secDay)), surveyor: null, technician: secIso(t(1 * secDay)), supplier: null, customer: null }, weakened: [],
+  });
+  secEvent({ kind: 'policy_changed', userId: 'u-admin-1', at: secIso(t(1 * secDay)), byName: 'Prashant Vasant Wable', detail: securityPolicies[1].reason });
+  const has = (id: string): boolean => !!byId(users, id);
+  const mk = (userId: string, label: string, platform: string, city: string | null, ip: string | null, openedAgo: number, activeAgo: number, extra: Partial<AuthSession> = {}): AuthSession | null => {
+    if (!has(userId)) return null;
+    secN.session += 1;
+    const s: AuthSession = { id: `as-${secN.session}`, userId, role: byId(users, userId)!.role, deviceLabel: label, platform, ipMasked: ip, city, openedAt: secIso(t(openedAgo)), lastActiveAt: secIso(t(activeAgo)), status: 'active', place: city ? 'usual' : 'unknown', ...extra };
+    authSessions.push(s);
+    secEvent({ kind: 'login_success', userId, session: s, at: s.openedAt });
+    return s;
+  };
+  const enrol = (userId: string, method: TwoFactorEnrolment['method'], agoDays: number, secondPhone?: string): void => {
+    if (!has(userId)) return;
+    twoFactorEnrolments.push({ userId, method, enrolledAt: secIso(t(agoDays * secDay)), secondPhoneMasked: secondPhone ? secMaskPhone(secondPhone) : undefined });
+    secEvent({ kind: 'twofa_enrolled', userId, at: secIso(t(agoDays * secDay)) });
+  };
+  enrol('u-admin-1', 'authenticator', 300);
+  enrol('u-tech-1', 'authenticator', 0.8);
+  enrol('u-tech-5', 'second_phone', 0.5, '9822099005');
+  mk('u-admin-1', 'Chrome · Windows', 'windows', 'Pune', '49.36.•••.••', 6 * H, 0.2 * H, { secondFactorAt: secIso(t(6 * H)) });
+  mk('u-admin-1', 'Safari · iPhone', 'ios', 'Pune', '106.51.•••.••', 9 * H, 5 * H, { secondFactorAt: secIso(t(28 * H)) });
+  const oldAdmin = mk('u-admin-1', 'Chrome · Windows (hotel desk)', 'windows', 'Mumbai', '103.21.•••.••', 9 * secDay, 9 * secDay - 2 * H);
+  if (oldAdmin) { oldAdmin.place = 'confirmed'; oldAdmin.placeBy = 'Prashant Vasant Wable'; oldAdmin.placeAt = oldAdmin.openedAt; secEnd(oldAdmin, 'signed_out', 'Prashant Vasant Wable', 'signed_out', t(9 * secDay - 2 * H)); }
+  mk('u-tech-1', 'Chrome · Android', 'android', 'Pune', '157.48.•••.••', 3 * H, 0.3 * H, { secondFactorAt: secIso(t(3 * H)) });
+  mk('u-tech-2', 'Chrome · Android', 'android', 'Pune', '157.48.•••.••', 5 * H, 0.5 * H);
+  mk('u-tech-3', 'Chrome · Android', 'android', 'Pimpri-Chinchwad', '152.58.•••.••', 4 * H, 1 * H);
+  mk('u-tech-5', 'Chrome · Android', 'android', 'Pune', '106.208.•••.••', 2 * H, 0.1 * H, { secondFactorAt: secIso(t(2 * H)) });
+  mk('u-srv-1', 'Chrome · Android', 'android', 'Pune', '49.36.•••.••', 7 * H, 0.4 * H);
+  mk('u-srv-1', 'Chrome · Android (old phone)', 'android', 'Pune', '49.36.•••.••', 40 * secDay, 12 * secDay);
+  mk('u-cust-1', 'Safari · iPhone', 'ios', 'Pune', '27.59.•••.••', 26 * H, 3 * H);
+  mk('u-sup-1', 'Chrome · Windows', 'windows', 'Mumbai', '117.99.•••.••', 10 * H, 2 * H);
+  // A sign-in from somewhere new that nobody has answered yet.
+  const lucknow = mk('u-tech-2', 'Chrome · Android', 'android', 'Lucknow', '117.203.•••.••', 2.5 * H, 2.4 * H, { place: 'new' });
+  if (lucknow) {
+    secEvent({ kind: 'new_location', userId: 'u-tech-2', session: lucknow, at: lucknow.openedAt, flagged: true, detail: 'Lucknow' });
+    raiseAlert({ titleKey: 'security.alert.newPlace', context: `Vishal More · Lucknow · Chrome · Android`, severity: 'medium', category: 'automation', relatedId: `place:${lucknow.id}`, sourceRoute: '/security?tab=accounts&account=u-tech-2' });
+  }
+  // A few wrong codes for one surveyor, not enough to pause the sign-in.
+  if (has('u-srv-2')) for (let i = 0; i < 3; i += 1) secEvent({ kind: 'login_failed', userId: 'u-srv-2', at: secIso(t((5 - i) * H)) });
+  // A phone reported lost two days ago: sessions ended, account locked, recovery not yet begun.
+  if (has('u-srv-4')) {
+    const a = mk('u-srv-4', 'Chrome · Android', 'android', 'Pune', '49.36.•••.••', 6 * secDay, 2 * secDay + H, {});
+    if (a) secEnd(a, 'revoked', 'Prashant Vasant Wable', 'device lost', t(2 * secDay));
+    secN.lock += 1;
+    const lock: AccountLock = { id: `lk-${secN.lock}`, userId: 'u-srv-4', reason: 'device_lost', since: secIso(t(2 * secDay)), byName: 'Prashant Vasant Wable', note: 'Rohit called from a friend\'s phone: his phone and SIM were stolen on the metro.', sessionsEnded: 1, status: 'locked' };
+    accountLocks.push(lock);
+    secEvent({ kind: 'device_lost', userId: 'u-srv-4', at: lock.since, byName: lock.byName, detail: lock.note, flagged: true });
+    secEvent({ kind: 'account_locked', userId: 'u-srv-4', at: lock.since, byName: lock.byName, flagged: true });
+    raiseAlert({ titleKey: 'security.alert.accountLocked', context: 'Rohit Jadhav · phone reported lost', severity: 'high', category: 'automation', relatedId: `lock:${lock.id}`, sourceRoute: '/security?tab=accounts&account=u-srv-4' });
+  }
+  // Second-step exceptions: one granted, one asked for and waiting.
+  const exc = (userId: string, status: TwoFactorException['status'], reason: string, reqAgo: number, extra: Partial<TwoFactorException> = {}): void => {
+    const u = byId(users, userId);
+    if (!u) return;
+    secN.exception += 1;
+    twoFactorExceptions.push({ id: `tx-${secN.exception}`, code: `AIEC-TX-${1000 + secN.exception}`, userId, userName: u.name, role: u.role, reason, requestedAt: secIso(t(reqAgo)), requestedBy: 'person', status, ...extra });
+  };
+  exc('u-tech-4', 'active', 'Uses one basic keypad phone with no way to receive a second code or run an app.', 0.9 * secDay, { decidedAt: secIso(t(0.8 * secDay)), decidedByName: 'Prashant Vasant Wable', decisionNote: 'Seen his phone. Sessions are kept short and a new place always needs Admin to confirm until he has a smartphone.', until: secIso(now + 30 * secDay) });
+  secEvent({ kind: 'twofa_exception_granted', userId: 'u-tech-4', at: secIso(t(0.8 * secDay)), byName: 'Prashant Vasant Wable' });
+  exc('u-tech-3', 'requested', 'Shares one phone with his brother and cannot keep an authenticator on it; a second number is not available to him yet.', 6 * H);
+  if (has('u-tech-3')) secEvent({ kind: 'twofa_requested', userId: 'u-tech-3', at: secIso(t(6 * H)), flagged: true });
+}
+
+/** The signed-in person's own place check, a lock, a failed code: all of the sign-in rules above, run on the clock for what the clock has to do. */
+function syncSecurity(now: number): void {
+  secEnsure();
+  const cfg = secConfig(now);
+  for (const s of authSessions) {
+    if (s.status !== 'active') continue;
+    const u = byId(users, s.userId);
+    const over = secExpiry(s, secSessionLimit(s, u ?? null, now), now);
+    if (!over) continue;
+    secEnd(s, 'expired', 'system', over, now);
+    secEvent({ kind: 'session_expired', userId: s.userId, session: s, detail: over });
+    logAutomatedAction({ sourceKey: 'security.session_expired', triggeringCondition: `A session was ${over === 'idle' ? 'unused for longer' : 'open for longer'} than its role allows`, actionTaken: `Ended the session on ${s.deviceLabel}`, affectedRecordId: s.id, affectedRecordType: 'other', subjectLabel: u?.name ?? s.userId });
+  }
+  for (const x of twoFactorExceptions) {
+    if (x.status === 'active' && x.until && Date.parse(x.until) <= now) {
+      x.status = 'expired'; x.endedAt = secIso(now); x.endNote = 'It reached its end date.';
+      secEvent({ kind: 'twofa_exception_ended', userId: x.userId, detail: 'expired' });
+      logAutomatedAction({ sourceKey: 'security.exception_expired', triggeringCondition: 'A second-step exception reached its end date', actionTaken: `Ended the exception for ${x.userName}: the second step is required of them again`, affectedRecordId: x.id, affectedRecordType: 'other', subjectLabel: x.userName });
+    }
+  }
+  for (const r of accountRecoveries) {
+    if (r.status === 'issued' && Date.parse(r.expiresAt) <= now) {
+      r.status = 'expired';
+      secEvent({ kind: 'recovery_failed', userId: r.userId, detail: 'expired' });
+      logAutomatedAction({ sourceKey: 'security.recovery_expired', triggeringCondition: 'A recovery code was not used within its time', actionTaken: 'Let the code lapse: the account stays locked until another is issued', affectedRecordId: r.id, affectedRecordType: 'other', subjectLabel: secUserName(r.userId) });
+    }
+  }
+  for (const a of alerts) {
+    if (a.status === 'resolved' || !a.relatedId) continue;
+    const done = (note: string): void => { patchInPlace(alerts, a.id, { status: 'resolved', resolvedBy: 'system', resolvedAt: secIso(now), resolutionNote: note }); };
+    if (a.relatedId.startsWith('place:')) { const s = authSessions.find((x) => x.id === a.relatedId!.slice(6)); if (!s || s.status !== 'active' || s.place !== 'new') done('The sign-in was answered or ended'); }
+    else if (a.relatedId.startsWith('fail:')) { if (!secPauseOf(a.relatedId.slice(5), now).paused) done('The pause on sign-in ended'); }
+  }
+  secResolveEvents((e) => e.kind === 'login_paused' && !!e.userId && !secPauseOf(e.userId, now).paused, 'system', 'The pause ended');
+  void cfg;
+}
+
+function secSignals(now: number): { places: { id: string; userId: string; name: string; dueAt: string }[]; requests: { id: string; name: string; dueAt: string }[]; exceptions: { id: string; name: string; until: string }[]; locks: { id: string; userId: string; name: string; dueAt: string }[] } {
+  secEnsure();
+  return {
+    places: authSessions.filter((s) => s.status === 'active' && s.place === 'new').map((s) => ({ id: s.id, userId: s.userId, name: secUserName(s.userId), dueAt: secIso(Date.parse(s.openedAt) + SEC_LOCATION_REVIEW_H * 3_600_000) })),
+    requests: twoFactorExceptions.filter((x) => x.status === 'requested').map((x) => ({ id: x.id, name: x.userName, dueAt: secIso(Date.parse(x.requestedAt) + SEC_DECIDE_DAYS * secDay) })),
+    exceptions: twoFactorExceptions.filter((x) => x.status === 'active' && !!x.until && Date.parse(x.until) > now).map((x) => ({ id: x.id, name: x.userName, until: x.until! })),
+    locks: accountLocks.filter((l) => l.status === 'locked').map((l) => ({ id: l.id, userId: l.userId, name: secUserName(l.userId), dueAt: secIso(Date.parse(l.since) + secDay) })),
+  };
+}
+
+
 const heartbeatCommitments = { notifications: 0, alerts: 0 };
 const HEARTBEAT: { id: string; run: (now: number) => void }[] = [
   { id: 'followUpTasks', run: () => reconcileFollowUpTasks() },
@@ -5200,6 +5566,7 @@ const HEARTBEAT: { id: string; run: (now: number) => void }[] = [
   { id: 'companyProfile', run: (now) => syncCompanyProfile(now) },
   { id: 'permissions', run: (now) => syncPermissions(now) },
   { id: 'privacy', run: (now) => syncPrivacy(now) },
+  { id: 'security', run: (now) => syncSecurity(now) },
   {
     id: 'stageInvoices',
     run: () => {
@@ -27020,6 +27387,377 @@ export const memoryRepository: Repository = {
       v.noticeHow = how;
       v.noticeNote = note.trim();
       return pvPolicyView(Date.now());
+    }),
+  /* 195 — authentication integrity */
+  getSecurityOverview: (userId) => simulateRead(() => { intAdmin(userId); return secOverview(Date.now()); }),
+  listAccountSecurity: (userId, filter) =>
+    simulateRead(() => {
+      intAdmin(userId);
+      secEnsure();
+      const now = Date.now();
+      const q = (filter.q ?? '').trim().toLowerCase();
+      const all = users.filter((u) => u.status !== 'rejected').map((u) => secRowOf(u, now));
+      const rank = (r: AccountSecurityRow): number => (r.locked ? 0 : r.flagged > 0 ? 1 : r.twoFactor === 'blocked' ? 2 : r.twoFactor === 'grace' ? 3 : 4);
+      const list = all
+        .filter((r) => (!filter.role || filter.role === 'all' || r.role === filter.role) && (!q || `${r.name} ${r.userId} ${r.phoneMasked} ${byId(users, r.userId)?.phone ?? ''}`.toLowerCase().includes(q)))
+        .filter((r) => { const st = filter.state ?? 'all'; return st === 'all' || (st === 'attention' && rank(r) < 4) || (st === 'no2fa' && r.twoFactor !== 'enrolled' && r.twoFactor !== 'not_required') || (st === 'locked' && r.locked) || (st === 'flagged' && r.flagged > 0); })
+        .sort((a, b) => rank(a) - rank(b) || ((a.lastActiveAt ?? '') < (b.lastActiveAt ?? '') ? 1 : -1));
+      const offset = filter.offset ?? 0;
+      const limit = filter.limit === 0 ? list.length : filter.limit ?? 25;
+      return JSON.parse(JSON.stringify({ rows: list.slice(offset, offset + limit), total: list.length })) as AccountListView;
+    }),
+  getAccountSecurity: (userId, accountId, currentSessionId) => simulateRead(() => { intAdmin(userId); secEnsure(); return secAccountView(accountId, currentSessionId, userId, Date.now()); }),
+  revokeSession: (userId, sessionId, reason) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      secEnsure();
+      const s = authSessions.find((x) => x.id === sessionId);
+      if (!s) throw new RepositoryError('not_found');
+      if (s.status !== 'active') throw new RepositoryError('already_ended');
+      if (secLetters(reason) < SEC_REASON_MIN) throw new RepositoryError('reason_short');
+      const now = Date.now();
+      secEnd(s, 'revoked', admin.name, reason.trim(), now);
+      secEvent({ kind: 'session_revoked', userId: s.userId, session: s, byName: admin.name, detail: reason.trim() });
+      secResolveEvents((e) => e.sessionId === s.id && e.kind === 'new_location', admin.name, 'The session was ended');
+      return secAccountView(s.userId, null, userId, now);
+    }),
+  revokeOtherSessions: (userId, accountId, reason, keepSessionId) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      secEnsure();
+      if (!byId(users, accountId)) throw new RepositoryError('not_found');
+      if (secLetters(reason) < SEC_REASON_MIN) throw new RepositoryError('reason_short');
+      const now = Date.now();
+      const open = authSessions.filter((s) => s.userId === accountId && s.status === 'active' && s.id !== keepSessionId);
+      if (open.length === 0) throw new RepositoryError('nothing_to_revoke');
+      for (const s of open) secEnd(s, 'revoked', admin.name, reason.trim(), now);
+      secEvent({ kind: 'sessions_revoked_all', userId: accountId, byName: admin.name, detail: `${open.length} · ${reason.trim()}` });
+      return secAccountView(accountId, keepSessionId, userId, now);
+    }),
+  reportDeviceLost: (userId, input) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      secEnsure();
+      const u = byId(users, input.accountId);
+      if (!u) throw new RepositoryError('not_found');
+      if (u.id === admin.id) throw new RepositoryError('cannot_lock_self');
+      if (secLockOf(u.id)) throw new RepositoryError('already_locked');
+      if (secLetters(input.note) < SEC_NOTE_MIN) throw new RepositoryError('note_short');
+      const now = Date.now();
+      const open = authSessions.filter((s) => s.userId === u.id && s.status === 'active');
+      for (const s of open) secEnd(s, 'revoked', admin.name, 'device lost', now);
+      secN.lock += 1;
+      const lock: AccountLock = { id: `lk-${secN.lock}`, userId: u.id, reason: 'device_lost', since: secIso(now), byName: admin.name, note: input.note.trim(), sessionsEnded: open.length, status: 'locked' };
+      accountLocks.push(lock);
+      secEvent({ kind: 'device_lost', userId: u.id, byName: admin.name, detail: lock.note, flagged: true });
+      secEvent({ kind: 'account_locked', userId: u.id, byName: admin.name, flagged: true });
+      raiseAlert({ titleKey: 'security.alert.accountLocked', context: `${u.name} · phone reported lost`, severity: 'high', category: 'automation', relatedId: `lock:${lock.id}`, sourceRoute: `/security?tab=accounts&account=${u.id}` });
+      return secAccountView(u.id, null, userId, now);
+    }),
+  startAccountRecovery: (userId, input) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      secEnsure();
+      const u = byId(users, input.accountId);
+      if (!u) throw new RepositoryError('not_found');
+      const lock = secLockOf(u.id);
+      if (!lock) throw new RepositoryError('not_locked');
+      if (!(['call_back_known', 'in_person', 'video_call', 'reference'] as const).includes(input.method)) throw new RepositoryError('method_invalid');
+      if (secLetters(input.note) < SEC_NOTE_MIN) throw new RepositoryError('note_short');
+      const now = Date.now();
+      const oldMasked = secMaskPhone(u.phone);
+      let newMasked: string | null = null;
+      if (input.newPhone && input.newPhone.trim()) {
+        if (!secValidPhone(input.newPhone)) throw new RepositoryError('phone_invalid');
+        const next = secLast10(input.newPhone);
+        if (users.some((x) => x.id !== u.id && secLast10(x.phone) === next)) throw new RepositoryError('phone_taken');
+        newMasked = secMaskPhone(next);
+      }
+      for (const r of accountRecoveries) if (r.lockId === lock.id && r.status === 'issued') { r.status = 'cancelled'; r.cancelNote = 'A newer code was issued.'; }
+      const plain = String(Math.floor(10 ** (SEC_RECOVERY_LEN - 1) + Math.random() * 9 * 10 ** (SEC_RECOVERY_LEN - 1)));
+      secN.recovery += 1;
+      const rec: AccountRecovery = {
+        id: `ar-${secN.recovery}`, code: `AIEC-AR-${1000 + secN.recovery}`, userId: u.id, lockId: lock.id, startedAt: secIso(now), byName: admin.name, method: input.method, note: input.note.trim(), oldPhoneMasked: oldMasked,
+        newPhoneMasked: newMasked ?? undefined, codeHash: secHash(plain), expiresAt: secIso(now + SEC_RECOVERY_TTL_H * 3_600_000), tries: 0, status: 'issued',
+      };
+      accountRecoveries.push(rec);
+      if (newMasked) patchInPlace(users, u.id, { phone: secLast10(input.newPhone as string) });
+      secEvent({ kind: 'recovery_started', userId: u.id, byName: admin.name, detail: `${input.method} · ${input.note.trim()}${newMasked ? ` · new number ${newMasked}` : ''}` });
+      return { id: rec.id, code: rec.code, plain, expiresAt: rec.expiresAt, newPhoneMasked: newMasked };
+    }),
+  cancelAccountRecovery: (userId, recoveryId, note) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      secEnsure();
+      const r = accountRecoveries.find((x) => x.id === recoveryId);
+      if (!r) throw new RepositoryError('not_found');
+      if (r.status !== 'issued') throw new RepositoryError('already_ended');
+      if (secLetters(note) < SEC_REASON_MIN) throw new RepositoryError('reason_short');
+      r.status = 'cancelled'; r.cancelNote = note.trim();
+      secEvent({ kind: 'recovery_cancelled', userId: r.userId, byName: admin.name, detail: note.trim() });
+      return secAccountView(r.userId, null, userId, Date.now());
+    }),
+  getSecurityEvents: (userId, filter) =>
+    simulateRead(() => {
+      intAdmin(userId);
+      secEnsure();
+      const q = (filter.q ?? '').trim().toLowerCase();
+      const kinds = filter.group && filter.group !== 'all' ? SEC_GROUPS[filter.group] ?? [] : null;
+      const base = securityEvents.filter((e) => (!filter.accountId || e.userId === filter.accountId) && (!filter.severity || filter.severity === 'all' || e.severity === filter.severity) && (!q || `${e.userName} ${e.kind} ${e.detail ?? ''} ${e.city ?? ''} ${e.deviceLabel ?? ''} ${e.byName ?? ''}`.toLowerCase().includes(q)));
+      const list = base.filter((e) => (!kinds || kinds.includes(e.kind as SecurityEventKind)) && (!filter.flagged || (!!e.flagged && !e.resolved))).sort((a, b) => (a.at < b.at ? 1 : -1));
+      const offset = filter.offset ?? 0;
+      const limit = filter.limit === 0 ? list.length : filter.limit ?? SEC_EVENTS_PAGE;
+      const byGroup: Record<string, number> = { all: base.length };
+      for (const [g, ks] of Object.entries(SEC_GROUPS)) byGroup[g] = base.filter((e) => ks.includes(e.kind as SecurityEventKind)).length;
+      return JSON.parse(JSON.stringify({ rows: list.slice(offset, offset + limit), total: list.length, counts: { flagged: base.filter((e) => e.flagged && !e.resolved).length, byGroup } })) as SecurityEventsView;
+    }),
+  confirmSessionPlace: (userId, sessionId, verdict, note) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      secEnsure();
+      const s = authSessions.find((x) => x.id === sessionId);
+      if (!s) throw new RepositoryError('not_found');
+      if (s.place !== 'new') throw new RepositoryError('nothing_to_confirm');
+      if (secLetters(note) < SEC_REASON_MIN) throw new RepositoryError('reason_short');
+      const now = Date.now();
+      s.placeBy = admin.name; s.placeNote = note.trim(); s.placeAt = secIso(now);
+      if (verdict === 'me') {
+        s.place = 'confirmed';
+        if (s.city) trustedPlaces.push({ userId: s.userId, city: s.city, until: secIso(now + SEC_TRUST_DAYS * secDay), byName: admin.name });
+        secEvent({ kind: 'location_confirmed', userId: s.userId, session: s, byName: admin.name, detail: note.trim() });
+        secResolveEvents((e) => e.sessionId === s.id && e.kind === 'new_location', admin.name, note.trim());
+      } else {
+        s.place = 'denied';
+        secEnd(s, 'revoked', admin.name, 'not the account holder', now);
+        secEvent({ kind: 'location_denied', userId: s.userId, session: s, byName: admin.name, detail: note.trim(), flagged: true });
+        secResolveEvents((e) => e.sessionId === s.id && e.kind === 'new_location', admin.name, note.trim());
+        const u = byId(users, s.userId);
+        if (u && u.id !== admin.id && !secLockOf(u.id)) {
+          const open = authSessions.filter((x) => x.userId === u.id && x.status === 'active');
+          for (const x of open) secEnd(x, 'revoked', admin.name, 'not the account holder', now);
+          secN.lock += 1;
+          const lock: AccountLock = { id: `lk-${secN.lock}`, userId: u.id, reason: 'not_me', since: secIso(now), byName: admin.name, note: note.trim(), sessionsEnded: open.length + 1, status: 'locked' };
+          accountLocks.push(lock);
+          secEvent({ kind: 'account_locked', userId: u.id, byName: admin.name, flagged: true });
+          raiseAlert({ titleKey: 'security.alert.accountLocked', context: `${u.name} · a sign-in was not theirs`, severity: 'high', category: 'automation', relatedId: `lock:${lock.id}`, sourceRoute: `/security?tab=accounts&account=${u.id}` });
+        }
+      }
+      return secAccountView(s.userId, null, userId, now);
+    }),
+  listTwoFactorExceptions: (userId, state) => simulateRead(() => { intAdmin(userId); return secExceptionList(state, Date.now()); }),
+  decideTwoFactorException: (userId, id, input) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      secEnsure();
+      const x = twoFactorExceptions.find((e) => e.id === id);
+      if (!x) throw new RepositoryError('not_found');
+      if (x.status !== 'requested') throw new RepositoryError('already_decided');
+      const now = Date.now();
+      if (input.decision === 'grant') {
+        const problem = secExceptionProblem({ reason: input.note, until: input.until ?? '' }, now);
+        if (problem) throw new RepositoryError(problem);
+        x.status = 'active'; x.until = new Date(input.until as string).toISOString();
+        secEvent({ kind: 'twofa_exception_granted', userId: x.userId, byName: admin.name, detail: input.note.trim() });
+      } else {
+        if (secLetters(input.note) < SEC_REASON_MIN) throw new RepositoryError('reason_short');
+        x.status = 'declined';
+        secEvent({ kind: 'twofa_exception_declined', userId: x.userId, byName: admin.name, detail: input.note.trim() });
+      }
+      x.decidedAt = secIso(now); x.decidedByName = admin.name; x.decisionNote = input.note.trim();
+      secResolveEvents((e) => e.userId === x.userId && e.kind === 'twofa_requested', admin.name, input.decision);
+      return secExceptionList('open', now);
+    }),
+  grantTwoFactorException: (userId, input) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      secEnsure();
+      const u = byId(users, input.accountId);
+      if (!u) throw new RepositoryError('not_found');
+      const now = Date.now();
+      const tf = secTwoFactor(u, now);
+      if (tf.state === 'enrolled') throw new RepositoryError('already_enrolled');
+      if (tf.state === 'not_required') throw new RepositoryError('not_required');
+      if (tf.state === 'excepted') throw new RepositoryError('already_excepted');
+      const problem = secExceptionProblem({ reason: input.reason, until: input.until }, now);
+      if (problem) throw new RepositoryError(problem);
+      for (const x of twoFactorExceptions) if (x.userId === u.id && x.status === 'requested') { x.status = 'declined'; x.decidedAt = secIso(now); x.decidedByName = admin.name; x.decisionNote = 'Replaced by an exception Admin recorded.'; }
+      secN.exception += 1;
+      twoFactorExceptions.push({ id: `tx-${secN.exception}`, code: `AIEC-TX-${1000 + secN.exception}`, userId: u.id, userName: u.name, role: u.role, reason: input.reason.trim(), requestedAt: secIso(now), requestedBy: admin.name, status: 'active', decidedAt: secIso(now), decidedByName: admin.name, decisionNote: input.reason.trim(), until: new Date(input.until).toISOString() });
+      secEvent({ kind: 'twofa_exception_granted', userId: u.id, byName: admin.name, detail: input.reason.trim() });
+      secResolveEvents((e) => e.userId === u.id && e.kind === 'twofa_requested', admin.name, 'granted');
+      return secExceptionList('open', now);
+    }),
+  endTwoFactorException: (userId, id, note) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      secEnsure();
+      const x = twoFactorExceptions.find((e) => e.id === id);
+      if (!x) throw new RepositoryError('not_found');
+      if (x.status !== 'active') throw new RepositoryError('already_ended');
+      if (secLetters(note) < SEC_REASON_MIN) throw new RepositoryError('reason_short');
+      x.status = 'ended'; x.endedAt = new Date().toISOString(); x.endNote = note.trim();
+      secEvent({ kind: 'twofa_exception_ended', userId: x.userId, byName: admin.name, detail: note.trim() });
+      return secExceptionList('open', Date.now());
+    }),
+  previewSecurityConfig: (userId, config) => simulateRead(() => { intAdmin(userId); secEnsure(); return secPreview(config, Date.now()); }),
+  saveSecurityConfig: (userId, input) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      secEnsure();
+      const now = Date.now();
+      const pol = secPolicyAt(now);
+      const pv = secPreview(input.config, now);
+      if (pv.problems.length) throw new RepositoryError(pv.problems[0]);
+      if (!pv.changed) throw new RepositoryError('no_change');
+      if (pv.token !== input.token) throw new RepositoryError('preview_stale');
+      if (secLetters(input.reason) < SEC_NOTE_MIN) throw new RepositoryError('reason_short');
+      if (pv.weakenings.length > 0 && !input.confirmWeaken) throw new RepositoryError('weaken_unconfirmed');
+      const since: Record<string, string | null> = {};
+      for (const r of SEC_ROLES) since[r] = input.config.twoFactor[r].required ? (pol.config.twoFactor[r].required ? pol.twoFactorSince[r] ?? secIso(now) : secIso(now)) : null;
+      securityPolicies.push({ id: `sp-${securityPolicies.length + 1}`, version: pol.version + 1, effectiveFrom: secIso(now), createdAt: secIso(now), byName: admin.name, reason: input.reason.trim(), config: JSON.parse(JSON.stringify(input.config)) as SecurityConfig, twoFactorSince: since, weakened: pv.weakenings });
+      secEvent({ kind: 'policy_changed', userId: admin.id, byName: admin.name, detail: input.reason.trim() });
+      syncSecurity(now);
+      return secOverview(now);
+    }),
+  simulateSignIn: (userId, input) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      secEnsure();
+      const u = byId(users, input.accountId);
+      if (!u) throw new RepositoryError('not_found');
+      if (u.id === admin.id) throw new RepositoryError('cannot_simulate_self');
+      const now = Date.now();
+      if (input.outcome === 'failure') secRecordFailure(u, now);
+      else secOpenSession(u.id, { deviceLabel: input.device.trim() || 'Chrome · Android', platform: 'android', city: input.city?.trim() || null }, { simulated: true });
+      return secAccountView(u.id, null, userId, now);
+    }),
+  openAuthSession: (userId, ctx) => simulateWrite(() => { const s = secOpenSession(userId, ctx); return { sessionId: s.id }; }),
+  resumeAuthSession: (userId, sessionId, ctx) =>
+    simulateWrite(() => {
+      secEnsure();
+      const existing = authSessions.find((x) => x.id === sessionId);
+      if (existing && existing.userId === userId) return { sessionId: existing.id };
+      // The store lives in memory and starts fresh on a reload: the session the browser still holds is taken up again rather than treated as ended.
+      const s = secOpenSession(userId, ctx, { id: sessionId, secondFactorAt: ctx.secondFactorAt });
+      return { sessionId: s.id };
+    }),
+  endAuthSession: (sessionId) => simulateWrite(() => { secEnsure(); const s = authSessions.find((x) => x.id === sessionId); if (s && s.status === 'active') secEnd(s, 'signed_out', secUserName(s.userId), 'signed_out', Date.now()); }),
+  checkAuthSession: (sessionId, touch) => simulateRead(() => secCheck(sessionId, touch)),
+  passSecondFactor: (sessionId, code) =>
+    simulateWrite(() => {
+      const { s, user } = secRequireSession(sessionId);
+      const now = Date.now();
+      const tf = secTwoFactor(user, now);
+      if (tf.state !== 'enrolled') throw new RepositoryError('not_enrolled');
+      if (code.trim() !== SEC_DEMO_CODE) {
+        secEvent({ kind: 'twofa_failed', userId: user.id, session: s });
+        const lastOk = [...securityEvents].reverse().find((e) => e.sessionId === s.id && e.kind === 'twofa_passed');
+        const fails = securityEvents.filter((e) => e.sessionId === s.id && e.kind === 'twofa_failed' && (!lastOk || e.at > lastOk.at)).length;
+        if (fails >= SEC_TWOFA_TRIES) {
+          secEnd(s, 'revoked', 'system', 'too many wrong second-step codes', now);
+          secEvent({ kind: 'login_paused', userId: user.id, session: s, flagged: true, detail: 'second step' });
+          raiseAlert({ titleKey: 'security.alert.failedLogins', context: `${user.name} · wrong second-step codes`, severity: user.role === 'admin' ? 'high' : 'medium', category: 'automation', relatedId: `fail:${user.id}`, sourceRoute: `/security?tab=accounts&account=${user.id}` });
+          throw new RepositoryError('session_ended');
+        }
+        throw new RepositoryError('wrong_code');
+      }
+      s.secondFactorAt = secIso(now);
+      secEvent({ kind: 'twofa_passed', userId: user.id, session: s });
+      return secCheck(sessionId, true);
+    }),
+  enrolTwoFactor: (sessionId, input) =>
+    simulateWrite(() => {
+      const { s, user } = secRequireSession(sessionId);
+      const now = Date.now();
+      if (!(SEC_METHODS as readonly string[]).includes(input.method)) throw new RepositoryError('method_invalid');
+      if (secLockOf(user.id)) throw new RepositoryError('locked');
+      if (input.method === 'second_phone') {
+        if (!input.secondPhone || !secValidPhone(input.secondPhone)) throw new RepositoryError('phone_invalid');
+        if (secLast10(input.secondPhone) === secLast10(user.phone)) throw new RepositoryError('same_phone');
+      }
+      if (input.code.trim() !== SEC_DEMO_CODE) throw new RepositoryError('wrong_code');
+      for (let i = twoFactorEnrolments.length - 1; i >= 0; i -= 1) if (twoFactorEnrolments[i].userId === user.id) twoFactorEnrolments.splice(i, 1);
+      twoFactorEnrolments.push({ userId: user.id, method: input.method, enrolledAt: secIso(now), secondPhoneMasked: input.method === 'second_phone' && input.secondPhone ? secMaskPhone(input.secondPhone) : undefined });
+      s.secondFactorAt = secIso(now);
+      for (const x of twoFactorExceptions) if (x.userId === user.id && (x.status === 'active' || x.status === 'requested')) { x.status = 'ended'; x.endedAt = secIso(now); x.endNote = 'The person set up the second step.'; }
+      secEvent({ kind: 'twofa_enrolled', userId: user.id, session: s, detail: input.method });
+      secResolveEvents((e) => e.userId === user.id && e.kind === 'twofa_requested', user.name, 'enrolled');
+      return secCheck(sessionId, true);
+    }),
+  answerPlaceCheck: (sessionId, answer) =>
+    simulateWrite(() => {
+      const { s, user } = secRequireSession(sessionId);
+      if (s.place !== 'new') return secCheck(sessionId, true);
+      const now = Date.now();
+      s.placeBy = user.name; s.placeAt = secIso(now);
+      if (answer === 'me') {
+        s.place = 'confirmed';
+        if (s.city) trustedPlaces.push({ userId: user.id, city: s.city, until: secIso(now + SEC_TRUST_DAYS * secDay), byName: user.name });
+        secEvent({ kind: 'location_confirmed', userId: user.id, session: s, byName: user.name });
+        secResolveEvents((e) => e.sessionId === s.id && e.kind === 'new_location', user.name, 'The person confirmed it was them');
+        return secCheck(sessionId, true);
+      }
+      s.place = 'denied';
+      const open = authSessions.filter((x) => x.userId === user.id && x.status === 'active');
+      for (const x of open) secEnd(x, 'revoked', user.name, 'the person said it was not them', now);
+      secEvent({ kind: 'location_denied', userId: user.id, session: s, byName: user.name, flagged: true });
+      secResolveEvents((e) => e.sessionId === s.id && e.kind === 'new_location', user.name, 'The person said it was not them');
+      if (!secLockOf(user.id)) {
+        secN.lock += 1;
+        const lock: AccountLock = { id: `lk-${secN.lock}`, userId: user.id, reason: 'not_me', since: secIso(now), byName: user.name, note: 'The person said a sign-in from a new place was not theirs.', sessionsEnded: open.length, status: 'locked' };
+        accountLocks.push(lock);
+        secEvent({ kind: 'account_locked', userId: user.id, byName: user.name, flagged: true });
+        raiseAlert({ titleKey: 'security.alert.accountLocked', context: `${user.name} · a sign-in was not theirs`, severity: 'high', category: 'automation', relatedId: `lock:${lock.id}`, sourceRoute: `/security?tab=accounts&account=${user.id}` });
+      }
+      return secCheck(sessionId, true);
+    }),
+  redeemRecoveryCode: (sessionId, code) =>
+    simulateWrite(() => {
+      const { s, user } = secRequireSession(sessionId);
+      const now = Date.now();
+      const lock = secLockOf(user.id);
+      if (!lock) return secCheck(sessionId, true);
+      const rec = secOpenRecovery(lock.id);
+      if (!rec) throw new RepositoryError('no_recovery');
+      if (Date.parse(rec.expiresAt) <= now) { rec.status = 'expired'; throw new RepositoryError('code_expired'); }
+      if (rec.tries >= SEC_RECOVERY_TRIES) throw new RepositoryError('too_many');
+      if (secHash(code.replace(/\s/g, '')) !== rec.codeHash) {
+        rec.tries += 1;
+        secEvent({ kind: 'recovery_failed', userId: user.id, session: s, flagged: rec.tries >= SEC_RECOVERY_TRIES });
+        throw new RepositoryError(rec.tries >= SEC_RECOVERY_TRIES ? 'too_many' : 'wrong_code');
+      }
+      rec.status = 'used'; rec.usedAt = secIso(now);
+      for (let i = twoFactorEnrolments.length - 1; i >= 0; i -= 1) if (twoFactorEnrolments[i].userId === user.id) twoFactorEnrolments.splice(i, 1);
+      secClearLock(lock, user.name, 'The person recovered the account with the code Admin issued', now);
+      secEvent({ kind: 'recovery_completed', userId: user.id, session: s, detail: 'second step reset' });
+      return secCheck(sessionId, true);
+    }),
+  requestTwoFactorException: (sessionId, note) =>
+    simulateWrite(() => {
+      const { s, user } = secRequireSession(sessionId);
+      const now = Date.now();
+      const tf = secTwoFactor(user, now);
+      if (tf.state !== 'blocked' && tf.state !== 'grace') throw new RepositoryError('not_needed');
+      if (tf.requested) throw new RepositoryError('already_requested');
+      if (secLetters(note) < SEC_NOTE_MIN) throw new RepositoryError('note_short');
+      secN.exception += 1;
+      twoFactorExceptions.push({ id: `tx-${secN.exception}`, code: `AIEC-TX-${1000 + secN.exception}`, userId: user.id, userName: user.name, role: user.role, reason: note.trim(), requestedAt: secIso(now), requestedBy: 'person', status: 'requested' });
+      secEvent({ kind: 'twofa_requested', userId: user.id, session: s, flagged: true });
+      return secCheck(sessionId, true);
+    }),
+  precheckSignIn: (userId) => simulateRead(() => { secEnsure(); const p = secPauseOf(userId, Date.now()); return { paused: p.paused, until: p.until }; }),
+  recordLoginFailure: (userId) => simulateWrite(() => { secEnsure(); const u = byId(users, userId); if (!u) throw new RepositoryError('not_found'); return secRecordFailure(u, Date.now()); }),
+  getPasswordPolicy: () => simulateRead(() => { secEnsure(); return { ...secConfig(Date.now()).password }; }),
+  recordPasswordReset: (userId) =>
+    simulateWrite(() => {
+      secEnsure();
+      const u = byId(users, userId);
+      if (!u) throw new RepositoryError('not_found');
+      const now = Date.now();
+      const open = authSessions.filter((s) => s.userId === userId && s.status === 'active');
+      for (const s of open) secEnd(s, 'revoked', 'system', 'password changed', now);
+      secEvent({ kind: 'password_reset', userId, detail: `${open.length}` });
+      return { sessionsEnded: open.length };
     }),
   /* 189 — integration management */
   getIntegrationManagement: (userId) => simulateRead(() => { intAdmin(userId); syncIntegrationManagement(Date.now()); return igView(Date.now()); }),

@@ -189,7 +189,7 @@ export function ForgotPasswordView() {
               {t(K.password.level[s.strength.score as 0 | 1 | 2 | 3 | 4])}
             </span>
             <div className="stack gap-1">
-              <Rule ok={s.strength.hasLength} label={t(K.password.rule.length)} />
+              <Rule ok={s.strength.hasLength} label={t(K.password.rule.length, { count: s.minLength })} />
               <Rule ok={s.strength.hasUpper} label={t(K.password.rule.upper)} />
               <Rule ok={s.strength.hasDigit} label={t(K.password.rule.digit)} />
               <Rule ok={s.strength.hasSymbol} label={t(K.password.rule.symbol)} />

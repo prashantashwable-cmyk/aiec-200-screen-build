@@ -9,6 +9,7 @@
  * Money is always a whole number of rupees (INR). Timestamps are ISO 8601
  * strings so seeded data is diffable and locale formatting stays in one place.
  */
+import type { SecurityConfig } from '@/features/security/security';
 
 export type Role = 'admin' | 'surveyor' | 'technician' | 'customer' | 'supplier';
 
@@ -5058,7 +5059,7 @@ export type CommitmentKind =
   | 'exit_dispute_decide'
   | 'tier_review_due'
   | 'certification_renewal'
-  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup' | 'support_chat_reply' | 'feedback_outreach' | 'feedback_recognition' | 'referral_reward' | 'automation_pause_review' | 'escalation_drill_due' | 'escalation_gap_fix' | 'integration_followup' | 'integration_credential_rotation' | 'sandbox_promotion_pending' | 'sandbox_library_review' | 'company_profile_legal_verify' | 'permission_override_review' | 'monitor_daily_check' | 'monitor_concern_followup' | 'privacy_request_respond' | 'privacy_policy_notice' | 'privacy_retention_review'
+  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup' | 'support_chat_reply' | 'feedback_outreach' | 'feedback_recognition' | 'referral_reward' | 'automation_pause_review' | 'escalation_drill_due' | 'escalation_gap_fix' | 'integration_followup' | 'integration_credential_rotation' | 'sandbox_promotion_pending' | 'sandbox_library_review' | 'company_profile_legal_verify' | 'permission_override_review' | 'monitor_daily_check' | 'monitor_concern_followup' | 'privacy_request_respond' | 'privacy_policy_notice' | 'privacy_retention_review' | 'security_place_review' | 'security_2fa_exception_decide' | 'security_2fa_exception_review' | 'security_account_recovery'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'
@@ -6079,3 +6080,112 @@ export interface DataRequest {
 export interface RetentionPolicyVersion { id: string; version: number; effectiveFrom: string; createdAt: string; byName: string; reason: string; rules: Record<string, { days: number | null; action: 'erase' | 'anonymise' | 'review' | 'retain' }>; appliedToExisting: boolean }
 export interface RetentionRun { id: string; code: string; at: string; policyVersion: number; actions: { category: string; action: string; count: number }[]; remaining: number; capped: boolean }
 export interface PrivacyPolicyVersion { id: string; version: number; effectiveFrom: string; createdAt: string; byName: string; summary: string; material: boolean; text: { en: string; hi: string; mr: string }; noticeAt?: string; noticeBy?: string; noticeHow?: string; noticeNote?: string }
+
+
+/* ------------------------------------------------------------------ Security & session management (195) */
+
+export interface AuthSession {
+  id: string;
+  userId: string;
+  role: Role;
+  deviceLabel: string;
+  platform: string;
+  /** Masked. The browser cannot know its own address: a real backend records it on the server. Null where none was recorded. */
+  ipMasked: string | null;
+  city: string | null;
+  openedAt: string;
+  lastActiveAt: string;
+  status: 'active' | 'revoked' | 'expired' | 'signed_out';
+  endedAt?: string;
+  /** A person's name, or "system" for an automatic end. */
+  endedBy?: string;
+  endReason?: string;
+  secondFactorAt?: string;
+  place: 'unknown' | 'usual' | 'new' | 'confirmed' | 'denied';
+  placeBy?: string;
+  placeNote?: string;
+  placeAt?: string;
+  /** Made by the demo "simulate a sign-in" control, not by a real sign-in. */
+  simulated?: boolean;
+}
+export interface SecurityEvent {
+  id: string;
+  at: string;
+  kind: string;
+  severity: 'info' | 'notice' | 'warning' | 'critical';
+  userId: string | null;
+  userName: string;
+  role?: Role;
+  phoneMasked: string | null;
+  sessionId?: string;
+  deviceLabel?: string;
+  ipMasked?: string | null;
+  city?: string | null;
+  /** Words an Admin wrote (a reason, a note), shown as written. */
+  detail?: string;
+  byName?: string;
+  /** Needs an Admin's attention until someone has dealt with it. */
+  flagged?: boolean;
+  resolved?: { at: string; byName: string; note: string };
+}
+export interface TwoFactorEnrolment { userId: string; method: 'authenticator' | 'second_phone'; enrolledAt: string; secondPhoneMasked?: string }
+export interface TwoFactorException {
+  id: string;
+  code: string;
+  userId: string;
+  userName: string;
+  role: Role;
+  /** The person's own words (a request) or Admin's reason (a grant). */
+  reason: string;
+  requestedAt: string;
+  requestedBy: string;
+  status: 'requested' | 'active' | 'declined' | 'ended' | 'expired';
+  decidedAt?: string;
+  decidedByName?: string;
+  decisionNote?: string;
+  until?: string;
+  endedAt?: string;
+  endNote?: string;
+}
+export interface AccountLock {
+  id: string;
+  userId: string;
+  reason: 'device_lost' | 'not_me' | 'admin';
+  since: string;
+  byName: string;
+  note: string;
+  sessionsEnded: number;
+  status: 'locked' | 'cleared';
+  clearedAt?: string;
+}
+export interface AccountRecovery {
+  id: string;
+  code: string;
+  userId: string;
+  lockId: string;
+  startedAt: string;
+  byName: string;
+  method: 'call_back_known' | 'in_person' | 'video_call' | 'reference';
+  note: string;
+  oldPhoneMasked: string;
+  newPhoneMasked?: string;
+  codeHash: string;
+  expiresAt: string;
+  tries: number;
+  status: 'issued' | 'used' | 'expired' | 'cancelled';
+  usedAt?: string;
+  cancelNote?: string;
+}
+export interface SecurityPolicyVersion {
+  id: string;
+  version: number;
+  effectiveFrom: string;
+  createdAt: string;
+  byName: string;
+  reason: string;
+  config: SecurityConfig;
+  /** When each role's second-factor requirement last came into force (null: not required). */
+  twoFactorSince: Record<string, string | null>;
+  weakened: string[];
+}
+export interface TrustedPlace { userId: string; city: string; until: string; byName: string }

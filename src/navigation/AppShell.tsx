@@ -1,4 +1,5 @@
 import { SandboxBanner } from '@/features/integrations/SandboxBanner';
+import { SecurityGate } from '@/features/security/SecurityGate';
 import { useBrand } from '@/features/brand/BrandProvider';
 import { useEffect, useRef, useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
@@ -84,6 +85,7 @@ export function AppShell() {
           </div>
         )}
         {role === 'admin' && user && <SandboxBanner userId={user.id} tick={heartbeat.tick} />}
+        <SecurityGate />
         <div className="shell__topbar">
           <span className="row gap-2">
             {brand?.logo ? <img className="shell__brand-logo" src={brand.logo.dataUrl} alt="" aria-hidden="true" /> : (

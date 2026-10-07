@@ -1,4 +1,5 @@
 import type { VaultKind } from '@/features/documents/vault';
+import type { ConfigProblem as SecConfigProblem, PasswordPolicy, SecurityConfig, SecondFactorMethod, TwoFactorState } from '@/features/security/security';
 import type { BrandDraft, ContrastCheck } from '@/features/brand/brand';
 import type { ConsentStatus, Purpose as PrivacyPurpose, RequestChannel as PrivacyChannel, RequestType as PrivacyRequestType, RetentionRules as PrivacyRules, SlaState as PrivacySla, SubjectKind, PlanRow as PrivacyPlanView, VerifyMethod as PrivacyVerifyMethod } from '@/features/privacy/privacy';
 import type { CheckKind as MonitorCheckKind, Direction as MonitorDirection, MonitorGroup, MonitorStatus, MonitorUnit } from '@/features/monitor/signals';
@@ -314,6 +315,13 @@ import type {
   TriggerRule,
   User,
   WorkNotification,
+  AuthSession,
+  SecurityEvent,
+  TwoFactorEnrolment,
+  TwoFactorException,
+  AccountLock,
+  AccountRecovery,
+  SecurityPolicyVersion,
 } from './types';
 import type { SlotDay } from '@/features/logistics/deliverySlots';
 import type { ArrivalWindow, CapacityWeek, ReadinessStatus } from '@/features/logistics/transit';
@@ -7413,6 +7421,67 @@ export interface RetentionSaveInput { rules: PrivacyRules; effectiveFrom: string
 export interface PrivacyPolicyView { current: PrivacyPolicyVersion | null; scheduled: PrivacyPolicyVersion | null; versions: PrivacyPolicyVersion[]; noticeOpen: { versionId: string; version: number; dueAt: string } | null; reach: { customers: number; partners: number }; at: string }
 export interface PrivacyPolicyInput { text: { en: string; hi: string; mr: string }; summary: string; material: boolean; effectiveFrom: string | null }
 
+/* ------------------------------------------------------------------ Security & session management (195) */
+
+export type SecFilterState = 'all' | 'attention' | 'no2fa' | 'locked' | 'flagged';
+export interface SecurityRoleRow { role: Role; required: boolean; graceDays: number; since: string | null; total: number; enrolled: number; inGrace: number; excepted: number; blocked: number }
+export interface SecurityAttentionItem { kind: 'place' | 'locked' | 'request' | 'exception_ending' | 'failures'; id: string; userId: string; name: string; at: string }
+export interface SecurityOverview {
+  config: SecurityConfig;
+  version: number;
+  effectiveFrom: string;
+  byName: string;
+  reason: string;
+  roles: SecurityRoleRow[];
+  counts: { activeSessions: number; accounts: number; failures24h: number; placesOpen: number; locked: number; exceptionsActive: number; requestsOpen: number; recoveriesOpen: number };
+  attention: SecurityAttentionItem[];
+  history: { id: string; version: number; effectiveFrom: string; byName: string; reason: string; weakened: string[] }[];
+  at: string;
+}
+export interface AccountSecurityRow { userId: string; name: string; role: Role; phoneMasked: string; active: number; lastActiveAt: string | null; twoFactor: TwoFactorState; method: SecondFactorMethod | null; locked: boolean; flagged: number; lockedSince?: string }
+export interface AccountListFilter { q?: string; role?: Role | 'all'; state?: SecFilterState; offset?: number; limit?: number }
+export interface AccountListView { rows: AccountSecurityRow[]; total: number }
+export interface AuthSessionView extends AuthSession { isCurrent: boolean }
+export interface AccountRecoveryView extends Omit<AccountRecovery, 'codeHash'> {}
+export interface AccountSecurityView extends AccountSecurityRow {
+  city: string | null;
+  sessions: AuthSessionView[];
+  enrolment: TwoFactorEnrolment | null;
+  graceEnds: string | null;
+  exceptions: TwoFactorException[];
+  lock: AccountLock | null;
+  recovery: AccountRecoveryView | null;
+  trusted: { city: string; until: string }[];
+  events: SecurityEvent[];
+  failures: { recent: number; paused: boolean; until: string | null };
+  isSelf: boolean;
+}
+export interface SecurityEventFilter { group?: string; accountId?: string; severity?: SecurityEvent['severity'] | 'all'; flagged?: boolean; q?: string; offset?: number; limit?: number }
+export interface SecurityEventsView { rows: SecurityEvent[]; total: number; counts: { flagged: number; byGroup: Record<string, number> } }
+export interface SecurityConfigPreview { problems: SecConfigProblem[]; weakenings: string[]; roleEffects: { role: Role; newlyRequired: boolean; people: number; notEnrolled: number; blockedAfter: string | null }[]; sessionsEnding: number; changed: boolean; token: string }
+export interface SecurityConfigSaveInput { config: SecurityConfig; reason: string; confirmWeaken: boolean; token: string }
+export interface TwoFactorExceptionList { rows: TwoFactorException[]; counts: { requested: number; active: number; ending: number } }
+export interface ExceptionDecisionInput { decision: 'grant' | 'decline'; until?: string; note: string }
+export interface ExceptionGrantInput { accountId: string; until: string; reason: string }
+export interface LostDeviceInput { accountId: string; note: string }
+export interface RecoveryStartInput { accountId: string; method: AccountRecovery['method']; note: string; newPhone?: string }
+export interface RecoveryIssued { id: string; code: string; plain: string; expiresAt: string; newPhoneMasked: string | null }
+export interface SimulateSignInInput { accountId: string; city: string | null; device: string; outcome: 'success' | 'failure' }
+export interface SessionContextInput { deviceLabel: string; platform: string; city?: string | null; /** A second step already passed on this browser's session (restored after a reload). */ secondFactorAt?: string }
+export type GateStep = 'none' | 'second_factor' | 'enrol' | 'place' | 'locked' | 'waiting_admin';
+export interface SessionCheck {
+  status: 'ok' | 'revoked' | 'expired' | 'signed_out' | 'unknown';
+  end?: { reason: string; by: string; at: string };
+  step: GateStep;
+  method: SecondFactorMethod | null;
+  /** Set while the person is inside the grace period for a newly required second step: a reminder, not a block. */
+  graceEnds: string | null;
+  place?: { city: string };
+  lock?: { reason: AccountLock['reason']; since: string; recovery: 'none' | 'issued'; expiresAt?: string };
+  exception: 'none' | 'requested' | 'declined' | 'active';
+  at: string;
+}
+
 /* ------------------------------------------------------------------ Integration management (189) */
 
 export interface IntegrationSetupView {
@@ -9153,6 +9222,39 @@ export interface Repository {
   getPrivacyPolicy(userId: string): Promise<PrivacyPolicyView>;
   publishPrivacyPolicy(userId: string, input: PrivacyPolicyInput): Promise<PrivacyPolicyView>;
   recordPolicyNotice(userId: string, versionId: string, how: PrivacyChannel, note: string): Promise<PrivacyPolicyView>;
+  /* 195 — authentication integrity: sessions, second factor, sign-in events, recovery and the policy that governs them. Admin sees and decides; the signed-in person's own session talks to the same records. */
+  getSecurityOverview(userId: string): Promise<SecurityOverview>;
+  listAccountSecurity(userId: string, filter: AccountListFilter): Promise<AccountListView>;
+  getAccountSecurity(userId: string, accountId: string, currentSessionId?: string | null): Promise<AccountSecurityView>;
+  revokeSession(userId: string, sessionId: string, reason: string): Promise<AccountSecurityView>;
+  revokeOtherSessions(userId: string, accountId: string, reason: string, keepSessionId?: string | null): Promise<AccountSecurityView>;
+  reportDeviceLost(userId: string, input: LostDeviceInput): Promise<AccountSecurityView>;
+  startAccountRecovery(userId: string, input: RecoveryStartInput): Promise<RecoveryIssued>;
+  cancelAccountRecovery(userId: string, recoveryId: string, note: string): Promise<AccountSecurityView>;
+  getSecurityEvents(userId: string, filter: SecurityEventFilter): Promise<SecurityEventsView>;
+  confirmSessionPlace(userId: string, sessionId: string, verdict: 'me' | 'not_me', note: string): Promise<AccountSecurityView>;
+  listTwoFactorExceptions(userId: string, state: 'open' | 'all'): Promise<TwoFactorExceptionList>;
+  decideTwoFactorException(userId: string, id: string, input: ExceptionDecisionInput): Promise<TwoFactorExceptionList>;
+  grantTwoFactorException(userId: string, input: ExceptionGrantInput): Promise<TwoFactorExceptionList>;
+  endTwoFactorException(userId: string, id: string, note: string): Promise<TwoFactorExceptionList>;
+  previewSecurityConfig(userId: string, config: SecurityConfig): Promise<SecurityConfigPreview>;
+  saveSecurityConfig(userId: string, input: SecurityConfigSaveInput): Promise<SecurityOverview>;
+  simulateSignIn(userId: string, input: SimulateSignInInput): Promise<AccountSecurityView>;
+  /** The signed-in person's own session. */
+  openAuthSession(userId: string, ctx: SessionContextInput): Promise<{ sessionId: string }>;
+  resumeAuthSession(userId: string, sessionId: string, ctx: SessionContextInput): Promise<{ sessionId: string }>;
+  endAuthSession(sessionId: string): Promise<void>;
+  checkAuthSession(sessionId: string, touch: boolean): Promise<SessionCheck>;
+  passSecondFactor(sessionId: string, code: string): Promise<SessionCheck>;
+  enrolTwoFactor(sessionId: string, input: { method: SecondFactorMethod; secondPhone?: string; code: string }): Promise<SessionCheck>;
+  answerPlaceCheck(sessionId: string, answer: 'me' | 'not_me'): Promise<SessionCheck>;
+  redeemRecoveryCode(sessionId: string, code: string): Promise<SessionCheck>;
+  requestTwoFactorException(sessionId: string, note: string): Promise<SessionCheck>;
+  /** Before a sign-in code is accepted: is this account's sign-in paused after repeated failures? */
+  precheckSignIn(userId: string): Promise<{ paused: boolean; until: string | null }>;
+  recordLoginFailure(userId: string): Promise<{ paused: boolean; until: string | null; recent: number }>;
+  getPasswordPolicy(): Promise<PasswordPolicy>;
+  recordPasswordReset(userId: string): Promise<{ sessionsEnded: number }>;
   /* 188 — the console for forcing what a rule would not, with a reason, a preview and a confirmation; guardrails with no override are refused and the attempt kept. */
   getOverrideConsole(userId: string): Promise<OverrideConsoleView>;
   getOverrideCandidates(userId: string, kind: string, q: string): Promise<OverrideCandidate[]>;
