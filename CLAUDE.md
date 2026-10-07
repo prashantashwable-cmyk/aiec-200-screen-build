@@ -92,6 +92,25 @@ After the **10th screen of a module**, run that module's checkpoint: click throu
 end to end, spot-check 2–3 screens from earlier modules for regressions, fix anything found, and add
 the module's section to `BUILD_README.md`.
 
+## Production conversion (branch `claude/production-build-stage`, from 2026-10-07)
+
+All 200 screens are built; the work now is turning the in-memory build into a production app, following the
+build-stage prompt. `AUDIT_REPORT.md` is the audit (what is real, what is mocked, the slice plan, open decisions) and
+`KNOWN_GAPS.md` is the running list of what is not real yet; update both with every slice.
+`node scripts/mock-inventory.mjs > docs/audit/mock-inventory.csv` regenerates the per-screen table.
+- **Never fake.** No timer standing in for work, no number invented from an id or a rating, no "verified" for a
+  check that did not run, no domain data kept in one browser's `localStorage` (drafts, outboxes and preferences are
+  fine). A provider that is not connected is said on screen and listed in `KNOWN_GAPS.md`.
+- S0a facts: field partners sign up through `submitFieldPartnerOnboarding` (pending User + `User.onboarding`, Admin
+  decides on 004 via `decidePendingUser`, commitment `onboarding_review`); customers confirm through
+  `confirmCustomerAccount`; an application keeps `identity.aadhaarLast4` / `aadhaarChecked`, never the number;
+  020 assigns jobs with `assignJobLead` and ranks on `getAssignmentFacts`; alerts carry `snoozedUntil` /
+  `delegatedToUserId` (the delegate owns the `alert_acknowledge` commitment); 030 reports are
+  `SavedReportDefinition`s; 026's manual watchlist is `Supplier.watchlist`; the supplier's home is `/orders`; refused
+  routes show a 403 page; Indian mobile / PIN / email rules live in `@/features/validation/india`.
+- Open decisions: D1 backend (Supabase or Firebase), D2 the product spec (the prompt describes a different product;
+  the repo's own 200 specs are followed), D3 password reset.
+
 ## Current status (as of 2026-09-30)
 
 - Modules 1–20 (`001`–`200`) are built. Modules 5–20 are checkpoint-verified.

@@ -26,6 +26,29 @@ specific fakes, not 200 screen rewrites.
 
 ---
 
+## Progress since this audit
+
+**S0a (fixes that need no backend) is done** — commits a576a32…e9a9a8c and the one after. The per-screen CSV now reads 199
+Real (in-memory), 1 Static (001 splash), 0 Partial. What changed:
+
+| Finding | Now |
+|---|---|
+| 005 / 006 sign-ups saved nothing | Saved as a pending account with documents, skills, zones, PAN, payout account; Admin decides on 004 (approval assigns the surveyor's zones); commitment `onboarding_review` |
+| 008 customer confirmation saved nothing | Creates or links the account, applies corrections, links the won deal, records SMS / WhatsApp choices as opt-out events; the fake "password" option is gone |
+| Full Aadhaar stored (142) | Only the last four digits and "checksum passed" are kept; the repository reduces or refuses anything longer |
+| 020 job assignment saved nothing; workload from rating; hard-coded "on leave" | `assignJobLead` with the same checks as every other way onto a job; real open work; real reasons (training, tier, leave, booked, skill) |
+| Supplier home was a "module pending" placeholder (found during S0a; the audit had called `/supplier` a leftover) | Supplier home is Orders (095) |
+| Refused route bounced home silently; 404 reloaded the page | "Not open to you" page; 404 navigates in-app |
+| Role audit, alert snooze/delegation, saved reports, supplier watchlist in one browser's storage | In the repository; delegation tells the person and moves the follow-up to them |
+| 026 trend drawn from a hash of the supplier id; "two months below" invented (found during S0a) | Trend removed; watchlist reads two real months of rated deliveries |
+| 030 promised scheduled sending and failure alerts (found during S0a) | Control removed; screen says a delivery connection is not set up |
+| 005 / 007 "Account verified", "GSTIN verified" after a timer | Real checks kept; the screens say the bank check and registry lookup are not connected |
+| Seven copies of the phone rule | One module, `@/features/validation/india` |
+
+Still open: everything in S0b onwards, and the items in `KNOWN_GAPS.md`.
+
+---
+
 ## Conflict with the build-stage prompt (read first)
 
 The prompt's "Product context" describes a different product: a map-first,
@@ -67,7 +90,7 @@ storage keys, lines of code.
 | Real (in-memory) | 194 | Calls repository logic; behaves correctly while the tab is open; lost on refresh |
 | Partial | 5 | Contains a fake delay presented as work (005, 006, 007, 008, 009) |
 | Static | 1 | 001 splash — correct, it has nothing to load |
-| Mock / Missing | 0 numbered screens; 1 leftover route (`/supplier` → `ModulePendingScreen`, `src/App.tsx:109`) |
+| Mock / Missing | 0 numbered screens; the supplier's home route (`/supplier` → `ModulePendingScreen`, `src/App.tsx:109`) — every supplier login landed there |
 
 **Uniform finding for all 194 "Real" screens:** backend needed = the real
 repository (S0); events = whatever they already write to the in-memory store,

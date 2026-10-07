@@ -2,12 +2,12 @@ screen,slug,path,roles,status,repo_calls,states,signals,ls_keys,loc
 001,splash,/,public,Static,0,none,localStorage,aiec.hasLaunched aiec.lastVersion,433
 002,login,/login,public,Real (in-memory),7,none,discloses-stand-in,,644
 003,otp,/login/otp,public,Real (in-memory),4,none,-,,565
-004,role-select,/onboarding/role,public,Real (in-memory),6,Loading+Error+Empty,localStorage,aiec.pendingRoleSelection aiec.roleAudit,599
-005,onboard-surveyor,/onboarding/surveyor,public,Partial,5,Loading+Error,fake-latency;discloses-stand-in,,804
-006,onboard-technician,/onboarding/technician,public,Partial,5,none,fake-latency,,792
-007,onboard-supplier,/onboarding/supplier,public,Partial,5,none,fake-latency;discloses-stand-in,,984
-008,onboard-customer,/onboarding/customer,public,Partial,6,Loading+Error,fake-latency,,700
-009,forgot-password,/forgot-password,public,Partial,8,none,fake-latency,,803
+004,role-select,/onboarding/role,public,Real (in-memory),7,Loading+Error+Empty,localStorage,aiec.pendingRoleSelection,636
+005,onboard-surveyor,/onboarding/surveyor,public,Real (in-memory),5,Loading+Error,discloses-stand-in,,800
+006,onboard-technician,/onboarding/technician,public,Real (in-memory),6,none,-,,820
+007,onboard-supplier,/onboarding/supplier,public,Real (in-memory),4,none,discloses-stand-in,,966
+008,onboard-customer,/onboarding/customer,public,Real (in-memory),7,Loading+Error,-,,694
+009,forgot-password,/forgot-password,public,Real (in-memory),8,none,-,,802
 010,permissions-primer,/onboarding/permissions,public,Real (in-memory),4,none,localStorage,aiec.permissionsPrimerShown aiec.permissionsPrimerShownAt,608
 011,live-map,/admin/map,admin,Real (in-memory),5,Loading+Error,localStorage;discloses-stand-in,aiec.mapFilters,940
 012,activity-feed,/admin/activity,admin,Real (in-memory),4,Loading+Error+Empty,-,,665
@@ -18,17 +18,17 @@ screen,slug,path,roles,status,repo_calls,states,signals,ls_keys,loc
 017,site-visit-verify,/admin/site-visits,admin,Real (in-memory),5,Loading+Error+Empty,discloses-stand-in,,724
 018,map-filters,/admin/map/filters,admin,Real (in-memory),9,none,localStorage,aiec.mapFilters,510
 019,escalation,/admin/escalations,admin,Real (in-memory),5,Loading+Error+Empty,discloses-stand-in,,682
-020,route-optimize,/admin/routes,admin,Real (in-memory),9,Loading+Error+Empty,discloses-stand-in,,634
+020,route-optimize,/admin/routes,admin,Real (in-memory),9,Loading+Error+Empty,-,,709
 021,exec-kpi,/admin,admin,Real (in-memory),4,Loading+Error,-,,558
 022,funnel,/admin/analytics/funnel,admin,Real (in-memory),4,Loading+Error,-,,554
 023,revenue,/admin/analytics/revenue,admin,Real (in-memory),7,Loading+Error,-,,580
 024,leaderboard,/admin/analytics/leaderboard,admin,Real (in-memory),12,Loading+Error+Empty,discloses-stand-in,,635
 025,region-conversion,/admin/analytics/conversion,admin,Real (in-memory),7,Loading+Error+Empty,-,,524
-026,supplier-score,/admin/analytics/suppliers,admin,Real (in-memory),4,Loading+Error+Empty,localStorage;discloses-stand-in,aiec.supplierWatchlist,586
+026,supplier-score,/admin/analytics/suppliers,admin,Real (in-memory),6,Loading+Error+Empty,discloses-stand-in,,590
 027,automation-health,/admin/analytics/automation,admin,Real (in-memory),5,Loading+Error+Empty,discloses-stand-in,,541
 028,finance,/admin/analytics/finance,admin,Real (in-memory),6,Loading+Error,discloses-stand-in,,620
-029,alerts-board,/admin/alerts,admin,Real (in-memory),10,Loading+Error+Empty,localStorage,aiec.snoozedAlerts aiec.delegatedAlerts,615
-030,report-builder,/admin/reports,admin,Real (in-memory),14,Loading+Error,localStorage;discloses-stand-in,aiec.savedReports,770
+029,alerts-board,/admin/alerts,admin,Real (in-memory),13,Loading+Error+Empty,-,,644
+030,report-builder,/admin/reports,admin,Real (in-memory),16,Loading+Error,discloses-stand-in,,735
 031,surveyor-home,/surveyor,surveyor,Real (in-memory),5,Loading+Error,localStorage,aiec.lastSyncedAt,468
 032,capture-gps,/surveyor/capture,surveyor,Real (in-memory),2,none,discloses-stand-in,,522
 033,capture-contact,/surveyor/capture/contact,surveyor,Real (in-memory),9,none,-,,595
@@ -140,7 +140,7 @@ screen,slug,path,roles,status,repo_calls,states,signals,ls_keys,loc
 139,warranty-amc-registration,/warranty/:jobId?,admin+customer,Real (in-memory),11,Loading+Error+Empty,localStorage;discloses-stand-in,,1014
 140,handover-completion-certificate,/handover-certificate/:jobId?,admin+customer,Real (in-memory),8,Loading+Error+Empty,localStorage;discloses-stand-in,,1433
 141,recruitment-landing,/join,public,Real (in-memory),9,Loading+Error,localStorage,aiec.recruitDraft aiec.recruitSource,890
-142,applicant-data-form,/apply/:applicationId,public,Real (in-memory),11,Loading+Error+Empty,localStorage;discloses-stand-in,,1477
+142,applicant-data-form,/apply/:applicationId,public,Real (in-memory),11,Loading+Error+Empty,localStorage;discloses-stand-in,,1485
 143,applicant-screening,/screening,admin,Real (in-memory),22,Loading+Error+Empty,discloses-stand-in,,1595
 144,interview-scheduling,/interview/:applicationId,public,Real (in-memory),31,Loading+Error+Empty,localStorage;discloses-stand-in,,1839
 145,background-verification,/verification/:applicationId?,admin,Real (in-memory),17,Loading+Error+Empty,discloses-stand-in,,992
