@@ -117,6 +117,7 @@ export const SUPPLIER_KEYS = {
     verified: 'onbSupplier.bank.verified',
     failed: 'onbSupplier.bank.failed',
     blocked: 'onbSupplier.bank.blocked',
+    notConnected: 'onbSupplier.bank.notConnected',
   },
   terms: {
     heading: 'onbSupplier.terms.heading',

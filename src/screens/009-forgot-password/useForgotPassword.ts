@@ -174,7 +174,6 @@ export function useForgotPassword(): ForgotPasswordState {
 
     setPhase('submitting');
     try {
-      await new Promise((resolve) => setTimeout(resolve, 700));
       // Every other device is signed out. The count is what makes that
       // promise visible rather than merely claimed.
       const done = account ? await repository.recordPasswordReset(account.id) : { sessionsEnded: 0 };

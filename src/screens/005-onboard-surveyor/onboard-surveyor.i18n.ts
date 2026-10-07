@@ -46,6 +46,7 @@ const translations: ScreenTranslations = {
         verified: 'Account verified',
         failed: 'Verification failed',
         retry: 'Try verification again',
+        notConnected: 'The bank check is not connected yet, so this account has not been verified. AIEC confirms it with you before the first payment.',
         blockedBanner:
           'Your bank account could not be verified. You can finish signing up, but commission payouts stay on hold until this is sorted.',
       },
@@ -108,6 +109,7 @@ const translations: ScreenTranslations = {
         verified: 'खाता सत्यापित',
         failed: 'सत्यापन नहीं हुआ',
         retry: 'सत्यापन दोबारा करें',
+        notConnected: 'बैंक जाँच अभी जुड़ी नहीं है, इसलिए यह खाता सत्यापित नहीं हुआ है। पहले भुगतान से पहले AIEC आपके साथ इसकी पुष्टि करेगा।',
         blockedBanner:
           'आपका बैंक खाता सत्यापित नहीं हो पाया। आप साइन अप पूरा कर सकते हैं, लेकिन जब तक यह ठीक नहीं होता, कमीशन का भुगतान रुका रहेगा।',
       },
@@ -170,6 +172,7 @@ const translations: ScreenTranslations = {
         verified: 'खाते पडताळले',
         failed: 'पडताळणी झाली नाही',
         retry: 'पडताळणी पुन्हा करा',
+        notConnected: 'बँक तपासणी अजून जोडलेली नाही, त्यामुळे हे खाते पडताळलेले नाही. पहिल्या पेमेंटपूर्वी AIEC तुमच्यासोबत त्याची खात्री करेल.',
         blockedBanner:
           'तुमचे बँक खाते पडताळता आले नाही. तुम्ही नोंदणी पूर्ण करू शकता, पण हे सुरळीत होईपर्यंत कमिशनचे पैसे थांबवले जातील.',
       },

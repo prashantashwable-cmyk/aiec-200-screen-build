@@ -30,10 +30,10 @@ const translations: ScreenTranslations = {
       },
       gstin: {
         verify: 'Verify GSTIN',
-        running: 'Checking the GST registry…',
+        running: 'Checking…',
         matched: 'GSTIN verified',
         lookupFailed:
-          'The GST registry did not respond, so we could not match the legal name automatically. You can carry on — an admin will verify this by hand before your account goes live.',
+          'Format checked, and this GSTIN is not already registered with AIEC. The GST registry lookup is not connected yet, so an admin confirms the legal name by hand before your account goes live.',
         mismatch:
           'The legal name on this GSTIN does not match the company name you entered. Check both and try again.',
         duplicate:
@@ -57,6 +57,7 @@ const translations: ScreenTranslations = {
         running: 'Checking with your bank…',
         verified: 'Account verified',
         failed: 'Verification failed',
+        notConnected: 'The bank check is not connected yet, so this account has not been verified. AIEC confirms it with you before the first payment.',
         blocked:
           'This account could not be verified. You can finish registering, but no payment can be released until it is sorted.',
       },
@@ -119,10 +120,10 @@ const translations: ScreenTranslations = {
       },
       gstin: {
         verify: 'GSTIN सत्यापित करें',
-        running: 'GST रजिस्ट्री से जाँच हो रही है…',
+        running: 'जाँच हो रही है…',
         matched: 'GSTIN सत्यापित',
         lookupFailed:
-          'GST रजिस्ट्री से जवाब नहीं मिला, इसलिए क़ानूनी नाम अपने आप मिलान नहीं हो सका। आप आगे बढ़ सकते हैं — खाता चालू होने से पहले एडमिन इसे ख़ुद जाँच लेगा।',
+          'फ़ॉर्मैट जाँचा गया, और यह GSTIN AIEC में पहले से पंजीकृत नहीं है। GST रजिस्ट्री से मिलान अभी जुड़ा नहीं है, इसलिए खाता चालू होने से पहले एक एडमिन हाथ से कानूनी नाम की पुष्टि करेगा।',
         mismatch:
           'इस GSTIN का क़ानूनी नाम आपकी लिखी कंपनी के नाम से मेल नहीं खाता। दोनों जाँचकर दोबारा कोशिश कीजिए।',
         duplicate:
@@ -146,6 +147,7 @@ const translations: ScreenTranslations = {
         running: 'आपके बैंक से जाँच हो रही है…',
         verified: 'खाता सत्यापित',
         failed: 'सत्यापन नहीं हुआ',
+        notConnected: 'बैंक जाँच अभी जुड़ी नहीं है, इसलिए यह खाता सत्यापित नहीं हुआ है। पहले भुगतान से पहले AIEC आपके साथ इसकी पुष्टि करेगा।',
         blocked:
           'यह खाता सत्यापित नहीं हो पाया। आप पंजीकरण पूरा कर सकते हैं, लेकिन ठीक होने तक कोई भुगतान जारी नहीं होगा।',
       },
@@ -208,10 +210,10 @@ const translations: ScreenTranslations = {
       },
       gstin: {
         verify: 'GSTIN पडताळा',
-        running: 'GST नोंदवहीकडून तपासत आहे…',
+        running: 'तपासत आहे…',
         matched: 'GSTIN पडताळले',
         lookupFailed:
-          'GST नोंदवहीकडून प्रतिसाद आला नाही, त्यामुळे कायदेशीर नाव आपोआप जुळवता आले नाही. तुम्ही पुढे जाऊ शकता — खाते सुरू होण्यापूर्वी प्रशासक हे स्वतः तपासेल.',
+          'फॉरमॅट तपासला, आणि हा GSTIN AIEC मध्ये आधीच नोंदलेला नाही. GST नोंदवहीशी जुळवणी अजून जोडलेली नाही, त्यामुळे खाते सुरू होण्यापूर्वी एक प्रशासक कायदेशीर नाव हाताने तपासेल.',
         mismatch:
           'या GSTIN वरील कायदेशीर नाव तुम्ही लिहिलेल्या कंपनीच्या नावाशी जुळत नाही. दोन्ही तपासा आणि पुन्हा प्रयत्न करा.',
         duplicate:
@@ -235,6 +237,7 @@ const translations: ScreenTranslations = {
         running: 'तुमच्या बँकेकडून तपासत आहे…',
         verified: 'खाते पडताळले',
         failed: 'पडताळणी झाली नाही',
+        notConnected: 'बँक तपासणी अजून जोडलेली नाही, त्यामुळे हे खाते पडताळलेले नाही. पहिल्या पेमेंटपूर्वी AIEC तुमच्यासोबत त्याची खात्री करेल.',
         blocked:
           'हे खाते पडताळता आले नाही. तुम्ही नोंदणी पूर्ण करू शकता, पण हे सुरळीत होईपर्यंत कोणतेही पैसे दिले जाणार नाहीत.',
       },

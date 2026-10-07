@@ -92,6 +92,7 @@ export const SURVEYOR_KEYS = {
     verified: 'onbSurveyor.penny.verified',
     failed: 'onbSurveyor.penny.failed',
     blockedBanner: 'onbSurveyor.penny.blockedBanner',
+    notConnected: 'onbSurveyor.penny.notConnected',
     retry: 'onbSurveyor.penny.retry',
     explain: 'onbSurveyor.penny.explain',
   },

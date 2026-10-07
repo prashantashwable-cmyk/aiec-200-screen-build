@@ -57,7 +57,6 @@ interface OnboardSurveyorState {
   zonesStatus: 'loading' | 'ready' | 'empty' | 'error';
   reloadZones: () => Promise<void>;
   toggleZone: (zoneId: string) => void;
-  runPennyDrop: () => Promise<void>;
   /** True once bank verification has failed — payouts stay blocked until fixed. */
   payoutsBlocked: boolean;
   submit: () => Promise<void>;
@@ -103,17 +102,6 @@ export function useOnboardSurveyor(): OnboardSurveyorState {
     [draft.preferredZoneIds, update],
   );
 
-  const runPennyDrop = useCallback(async () => {
-    update({ pennyDrop: 'running' });
-    // SIMULATED: a real penny-drop deposits ₹1 through a payments partner and
-    // compares the returned account name. There is no gateway in this build,
-    // so the outcome is derived from the account number: one ending in 0 fails,
-    // which gives a deterministic way to exercise the blocked-payout path.
-    await new Promise((resolve) => setTimeout(resolve, 1400));
-    const fails = draft.accountNumber.endsWith('0');
-    update({ pennyDrop: fails ? 'failed' : 'verified' });
-  }, [draft.accountNumber, update]);
-
   const [submitError, setSubmitError] = useState<'already_applied' | 'phone_taken' | null>(null);
 
   const submit = useCallback(async () => {
@@ -139,7 +127,7 @@ export function useOnboardSurveyor(): OnboardSurveyorState {
         aadhaarLast4: isValidAadhaar(draft.aadhaarNumber) ? aadhaar.slice(-4) : undefined,
         panNumber: isValidPan(draft.panNumber) ? draft.panNumber : undefined,
         documents: docs.map((d) => ({ kind: d.kind, label: d.doc.fileName, fileName: d.doc.fileName, capturedAt: d.doc.capturedAt })),
-        bank: { holderName: draft.accountHolder, accountNumber: draft.accountNumber, ifsc: draft.ifsc, verified: draft.pennyDrop === 'verified' },
+        bank: { holderName: draft.accountHolder, accountNumber: draft.accountNumber, ifsc: draft.ifsc, verified: false },
       });
       wizard.setStatus('submitted');
       localStorage.removeItem(SURVEYOR_DRAFT_KEY);
@@ -156,8 +144,7 @@ export function useOnboardSurveyor(): OnboardSurveyorState {
     zonesStatus,
     reloadZones,
     toggleZone,
-    runPennyDrop,
-    payoutsBlocked: draft.pennyDrop === 'failed',
+    payoutsBlocked: false,
     submit,
     submitError,
   };

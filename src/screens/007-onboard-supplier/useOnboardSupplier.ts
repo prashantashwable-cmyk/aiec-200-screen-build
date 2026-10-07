@@ -52,7 +52,6 @@ export const SUPPLIER_STEPS: WizardStepDef<SupplierDraft>[] = [
 interface OnboardSupplierState {
   wizard: ReturnType<typeof useWizard<SupplierDraft>>;
   verifyGstin: () => Promise<void>;
-  runPennyDrop: () => Promise<void>;
   payoutsBlocked: boolean;
   submit: () => Promise<void>;
   /** Translation key for why the last submission was refused, if it was. */
@@ -80,24 +79,14 @@ export function useOnboardSupplier(): OnboardSupplierState {
         return;
       }
 
-      // SIMULATED: the legal-name lookup needs the GST registry. Without it,
-      // a GSTIN ending in '9' stands in for "registry unreachable" so the
-      // manual-verification path can actually be exercised.
-      await new Promise((resolve) => setTimeout(resolve, 1200));
-      update({ gstinCheck: normalised.endsWith('9') ? 'lookupFailed' : 'matched' });
+      // The legal-name lookup needs the GST registry, which is not connected: the format and the
+      // one-account rule are checked here, and an admin confirms the legal name during KYC review (091).
+      update({ gstinCheck: 'lookupFailed' });
     } catch {
       // A failed request is exactly the offline case: allow, flag for review.
       update({ gstinCheck: 'lookupFailed' });
     }
   }, [draft.gstin, repository, update]);
-
-  const runPennyDrop = useCallback(async () => {
-    update({ pennyDrop: 'running' });
-    // SIMULATED, same as the surveyor payout account: an account number ending
-    // in 0 fails, so the blocked-payment path is reachable on demand.
-    await new Promise((resolve) => setTimeout(resolve, 1400));
-    update({ pennyDrop: draft.accountNumber.endsWith('0') ? 'failed' : 'verified' });
-  }, [draft.accountNumber, update]);
 
   const [submitErrorKey, setSubmitErrorKey] = useState<string | null>(null);
 
@@ -128,8 +117,7 @@ export function useOnboardSupplier(): OnboardSupplierState {
   return {
     wizard,
     verifyGstin,
-    runPennyDrop,
-    payoutsBlocked: draft.pennyDrop === 'failed',
+    payoutsBlocked: false,
     submit,
     submitErrorKey,
   };

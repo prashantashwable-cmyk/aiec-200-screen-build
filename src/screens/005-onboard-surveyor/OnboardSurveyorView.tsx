@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { CheckCircle, Warning } from '@phosphor-icons/react';
+import { CheckCircle, Warning, Info } from '@phosphor-icons/react';
 import {
   Badge,
   Button,
@@ -264,35 +264,13 @@ export function OnboardSurveyorView() {
             onChange={(value) => update({ bankDoc: value })}
           />
 
+          {/* No bank-verification provider is connected, so nothing here claims the account was checked. */}
           <Card>
-            <div className="row between gap-3">
-              <span className="t-sm t-semibold grow">{t(K.penny.explain)}</span>
-              {draft.pennyDrop === 'verified' && (
-                <Badge tone="success" dot>
-                  {t(K.penny.verified)}
-                </Badge>
-              )}
-              {draft.pennyDrop === 'failed' && (
-                <Badge tone="error" dot>
-                  {t(K.penny.failed)}
-                </Badge>
-              )}
-            </div>
-            <div className="mt-3">
-              <Button
-                size="sm"
-                variant={draft.pennyDrop === 'verified' ? 'ghost' : 'primary'}
-                loading={draft.pennyDrop === 'running'}
-                disabled={!isValidIfsc(draft.ifsc) || !/^\d{9,18}$/.test(draft.accountNumber)}
-                onClick={() => void s.runPennyDrop()}
-              >
-                {draft.pennyDrop === 'running'
-                  ? t(K.penny.running)
-                  : draft.pennyDrop === 'failed'
-                    ? t(K.penny.retry)
-                    : t(K.penny.start)}
-              </Button>
-            </div>
+            <p className="t-sm t-semibold">{t(K.penny.explain)}</p>
+            <p className="t-xs t-muted mt-2 row gap-2">
+              <Info size={14} className="shrink-0" />
+              {t(K.penny.notConnected)}
+            </p>
           </Card>
         </>
       )}
