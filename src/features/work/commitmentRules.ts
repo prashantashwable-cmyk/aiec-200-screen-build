@@ -157,6 +157,8 @@ export interface CommitmentSources {
   /** A customer's referral reward, issued when the referred order was confirmed (179). */
   /** A category of automation someone paused (181): a stop is not meant to be forgotten, so Admin is asked a day later whether it is still on purpose. */
   automationPauses: { category: string; name: string; since: string; byName: string }[];
+  /** The escalation matrix (184): a drill is owed on each scenario's own rhythm, and a gap a drill found is Admin's to put right within a day. */
+  escalation: { drills: { id: string; name: string; dueAt: string }[]; gaps: { id: string; scenarioId: string; name: string; since: string }[] };
   referrals: { rewards: { id: string; userId: string; friend: string; at: string }[] };
   supportChats: { waiting: { id: string; name: string; since: string; urgent: boolean }[] };
   serviceTickets: { respond: { id: string; code: string; ownerUserId: string; dueAt: string; urgency: string; site: string }[]; visits: { id: string; code: string; technicianId: string; dueAt: string; site: string; date: string; state: 'open' | 'done' | 'cancelled' }[]; claims: { id: string; code: string; since: string }[]; followups: { id: string; code: string; since: string; unsafe: boolean }[] };
@@ -2342,6 +2344,50 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
         paused: false,
         actionRoute: `/automation-rules?category=${x.category}`,
         oversightRoute: '/automation-rules',
+      }));
+    },
+  },
+  {
+    // An escalation chain nobody has tested is a guess (184): a drill is owed on each scenario's rhythm, and again soon after the chain or a backup changed.
+    kind: 'escalation_drill_due',
+    nudgeBefore: days(2),
+    escalateAfter: days(7),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'automation',
+    collect(src) {
+      return src.escalation.drills.map((x) => ({
+        ...base('escalation_drill_due', 'alert', x.id),
+        ownerUserId: adminId(src),
+        titleKey: 'work.title.escalation_drill_due',
+        titleParams: { scenario: x.name },
+        dueAt: x.dueAt,
+        state: 'open' as const,
+        paused: false,
+        actionRoute: `/escalation-matrix?scenario=${x.id}`,
+        oversightRoute: '/escalation-matrix',
+      }));
+    },
+  },
+  {
+    // A drill that found a gap is not a result to file: the fix is due within a day, and it is open until a later drill passes or the gap is accepted in writing (184).
+    kind: 'escalation_gap_fix',
+    nudgeBefore: hours(4),
+    escalateAfter: hours(24),
+    escalates: true,
+    raisesAlert: true,
+    alertCategory: 'automation',
+    collect(src) {
+      return src.escalation.gaps.map((x) => ({
+        ...base('escalation_gap_fix', 'alert', x.id),
+        ownerUserId: adminId(src),
+        titleKey: 'work.title.escalation_gap_fix',
+        titleParams: { scenario: x.name },
+        dueAt: new Date(Date.parse(x.since) + hours(24)).toISOString(),
+        state: 'open' as const,
+        paused: false,
+        actionRoute: `/escalation-matrix?scenario=${x.scenarioId}`,
+        oversightRoute: '/escalation-matrix',
       }));
     },
   },

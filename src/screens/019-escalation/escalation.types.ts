@@ -1,6 +1,7 @@
 /** Screen 019 — Emergency / Escalation Alert Screen. Types and keys only. */
 
 import type { Alert } from '@/data/types';
+import type { AlertEscalationView } from '@/data/repository';
 
 export type EscalationStatus = 'loading' | 'ready' | 'empty' | 'error';
 
@@ -16,13 +17,15 @@ export interface EscalationEntry {
   clusterWith: string[];
   /** True once the acknowledgement window has passed with no response. */
   overdueAcknowledgement: boolean;
+  /** How far the alert has climbed its chain (184); absent when nothing could be read. */
+  chain?: AlertEscalationView;
 }
 
 /** Alerts within this distance and time of each other are one incident. */
 export const CLUSTER_RADIUS_KM = 0.5;
 export const CLUSTER_WINDOW_MS = 30 * 60 * 1000;
 
-/** No acknowledgement within this window escalates to a backup channel. */
+/** Used only for an alert the escalation matrix (184) has no chain for: no acknowledgement within this window reads as overdue. */
 export const ACK_DEADLINE_MS = 10 * 60 * 1000;
 
 /** A field SOS can be cancelled within this window before the admin is alerted. One number, shared with the button that sends it. */
@@ -54,7 +57,10 @@ export const ESCALATION_KEYS = {
   cluster: 'escalation.cluster',
   clusterNote: 'escalation.clusterNote',
   overdue: 'escalation.overdue',
-  backupChannel: 'escalation.backupChannel',
+  chainProgress: 'escalation.chainProgress',
+  chainOut: 'escalation.chainOut',
+  chainNone: 'escalation.chainNone',
+  chainLink: 'escalation.chainLink',
   safetyBanner: 'escalation.safetyBanner',
   history: 'escalation.history',
   historyNote: 'escalation.historyNote',

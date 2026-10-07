@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { Phone, ShieldWarning, Siren, Warning } from '@phosphor-icons/react';
 import {
   AscensionLine,
@@ -108,6 +109,7 @@ function AlertCard({
   state: ReturnType<typeof useEscalation>;
 }) {
   const { t, i18n } = useTranslation();
+  const nav = useNavigate();
   const [note, setNote] = useState('');
   const { alert, stage } = entry;
   const isSafety = alert.category === 'safety';
@@ -168,7 +170,10 @@ function AlertCard({
             <ShieldWarning size={16} className="shrink-0" />
             {t(K.overdue)}
           </p>
-          <p className="t-xs t-muted mt-2">{t(K.backupChannel)}</p>
+          <p className="t-xs t-muted mt-2" data-chain>
+            {entry.chain?.exhausted ? t(K.chainOut) : entry.chain && entry.chain.firedTiers > 0 ? t(K.chainProgress, { done: entry.chain.firedTiers, total: entry.chain.totalTiers, names: entry.chain.lastNames.join(', ') || '—' }) : t(K.chainNone)}
+          </p>
+          <Button size="sm" variant="ghost" onClick={() => nav('/escalation-matrix')}>{t(K.chainLink)}</Button>
         </Card>
       )}
 

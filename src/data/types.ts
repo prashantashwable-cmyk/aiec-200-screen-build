@@ -5032,7 +5032,7 @@ export type CommitmentKind =
   | 'exit_dispute_decide'
   | 'tier_review_due'
   | 'certification_renewal'
-  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup' | 'support_chat_reply' | 'feedback_outreach' | 'feedback_recognition' | 'referral_reward' | 'automation_pause_review'
+  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup' | 'support_chat_reply' | 'feedback_outreach' | 'feedback_recognition' | 'referral_reward' | 'automation_pause_review' | 'escalation_drill_due' | 'escalation_gap_fix'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'
@@ -5689,4 +5689,92 @@ export interface InternalDelivery {
   test: boolean;
   context: string;
   isDemo: boolean;
+}
+
+/* ------------------------------------------------------------------ Escalation matrix (184) */
+
+export type EscalationChannel = 'inApp' | 'sms' | 'call';
+export type EscalationRailState = 'working' | 'failing' | 'silent';
+export interface EscalationChainTier { id: string; targets: string[]; channels: EscalationChannel[]; afterMinutes: number }
+export interface EscalationLastResort { repeatEveryMinutes: number; repeats: number }
+
+/** One person who can be reached when the Admin cannot. A backup need not have an app account: a phone number is enough. `rail` is the demo gateway's answer for each channel. */
+export interface EscalationContact {
+  name: string;
+  phone: string;
+  userId?: string;
+  note?: string;
+  rail: { sms: EscalationRailState; call: EscalationRailState };
+}
+/** What Admin changed for one scenario. Anything unset follows the defaults. */
+export interface EscalationScenarioConfig {
+  id: string;
+  enabled: boolean;
+  trigger: 'unacknowledged' | 'unresolved';
+  tiers: EscalationChainTier[];
+  lastResort: EscalationLastResort;
+  /** Kept when a vital chain deliberately reaches only the Admin. */
+  singlePointNote?: string;
+  version: number;
+  updatedAt: string;
+  updatedByName: string;
+  history: { at: string; byName: string; version: number; summary: string }[];
+}
+/** One real alert being walked up its chain. The chain is frozen at the start, so changing a scenario never rewrites an escalation already under way. */
+export interface EscalationRun {
+  id: string;
+  alertId: string;
+  alertCode: string;
+  scenarioId: string;
+  trigger: 'unacknowledged' | 'unresolved';
+  startedAt: string;
+  tiers: EscalationChainTier[];
+  lastResort: EscalationLastResort;
+  firedTiers: number;
+  repeatsFired: number;
+  status: 'running' | 'stopped' | 'exhausted';
+  stoppedBy?: 'acknowledged' | 'resolved';
+  stoppedAt?: string;
+  exhaustedAlertId?: string;
+}
+export interface EscalationDelivery {
+  id: string;
+  runId: string;
+  alertId: string;
+  tierIndex: number;
+  /** 0 for the tier itself, 1.. for each repeat of the last tier. */
+  repeat: number;
+  target: string;
+  name: string;
+  channel: EscalationChannel;
+  at: string;
+  status: 'sent' | 'failed' | 'skipped';
+  reason?: 'unfilled' | 'no_phone' | 'no_account' | 'gateway_refused';
+}
+export interface EscalationDrillStep {
+  id: string;
+  tierIndex: number;
+  target: string;
+  name: string;
+  channel: EscalationChannel;
+  status: 'pending' | 'confirmed' | 'failed' | 'no_response' | 'unfilled' | 'no_phone' | 'no_account';
+  sentAt: string;
+  confirmedAt?: string;
+  confirmedBy?: 'gateway' | 'admin';
+  /** When the demo rail's answer arrives. */
+  answerAt: string;
+  answer: 'confirms' | 'fails' | 'silent';
+}
+export interface EscalationDrill {
+  id: string;
+  code: string;
+  scenarioId: string;
+  startedAt: string;
+  byName: string;
+  tiers: EscalationChainTier[];
+  steps: EscalationDrillStep[];
+  status: 'running' | 'passed' | 'gaps';
+  finishedAt?: string;
+  gapAlertId?: string;
+  accepted?: { at: string; byName: string; note: string };
 }

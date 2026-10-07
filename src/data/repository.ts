@@ -131,6 +131,14 @@ import type {
   CustomRule,
   InternalChannel,
   InternalChannelSet,
+  EscalationContact,
+  EscalationDrill,
+  EscalationRailState,
+  EscalationRun,
+  EscalationDelivery,
+  EscalationScenarioConfig,
+  EscalationChainTier,
+  EscalationLastResort,
   InternalContent,
   InternalDelivery,
   InternalTypeConfig,
@@ -7148,6 +7156,52 @@ export interface InternalNotificationsView {
 }
 export interface InternalTypeInput { urgency: InternalUrgency | null; roles: Record<string, InternalChannelSet> | null; enabled: boolean; content: Partial<Record<Language, InternalContent>> }
 
+/* ------------------------------------------------------------------ Escalation matrix (184) */
+
+export interface EscalationBackupView { key: string; slot: number; contact: EscalationContact | null }
+export interface EscalationGap { tierIndex: number; target: string; kind: 'unfilled' | 'no_phone' | 'no_account' | 'failed' | 'no_response' }
+export interface EscalationScenarioView {
+  id: string;
+  vital: boolean;
+  enabled: boolean;
+  trigger: 'unacknowledged' | 'unresolved';
+  tiers: EscalationChainTier[];
+  lastResort: EscalationLastResort;
+  /** True while nothing has been changed from the defaults. */
+  isDefault: boolean;
+  singlePointNote: string;
+  version: number;
+  history: EscalationScenarioConfig['history'];
+  problems: { blocking: string[]; warn: string[] };
+  /** Tiers that name a backup slot nobody fills yet. */
+  unfilled: EscalationGap[];
+  offsets: number[];
+  repeatOffsets: number[];
+  exhaustedAfter: number;
+  drillEveryDays: number;
+  lastDrill: { id: string; at: string; status: EscalationDrill['status']; gaps: number } | null;
+  drillDueAt: string;
+  drillOverdue: boolean;
+  runningDrillId: string | null;
+  /** The latest drill found gaps that nobody has put right or accepted yet. */
+  openGap: boolean;
+  openRuns: number;
+}
+export interface EscalationRunView extends EscalationRun { deliveries: EscalationDelivery[]; nextAt: string | null; nextTier: number | null }
+export interface EscalationMatrixView {
+  scenarios: EscalationScenarioView[];
+  primary: { name: string; phone: string; rail: EscalationContact['rail'] };
+  backups: EscalationBackupView[];
+  drills: EscalationDrill[];
+  runs: EscalationRunView[];
+  totals: { scenarios: number; vital: number; vitalWithBackup: number; overdueDrills: number; openGaps: number; runningNow: number };
+  at: string;
+}
+export interface EscalationScenarioInput { enabled: boolean; trigger: 'unacknowledged' | 'unresolved'; tiers: EscalationChainTier[]; lastResort: EscalationLastResort; singlePointNote: string }
+export interface EscalationBackupInput { name: string; phone: string; userId?: string; note?: string }
+/** What 019 shows beside an open alert: how far up its chain it has gone, and what is next. */
+export interface AlertEscalationView { alertId: string; scenarioId: string; status: EscalationRun['status'] | 'idle'; firedTiers: number; totalTiers: number; nextAt: string | null; firstBackupAfterMinutes: number | null; lastNames: string[]; exhausted: boolean }
+
 /* ------------------------------------------------------------------ Workflow trigger builder (182) */
 
 export interface CustomRuleView extends CustomRule {
@@ -8612,6 +8666,15 @@ export interface Repository {
   getVaultBundle(userId: string): Promise<VaultDocument[]>;
   /** 174: the customer's payment picture for one project (the first needing attention when none is named). */
   getCustomerPayments(dealId: string | null, userId: string): Promise<CustomerPayView>;
+  /* 184 — the escalation matrix: who hears, in what order and after what delay, with a backup path and drills that prove it works. */
+  getEscalationMatrix(userId: string): Promise<EscalationMatrixView>;
+  saveEscalationScenario(userId: string, scenarioId: string, input: EscalationScenarioInput): Promise<EscalationScenarioView>;
+  saveEscalationBackup(userId: string, slot: number, input: EscalationBackupInput | null): Promise<EscalationMatrixView>;
+  setEscalationRail(userId: string, target: string, channel: 'sms' | 'call', state: EscalationRailState): Promise<EscalationMatrixView>;
+  startEscalationDrill(userId: string, scenarioId: string): Promise<EscalationDrill>;
+  confirmEscalationDrillStep(userId: string, drillId: string, stepId: string): Promise<EscalationDrill>;
+  acceptEscalationGap(userId: string, drillId: string, note: string): Promise<EscalationDrill>;
+  getAlertEscalations(userId: string): Promise<AlertEscalationView[]>;
   /* 183 — notification templates and channels for staff-facing notices: urgency decides the channels, roles can be added, content is tested before a real alert needs it. */
   getInternalNotifications(userId: string): Promise<InternalNotificationsView>;
   saveInternalType(userId: string, typeId: string, input: InternalTypeInput, confirmReduction: boolean): Promise<InternalTypeView>;

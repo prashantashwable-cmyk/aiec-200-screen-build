@@ -1016,6 +1016,9 @@ import { MANY_AT as WF_MANY_AT, MAX_PER_RUN as WF_MAX_PER_RUN, conflictsOf as wf
 import type { RecordValues, RuleDraft, SubjectId as WfSubject } from '@/features/automation/customRules';
 import { CHANNELS as INT_CHANNELS, CORE_TYPES as INT_CORE, DEFAULT_URGENCY_CHANNELS as INT_DEFAULTS, NO_CHANNELS as INT_NONE, atLeast as intAtLeast, channelProblems as intChannelProblems, contentProblems as intContentProblems, fatigueOf as intFatigueOf, isBlocking as intIsBlocking, reducesReach as intReducesReach, severityFloorOf as intSeverityFloor, urgencyOfSeverity as intUrgencyOfSeverity } from '@/features/notifications/internal';
 import type { Urgency as IntUrgency } from '@/features/notifications/internal';
+import { BACKUP_KEYS as ESC_BACKUP_KEYS, DEMO_CONFIRM_MS as ESC_DEMO_CONFIRM_MS, DEMO_SILENCE_MS as ESC_DEMO_SILENCE_MS, DRILL_GAP_TITLE as ESC_DRILL_GAP_TITLE, ESC_CHANNELS, EXHAUSTED_TITLE as ESC_EXHAUSTED_TITLE, MAX_BACKUPS as ESC_MAX_BACKUPS, NOTE_MIN as ESC_NOTE_MIN, PRIMARY as ESC_PRIMARY, SCENARIOS as ESC_SCENARIOS, SCENARIO_NAMES as ESC_NAMES, chainProblems as escChainProblems, drillDueAt as escDrillDueAt, drillStepsOf as escDrillStepsOf, exhaustedAfterMinutes as escExhaustedAfter, offsetsOf as escOffsets, phoneProblem as escPhoneBad, railOutcome as escRailOutcome, repeatOffsets as escRepeatOffsets, scenarioDef as escDef, scenarioIdOf as escScenarioIdOf, withTierIds as escTierIds } from '@/features/escalation/matrix';
+import type { EscalationChainTier, EscalationChannel, EscalationContact, EscalationDelivery, EscalationDrill, EscalationDrillStep, EscalationLastResort, EscalationRun, EscalationScenarioConfig } from './types';
+import type { AlertEscalationView, EscalationGap, EscalationMatrixView, EscalationRunView, EscalationScenarioView } from './repository';
 import { VAULT_KINDS, validityState } from '@/features/documents/vault';
 import type { VaultKind } from '@/features/documents/vault';
 import { MONTHS_OFFERED as PH_MONTHS, PAGE as PH_PAGE, QUERY_DUE as PH_QUERY_DUE, answerProblem as phAnswerProblem, countsAsEarned as phCountsAsEarned, filterOf as phFilterOf, fyOf as phFyOf, inPeriod as phInPeriod, monthIdOf as phMonthId, periodOf as phPeriodOf, queryProblem as phQueryProblem, stageOf as phStageOf } from '@/features/payout/history';
@@ -2833,6 +2836,7 @@ function commitmentSources(now: number): CommitmentSources {
     feedback: feedbackSignals(),
     referrals: referralSignals(),
     automationPauses: automationPauseSignals(),
+    escalation: escSignals(now),
     tds: tdsObligations(Date.now()),
     exits: exitSignals(),
     handoverReviews: handoverSignals().reviews,
@@ -3312,6 +3316,215 @@ function automationPauseSignals(): { category: string; name: string; since: stri
     .flatMap((id) => { const p = autoPauseOf('category', id); return p ? [{ category: id, name: categoryName(id), since: p.at, byName: p.byName }] : []; });
 }
 
+/* ============================================ Escalation matrix (184) */
+
+/**
+ * The one configuration source for how an unanswered alert climbs: who is told, in what order and after what delay. An alert is matched to a scenario (`scenarioIdOf`), the chain is
+ * frozen when its escalation starts, and the heartbeat walks it. The gateway is a demo: a delivery says what would have gone where, per person and channel, and nothing leaves the app.
+ */
+const escScenarioConfigs: EscalationScenarioConfig[] = [];
+const escBackups: (EscalationContact | null)[] = Array.from({ length: ESC_MAX_BACKUPS }, () => null);
+const escPrimaryRail: EscalationContact['rail'] = { sms: 'working', call: 'working' };
+const escRuns: EscalationRun[] = [];
+const escDeliveries: EscalationDelivery[] = [];
+const escDrills: EscalationDrill[] = [];
+let escCounter = 0;
+/** Alerts already open when this started are history: only what is raised from now on is walked up a chain. */
+const escInForceAt = new Date().toISOString();
+let escBackupsChangedAt = escInForceAt;
+const escId = (p: string): string => `${p}-${(escCounter += 1)}`;
+
+function escEffective(id: string): { def: NonNullable<ReturnType<typeof escDef>>; enabled: boolean; trigger: EscalationScenarioConfig['trigger']; tiers: EscalationChainTier[]; lastResort: EscalationLastResort; note: string; config?: EscalationScenarioConfig } {
+  const def = escDef(id)!;
+  const config = escScenarioConfigs.find((c) => c.id === id);
+  return { def, enabled: config?.enabled ?? true, trigger: config?.trigger ?? def.trigger, tiers: (config?.tiers ?? escTierIds(def.tiers)).map((t) => ({ ...t, targets: [...t.targets], channels: [...t.channels] })), lastResort: { ...(config?.lastResort ?? def.lastResort) }, note: config?.singlePointNote ?? '', config };
+}
+const escAdminUser = (): User | undefined => users.find((u) => u.role === 'admin' && u.status === 'active');
+function escContactOf(key: string): { name: string; phone: string; userId?: string; rail: EscalationContact['rail'] } | null {
+  if (key === ESC_PRIMARY) { const a = escAdminUser(); return a ? { name: a.name, phone: a.phone, userId: a.id, rail: escPrimaryRail } : null; }
+  const i = ESC_BACKUP_KEYS.indexOf(key);
+  const c = i >= 0 ? escBackups[i] : null;
+  return c ? { name: c.name, phone: c.phone, userId: c.userId, rail: c.rail } : null;
+}
+type EscAttempt = { status: 'sent' | 'failed' | 'skipped'; reason?: EscalationDelivery['reason']; name: string; answer: 'confirms' | 'fails' | 'silent' | 'needs_person' };
+/** What the gateway would do for one person on one channel. */
+function escAttempt(key: string, channel: EscalationChannel): EscAttempt {
+  const c = escContactOf(key);
+  if (!c) return { status: 'skipped', reason: 'unfilled', name: '', answer: 'silent' };
+  if (channel === 'inApp') return c.userId ? { status: 'sent', name: c.name, answer: 'needs_person' } : { status: 'skipped', reason: 'no_account', name: c.name, answer: 'silent' };
+  if (escPhoneBad(c.phone)) return { status: 'skipped', reason: 'no_phone', name: c.name, answer: 'silent' };
+  const out = escRailOutcome(c.rail[channel]);
+  return out === 'fails' ? { status: 'failed', reason: 'gateway_refused', name: c.name, answer: 'fails' } : { status: 'sent', name: c.name, answer: out };
+}
+
+function escFire(run: EscalationRun, alert: Alert, tierIndex: number, repeat: number, now: number): boolean {
+  const tier = run.tiers[tierIndex];
+  const at = new Date(now).toISOString();
+  let reached = false;
+  const told: string[] = [];
+  for (const target of tier.targets) for (const channel of tier.channels) {
+    const a = escAttempt(target, channel);
+    escDeliveries.push({ id: escId('esd'), runId: run.id, alertId: alert.id, tierIndex, repeat, target, name: a.name || (target === ESC_PRIMARY ? 'Admin' : target), channel, at, status: a.status, reason: a.reason });
+    if (a.status === 'sent') { reached = true; told.push(`${a.name} (${channel})`); }
+  }
+  logAutomatedAction({
+    sourceKey: 'escalation.tier',
+    triggeringCondition: `${alert.code} was still ${run.trigger === 'unresolved' ? 'unresolved' : 'unacknowledged'} when step ${tierIndex + 1} of its escalation fell due${repeat > 0 ? ` (repeat ${repeat})` : ''}`,
+    actionTaken: reached ? `Told ${told.join(', ')}` : 'Nobody could be reached at this step; the next step comes straight away',
+    affectedRecordId: alert.id,
+    affectedRecordType: 'alert',
+    subjectLabel: alert.code,
+  });
+  return reached;
+}
+
+function escStop(run: EscalationRun, by: 'acknowledged' | 'resolved', now: number, alert: Alert): void {
+  patchInPlace(escRuns, run.id, { status: 'stopped', stoppedBy: by, stoppedAt: new Date(now).toISOString() });
+  logAutomatedAction({ sourceKey: 'escalation.stopped', triggeringCondition: `${alert.code} was ${by}`, actionTaken: `Stopped its escalation after step ${run.firedTiers}`, affectedRecordId: alert.id, affectedRecordType: 'alert', subjectLabel: alert.code });
+  if (run.exhaustedAlertId) {
+    const x = byId(alerts, run.exhaustedAlertId);
+    if (x && x.status !== 'resolved') patchInPlace(alerts, x.id, { status: 'resolved', resolvedBy: 'system', resolvedAt: new Date(now).toISOString(), resolutionNote: `${alert.code} was ${by}` });
+  }
+}
+
+/** Walks every open alert up its chain; stops it once answered; says so loudly when the chain runs out of people. Idempotent. */
+function syncEscalationMatrix(now: number): void {
+  for (const alert of [...alerts]) {
+    const sid = escScenarioIdOf(alert);
+    if (!sid) continue;
+    let run: EscalationRun | undefined = escRuns.find((r) => r.alertId === alert.id);
+    if (!run) {
+      const eff = escEffective(sid);
+      if (!eff.enabled || alert.raisedAt < escInForceAt || alert.status === 'resolved' || (eff.trigger === 'unacknowledged' && alert.status !== 'open')) continue;
+      run = { id: escId('esr'), alertId: alert.id, alertCode: alert.code, scenarioId: sid, trigger: eff.trigger, startedAt: alert.raisedAt, tiers: eff.tiers, lastResort: eff.lastResort, firedTiers: 0, repeatsFired: 0, status: 'running' };
+      escRuns.push(run);
+    }
+    if (run.status === 'stopped') continue;
+    const answered = alert.status === 'resolved' ? 'resolved' : run.trigger === 'unacknowledged' && alert.status !== 'open' ? 'acknowledged' : null;
+    if (answered) { escStop(run, answered, now, alert); continue; }
+    if (run.status === 'exhausted') continue;
+    const start = Date.parse(run.startedAt);
+    const offsets = escOffsets(run.tiers);
+    let lastReached = true;
+    // Steps fall due on their own clock, or straight away when the step before reached nobody.
+    for (;;) {
+      const i: number = run.firedTiers;
+      if (i >= run.tiers.length) break;
+      if (i > 0 && lastReached && now < start + offsets[i] * 60_000) break;
+      if (i === 0 && now < start) break;
+      lastReached = escFire(run, alert, i, 0, now);
+      run = patchInPlace(escRuns, run.id, { firedTiers: i + 1 });
+    }
+    if (run.firedTiers >= run.tiers.length) {
+      const reps = escRepeatOffsets(run.tiers, run.lastResort);
+      while (run.repeatsFired < reps.length && now >= start + reps[run.repeatsFired] * 60_000) {
+        escFire(run, alert, run.tiers.length - 1, run.repeatsFired + 1, now);
+        run = patchInPlace(escRuns, run.id, { repeatsFired: run.repeatsFired + 1 });
+      }
+      const doneAt = start + (escExhaustedAfter(run.tiers, run.lastResort) + Math.max(1, run.lastResort.repeatEveryMinutes)) * 60_000;
+      if (run.repeatsFired >= reps.length && now >= doneAt) {
+        const vital = escDef(run.scenarioId)?.vital;
+        const limit = raiseAlert({ titleKey: ESC_EXHAUSTED_TITLE, context: `${alert.code} · ${run.tiers.length} step${run.tiers.length === 1 ? '' : 's'}${run.lastResort.repeats > 0 ? ` and ${run.lastResort.repeats} repeat${run.lastResort.repeats === 1 ? '' : 's'}` : ''}`, severity: 'critical', category: vital ? 'safety' : 'automation', relatedId: `escx:${alert.id}`, sourceRoute: `/escalation-matrix?run=${run.id}` });
+        patchInPlace(escRuns, run.id, { status: 'exhausted', exhaustedAlertId: limit.id });
+        logAutomatedAction({ sourceKey: 'escalation.exhausted', triggeringCondition: `${alert.code} stayed unanswered through every step of its chain`, actionTaken: `Raised ${limit.code}: this is the limit of the current escalation design`, affectedRecordId: alert.id, affectedRecordType: 'alert', subjectLabel: alert.code });
+      }
+    }
+  }
+  for (const d of escDrills) if (d.status === 'running') escEvaluateDrill(d, now);
+}
+
+/* ---- drills */
+function escGapsOf(d: EscalationDrill): EscalationGap[] {
+  const out: EscalationGap[] = [];
+  for (const s of d.steps) {
+    if (s.status === 'confirmed' || s.status === 'pending') continue;
+    if (!out.some((g) => g.tierIndex === s.tierIndex && g.target === s.target && g.kind === s.status)) out.push({ tierIndex: s.tierIndex, target: s.target, kind: s.status });
+  }
+  return out;
+}
+function escEvaluateDrill(d: EscalationDrill, now: number): void {
+  if (d.status !== 'running') return;
+  let steps = d.steps;
+  steps = steps.map((s) => {
+    if (s.status !== 'pending') return s;
+    if (s.answer === 'confirms' && now >= Date.parse(s.answerAt)) return { ...s, status: 'confirmed' as const, confirmedAt: new Date(now).toISOString(), confirmedBy: 'gateway' as const };
+    if (now >= Date.parse(s.sentAt) + ESC_DEMO_SILENCE_MS) return { ...s, status: 'no_response' as const };
+    return s;
+  });
+  const done = steps.every((s) => s.status !== 'pending');
+  if (!done) { d.steps = steps; return; }
+  const finishedAt = new Date(now).toISOString();
+  const gaps = steps.some((s) => s.status !== 'confirmed');
+  d.steps = steps;
+  d.status = gaps ? 'gaps' : 'passed';
+  d.finishedAt = finishedAt;
+  // An earlier gap alert for this scenario is superseded by what this drill found.
+  const old = alerts.find((a) => a.titleKey === ESC_DRILL_GAP_TITLE && a.relatedId === `drillgap:${d.scenarioId}` && a.status !== 'resolved');
+  if (old) patchInPlace(alerts, old.id, { status: 'resolved', resolvedBy: 'system', resolvedAt: finishedAt, resolutionNote: gaps ? 'A newer drill found its own gaps' : 'A newer drill passed' });
+  if (gaps) {
+    const n = escGapsOf(d).length;
+    const alert = raiseAlert({ titleKey: ESC_DRILL_GAP_TITLE, context: `${d.code} · ${d.scenarioId} · ${n} gap${n === 1 ? '' : 's'}`, severity: 'high', category: 'automation', relatedId: `drillgap:${d.scenarioId}`, sourceRoute: `/escalation-matrix?scenario=${d.scenarioId}` });
+    d.gapAlertId = alert.id;
+  }
+  logAutomatedAction({ sourceKey: 'escalation.drill', triggeringCondition: `${d.code} finished`, actionTaken: gaps ? `Found ${escGapsOf(d).length} gap(s) in the ${d.scenarioId} chain` : `The ${d.scenarioId} chain reached everyone it names`, affectedRecordId: d.id, affectedRecordType: 'other', subjectLabel: d.code });
+}
+const escLatestDrill = (scenarioId: string): EscalationDrill | undefined => [...escDrills].filter((d) => d.scenarioId === scenarioId && d.status !== 'running').sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1))[0];
+const escChangedAt = (id: string): string => { const c = escScenarioConfigs.find((x) => x.id === id)?.updatedAt ?? escInForceAt; return c > escBackupsChangedAt ? c : escBackupsChangedAt; };
+const escOpenGap = (scenarioId: string): EscalationDrill | undefined => { const d = escLatestDrill(scenarioId); return d && d.status === 'gaps' && !d.accepted ? d : undefined; };
+function escDrillDue(id: string): string {
+  const def = escDef(id)!;
+  const last = escLatestDrill(id);
+  const regular = escDrillDueAt(last?.startedAt ?? null, escInForceAt, def.drillEveryDays);
+  // A chain (or a backup) changed since the last drill is untested again: a week to test it.
+  const changed = escChangedAt(id);
+  const stale = !last || changed > last.startedAt ? new Date(Date.parse(changed) + 7 * 86_400_000).toISOString() : regular;
+  return stale < regular ? stale : regular;
+}
+function escScenarioView(id: string, now: number): EscalationScenarioView {
+  const eff = escEffective(id);
+  const def = eff.def;
+  const problems = escChainProblems({ tiers: eff.tiers, lastResort: eff.lastResort, vital: def.vital, singlePointNote: eff.note });
+  const unfilled: EscalationGap[] = [];
+  eff.tiers.forEach((t, tierIndex) => t.targets.forEach((target) => { if (target !== ESC_PRIMARY && !escContactOf(target)) unfilled.push({ tierIndex, target, kind: 'unfilled' }); }));
+  const last = escLatestDrill(id);
+  const due = escDrillDue(id);
+  const open = escOpenGap(id);
+  return {
+    id, vital: def.vital, enabled: eff.enabled, trigger: eff.trigger, tiers: eff.tiers, lastResort: eff.lastResort, isDefault: !eff.config, singlePointNote: eff.note,
+    version: eff.config?.version ?? 0, history: eff.config?.history ?? [], problems, unfilled, offsets: escOffsets(eff.tiers), repeatOffsets: escRepeatOffsets(eff.tiers, eff.lastResort), exhaustedAfter: escExhaustedAfter(eff.tiers, eff.lastResort),
+    drillEveryDays: def.drillEveryDays, lastDrill: last ? { id: last.id, at: last.startedAt, status: last.status, gaps: escGapsOf(last).length } : null,
+    drillDueAt: due, drillOverdue: Date.parse(due) <= now, runningDrillId: escDrills.find((d) => d.scenarioId === id && d.status === 'running')?.id ?? null, openGap: !!open,
+    openRuns: escRuns.filter((r) => r.scenarioId === id && r.status !== 'stopped').length,
+  };
+}
+function escRunView(r: EscalationRun): EscalationRunView {
+  const start = Date.parse(r.startedAt);
+  const offs = escOffsets(r.tiers);
+  const reps = escRepeatOffsets(r.tiers, r.lastResort);
+  const nextAt = r.status !== 'running' ? null : r.firedTiers < r.tiers.length ? new Date(start + offs[r.firedTiers] * 60_000).toISOString() : r.repeatsFired < reps.length ? new Date(start + reps[r.repeatsFired] * 60_000).toISOString() : new Date(start + (escExhaustedAfter(r.tiers, r.lastResort) + Math.max(1, r.lastResort.repeatEveryMinutes)) * 60_000).toISOString();
+  return { ...r, deliveries: escDeliveries.filter((d) => d.runId === r.id), nextAt, nextTier: r.status === 'running' && r.firedTiers < r.tiers.length ? r.firedTiers : null };
+}
+function escMatrixView(now: number): EscalationMatrixView {
+  syncEscalationMatrix(now);
+  const a = escAdminUser();
+  const scenarios = ESC_SCENARIOS.map((s) => escScenarioView(s.id, now));
+  const vital = scenarios.filter((s) => s.vital);
+  return JSON.parse(JSON.stringify({
+    scenarios, primary: { name: a?.name ?? '', phone: a?.phone ?? '', rail: escPrimaryRail },
+    backups: escBackups.map((c, i) => ({ key: ESC_BACKUP_KEYS[i], slot: i + 1, contact: c })),
+    drills: [...escDrills].sort((x, y) => (x.startedAt < y.startedAt ? 1 : -1)).slice(0, 12),
+    runs: [...escRuns].sort((x, y) => (x.startedAt < y.startedAt ? 1 : -1)).slice(0, 12).map(escRunView),
+    totals: { scenarios: scenarios.length, vital: vital.length, vitalWithBackup: vital.filter((s) => s.tiers.some((t) => t.targets.some((k) => k !== ESC_PRIMARY && !!escContactOf(k)))).length, overdueDrills: scenarios.filter((s) => s.drillOverdue).length, openGaps: scenarios.filter((s) => s.openGap).length, runningNow: escRuns.filter((r) => r.status === 'running').length },
+    at: new Date(now).toISOString(),
+  })) as EscalationMatrixView;
+}
+function escSignals(now: number): { drills: { id: string; name: string; dueAt: string }[]; gaps: { id: string; scenarioId: string; name: string; since: string }[] } {
+  return {
+    drills: ESC_SCENARIOS.filter((s) => escEffective(s.id).enabled).map((s) => ({ id: s.id, name: ESC_NAMES[s.id], dueAt: escDrillDue(s.id) })),
+    gaps: ESC_SCENARIOS.flatMap((s) => { const d = escOpenGap(s.id); return d ? [{ id: d.id, scenarioId: s.id, name: ESC_NAMES[s.id], since: d.finishedAt ?? d.startedAt }] : []; }),
+  };
+}
+
 const heartbeatCommitments = { notifications: 0, alerts: 0 };
 const HEARTBEAT: { id: string; run: (now: number) => void }[] = [
   { id: 'followUpTasks', run: () => reconcileFollowUpTasks() },
@@ -3367,6 +3580,7 @@ const HEARTBEAT: { id: string; run: (now: number) => void }[] = [
   // 105: a delivery running late is noticed, and one that caught up is cleared, without anyone looking.
   { id: 'delayCases', run: (now) => syncDelayCases(now) },
   { id: 'customRules', run: (now) => syncCustomRules(now) },
+  { id: 'escalationMatrix', run: (now) => syncEscalationMatrix(now) },
   {
     id: 'stageInvoices',
     run: () => {
@@ -24654,6 +24868,120 @@ export const memoryRepository: Repository = {
 
   /* --------------------------------- Notification templates & channels (183) */
   getInternalNotifications: (userId) => simulateRead(() => { intAdmin(userId); return intOverview(Date.now()); }),
+  /* 184 — escalation matrix */
+  getEscalationMatrix: (userId) => simulateRead(() => { intAdmin(userId); return escMatrixView(Date.now()); }),
+  saveEscalationScenario: (userId, scenarioId, input) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      const def = escDef(scenarioId);
+      if (!def) throw new RepositoryError('not_found');
+      if (def.vital && !input.enabled) throw new RepositoryError('vital_cannot_be_off');
+      const tiers: EscalationChainTier[] = input.tiers.map((t, i) => ({ id: `t${i + 1}`, targets: [...new Set(t.targets)], channels: ESC_CHANNELS.filter((c) => t.channels.includes(c)), afterMinutes: Math.round(Number(t.afterMinutes)) }));
+      const note = input.singlePointNote.trim();
+      const probs = escChainProblems({ tiers, lastResort: input.lastResort, vital: def.vital, singlePointNote: note });
+      if (probs.blocking.length > 0) throw new RepositoryError(`chain_${probs.blocking[0]}`);
+      const before = escEffective(scenarioId);
+      const at = new Date().toISOString();
+      const parts = [JSON.stringify(before.tiers.map((t) => [t.targets, t.channels])) !== JSON.stringify(tiers.map((t) => [t.targets, t.channels])) ? 'who and how' : '', JSON.stringify(before.tiers.map((t) => t.afterMinutes)) !== JSON.stringify(tiers.map((t) => t.afterMinutes)) ? 'timing' : '', JSON.stringify(before.lastResort) !== JSON.stringify(input.lastResort) ? 'last resort' : '', before.enabled !== input.enabled ? (input.enabled ? 'switched on' : 'switched off') : '', before.trigger !== input.trigger ? 'what stops it' : ''].filter(Boolean);
+      const existing = escScenarioConfigs.find((c) => c.id === scenarioId);
+      const next: EscalationScenarioConfig = { id: scenarioId, enabled: input.enabled, trigger: input.trigger, tiers, lastResort: { repeatEveryMinutes: Math.round(input.lastResort.repeatEveryMinutes), repeats: Math.round(input.lastResort.repeats) }, singlePointNote: note || undefined, version: (existing?.version ?? 0) + 1, updatedAt: at, updatedByName: admin.name, history: [...(existing?.history ?? []), { at, byName: admin.name, version: (existing?.version ?? 0) + 1, summary: parts.join(', ') || 'saved' }] };
+      if (existing) escScenarioConfigs[escScenarioConfigs.indexOf(existing)] = next; else escScenarioConfigs.push(next);
+      return JSON.parse(JSON.stringify(escScenarioView(scenarioId, Date.now()))) as EscalationScenarioView;
+    }),
+  saveEscalationBackup: (userId, slot, input) =>
+    simulateWrite(() => {
+      intAdmin(userId);
+      if (!Number.isInteger(slot) || slot < 1 || slot > ESC_MAX_BACKUPS) throw new RepositoryError('invalid_slot');
+      if (input === null) escBackups[slot - 1] = null;
+      else {
+        const name = input.name.trim();
+        const phone = input.phone.replace(/[\s-]/g, '');
+        if (name.length < 2) throw new RepositoryError('name_required');
+        if (escPhoneBad(phone)) throw new RepositoryError('invalid_phone');
+        const last10 = phone.slice(-10);
+        const primary = escAdminUser();
+        if (primary && primary.phone.replace(/\D/g, '').slice(-10) === last10) throw new RepositoryError('same_as_admin');
+        if (escBackups.some((c, i) => i !== slot - 1 && c && c.phone.replace(/\D/g, '').slice(-10) === last10)) throw new RepositoryError('duplicate_contact');
+        if (input.userId && !users.some((u) => u.id === input.userId && u.status === 'active')) throw new RepositoryError('unknown_user');
+        escBackups[slot - 1] = { name, phone, userId: input.userId || undefined, note: input.note?.trim() || undefined, rail: { sms: 'working', call: 'working' } };
+      }
+      escBackupsChangedAt = new Date().toISOString();
+      // The follow-up engine's own last step reads the Admin's backup: keep it in step with the first named person who has an account.
+      const admin = escAdminUser();
+      const first = escBackups.find((c) => c?.userId);
+      if (admin && first?.userId) patchInPlace(users, admin.id, { backupUserId: first.userId });
+      return escMatrixView(Date.now());
+    }),
+  setEscalationRail: (userId, target, channel, state) =>
+    simulateWrite(() => {
+      intAdmin(userId);
+      if (target === ESC_PRIMARY) escPrimaryRail[channel] = state;
+      else { const i = ESC_BACKUP_KEYS.indexOf(target); const c = i >= 0 ? escBackups[i] : null; if (!c) throw new RepositoryError('not_found'); c.rail[channel] = state; }
+      return escMatrixView(Date.now());
+    }),
+  startEscalationDrill: (userId, scenarioId) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      if (!escDef(scenarioId)) throw new RepositoryError('not_found');
+      if (escDrills.some((d) => d.scenarioId === scenarioId && d.status === 'running')) throw new RepositoryError('drill_running');
+      const eff = escEffective(scenarioId);
+      const now = Date.now();
+      const at = new Date(now).toISOString();
+      const id = escId('esdr');
+      const steps: EscalationDrillStep[] = escDrillStepsOf(eff.tiers).map((st, i) => {
+        const a = escAttempt(st.target, st.channel);
+        const answer = a.answer === 'needs_person' ? 'silent' : a.answer;
+        const status: EscalationDrillStep['status'] = a.status === 'skipped' ? (a.reason as 'unfilled' | 'no_phone' | 'no_account') : a.status === 'failed' ? 'failed' : 'pending';
+        return { id: `${id}-s${i + 1}`, tierIndex: st.tierIndex, target: st.target, name: a.name, channel: st.channel, status, sentAt: at, answerAt: new Date(now + (answer === 'confirms' ? ESC_DEMO_CONFIRM_MS : 0)).toISOString(), answer };
+      });
+      const drill: EscalationDrill = { id, code: `AIEC-DR-${1000 + escDrills.length + 1}`, scenarioId, startedAt: at, byName: admin.name, tiers: eff.tiers, steps, status: 'running' };
+      escDrills.push(drill);
+      escEvaluateDrill(drill, now);
+      return JSON.parse(JSON.stringify(drill)) as EscalationDrill;
+    }),
+  confirmEscalationDrillStep: (userId, drillId, stepId) =>
+    simulateWrite(() => {
+      intAdmin(userId);
+      const drill = byId(escDrills, drillId);
+      if (!drill) throw new RepositoryError('not_found');
+      const step = drill.steps.find((s) => s.id === stepId);
+      if (!step) throw new RepositoryError('not_found');
+      if (drill.status !== 'running' || step.status !== 'pending') throw new RepositoryError('invalid_state');
+      step.status = 'confirmed';
+      step.confirmedAt = new Date().toISOString();
+      step.confirmedBy = 'admin';
+      escEvaluateDrill(drill, Date.now());
+      return JSON.parse(JSON.stringify(drill)) as EscalationDrill;
+    }),
+  acceptEscalationGap: (userId, drillId, note) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      const drill = byId(escDrills, drillId);
+      if (!drill) throw new RepositoryError('not_found');
+      if (drill.status !== 'gaps' || drill.accepted) throw new RepositoryError('invalid_state');
+      if (note.trim().length < ESC_NOTE_MIN) throw new RepositoryError('reason_required');
+      const at = new Date().toISOString();
+      drill.accepted = { at, byName: admin.name, note: note.trim() };
+      const x = drill.gapAlertId ? byId(alerts, drill.gapAlertId) : undefined;
+      if (x && x.status !== 'resolved') patchInPlace(alerts, x.id, { status: 'resolved', resolvedBy: admin.id, resolvedAt: at, resolutionNote: `Gap accepted: ${note.trim()}` });
+      return JSON.parse(JSON.stringify(drill)) as EscalationDrill;
+    }),
+  getAlertEscalations: (userId) =>
+    simulateRead(() => {
+      intAdmin(userId);
+      syncEscalationMatrix(Date.now());
+      return alerts.filter((a) => a.status !== 'resolved').flatMap((a): AlertEscalationView[] => {
+        const sid = escScenarioIdOf(a);
+        if (!sid) return [];
+        const eff = escEffective(sid);
+        const run = escRuns.find((r) => r.alertId === a.id);
+        const tiers = run?.tiers ?? eff.tiers;
+        const firstBackup = tiers.findIndex((t) => t.targets.some((k) => k !== ESC_PRIMARY));
+        const view = run ? escRunView(run) : null;
+        const last = run ? escDeliveries.filter((d) => d.runId === run.id && d.status === 'sent').slice(-3).map((d) => d.name) : [];
+        return [{ alertId: a.id, scenarioId: sid, status: run?.status ?? 'idle', firedTiers: run?.firedTiers ?? 0, totalTiers: tiers.length, nextAt: view?.nextAt ?? null, firstBackupAfterMinutes: firstBackup >= 0 ? escOffsets(tiers)[firstBackup] : null, lastNames: [...new Set(last)], exhausted: run?.status === 'exhausted' }];
+      });
+    }),
   saveInternalType: (userId, typeId, input, confirmReduction) =>
     simulateWrite(() => {
       const admin = intAdmin(userId);

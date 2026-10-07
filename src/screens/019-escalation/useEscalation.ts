@@ -3,6 +3,7 @@ import { useData } from '@/data/DataProvider';
 import { useSession } from '@/session/SessionProvider';
 import { haversineKm } from '@/design-system';
 import type { Alert } from '@/data/types';
+import type { AlertEscalationView } from '@/data/repository';
 import { ACK_DEADLINE_MS, CLUSTER_RADIUS_KM, CLUSTER_WINDOW_MS } from './escalation.types';
 import type { EscalationEntry, EscalationStage, EscalationStatus } from './escalation.types';
 
@@ -40,16 +41,19 @@ export function useEscalation(): EscalationState {
   const [status, setStatus] = useState<EscalationStatus>('loading');
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [chains, setChains] = useState<AlertEscalationView[]>([]);
 
   const reload = useCallback(async () => {
     try {
       const list = await repository.listAlerts();
       setAlerts(list);
+      // How far each alert has climbed its chain (184) decides when it counts as overdue.
+      setChains(user ? await repository.getAlertEscalations(user.id).catch(() => []) : []);
       setStatus('ready');
     } catch {
       setStatus((current) => (current === 'ready' ? 'ready' : 'error'));
     }
-  }, [repository]);
+  }, [repository, user]);
 
   useEffect(() => {
     void reload();
@@ -77,16 +81,17 @@ export function useEscalation(): EscalationState {
         })
         .map((other) => other.code);
 
+      const chain = chains.find((c) => c.alertId === alert.id);
+      const waitMs = chain?.firstBackupAfterMinutes != null ? chain.firstBackupAfterMinutes * 60_000 : ACK_DEADLINE_MS;
       return {
         alert,
         stage: stageOf(alert),
         clusterWith,
-        overdueAcknowledgement:
-          alert.status === 'open' &&
-          Date.now() - new Date(alert.raisedAt).getTime() > ACK_DEADLINE_MS,
+        chain,
+        overdueAcknowledgement: alert.status === 'open' && Date.now() - new Date(alert.raisedAt).getTime() > waitMs,
       };
     });
-  }, [alerts]);
+  }, [alerts, chains]);
 
   const acknowledge = useCallback(
     async (alert: Alert) => {
