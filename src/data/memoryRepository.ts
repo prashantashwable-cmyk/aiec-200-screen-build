@@ -299,6 +299,9 @@ import type {
   MaintenanceBooking,
   MaintenanceDeskView,
   AutomationActivityView,
+  InternalNotificationsView,
+  InternalTypeInput,
+  InternalTypeView,
   CustomRuleActivateOptions,
   CustomRuleSimulation,
   CustomRuleView,
@@ -613,10 +616,15 @@ import type {
   TicketEvent,
   TicketRoute,
   Alert,
+  AlertSeverity,
   AutomatedActionLogEntry,
   AutomationPause,
   CustomRule,
   CustomRuleEvent,
+  InternalChannelSet,
+  InternalDelivery,
+  InternalTypeConfig,
+  InternalUrgencyChannels,
   AutoPoRules,
   AutoPoSimulationResult,
   CategoryMatchResult,
@@ -1006,6 +1014,8 @@ import { healthOf as autoHealthOf, rollUp as autoRollUp } from '@/features/autom
 import { foldActivity } from '@/features/automation/activity';
 import { MANY_AT as WF_MANY_AT, MAX_PER_RUN as WF_MAX_PER_RUN, conflictsOf as wfConflictsOf, draftHash as wfDraftHash, draftProblems as wfDraftProblems, matches as wfMatches, failedConditions as wfFailedConditions } from '@/features/automation/customRules';
 import type { RecordValues, RuleDraft, SubjectId as WfSubject } from '@/features/automation/customRules';
+import { CHANNELS as INT_CHANNELS, CORE_TYPES as INT_CORE, DEFAULT_URGENCY_CHANNELS as INT_DEFAULTS, NO_CHANNELS as INT_NONE, atLeast as intAtLeast, channelProblems as intChannelProblems, contentProblems as intContentProblems, fatigueOf as intFatigueOf, isBlocking as intIsBlocking, reducesReach as intReducesReach, severityFloorOf as intSeverityFloor, urgencyOfSeverity as intUrgencyOfSeverity } from '@/features/notifications/internal';
+import type { Urgency as IntUrgency } from '@/features/notifications/internal';
 import { VAULT_KINDS, validityState } from '@/features/documents/vault';
 import type { VaultKind } from '@/features/documents/vault';
 import { MONTHS_OFFERED as PH_MONTHS, PAGE as PH_PAGE, QUERY_DUE as PH_QUERY_DUE, answerProblem as phAnswerProblem, countsAsEarned as phCountsAsEarned, filterOf as phFilterOf, fyOf as phFyOf, inPeriod as phInPeriod, monthIdOf as phMonthId, periodOf as phPeriodOf, queryProblem as phQueryProblem, stageOf as phStageOf } from '@/features/payout/history';
@@ -1275,16 +1285,101 @@ let automatedActionLogCounter = 0;
 /** The heartbeat step that is running, so what it logs says which one did it (181). */
 let currentUnitId: string | null = null;
 
+/* ------------------------------------------------------------------ Internal notifications (183) */
+
+/**
+ * Every alert is a staff-facing notification of some type (named by its title key). `raiseAlert` is the one place they are raised, so it is also where their settings take
+ * effect: a type tagged critical or high is never raised as less, and a notice goes to each configured role on each configured channel. The rail is a demo: a delivery record
+ * says what would have gone where, and nothing leaves the app.
+ */
+const internalTypeConfigs: InternalTypeConfig[] = [];
+const internalUrgencyChannels: InternalUrgencyChannels = { channels: { critical: { ...INT_DEFAULTS.critical }, high: { ...INT_DEFAULTS.high }, routine: { ...INT_DEFAULTS.routine } }, version: 1, updatedAt: new Date(0).toISOString(), updatedByName: 'System', history: [] };
+const internalDeliveries: InternalDelivery[] = [];
+let internalDeliveryCounter = 0;
+let internalSeeded = false;
+
+const intConfigOf = (typeId: string): InternalTypeConfig | undefined => internalTypeConfigs.find((c) => c.typeId === typeId);
+/** The roles that can be told: every role the business has, apart from the people it serves (customers, suppliers). A role added later appears here by itself. */
+const intStaffRoles = (): string[] => ['admin', ...new Set(users.map((u) => u.role as string).filter((r) => r !== 'admin' && r !== 'customer' && r !== 'supplier'))];
+function intEffective(typeId: string, severity: AlertSeverity): { urgency: IntUrgency; source: 'configured' | 'severity'; enabled: boolean; roles: Record<string, InternalChannelSet> } {
+  const cfg = intConfigOf(typeId);
+  const urgency = cfg?.urgency ?? intUrgencyOfSeverity(severity);
+  const roles: Record<string, InternalChannelSet> = {};
+  for (const r of intStaffRoles()) roles[r] = cfg?.roles?.[r] ?? (r === 'admin' ? { ...internalUrgencyChannels.channels[urgency] } : { ...INT_NONE });
+  return { urgency, source: cfg?.urgency ? 'configured' : 'severity', enabled: cfg?.enabled ?? true, roles };
+}
+function intDeliver(alert: Alert, at: string): void {
+  const eff = intEffective(alert.titleKey, alert.severity);
+  if (!eff.enabled) return;
+  for (const [role, set] of Object.entries(eff.roles)) {
+    for (const person of users.filter((u) => u.role === role && u.status === 'active')) {
+      for (const channel of INT_CHANNELS.filter((c) => set[c])) {
+        internalDeliveryCounter += 1;
+        internalDeliveries.push({ id: `idl-${internalDeliveryCounter}`, typeId: alert.titleKey, alertId: alert.id, channel, role, recipientName: person.name, urgency: eff.urgency, severity: alert.severity, at, status: 'sent', test: false, context: alert.context, isDemo: true });
+      }
+    }
+  }
+}
+
 /** The one write path for "a human needs to look at this" — dedupes against
  *  any unresolved alert for the same (relatedId, titleKey). */
 function raiseAlert(input: AttentionAlertInput): Alert {
   const existing = findOpenAlertFor(alerts, input);
   if (existing) return existing;
   alertCounter += 1;
-  const created = buildAlert(input, `al-new-${alertCounter}`, `ALT-${9000 + alertCounter}`, new Date().toISOString());
+  // A type an Admin tagged critical or high is never raised as less (183).
+  const tagged = intConfigOf(input.titleKey)?.urgency;
+  const at = new Date().toISOString();
+  const created = buildAlert(tagged ? { ...input, severity: intAtLeast(input.severity, intSeverityFloor(tagged)) } : input, `al-new-${alertCounter}`, `ALT-${9000 + alertCounter}`, at);
   alerts.push(created);
+  intDeliver(created, at);
   return created;
 }
+
+function intSeedDeliveries(): void {
+  if (internalSeeded) return;
+  internalSeeded = true;
+  // What the existing alerts would have sent, so the log and the frequencies reflect the alerts already on the board.
+  for (const a of alerts) intDeliver(a, a.raisedAt);
+  internalDeliveries.sort((x, y) => (x.at < y.at ? -1 : 1));
+}
+function intFrequency(typeId: string, now: number): { last7: number; last30: number; lastAt: string | null } {
+  const mine = alerts.filter((a) => a.titleKey === typeId);
+  return { last7: mine.filter((a) => now - Date.parse(a.raisedAt) <= 7 * 86_400_000).length, last30: mine.filter((a) => now - Date.parse(a.raisedAt) <= 30 * 86_400_000).length, lastAt: mine.map((a) => a.raisedAt).sort().pop() ?? null };
+}
+function intTypeView(typeId: string, now: number): InternalTypeView {
+  const mine = alerts.filter((a) => a.titleKey === typeId);
+  const core = INT_CORE.find((c) => c.id === typeId);
+  const sev = (mine.sort((a, b) => (a.raisedAt < b.raisedAt ? 1 : -1))[0]?.severity ?? 'medium') as AlertSeverity;
+  const cfg = intConfigOf(typeId);
+  const eff = intEffective(typeId, sev);
+  const defaultUrgency = core?.urgency ?? intUrgencyOfSeverity(sev);
+  const urgency = cfg?.urgency ?? (mine.length === 0 && core ? core.urgency : eff.urgency);
+  const freq = intFrequency(typeId, now);
+  const cats = mine.map((a) => a.category);
+  return {
+    typeId, category: cats.sort((a, b) => cats.filter((x) => x === b).length - cats.filter((x) => x === a).length)[0] ?? 'automation', urgency, urgencySource: cfg?.urgency ? 'configured' : 'severity', defaultUrgency,
+    enabled: eff.enabled, roles: urgency === eff.urgency ? eff.roles : Object.fromEntries(intStaffRoles().map((r) => [r, cfg?.roles?.[r] ?? (r === 'admin' ? { ...internalUrgencyChannels.channels[urgency] } : { ...INT_NONE })])),
+    content: cfg?.content ?? {}, frequency: freq, fatigue: intFatigueOf(urgency, freq.last7), configured: !!cfg, version: cfg?.version ?? 0, history: cfg?.history ?? [],
+  };
+}
+function intOverview(now: number): InternalNotificationsView {
+  intSeedDeliveries();
+  const ids = [...new Set([...INT_CORE.map((c) => c.id), ...alerts.map((a) => a.titleKey), ...internalTypeConfigs.map((c) => c.typeId)])];
+  const types = ids.map((id) => intTypeView(id, now)).sort((a, b) => (a.typeId < b.typeId ? -1 : 1));
+  return JSON.parse(JSON.stringify({
+    types, urgencyChannels: internalUrgencyChannels.channels, urgencyVersion: internalUrgencyChannels.version, roles: intStaffRoles(),
+    deliveries: [...internalDeliveries].reverse().slice(0, 30),
+    totals: { types: types.length, critical: types.filter((t) => t.urgency === 'critical').length, deliveries24h: internalDeliveries.filter((d) => now - Date.parse(d.at) <= 86_400_000).length, noisy: types.filter((t) => t.fatigue).length },
+    at: new Date(now).toISOString(),
+  })) as InternalNotificationsView;
+}
+function intAdmin(userId: string): User {
+  const u = byId(users, userId);
+  if (u?.role !== 'admin') throw new RepositoryError('forbidden');
+  return u;
+}
+const intSetOk = (c: unknown): c is InternalChannelSet => !!c && INT_CHANNELS.every((ch) => typeof (c as Record<string, unknown>)[ch] === 'boolean');
 
 /** The one write path for "the automation did something on its own". */
 function logAutomatedAction(input: AutomatedActionInput): AutomatedActionLogEntry {
@@ -24555,6 +24650,53 @@ export const memoryRepository: Repository = {
     simulateRead((): VaultDocument[] => {
       const docs = vdDocsOf(vdCustomer(userId), Date.now());
       return JSON.parse(JSON.stringify(docs.map((d) => ({ row: d.row, sections: d.sections, versions: docs.filter((x) => x.row.chainId === d.row.chainId).map((x) => x.row), issuedBy: d.issuedBy })))) as VaultDocument[];
+    }),
+
+  /* --------------------------------- Notification templates & channels (183) */
+  getInternalNotifications: (userId) => simulateRead(() => { intAdmin(userId); return intOverview(Date.now()); }),
+  saveInternalType: (userId, typeId, input, confirmReduction) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      const now = Date.now();
+      const before = intTypeView(typeId, now);
+      if (input.roles) for (const set of Object.values(input.roles)) if (!intSetOk(set)) throw new RepositoryError('invalid_channels');
+      for (const c of Object.values(input.content)) if (c && intContentProblems(c).length > 0) throw new RepositoryError('content_too_long');
+      const after = { urgency: input.urgency ?? before.defaultUrgency, roles: input.roles };
+      const afterAdmin = (input.roles?.admin) ?? internalUrgencyChannels.channels[after.urgency];
+      // Taking a critical notice off a channel, switching it off, or lowering its urgency is a high-consequence change: it needs a plain yes.
+      const reduces = before.urgency === 'critical' && (!input.enabled || input.urgency === 'routine' || input.urgency === 'high' || intReducesReach(before.roles.admin ?? INT_NONE, afterAdmin));
+      if (reduces && !confirmReduction) throw new RepositoryError('reduction_unconfirmed');
+      const at = new Date(now).toISOString();
+      const existing = intConfigOf(typeId);
+      const summary = [input.urgency !== (existing?.urgency ?? null) ? `urgency ${input.urgency ?? 'from severity'}` : '', JSON.stringify(input.roles) !== JSON.stringify(existing?.roles ?? null) ? 'channels' : '', input.enabled !== (existing?.enabled ?? true) ? (input.enabled ? 'switched on' : 'switched off') : '', JSON.stringify(input.content) !== JSON.stringify(existing?.content ?? {}) ? 'wording' : ''].filter(Boolean).join(', ') || 'saved';
+      const next: InternalTypeConfig = { typeId, urgency: input.urgency, roles: input.roles ? Object.fromEntries(Object.entries(input.roles).map(([r, c]) => [r, { ...c }])) : null, enabled: input.enabled, content: JSON.parse(JSON.stringify(input.content)), version: (existing?.version ?? 0) + 1, updatedAt: at, updatedByName: admin.name, history: [...(existing?.history ?? []), { at, byName: admin.name, version: (existing?.version ?? 0) + 1, summary }] };
+      if (existing) internalTypeConfigs[internalTypeConfigs.indexOf(existing)] = next; else internalTypeConfigs.push(next);
+      return JSON.parse(JSON.stringify(intTypeView(typeId, now))) as InternalTypeView;
+    }),
+  saveInternalUrgencyChannels: (userId, channels, confirmReduction) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      for (const u of ['critical', 'high', 'routine'] as const) if (!intSetOk(channels[u]) || !channels[u].inApp) throw new RepositoryError('invalid_channels');
+      const reduces = (['critical', 'high'] as const).some((u) => intReducesReach(internalUrgencyChannels.channels[u], channels[u]));
+      if (reduces && !confirmReduction) throw new RepositoryError('reduction_unconfirmed');
+      const at = new Date().toISOString();
+      internalUrgencyChannels.channels = { critical: { ...channels.critical }, high: { ...channels.high }, routine: { ...channels.routine } };
+      internalUrgencyChannels.version += 1;
+      internalUrgencyChannels.updatedAt = at;
+      internalUrgencyChannels.updatedByName = admin.name;
+      internalUrgencyChannels.history.push({ at, byName: admin.name, version: internalUrgencyChannels.version, summary: 'channels per urgency' });
+      return intOverview(Date.now());
+    }),
+  testSendInternalNotification: (userId, typeId, channel, role, rendered) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      const problems = intChannelProblems(channel, rendered);
+      const blocking = problems.find(intIsBlocking);
+      internalDeliveryCounter += 1;
+      const eff = intEffective(typeId, 'high');
+      const d: InternalDelivery = { id: `idl-${internalDeliveryCounter}`, typeId, channel, role, recipientName: role === 'admin' ? admin.name : role, urgency: eff.urgency, severity: 'high', at: new Date().toISOString(), status: blocking ? 'rejected' : 'sent', ...(blocking ? { problem: blocking } : problems[0] ? { problem: problems[0] } : {}), test: true, context: rendered.body || rendered.subject, isDemo: true };
+      internalDeliveries.push(d);
+      return JSON.parse(JSON.stringify(d)) as InternalDelivery;
     }),
 
   /* --------------------------------- Workflow trigger builder (182) */

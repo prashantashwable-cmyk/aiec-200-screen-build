@@ -5639,3 +5639,54 @@ export interface CustomRule {
   events: CustomRuleEvent[];
   isDemo: boolean;
 }
+
+
+/* ------------------------------------------------------------------ Internal notifications (183) */
+
+export type InternalUrgency = 'critical' | 'high' | 'routine';
+export type InternalChannel = 'inApp' | 'sms' | 'email';
+export type InternalChannelSet = Record<InternalChannel, boolean>;
+/** What an Admin wrote to replace the standard wording of one notification type in one language. Merge fields look like {{context}}. */
+export interface InternalContent { subject: string; body: string }
+
+/** The settings of one kind of staff-facing notification (an alert type, named by its title key). Only what was changed is stored: anything unset follows the urgency it inherits. */
+export interface InternalTypeConfig {
+  typeId: string;
+  /** Null: the urgency follows the severity the alert is raised with. */
+  urgency: InternalUrgency | null;
+  /** Channels per recipient role. Null: the admin role follows its urgency's defaults and nobody else is told. A role added later is just another key. */
+  roles: Record<string, InternalChannelSet> | null;
+  enabled: boolean;
+  content: Partial<Record<Language, InternalContent>>;
+  version: number;
+  updatedAt: string;
+  updatedByName: string;
+  history: { at: string; byName: string; version: number; summary: string }[];
+}
+
+/** Which channels each urgency level uses when a type does not say otherwise. */
+export interface InternalUrgencyChannels {
+  channels: Record<InternalUrgency, InternalChannelSet>;
+  version: number;
+  updatedAt: string;
+  updatedByName: string;
+  history: { at: string; byName: string; version: number; summary: string }[];
+}
+
+/** One notice sent (or refused) to a person on a channel. The delivery rail is a demo: nothing leaves the app, the record says what would have gone where. */
+export interface InternalDelivery {
+  id: string;
+  typeId: string;
+  alertId?: string;
+  channel: InternalChannel;
+  role: string;
+  recipientName: string;
+  urgency: InternalUrgency;
+  severity: AlertSeverity;
+  at: string;
+  status: 'sent' | 'rejected';
+  problem?: string;
+  test: boolean;
+  context: string;
+  isDemo: boolean;
+}

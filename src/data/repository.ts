@@ -129,6 +129,12 @@ import type {
   AutomationPause,
   AutomationRule,
   CustomRule,
+  InternalChannel,
+  InternalChannelSet,
+  InternalContent,
+  InternalDelivery,
+  InternalTypeConfig,
+  InternalUrgency,
   Commitment,
   BotConfig,
   CallLogEntry,
@@ -7111,6 +7117,37 @@ export interface VisitTracking {
   at: string;
 }
 
+/* ------------------------------------------------------------------ Notification templates & channels (183) */
+
+export interface InternalTypeView {
+  typeId: string;
+  /** The alert category this type is usually raised under (for grouping). */
+  category: string;
+  urgency: InternalUrgency;
+  urgencySource: 'configured' | 'severity';
+  /** What its urgency would be with nothing configured. */
+  defaultUrgency: InternalUrgency;
+  enabled: boolean;
+  /** Effective channels per role (a role nobody configured has none). */
+  roles: Record<string, InternalChannelSet>;
+  content: Partial<Record<Language, InternalContent>>;
+  frequency: { last7: number; last30: number; lastAt: string | null };
+  fatigue: 'noisy' | null;
+  configured: boolean;
+  version: number;
+  history: InternalTypeConfig['history'];
+}
+export interface InternalNotificationsView {
+  types: InternalTypeView[];
+  urgencyChannels: Record<InternalUrgency, InternalChannelSet>;
+  urgencyVersion: number;
+  roles: string[];
+  deliveries: InternalDelivery[];
+  totals: { types: number; critical: number; deliveries24h: number; noisy: number };
+  at: string;
+}
+export interface InternalTypeInput { urgency: InternalUrgency | null; roles: Record<string, InternalChannelSet> | null; enabled: boolean; content: Partial<Record<Language, InternalContent>> }
+
 /* ------------------------------------------------------------------ Workflow trigger builder (182) */
 
 export interface CustomRuleView extends CustomRule {
@@ -8575,6 +8612,11 @@ export interface Repository {
   getVaultBundle(userId: string): Promise<VaultDocument[]>;
   /** 174: the customer's payment picture for one project (the first needing attention when none is named). */
   getCustomerPayments(dealId: string | null, userId: string): Promise<CustomerPayView>;
+  /* 183 — notification templates and channels for staff-facing notices: urgency decides the channels, roles can be added, content is tested before a real alert needs it. */
+  getInternalNotifications(userId: string): Promise<InternalNotificationsView>;
+  saveInternalType(userId: string, typeId: string, input: InternalTypeInput, confirmReduction: boolean): Promise<InternalTypeView>;
+  saveInternalUrgencyChannels(userId: string, channels: Record<InternalUrgency, InternalChannelSet>, confirmReduction: boolean): Promise<InternalNotificationsView>;
+  testSendInternalNotification(userId: string, typeId: string, channel: InternalChannel, role: string, rendered: InternalContent): Promise<InternalDelivery>;
   /* 182 — workflow trigger builder: plain-language rules that run through the same actions as every other automation, tested before they go live. */
   listCustomRules(userId: string): Promise<CustomRulesView>;
   saveCustomRule(userId: string, ruleId: string | null, draft: RuleDraft): Promise<CustomRuleView>;
