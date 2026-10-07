@@ -5060,7 +5060,7 @@ export type CommitmentKind =
   | 'exit_dispute_decide'
   | 'tier_review_due'
   | 'certification_renewal'
-  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup' | 'support_chat_reply' | 'feedback_outreach' | 'feedback_recognition' | 'referral_reward' | 'automation_pause_review' | 'escalation_drill_due' | 'escalation_gap_fix' | 'integration_followup' | 'integration_credential_rotation' | 'sandbox_promotion_pending' | 'sandbox_library_review' | 'company_profile_legal_verify' | 'permission_override_review' | 'monitor_daily_check' | 'monitor_concern_followup' | 'privacy_request_respond' | 'privacy_policy_notice' | 'privacy_retention_review' | 'security_place_review' | 'security_2fa_exception_decide' | 'security_2fa_exception_review' | 'security_account_recovery' | 'backup_failure_followup' | 'backup_restore_test' | 'export_collect' | 'billing_payment_fix' | 'billing_renewal_due'
+  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup' | 'support_chat_reply' | 'feedback_outreach' | 'feedback_recognition' | 'referral_reward' | 'automation_pause_review' | 'escalation_drill_due' | 'escalation_gap_fix' | 'integration_followup' | 'integration_credential_rotation' | 'sandbox_promotion_pending' | 'sandbox_library_review' | 'company_profile_legal_verify' | 'permission_override_review' | 'monitor_daily_check' | 'monitor_concern_followup' | 'privacy_request_respond' | 'privacy_policy_notice' | 'privacy_retention_review' | 'security_place_review' | 'security_2fa_exception_decide' | 'security_2fa_exception_review' | 'security_account_recovery' | 'backup_failure_followup' | 'backup_restore_test' | 'export_collect' | 'billing_payment_fix' | 'billing_renewal_due' | 'legal_issue_fix' | 'legal_review_due'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'
@@ -6283,3 +6283,61 @@ export interface UsageMonth {
 }
 export interface TierChange { id: string; serviceId: string; from: string; to: string; at: string; byName: string; effective: 'renewal' | 'now'; effectiveAt: string; reason: string; monthlyDelta: number; accepted: string[] }
 export interface PaymentMethodChange { id: string; serviceId: string; at: string; byName: string; from: string | null; to: string }
+
+/* ------------------------------------------------------------------ Legal & contract templates (198) */
+
+export type LegalRevisionKind = 'boilerplate' | 'state_clause';
+export type LegalRevisionReason = 'law_change' | 'standard_change' | 'legal_review' | 'correction' | 'new_state' | 'edited_elsewhere';
+/**
+ * One change to a piece of governed legal wording that the contract and quotation generators read (198).
+ * Append-only: a scheduled change is applied by the heartbeat on its day (or cancelled with a reason, never removed), the wording it replaced is kept.
+ */
+export interface LegalRevision {
+  id: string;
+  code: string;
+  kind: LegalRevisionKind;
+  templateId: string;
+  state: string | null;
+  text: string;
+  previousText: string;
+  changeNote: string;
+  reason: LegalRevisionReason;
+  /** The Act, notice or standard behind the change (required for a change in law, a standard or a new state). */
+  reference: string;
+  effectiveFrom: string;
+  status: 'scheduled' | 'applied' | 'cancelled';
+  createdAt: string;
+  byName: string;
+  appliedAt?: string;
+  /** The template's own version number once this took effect. */
+  version?: number;
+  cancelledAt?: string;
+  cancelledBy?: string;
+  cancelReason?: string;
+}
+export interface LegalReview {
+  id: string;
+  code: string;
+  docKey: string;
+  reviewedOn: string;
+  reviewer: string;
+  firm: string | null;
+  outcome: 'clear' | 'issues_found';
+  versionReviewed: number;
+  note: string;
+  nextDueOn: string;
+  recordedAt: string;
+  recordedBy: string;
+  closedAt?: string;
+  closedBy?: string;
+  closeNote?: string;
+}
+export interface LegalState {
+  state: string;
+  cities: string[];
+  authority: string;
+  addedAt: string;
+  addedBy: string;
+  note: string;
+  events: { at: string; byName: string; kind: 'added' | 'cities_added' | 'authority_changed'; note: string }[];
+}

@@ -165,6 +165,8 @@ export interface CommitmentSources {
   security: { places: { id: string; userId: string; name: string; dueAt: string }[]; requests: { id: string; name: string; dueAt: string }[]; exceptions: { id: string; name: string; until: string }[]; locks: { id: string; userId: string; name: string; dueAt: string }[] };
   backups: { failures: { id: string; code: string; at: string }[]; test: { dueAt: string } | null; exports: { id: string; code: string; dueAt: string }[] };
   billing: { fixes: { id: string; name: string; dueAt: string }[]; renewals: { id: string; name: string; dueAt: string }[] };
+  /** Wording a legal review found a problem with, and wording whose review is owed (198). */
+  legal: { fixes: { id: string; name: string; dueAt: string }[]; reviews: { id: string; name: string; dueAt: string }[] };
   monitor: { checks: { adminId: string; day: string; dueAt: string }[]; concerns: { id: string; adminId: string; note: string; reviewAt: string }[] };
   permissions: { reviews: { id: string; name: string; screen: string; dueAt: string }[] };
   companyProfile: { verify: { id: string; version: number; dueAt: string }[] };
@@ -2732,6 +2734,50 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
         paused: false,
         actionRoute: `/billing?service=${x.id}`,
         oversightRoute: '/billing',
+      }));
+    },
+  },
+  {
+    // A legal review that found a problem with wording already in use is not left as information: it is corrected and re-versioned within days (198).
+    kind: 'legal_issue_fix',
+    nudgeBefore: hours(12),
+    escalateAfter: hours(12),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'automation',
+    collect(src) {
+      return src.legal.fixes.map((x) => ({
+        ...base('legal_issue_fix', 'alert', x.id),
+        ownerUserId: adminId(src),
+        titleKey: 'work.title.legal_issue_fix',
+        titleParams: { name: x.name },
+        dueAt: x.dueAt,
+        state: 'open' as const,
+        paused: false,
+        actionRoute: `/legal-templates?review=${x.id}`,
+        oversightRoute: '/legal-templates',
+      }));
+    },
+  },
+  {
+    // Wording is looked at again by a professional on its own rhythm, and again after it changes (198).
+    kind: 'legal_review_due',
+    nudgeBefore: days(14),
+    escalateAfter: days(14),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'automation',
+    collect(src) {
+      return src.legal.reviews.map((x) => ({
+        ...base('legal_review_due', 'alert', x.id),
+        ownerUserId: adminId(src),
+        titleKey: 'work.title.legal_review_due',
+        titleParams: { name: x.name },
+        dueAt: x.dueAt,
+        state: 'open' as const,
+        paused: false,
+        actionRoute: `/legal-templates?doc=${encodeURIComponent(x.id)}`,
+        oversightRoute: '/legal-templates?tab=reviews',
       }));
     },
   },

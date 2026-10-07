@@ -1033,7 +1033,7 @@ import type { OverrideKind, OverrideProblem } from '@/features/override/rules';
 import { GENESIS as AUDIT_GENESIS, codeOf as auditCodeOf, hashOf as auditHashOf, verifyChain as auditVerify } from '@/features/audit/chain';
 import { BOT_DRIFT_POINTS as HC_BOT_DRIFT, BOT_MIN_SAMPLE as HC_BOT_MIN, ENGINE_DOWN_MS as HC_ENGINE_DOWN, INTEGRATIONS as HC_INTEGRATIONS, MAX_PROBES as HC_MAX_PROBES, STATUS_WINDOW_MS as HC_STATUS_WINDOW, NOTE_MIN as HC_NOTE_MIN, PROBE_EVERY_MS as HC_PROBE_EVERY, WINDOW_MS as HC_WINDOW, agreementOf as hcAgreement, causeOf as hcCause, integrationDef as hcDef, isHttpUrl as hcIsUrl, judge as hcJudge, recovered as hcRecovered, sharedCauseOf as hcShared, uptimeOf as hcUptime } from '@/features/health/system';
 import type { IntegrationDef as HcDef, Observation as HcObservation, TechStatus } from '@/features/health/system';
-import type { AccessPackageView, ConsentRegisterFilter, ConsentRegisterView, DataRequestFilter, DataRequestListView, DataRequestView, DeletionPlanResult, FulfilInput, PrivacyPolicyView, RetentionPreview, RetentionView, SubjectDetailView, SubjectRowView, MonitorAbsenceInput, MonitorBackupCandidate, MonitorCheckInput, MonitorConfigInput, MonitorPanelView, MonitorSignalView, AccessGrantsView, CustomRoleInput, MatrixRowView, PermissionLogFilter, PermissionLogView, PermissionMatrixFilter, PermissionMatrixView, PermissionOverview, PermissionRoleView, PermissionUserRow, RoleChangeInput, RoleChangePreview, UserAccessView, UserOverrideInput, BrandView, CompanyProfilePreview, CompanyProfilePublishInput, CompanyProfileVersionView, CompanyProfileView, CompanyUsage, SandboxRunView, SandboxPromotionPreview, SandboxPromotionRow, SandboxRuleRef, SandboxScenarioView, SandboxView, IntegrationManagementView, IntegrationSetupView, IsolationCheckView, OverrideCandidate, OverrideConsoleView, OverridePreviewView, AuditDetailView, AuditExportView, AuditFilter, AuditRowView, AuditSearchView, BotHealthView, SystemHealthIntegrationView, SystemHealthView, SecurityOverview, SecurityRoleRow, SecurityAttentionItem, AccountSecurityRow, AccountListView, AuthSessionView, AccountRecoveryView, AccountSecurityView, SecurityEventsView, SecurityConfigPreview, TwoFactorExceptionList, SessionCheck, GateStep, SessionContextInput, BackupOverview, ExportPreview, ExportInput, ExportListView, BillingOverview, BillingServiceView, BillingServiceDetail, BillingMonthView, TierChangePreview } from './repository';
+import type { AccessPackageView, ConsentRegisterFilter, ConsentRegisterView, DataRequestFilter, DataRequestListView, DataRequestView, DeletionPlanResult, FulfilInput, PrivacyPolicyView, RetentionPreview, RetentionView, SubjectDetailView, SubjectRowView, MonitorAbsenceInput, MonitorBackupCandidate, MonitorCheckInput, MonitorConfigInput, MonitorPanelView, MonitorSignalView, AccessGrantsView, CustomRoleInput, MatrixRowView, PermissionLogFilter, PermissionLogView, PermissionMatrixFilter, PermissionMatrixView, PermissionOverview, PermissionRoleView, PermissionUserRow, RoleChangeInput, RoleChangePreview, UserAccessView, UserOverrideInput, BrandView, CompanyProfilePreview, CompanyProfilePublishInput, CompanyProfileVersionView, CompanyProfileView, CompanyUsage, SandboxRunView, SandboxPromotionPreview, SandboxPromotionRow, SandboxRuleRef, SandboxScenarioView, SandboxView, IntegrationManagementView, IntegrationSetupView, IsolationCheckView, OverrideCandidate, OverrideConsoleView, OverridePreviewView, AuditDetailView, AuditExportView, AuditFilter, AuditRowView, AuditSearchView, BotHealthView, SystemHealthIntegrationView, SystemHealthView, SecurityOverview, SecurityRoleRow, SecurityAttentionItem, AccountSecurityRow, AccountListView, AuthSessionView, AccountRecoveryView, AccountSecurityView, SecurityEventsView, SecurityConfigPreview, TwoFactorExceptionList, SessionCheck, GateStep, SessionContextInput, BackupOverview, ExportPreview, ExportInput, ExportListView, BillingOverview, BillingServiceView, BillingServiceDetail, BillingMonthView, TierChangePreview, LegalDocDetail, LegalDocRow, LegalOverview, LegalPropagation, LegalPropagationItem, LegalReviewInput, LegalReviewView, LegalRevisionInput, LegalRevisionPreview, LegalRevisionView, LegalStateInput, LegalStateRow } from './repository';
 import { SLA_CATEGORIES, WINDOW_DAYS as SLA_WINDOW_DAYS, elapsedMsOf as slaElapsedOf, pauseOf as slaPauseOf, ratioOf as slaRatioOf, rollupOf as slaRollupOf, statusOf as slaStatusOf, targetSignal as slaTargetSignal, trendOf as slaTrendOf, triageScore as slaTriageScore } from '@/features/sla/consolidated';
 import type { SlaItem } from '@/features/sla/consolidated';
 import type { SlaCategoryView, SlaItemView, SlaOverviewView } from './repository';
@@ -1056,7 +1056,12 @@ import {
   billingStateOf as BL_STATE, costOf as blCost, isValidExpiry as BL_VALID_EXPIRY, isValidLast4 as BL_VALID_LAST4, monthIdOf as blMonthId, serviceDef as BL_SERVICE, spikeOf as BL_SPIKE, tierDef as BL_TIER,
 } from '@/features/billing/billing';
 import type { ServiceDef, TierDef, TierRow } from '@/features/billing/billing';
-import type { ServiceSubscription, BillingInvoice, UsageMonth, TierChange, PaymentMethodChange, BackupRun, BackupConfigVersion, RestoreTest, ExportJob, AuthSession, SecurityEvent, TwoFactorEnrolment, TwoFactorException, AccountLock, AccountRecovery, SecurityPolicyVersion, TrustedPlace, GeoPoint, ConsentRecord, DataRequest, PrivacyPolicyVersion, RetentionPolicyVersion, RetentionRun, MonitorAbsence, MonitorCheck, MonitorConcern, MonitorConfig, CompanyProfileVersion, Role, CustomRole, PermissionChange, PermissionChangeKind, UserAccessOverride, SandboxBaseline, SandboxRun, SandboxScenario, IntegrationChange, IntegrationCredentialView, IntegrationSetup, AuditExportRecord, LeadStage, ManualOverride, IntegrationConfig, IntegrationIncident, IntegrationProbe, MessageStatus } from './types';
+import {
+  CLOSE_NOTE_MIN as LG_CLOSE_MIN, FIX_DAYS as LG_FIX_DAYS, CANCEL_MIN as LG_CANCEL_MIN, cityListOf as LG_CITIES, dayOf, docKeyOf as LG_KEY, draftHash as LG_HASH, isImmediate as LG_IMMEDIATE, parseDocKey as LG_PARSE,
+  rereviewDueAt as LG_REREVIEW, reviewProblem as LG_REVIEW_PROBLEM, reviewStateOf as LG_REVIEW_STATE, revisionProblem as LG_REVISION_PROBLEM, stateProblem as LG_STATE_PROBLEM,
+} from '@/features/legal/legal';
+import type { LegalCategory } from '@/features/legal/legal';
+import type { LegalRevision, LegalReview, LegalState, ServiceSubscription, BillingInvoice, UsageMonth, TierChange, PaymentMethodChange, BackupRun, BackupConfigVersion, RestoreTest, ExportJob, AuthSession, SecurityEvent, TwoFactorEnrolment, TwoFactorException, AccountLock, AccountRecovery, SecurityPolicyVersion, TrustedPlace, GeoPoint, ConsentRecord, DataRequest, PrivacyPolicyVersion, RetentionPolicyVersion, RetentionRun, MonitorAbsence, MonitorCheck, MonitorConcern, MonitorConfig, CompanyProfileVersion, Role, CustomRole, PermissionChange, PermissionChangeKind, UserAccessOverride, SandboxBaseline, SandboxRun, SandboxScenario, IntegrationChange, IntegrationCredentialView, IntegrationSetup, AuditExportRecord, LeadStage, ManualOverride, IntegrationConfig, IntegrationIncident, IntegrationProbe, MessageStatus } from './types';
 import type { EscalationChainTier, EscalationChannel, EscalationContact, EscalationDelivery, EscalationDrill, EscalationDrillStep, EscalationLastResort, EscalationRun, EscalationScenarioConfig } from './types';
 import type { AlertEscalationView, EscalationGap, EscalationMatrixView, EscalationRunView, EscalationScenarioView } from './repository';
 import { VAULT_KINDS, validityState } from '@/features/documents/vault';
@@ -1491,7 +1496,13 @@ const currentQuotationForLead = (leadId: string): Quotation | undefined =>
  *  screen 075 falls back on, since lift regulation in India is
  *  state-specific rather than centrally governed. */
 const MAHARASHTRA_CITIES = new Set(['Pune', 'Pimpri-Chinchwad', 'Mumbai', 'Nashik']);
-const deriveStateFromCity = (city: string): string | null => (MAHARASHTRA_CITIES.has(city) ? 'Maharashtra' : null);
+/** Which state a city belongs to is configured on screen 198: adding a state there is what makes its sites find its wording. */
+const legalStateCities = new Map<string, Set<string>>([['Maharashtra', MAHARASHTRA_CITIES]]);
+const deriveStateFromCity = (city: string): string | null => {
+  const k = city.trim().toLowerCase();
+  for (const [state, cities] of legalStateCities) for (const c of cities) if (c.toLowerCase() === k) return state;
+  return null;
+};
 
 function buildContractClauses(
   lead: Lead,
@@ -2906,6 +2917,7 @@ function commitmentSources(now: number): CommitmentSources {
     security: secSignals(now),
     backups: bkSignals(now),
     billing: blSignals(now),
+    legal: lgSignals(now),
     tds: tdsObligations(Date.now()),
     exits: exitSignals(),
     handoverReviews: handoverSignals().reviews,
@@ -5948,6 +5960,217 @@ function blTryPay(sub: ServiceSubscription, inv: BillingInvoice, now: number, by
   return null;
 }
 
+/* ------------------------------------------------------------------ 198 — legal & contract templates */
+
+const legalRevisions: LegalRevision[] = [];
+const legalReviews: LegalReview[] = [];
+const legalStates: LegalState[] = [];
+const lgN = { rev: 0, rv: 0, seeded: false };
+const LG_DAY = 86_400_000;
+const lgLetters = (s: string): number => s.replace(/[^\p{L}\p{N}]/gu, '').length;
+const lgIso = (ms: number): string => new Date(ms).toISOString();
+const lgDayIso = (d: string): string => (d.length === 10 ? `${d}T00:00:00.000Z` : d);
+
+function lgRevision(r: Omit<LegalRevision, 'id' | 'code'>): LegalRevision {
+  lgN.rev += 1;
+  const x: LegalRevision = { ...r, id: `lr-${lgN.rev}`, code: `AIEC-LR-${1000 + lgN.rev}` };
+  legalRevisions.push(x);
+  return x;
+}
+
+/** Seeds, built the first time they are needed. All wording and review records here are examples for the owner to replace. */
+function lgEnsure(): void {
+  if (lgN.seeded) return;
+  lgN.seeded = true;
+  const now = Date.now();
+  const addedAt = lgIso(now - 400 * LG_DAY);
+  legalStates.push({ state: 'Maharashtra', cities: [...MAHARASHTRA_CITIES], authority: 'Maharashtra Lifts, Escalators and Moving Walks Act, 2017', addedAt, addedBy: 'Prashant Vasant Wable', note: 'The state every AIEC site is in today.', events: [{ at: addedAt, byName: 'Prashant Vasant Wable', kind: 'added', note: 'Where AIEC works today' }] });
+  const q1 = byId(quotationTemplates, 'qt-1');
+  if (q1) lgRevision({ kind: 'boilerplate', templateId: q1.id, state: null, text: q1.legalBoilerplate, previousText: q1.legalBoilerplate.replace(/ AIEC is not liable[^.]*\./, ''), changeNote: 'Added the sentence on delays caused by civil work outside AIEC’s scope.', reason: 'standard_change', reference: 'Example reference: replace with the real source', effectiveFrom: dayOf(Date.parse(q1.updatedAt)), status: 'applied', createdAt: q1.updatedAt, byName: q1.updatedBy, appliedAt: q1.updatedAt, version: q1.version });
+  const q2 = byId(quotationTemplates, 'qt-2');
+  const mh = q2?.stateOverrides.Maharashtra;
+  if (q2 && mh) lgRevision({ kind: 'state_clause', templateId: q2.id, state: 'Maharashtra', text: `${mh} A copy of the current inspection certificate is kept at the site.`, previousText: mh, changeNote: 'Example scheduled change: replace with the wording from the notified amendment.', reason: 'law_change', reference: 'Example: notified amendment to the state Lift Act (replace)', effectiveFrom: dayOf(now + 10 * LG_DAY), status: 'scheduled', createdAt: lgIso(now - 2 * LG_DAY), byName: 'Prashant Vasant Wable' });
+  const rv = (docKey: string, ago: number, version: number, nextInDays: number): void => {
+    lgN.rv += 1;
+    const on = dayOf(now - ago * LG_DAY);
+    legalReviews.push({ id: `lv-${lgN.rv}`, code: `AIEC-LV-${1000 + lgN.rv}`, docKey, reviewedOn: on, reviewer: 'Example Associates', firm: 'Example Associates LLP', outcome: 'clear', versionReviewed: version, note: 'Example record: replace with the real review.', nextDueOn: dayOf(now + nextInDays * LG_DAY), recordedAt: `${on}T10:00:00.000Z`, recordedBy: 'Prashant Vasant Wable' });
+  };
+  rv('contract:qt-1', 200, 2, 165);
+  rv('partner:surveyor', 60, 1, 305);
+  rv('partner:technician', 400, 1, -35);
+}
+
+const lgLabelOf = (category: LegalCategory, ref: string, name?: string): string => (category === 'contract' ? name ?? ref : category === 'state' ? ref : category === 'partner' ? `Partner agreement (${ref})` : category === 'supplier' ? 'Supplier agreements' : category === 'privacy' ? 'Privacy policy' : `Inspection guidance (${ref})`);
+
+function lgRows(now: number): LegalDocRow[] {
+  lgEnsure();
+  const out: LegalDocRow[] = [];
+  const fin = (b: Omit<LegalDocRow, 'review' | 'lastReviewOn' | 'lastReviewer' | 'nextDueOn' | 'dueInDays'>): void => {
+    const lines = legalReviews.filter((r) => r.docKey === b.key);
+    const st = LG_REVIEW_STATE(lines, { version: b.version, changedAt: b.changedAt }, now);
+    out.push({ ...b, review: st.state, lastReviewOn: st.latest?.reviewedOn ?? null, lastReviewer: st.latest ? lines.find((l) => l.id === st.latest?.id)?.reviewer ?? null : null, nextDueOn: st.latest?.nextDueOn ?? null, dueInDays: st.dueInDays });
+  };
+  for (const t of [...quotationTemplates].sort((a, b) => a.name.localeCompare(b.name))) {
+    const applied = legalRevisions.filter((r) => r.templateId === t.id && r.status === 'applied').sort((a, b) => ((a.appliedAt ?? '') < (b.appliedAt ?? '') ? 1 : -1))[0];
+    const sched = legalRevisions.find((r) => r.status === 'scheduled' && r.templateId === t.id);
+    fin({ key: LG_KEY('contract', t.id), category: 'contract', ref: t.id, refLabel: lgLabelOf('contract', t.id, t.name), version: t.version, effectiveFrom: applied ? lgDayIso(applied.effectiveFrom) : t.updatedAt, changedAt: t.updatedAt, changedBy: t.updatedBy, editable: true, maintainedAt: null, usedBy: 'contract', scheduled: sched ? { code: sched.code, effectiveFrom: sched.effectiveFrom } : null, gaps: legalStates.filter((s) => !t.stateOverrides[s.state]?.trim()).map((s) => s.state) });
+  }
+  for (const s of legalStates) {
+    const applied = legalRevisions.filter((r) => r.kind === 'state_clause' && r.state === s.state && r.status === 'applied').sort((a, b) => ((a.appliedAt ?? '') < (b.appliedAt ?? '') ? 1 : -1));
+    const sched = legalRevisions.find((r) => r.status === 'scheduled' && r.state === s.state);
+    const changedAt = applied[0]?.appliedAt && applied[0].appliedAt > s.addedAt ? applied[0].appliedAt : s.addedAt;
+    fin({ key: LG_KEY('state', s.state), category: 'state', ref: s.state, refLabel: lgLabelOf('state', s.state), version: 1 + applied.length, effectiveFrom: applied[0] ? lgDayIso(applied[0].effectiveFrom) : s.addedAt, changedAt, changedBy: applied[0]?.byName ?? s.addedBy, editable: true, maintainedAt: null, usedBy: 'contract', scheduled: sched ? { code: sched.code, effectiveFrom: sched.effectiveFrom } : null, gaps: quotationTemplates.filter((t) => !t.stateOverrides[s.state]?.trim()).map((t) => t.name) });
+  }
+  for (const role of ['surveyor', 'technician', 'supplier'] as const) {
+    const t = templateInForce(role, now);
+    fin({ key: LG_KEY('partner', role), category: 'partner', ref: role, refLabel: lgLabelOf('partner', role), version: t.version, effectiveFrom: lgDayIso(t.effectiveFrom), changedAt: t.createdAt, changedBy: t.createdByName, editable: false, maintainedAt: '/offers?tab=terms', usedBy: 'partner', scheduled: null, gaps: [] });
+  }
+  const inForce = supplierAgreementVersions.filter((v) => Date.parse(v.effectiveFrom) <= now);
+  fin({ key: LG_KEY('supplier', 'standard'), category: 'supplier', ref: 'standard', refLabel: lgLabelOf('supplier', 'standard'), version: Math.max(1, ...inForce.map((v) => v.version)), effectiveFrom: inForce.map((v) => lgDayIso(v.effectiveFrom)).sort().pop() ?? lgIso(0), changedAt: inForce.map((v) => v.recordedAt).sort().pop() ?? lgIso(0), changedBy: 'Admin', editable: false, maintainedAt: '/agreement', usedBy: 'supplier', scheduled: null, gaps: [] });
+  pvEnsure();
+  const pol = pvPolicyTextAt(now);
+  if (pol) fin({ key: LG_KEY('privacy', 'policy'), category: 'privacy', ref: 'policy', refLabel: lgLabelOf('privacy', 'policy'), version: pol.version, effectiveFrom: lgDayIso(pol.effectiveFrom), changedAt: pol.createdAt, changedBy: pol.byName, editable: false, maintainedAt: '/privacy?tab=policy', usedBy: 'privacy', scheduled: null, gaps: [] });
+  for (const g of stateGuidance) fin({ key: LG_KEY('guidance', g.state), category: 'guidance', ref: g.state, refLabel: lgLabelOf('guidance', g.state), version: 1, effectiveFrom: g.updatedAt, changedAt: g.updatedAt, changedBy: g.updatedByName, editable: false, maintainedAt: '/compliance', usedBy: 'inspection', scheduled: null, gaps: [] });
+  return out;
+}
+
+/** What the contract generator makes of each live contract's compliance clause now, or as it would be if one piece of wording were replaced. */
+function lgContractTexts(now: number, hypo?: { templateId: string; state: string | null; text: string }): { item: LegalPropagationItem; tplId: string | null; state: string | null; text: string; stored: string; fallback: boolean }[] {
+  void now;
+  const out: { item: LegalPropagationItem; tplId: string | null; state: string | null; text: string; stored: string; fallback: boolean }[] = [];
+  for (const c of contracts.filter((x) => x.status === 'active')) {
+    const deal = byId(deals, c.dealId);
+    const lead = deal ? resolveLead(deal.leadId) : null;
+    const terms = dealTermsRecords.find((t) => t.dealId === c.dealId);
+    if (!deal || !lead || !terms) continue;
+    const quotation = currentQuotationForLead(lead.id);
+    let template = quotation ? selectActiveQuotationTemplate(quotation, lead) : undefined;
+    const tplId = template?.id ?? null;
+    if (hypo && template && template.id === hypo.templateId) template = hypo.state === null ? { ...template, legalBoilerplate: hypo.text } : { ...template, stateOverrides: { ...template.stateOverrides, [hypo.state]: hypo.text } };
+    const fresh = buildContractClauses(lead, terms, quotation, template);
+    const sig = contractSignatures.find((s) => s.contractId === c.id)?.status ?? 'unsigned';
+    const stored = c.clauses.find((k) => k.key === 'state_compliance')?.legalText ?? '';
+    const text = fresh.clauses.find((k) => k.key === 'state_compliance')?.legalText ?? '';
+    out.push({ item: { contractId: c.id, dealId: c.dealId, version: c.version, siteName: lead.siteName, signature: sig, kind: sig === 'unsigned' ? 'behind' : 'signed_older' }, tplId, state: deriveStateFromCity(lead.city), text, stored, fallback: c.usedStateClauseFallback });
+  }
+  return out;
+}
+
+function lgPropagation(now: number, scope?: { templateId?: string; state?: string }): LegalPropagation {
+  const rows = lgContractTexts(now).filter((r) => (!scope?.templateId || r.tplId === scope.templateId) && (!scope?.state || r.state === scope.state));
+  const differing = rows.filter((r) => r.text !== r.stored);
+  return { behind: differing.filter((r) => r.item.kind === 'behind').length, signedOlder: differing.filter((r) => r.item.kind === 'signed_older').length, fallback: rows.filter((r) => r.fallback).length, items: differing.map((r) => r.item).slice(0, 10) };
+}
+
+function lgReviewView(r: LegalReview, rows: LegalDocRow[]): LegalReviewView {
+  const row = rows.find((x) => x.key === r.docKey);
+  const parsed = LG_PARSE(r.docKey);
+  const corrected = !!row && row.changedAt > r.recordedAt && row.version !== r.versionReviewed;
+  const status: LegalReviewView['status'] = r.closedAt ? 'issue_closed' : r.outcome === 'clear' ? 'clear' : corrected ? 'issue_corrected' : 'issue_open';
+  const fixDueAt = status === 'issue_open' ? lgIso(Date.parse(r.recordedAt) + LG_FIX_DAYS * LG_DAY) : null;
+  return { id: r.id, code: r.code, docKey: r.docKey, category: parsed?.category ?? 'contract', refLabel: row?.refLabel ?? r.docKey, reviewedOn: r.reviewedOn, reviewer: r.reviewer, firm: r.firm, outcome: r.outcome, versionReviewed: r.versionReviewed, note: r.note, nextDueOn: r.nextDueOn, recordedAt: r.recordedAt, recordedBy: r.recordedBy, status, fixDueAt, fixLate: !!fixDueAt && Date.now() > Date.parse(fixDueAt), ...(r.closedAt ? { closedAt: r.closedAt, closedBy: r.closedBy, closeNote: r.closeNote } : {}) };
+}
+const lgRevisionView = (r: LegalRevision): LegalRevisionView => ({ id: r.id, code: r.code, kind: r.kind, templateId: r.templateId, templateName: byId(quotationTemplates, r.templateId)?.name ?? r.templateId, state: r.state, text: r.text, previousText: r.previousText, changeNote: r.changeNote, reason: r.reason, reference: r.reference, effectiveFrom: r.effectiveFrom, status: r.status, createdAt: r.createdAt, byName: r.byName, ...(r.appliedAt ? { appliedAt: r.appliedAt } : {}), ...(r.version ? { version: r.version } : {}), ...(r.cancelReason ? { cancelReason: r.cancelReason, cancelledBy: r.cancelledBy } : {}) });
+
+function lgStateRow(s: LegalState, now: number): LegalStateRow {
+  return {
+    state: s.state, cities: [...s.cities], authority: s.authority, addedAt: s.addedAt, addedBy: s.addedBy, note: s.note,
+    coverage: [...quotationTemplates].sort((a, b) => a.name.localeCompare(b.name)).map((t) => ({ templateId: t.id, templateName: t.name, has: !!t.stateOverrides[s.state]?.trim(), text: t.stateOverrides[s.state] ?? '', scheduled: legalRevisions.some((r) => r.status === 'scheduled' && r.templateId === t.id && r.state === s.state) })),
+    contracts: lgContractTexts(now).filter((r) => r.state === s.state).length, events: s.events.map((e) => ({ ...e })),
+  };
+}
+
+function lgOverview(now: number): LegalOverview {
+  const docs = lgRows(now);
+  const reviews = [...legalReviews].sort((a, b) => (a.recordedAt < b.recordedAt ? 1 : -1)).map((r) => lgReviewView(r, docs));
+  return JSON.parse(JSON.stringify({
+    docs, reviews, issues: reviews.filter((r) => r.status === 'issue_open'),
+    counts: { total: docs.length, editable: docs.filter((d) => d.editable).length, never: docs.filter((d) => d.review === 'never').length, due: docs.filter((d) => d.review === 'due').length, outdated: docs.filter((d) => d.review === 'outdated').length, issues: docs.filter((d) => d.review === 'issue_open').length, scheduled: legalRevisions.filter((r) => r.status === 'scheduled').length, gaps: docs.filter((d) => d.category === 'contract' && d.gaps.length > 0).length },
+    states: legalStates.map((s) => lgStateRow(s, now)), propagation: lgPropagation(now), at: lgIso(now),
+  })) as LegalOverview;
+}
+
+function lgDetail(key: string, now: number): LegalDocDetail {
+  const docs = lgRows(now);
+  const row = docs.find((d) => d.key === key);
+  const parsed = LG_PARSE(key);
+  if (!row || !parsed) throw new RepositoryError('not_found');
+  const tpl = row.category === 'contract' ? byId(quotationTemplates, row.ref) : undefined;
+  let clauses: LegalDocDetail['clauses'] = [];
+  if (row.category === 'contract' && tpl) clauses = legalStates.map((s) => ({ templateId: tpl.id, templateName: tpl.name, state: s.state, text: tpl.stateOverrides[s.state]?.trim() ? tpl.stateOverrides[s.state] : null, scheduled: (() => { const r = legalRevisions.find((x) => x.status === 'scheduled' && x.templateId === tpl.id && x.state === s.state); return r ? { code: r.code, effectiveFrom: r.effectiveFrom } : null; })() }));
+  if (row.category === 'state') clauses = [...quotationTemplates].sort((a, b) => a.name.localeCompare(b.name)).map((t) => ({ templateId: t.id, templateName: t.name, state: row.ref, text: t.stateOverrides[row.ref]?.trim() ? t.stateOverrides[row.ref] : null, scheduled: (() => { const r = legalRevisions.find((x) => x.status === 'scheduled' && x.templateId === t.id && x.state === row.ref); return r ? { code: r.code, effectiveFrom: r.effectiveFrom } : null; })() }));
+  const history = legalRevisions.filter((r) => (row.category === 'contract' ? r.templateId === row.ref : row.category === 'state' ? r.state === row.ref : false)).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)).map(lgRevisionView);
+  return JSON.parse(JSON.stringify({
+    row, text: tpl ? tpl.legalBoilerplate : null, clauses, history,
+    reviews: legalReviews.filter((r) => r.docKey === key).sort((a, b) => (a.recordedAt < b.recordedAt ? 1 : -1)).map((r) => lgReviewView(r, docs)),
+    propagation: row.category === 'contract' ? lgPropagation(now, { templateId: row.ref }) : row.category === 'state' ? lgPropagation(now, { state: row.ref }) : null,
+  })) as LegalDocDetail;
+}
+
+/** The wording takes effect: the template every generator reads is changed through its own version, so quotations already sent keep what they were sent. */
+function lgApply(rev: LegalRevision, now: number, automatic: boolean): void {
+  const t = byId(quotationTemplates, rev.templateId);
+  if (!t) return;
+  const before = rev.kind === 'boilerplate' ? t.legalBoilerplate : t.stateOverrides[rev.state as string] ?? '';
+  const version = t.version + 1;
+  const common = { version, updatedAt: lgIso(now), updatedBy: rev.byName };
+  patchInPlace(quotationTemplates, t.id, rev.kind === 'boilerplate' ? { legalBoilerplate: rev.text, ...common } : { stateOverrides: { ...t.stateOverrides, [rev.state as string]: rev.text }, ...common });
+  patchInPlace(legalRevisions, rev.id, { status: 'applied', appliedAt: lgIso(now), version, previousText: before });
+  if (automatic) logAutomatedAction({ sourceKey: 'legal.revision_applied', triggeringCondition: `${rev.code} reached its effective day`, actionTaken: `Wording for ${t.name}${rev.state ? ` (${rev.state})` : ''} replaced; documents made from now on use it`, affectedRecordId: rev.id, affectedRecordType: 'other', subjectLabel: t.name });
+}
+
+/** Beacons: a problem a review found in wording in use, a state with no wording yet, and contracts waiting for a signature that are behind the wording now in force. */
+function lgAlerts(now: number): void {
+  const done = (rel: string, note: string): void => { const a = alerts.find((x) => x.relatedId === rel && x.status !== 'resolved'); if (a) patchInPlace(alerts, a.id, { status: 'resolved', resolvedBy: 'system', resolvedAt: lgIso(now), resolutionNote: note }); };
+  const rows = lgRows(now);
+  for (const row of rows) {
+    const rel = `legal:issue:${row.key}`;
+    if (row.review === 'issue_open') raiseAlert({ titleKey: 'legal.alert.reviewIssue', context: `${row.refLabel}: a legal review found a problem with wording that is in use`, severity: 'critical', category: 'automation', relatedId: rel, sourceRoute: `/legal-templates?doc=${encodeURIComponent(row.key)}` });
+    else done(rel, 'The wording was corrected or the finding was closed');
+  }
+  for (const s of legalStates) {
+    const missing = quotationTemplates.filter((t) => !t.stateOverrides[s.state]?.trim());
+    if (missing.length > 0) raiseAlert({ titleKey: 'legal.alert.stateGap', context: `${s.state}: no wording yet for ${missing.map((t) => t.name).join(', ')}; contracts there use the national text`, severity: 'medium', category: 'automation', relatedId: `legal:gap:${s.state}`, sourceRoute: `/legal-templates?tab=states&state=${encodeURIComponent(s.state)}` });
+    else done(`legal:gap:${s.state}`, 'Every template has wording for the state');
+  }
+  const behind = lgPropagation(now).behind;
+  if (behind > 0) raiseAlert({ titleKey: 'legal.alert.contractsBehind', context: `${behind} contract${behind === 1 ? '' : 's'} not yet signed still carry earlier wording`, severity: 'medium', category: 'automation', relatedId: 'legal:behind', sourceRoute: '/legal-templates?tab=library' });
+  else done('legal:behind', 'No unsigned contract is behind the wording in force');
+}
+
+function syncLegal(now: number): void {
+  lgEnsure();
+  for (const r of legalRevisions.filter((x) => x.status === 'scheduled' && Date.parse(lgDayIso(x.effectiveFrom)) <= now)) lgApply(r, now, true);
+  lgAlerts(now);
+}
+
+function lgSignals(now: number): { fixes: { id: string; name: string; dueAt: string }[]; reviews: { id: string; name: string; dueAt: string }[] } {
+  const rows = lgRows(now);
+  const fixes: { id: string; name: string; dueAt: string }[] = [];
+  const reviews: { id: string; name: string; dueAt: string }[] = [];
+  for (const row of rows) {
+    if (row.review === 'issue_open') { const l = legalReviews.filter((r) => r.docKey === row.key && r.outcome === 'issues_found' && !r.closedAt).sort((a, b) => (a.recordedAt < b.recordedAt ? 1 : -1))[0]; if (l) fixes.push({ id: l.id, name: row.refLabel, dueAt: lgIso(Date.parse(l.recordedAt) + LG_FIX_DAYS * LG_DAY) }); }
+    else if (row.review === 'due' && row.nextDueOn) reviews.push({ id: row.key, name: row.refLabel, dueAt: lgDayIso(row.nextDueOn) });
+    else if (row.review === 'outdated') reviews.push({ id: row.key, name: row.refLabel, dueAt: LG_REREVIEW(row.changedAt) });
+  }
+  return { fixes, reviews };
+}
+
+function lgRevisionPreview(input: LegalRevisionInput, now: number): LegalRevisionPreview {
+  lgEnsure();
+  const t = byId(quotationTemplates, input.templateId);
+  if (!t) throw new RepositoryError('not_found');
+  if (input.state !== null && !legalStates.some((s) => s.state === input.state)) throw new RepositoryError('state_unknown');
+  if (input.reason === 'new_state' && input.state === null) throw new RepositoryError('state_required');
+  const previous = input.state === null ? t.legalBoilerplate : t.stateOverrides[input.state] ?? '';
+  const ri = { text: input.text, current: previous, changeNote: input.changeNote, reason: input.reason, reference: input.reference, effectiveFrom: input.effectiveFrom };
+  const problem = LG_REVISION_PROBLEM(ri, now) ?? (legalRevisions.some((r) => r.status === 'scheduled' && r.templateId === t.id && r.state === input.state) ? 'scheduled_pending' : null);
+  const base = lgContractTexts(now);
+  const hypo = lgContractTexts(now, { templateId: t.id, state: input.state, text: input.text.trim() });
+  const affected = hypo.filter((h, i) => h.text !== base[i].text);
+  return { problem, immediate: LG_IMMEDIATE(input.effectiveFrom, now), previous, behind: affected.filter((a) => a.item.kind === 'behind').length, signedOlder: affected.filter((a) => a.item.kind === 'signed_older').length, sample: affected.map((a) => a.item).slice(0, 8), token: LG_HASH(t.id, input.state, ri) };
+}
+
 const heartbeatCommitments = { notifications: 0, alerts: 0 };
 const HEARTBEAT: { id: string; run: (now: number) => void }[] = [
   { id: 'followUpTasks', run: () => reconcileFollowUpTasks() },
@@ -6015,6 +6238,7 @@ const HEARTBEAT: { id: string; run: (now: number) => void }[] = [
   { id: 'security', run: (now) => syncSecurity(now) },
   { id: 'backups', run: (now) => syncBackups(now) },
   { id: 'billing', run: (now) => syncBilling(now) },
+  { id: 'legal', run: (now) => syncLegal(now) },
   {
     id: 'stageInvoices',
     run: () => {
@@ -20052,7 +20276,14 @@ export const memoryRepository: Repository = {
         // Edits bump the version — a quote already open with a customer
         // keeps whichever version it was sent with (templateVersionAtSend);
         // only new sends pick up the change.
-        return patchInPlace(quotationTemplates, template.id, { ...template, version: existing.version + 1, updatedAt: new Date().toISOString() });
+        const beforeBoiler = existing.legalBoilerplate;
+        const beforeStates = { ...existing.stateOverrides };
+        const saved = patchInPlace(quotationTemplates, template.id, { ...template, version: existing.version + 1, updatedAt: new Date().toISOString() });
+        // The legal wording is governed on screen 198: a change made here is recorded there too, so its history is never missing a version.
+        const rec = (kind: LegalRevision['kind'], state: string | null, text: string, previousText: string): void => { lgRevision({ kind, templateId: saved.id, state, text, previousText, changeNote: 'Changed on the quotation templates screen', reason: 'edited_elsewhere', reference: '', effectiveFrom: dayOf(Date.parse(saved.updatedAt)), status: 'applied', createdAt: saved.updatedAt, byName: saved.updatedBy, appliedAt: saved.updatedAt, version: saved.version }); };
+        if (saved.legalBoilerplate !== beforeBoiler) rec('boilerplate', null, saved.legalBoilerplate, beforeBoiler);
+        for (const [st, text] of Object.entries(saved.stateOverrides)) if (text !== beforeStates[st]) rec('state_clause', st, text, beforeStates[st] ?? '');
+        return saved;
       }
       templateCounter += 1;
       const created: QuotationTemplate = {
@@ -28433,6 +28664,88 @@ export const memoryRepository: Repository = {
       blAlerts(now);
       return blDetail(serviceId, now);
     }),
+  /* 198 — legal & contract templates */
+  getLegalOverview: (userId) => simulateRead(() => { intAdmin(userId); return lgOverview(Date.now()); }),
+  getLegalDocument: (userId, docKey) => simulateRead(() => { intAdmin(userId); return lgDetail(docKey, Date.now()); }),
+  previewLegalRevision: (userId, input) => simulateRead(() => { intAdmin(userId); return lgRevisionPreview(input, Date.now()); }),
+  saveLegalRevision: (userId, input, token, confirmed) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      const now = Date.now();
+      const p = lgRevisionPreview(input, now);
+      if (p.problem) throw new RepositoryError(p.problem);
+      if (p.token !== token) throw new RepositoryError('preview_stale');
+      if (!confirmed) throw new RepositoryError('confirm_required');
+      const t = byId(quotationTemplates, input.templateId) as QuotationTemplate;
+      const rev = lgRevision({ kind: input.state === null ? 'boilerplate' : 'state_clause', templateId: t.id, state: input.state, text: input.text.trim(), previousText: p.previous, changeNote: input.changeNote.trim(), reason: input.reason as LegalRevision['reason'], reference: input.reference.trim(), effectiveFrom: input.effectiveFrom, status: 'scheduled', createdAt: lgIso(now), byName: admin.name });
+      if (p.immediate) lgApply(rev, now, false);
+      lgAlerts(now);
+      return lgDetail(LG_KEY('contract', t.id), now);
+    }),
+  cancelLegalRevision: (userId, revisionId, reason) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      lgEnsure();
+      const rev = byId(legalRevisions, revisionId);
+      if (!rev) throw new RepositoryError('not_found');
+      if (rev.status !== 'scheduled') throw new RepositoryError('not_scheduled');
+      if (lgLetters(reason) < LG_CANCEL_MIN) throw new RepositoryError('reason_short');
+      patchInPlace(legalRevisions, rev.id, { status: 'cancelled', cancelledAt: new Date().toISOString(), cancelledBy: admin.name, cancelReason: reason.trim() });
+      return lgDetail(LG_KEY('contract', rev.templateId), Date.now());
+    }),
+  recordLegalReview: (userId, input) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      const now = Date.now();
+      lgEnsure();
+      const problem = LG_REVIEW_PROBLEM(input, now);
+      if (problem) throw new RepositoryError(problem);
+      const row = lgRows(now).find((r) => r.key === input.docKey);
+      if (!row) throw new RepositoryError('doc_unknown');
+      lgN.rv += 1;
+      legalReviews.push({ id: `lv-${lgN.rv}`, code: `AIEC-LV-${1000 + lgN.rv}`, docKey: input.docKey, reviewedOn: input.reviewedOn, reviewer: input.reviewer.trim(), firm: input.firm.trim() || null, outcome: input.outcome, versionReviewed: row.version, note: input.note.trim(), nextDueOn: input.nextDueOn, recordedAt: lgIso(now), recordedBy: admin.name });
+      lgAlerts(now);
+      return lgDetail(input.docKey, now);
+    }),
+  closeLegalIssue: (userId, reviewId, note) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      const now = Date.now();
+      lgEnsure();
+      const r = byId(legalReviews, reviewId);
+      if (!r) throw new RepositoryError('not_found');
+      if (r.outcome !== 'issues_found' || r.closedAt) throw new RepositoryError('not_open');
+      if (lgLetters(note) < LG_CLOSE_MIN) throw new RepositoryError('close_note_short');
+      patchInPlace(legalReviews, r.id, { closedAt: lgIso(now), closedBy: admin.name, closeNote: note.trim() });
+      lgAlerts(now);
+      return lgDetail(r.docKey, now);
+    }),
+  saveLegalState: (userId, input) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      const now = Date.now();
+      lgEnsure();
+      const cities = LG_CITIES(input.cities);
+      const problem = LG_STATE_PROBLEM({ state: input.state, cities, authority: input.authority, known: new Map(legalStates.map((s) => [s.state, s.cities])) });
+      if (problem) throw new RepositoryError(problem);
+      const existing = legalStates.find((s) => s.state === input.state);
+      const at = lgIso(now);
+      if (existing) {
+        const have = new Set(existing.cities.map((c) => c.toLowerCase()));
+        const added = cities.filter((c) => !have.has(c.toLowerCase()));
+        existing.cities.push(...added);
+        existing.events.push({ at, byName: admin.name, kind: 'cities_added', note: added.join(', ') });
+        const set = legalStateCities.get(existing.state) ?? new Set<string>();
+        for (const c of added) set.add(c);
+        legalStateCities.set(existing.state, set);
+      } else {
+        legalStates.push({ state: input.state, cities, authority: input.authority.trim(), addedAt: at, addedBy: admin.name, note: input.note.trim(), events: [{ at, byName: admin.name, kind: 'added', note: input.note.trim() }] });
+        legalStateCities.set(input.state, new Set(cities));
+      }
+      lgAlerts(now);
+      return lgOverview(now);
+    }),
+
   /* 189 — integration management */
   getIntegrationManagement: (userId) => simulateRead(() => { intAdmin(userId); syncIntegrationManagement(Date.now()); return igView(Date.now()); }),
   saveIntegrationCredential: (userId, id, input) => simulateWrite(() => { const admin = intAdmin(userId); igRotate(admin, id, input, Date.now()); return igView(Date.now()); }),

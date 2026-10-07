@@ -1,4 +1,5 @@
 import type { VaultKind } from '@/features/documents/vault';
+import type { LegalCategory, LegalReviewState } from '@/features/legal/legal';
 import type { Advice, BillingState, TierDef, TierRow, Tradeoff } from '@/features/billing/billing';
 import type { BackupConfig, BackupConfigProblem, BackupFailure, RestoreState } from '@/features/backup/backup';
 import type { ExportProblem } from '@/features/backup/backup';
@@ -7570,6 +7571,124 @@ export interface BillingServiceDetail extends BillingServiceView {
   /** Messages the app itself sent this month on the channel (messaging services), as a cross-check on the provider's count. */
   appSends: number | null;
 }
+/* 198 — legal & contract templates */
+export interface LegalDocRow {
+  key: string;
+  category: LegalCategory;
+  ref: string;
+  refLabel: string;
+  version: number;
+  effectiveFrom: string;
+  changedAt: string;
+  changedBy: string;
+  editable: boolean;
+  /** Where wording kept elsewhere is maintained; null for wording written here. */
+  maintainedAt: string | null;
+  usedBy: 'contract' | 'partner' | 'supplier' | 'privacy' | 'inspection';
+  review: LegalReviewState;
+  lastReviewOn: string | null;
+  lastReviewer: string | null;
+  nextDueOn: string | null;
+  dueInDays: number | null;
+  scheduled: { code: string; effectiveFrom: string } | null;
+  /** States with no wording yet (a contract wording), or templates with none for this state. */
+  gaps: string[];
+}
+export interface LegalReviewView {
+  id: string;
+  code: string;
+  docKey: string;
+  category: LegalCategory;
+  refLabel: string;
+  reviewedOn: string;
+  reviewer: string;
+  firm: string | null;
+  outcome: 'clear' | 'issues_found';
+  versionReviewed: number;
+  note: string;
+  nextDueOn: string;
+  recordedAt: string;
+  recordedBy: string;
+  status: 'clear' | 'issue_open' | 'issue_corrected' | 'issue_closed';
+  fixDueAt: string | null;
+  fixLate: boolean;
+  closedAt?: string;
+  closedBy?: string;
+  closeNote?: string;
+}
+export interface LegalRevisionView {
+  id: string;
+  code: string;
+  kind: 'boilerplate' | 'state_clause';
+  templateId: string;
+  templateName: string;
+  state: string | null;
+  text: string;
+  previousText: string;
+  changeNote: string;
+  reason: string;
+  reference: string;
+  effectiveFrom: string;
+  status: 'scheduled' | 'applied' | 'cancelled';
+  createdAt: string;
+  byName: string;
+  appliedAt?: string;
+  version?: number;
+  cancelReason?: string;
+  cancelledBy?: string;
+}
+export interface LegalPropagationItem { contractId: string; dealId: string; version: number; siteName: string; signature: 'unsigned' | 'customer_signed' | 'fully_signed'; kind: 'behind' | 'signed_older' }
+export interface LegalPropagation {
+  /** Contracts not yet signed whose compliance clause no longer matches what would be generated now. */
+  behind: number;
+  /** Contracts already signed under earlier wording: they stay exactly as signed. */
+  signedOlder: number;
+  /** Contracts that used the national wording because no state clause (or template) was found. */
+  fallback: number;
+  items: LegalPropagationItem[];
+}
+export interface LegalStateRow {
+  state: string;
+  cities: string[];
+  authority: string;
+  addedAt: string;
+  addedBy: string;
+  note: string;
+  coverage: { templateId: string; templateName: string; has: boolean; text: string; scheduled: boolean }[];
+  contracts: number;
+  events: { at: string; byName: string; kind: string; note: string }[];
+}
+export interface LegalOverview {
+  docs: LegalDocRow[];
+  counts: { total: number; editable: number; never: number; due: number; outdated: number; issues: number; scheduled: number; gaps: number };
+  issues: LegalReviewView[];
+  reviews: LegalReviewView[];
+  states: LegalStateRow[];
+  propagation: LegalPropagation;
+  at: string;
+}
+export interface LegalDocDetail {
+  row: LegalDocRow;
+  /** The wording written for a contract's national text; null for anything else. */
+  text: string | null;
+  clauses: { templateId: string; templateName: string; state: string; text: string | null; scheduled: { code: string; effectiveFrom: string } | null }[];
+  history: LegalRevisionView[];
+  reviews: LegalReviewView[];
+  propagation: LegalPropagation | null;
+}
+export interface LegalRevisionInput { templateId: string; state: string | null; text: string; changeNote: string; reason: string; reference: string; effectiveFrom: string }
+export interface LegalRevisionPreview {
+  problem: string | null;
+  immediate: boolean;
+  previous: string;
+  behind: number;
+  signedOlder: number;
+  sample: LegalPropagationItem[];
+  token: string;
+}
+export interface LegalReviewInput { docKey: string; reviewedOn: string; reviewer: string; firm: string; outcome: 'clear' | 'issues_found'; note: string; nextDueOn: string }
+export interface LegalStateInput { state: string; cities: string; authority: string; note: string }
+
 export interface TierChangeInput { tierId: string; when: 'renewal' | 'now'; reason: string; accepted: string[] }
 export interface TierChangePreview { fromTier: string; toTier: string; costFrom: number; costTo: number; avgDelta: number; tradeoffs: Tradeoff[]; lost: string[]; needConfirm: boolean; problems: string[]; effectiveAt: string }
 export interface PaymentMethodInput { last4: string; expiry: string }
@@ -9366,6 +9485,15 @@ export interface Repository {
   markServiceRenewed(userId: string, serviceId: string, note: string): Promise<BillingServiceDetail>;
   noteServiceUsage(userId: string, serviceId: string, month: string, note: string): Promise<BillingServiceDetail>;
   simulateBillingProblem(userId: string, serviceId: string, kind: 'declined' | 'expired' | 'clear'): Promise<BillingServiceDetail>;
+  /* 198 — legal & contract templates */
+  getLegalOverview(userId: string): Promise<LegalOverview>;
+  getLegalDocument(userId: string, docKey: string): Promise<LegalDocDetail>;
+  previewLegalRevision(userId: string, input: LegalRevisionInput): Promise<LegalRevisionPreview>;
+  saveLegalRevision(userId: string, input: LegalRevisionInput, token: string, confirmed: boolean): Promise<LegalDocDetail>;
+  cancelLegalRevision(userId: string, revisionId: string, reason: string): Promise<LegalDocDetail>;
+  recordLegalReview(userId: string, input: LegalReviewInput): Promise<LegalDocDetail>;
+  closeLegalIssue(userId: string, reviewId: string, note: string): Promise<LegalDocDetail>;
+  saveLegalState(userId: string, input: LegalStateInput): Promise<LegalOverview>;
   /** Before a sign-in code is accepted: is this account's sign-in paused after repeated failures? */
   precheckSignIn(userId: string): Promise<{ paused: boolean; until: string | null }>;
   recordLoginFailure(userId: string): Promise<{ paused: boolean; until: string | null; recent: number }>;
