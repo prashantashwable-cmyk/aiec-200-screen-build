@@ -18,7 +18,7 @@ import {
 } from '@/design-system';
 import type { MapMarker } from '@/design-system';
 import { useRouteOptimize } from './useRouteOptimize';
-import { ROUTE_OPTIMIZE_KEYS as K } from './route-optimize.types';
+import { MAX_REASONABLE_KM, ROUTE_OPTIMIZE_KEYS as K } from './route-optimize.types';
 import type { Candidate } from './route-optimize.types';
 
 /**
@@ -56,6 +56,19 @@ export function RouteOptimizeView() {
     });
     return list;
   }, [s.selectedTask, s.candidates]);
+
+  const assignTo = (candidate: Candidate) => {
+    const task = s.selectedTask;
+    if (!task) return;
+    void s.assign(task, candidate).then((result) => {
+      if (result === 'assigned') {
+        toast.push(t(K.assigned, { name: candidate.user.name, task: task.title }), 'success');
+      } else if (typeof result === 'object') {
+        const known = result.failed in K.reason;
+        toast.push(t(K.assignFailed, { reason: known ? t(K.reason[result.failed as keyof typeof K.reason]) : t(K.error.body) }), 'error');
+      }
+    });
+  };
 
   if (s.status === 'loading') {
     return (
@@ -128,19 +141,34 @@ export function RouteOptimizeView() {
                   candidate={candidate}
                   rank={index}
                   busy={s.busyUserId === candidate.user.id}
-                  onAssign={() =>
-                    void s.assign(s.selectedTask!, candidate).then((result) => {
-                      if (result === 'assigned') {
-                        toast.push(
-                          t(K.assigned, { name: candidate.user.name, task: s.selectedTask!.title }),
-                          'success',
-                        );
-                      }
-                    })
-                  }
+                  onAssign={() => assignTo(candidate)}
                 />
               ))}
             </div>
+          )}
+
+          {s.notOffered.length > 0 && (
+            <>
+              <h2 className="label mt-4 mb-2">{t(K.notOffered)}</h2>
+              <Card flush>
+                {s.notOffered.map((c) => (
+                  <ListRow
+                    key={c.user.id}
+                    leading={<Avatar name={c.user.name} />}
+                    title={c.user.name}
+                    subtitle={c.unavailableReason ? t(K.reason[c.unavailableReason]) : t(K.tooFar, { km: MAX_REASONABLE_KM })}
+                    // Distance is only a suggestion: someone further away can still be chosen. A rule (training, tier, leave) cannot be overridden here.
+                    trailing={
+                      c.unavailable ? undefined : (
+                        <Button size="sm" variant="ghost" loading={s.busyUserId === c.user.id} onClick={() => assignTo(c)}>
+                          {t(K.assign)}
+                        </Button>
+                      )
+                    }
+                  />
+                ))}
+              </Card>
+            </>
           )}
 
           <p className="t-xs t-muted mt-3">{t(K.overrideNote)}</p>

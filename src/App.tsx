@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { AppShell } from '@/navigation/AppShell';
 import { HOME_PATH_BY_ROLE, screenRoutes } from '@/navigation/registry';
@@ -8,7 +8,6 @@ import { useSession } from '@/session/SessionProvider';
 import { EmptyState, LoadingState, Screen } from '@/design-system';
 import { SettingsScreen } from '@/screens/_settings/SettingsScreen';
 import { PendingApprovalScreen } from '@/screens/_pending/PendingApprovalScreen';
-import { ModulePendingScreen } from '@/screens/_pending/ModulePendingScreen';
 
 /**
  * Routing is assembled from the discovered screen registry. Public (chromeless)
@@ -52,24 +51,40 @@ function RoleGuard({
   const { role } = useSession();
   const { canOpen } = useAccess();
   // Who may open a screen is decided centrally (192): the code's route table, then Admin's decisions for the role and for the person.
-  if (route.roles !== 'public' && (!role || !canOpen(route))) {
-    return <Navigate to={role ? HOME_PATH_BY_ROLE[role] : '/login'} replace />;
-  }
+  if (route.roles !== 'public' && !role) return <Navigate to="/login" replace />;
+  // Said plainly rather than bouncing home, so a refused link is never mistaken for a broken one.
+  if (route.roles !== 'public' && role && !canOpen(route)) return <Forbidden />;
   return <>{children}</>;
+}
+
+function Forbidden() {
+  const { t } = useTranslation();
+  const { role } = useSession();
+  const navigate = useNavigate();
+  return (
+    <Screen width="narrow">
+      <EmptyState
+        title={t('forbidden.title')}
+        body={t('forbidden.body')}
+        actionLabel={t('forbidden.home')}
+        onAction={() => navigate(role ? HOME_PATH_BY_ROLE[role] : '/login', { replace: true })}
+      />
+    </Screen>
+  );
 }
 
 function NotFound() {
   const { t } = useTranslation();
   const { role } = useSession();
+  const navigate = useNavigate();
   return (
     <Screen width="narrow">
       <EmptyState
         title={t('notFound.title')}
         body={t('notFound.body')}
         actionLabel={t('notFound.home')}
-        onAction={() => {
-          window.location.href = role ? HOME_PATH_BY_ROLE[role] : '/login';
-        }}
+        // Within the app, never a page reload: a reload would start the data over.
+        onAction={() => navigate(role ? HOME_PATH_BY_ROLE[role] : '/login', { replace: true })}
       />
     </Screen>
   );
@@ -106,7 +121,6 @@ export default function App() {
 
         {/* Foundation-owned screens, not part of the numbered 200. */}
         <Route path="/settings" element={<SettingsScreen />} />
-        <Route path="/supplier" element={<ModulePendingScreen role="supplier" moduleNumber={10} />} />
       </Route>
 
       <Route path="*" element={<NotFound />} />

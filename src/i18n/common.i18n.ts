@@ -200,8 +200,13 @@ const common: ScreenTranslations = {
     },
     notFound: {
       title: 'Screen not found',
-      body: 'This part of AIEC has not been built yet.',
+      body: 'This address does not lead to a screen in AIEC. Check the link, or go back to your home.',
       home: 'Go to home',
+    },
+    forbidden: {
+      title: 'This screen is not open to you',
+      body: 'Your account does not have access to this screen. If you need it for your work, ask the AIEC admin.',
+      home: 'Go to my home',
     },
     sos: {
       button: 'SOS',
@@ -689,8 +694,13 @@ const common: ScreenTranslations = {
     },
     notFound: {
       title: 'स्क्रीन नहीं मिली',
-      body: 'AIEC का यह हिस्सा अभी बनाया नहीं गया है।',
+      body: 'यह पता AIEC की किसी स्क्रीन तक नहीं जाता। लिंक जाँचें, या अपने होम पर लौटें।',
       home: 'होम पर जाएँ',
+    },
+    forbidden: {
+      title: 'यह स्क्रीन आपके लिए खुली नहीं है',
+      body: 'आपके खाते को इस स्क्रीन की अनुमति नहीं है। अगर काम के लिए ज़रूरी हो, तो AIEC एडमिन से पूछें।',
+      home: 'मेरे होम पर जाएँ',
     },
     sos: {
       button: 'SOS',
@@ -1179,8 +1189,13 @@ const common: ScreenTranslations = {
     },
     notFound: {
       title: 'स्क्रीन सापडली नाही',
-      body: 'AIEC चा हा भाग अजून तयार झालेला नाही.',
+      body: 'हा पत्ता AIEC मधील कोणत्याही स्क्रीनकडे जात नाही. लिंक तपासा, किंवा तुमच्या होमवर परत जा.',
       home: 'होमवर जा',
+    },
+    forbidden: {
+      title: 'ही स्क्रीन तुमच्यासाठी उघडी नाही',
+      body: 'तुमच्या खात्याला या स्क्रीनची परवानगी नाही. कामासाठी आवश्यक असल्यास AIEC प्रशासकाला विचारा.',
+      home: 'माझ्या होमवर जा',
     },
     sos: {
       button: 'SOS',

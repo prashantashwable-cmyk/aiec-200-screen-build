@@ -71,7 +71,7 @@ export function routeMatches(path: string, pattern: string): boolean {
   return parts.every((p, i) => (i >= segs.length ? p.endsWith('?') : p.startsWith(':') || p === segs[i]));
 }
 /** Screens the app routes by hand, outside the discovered route table. */
-export const HAND_ROUTED = ['/settings', '/supplier'];
+export const HAND_ROUTED = ['/settings'];
 export const routeKnown = (path: string, catalogue: string[]): boolean => [...catalogue, ...HAND_ROUTED].some((p) => routeMatches(path, p));
 
 export const normalizeQuery = (q: string): string => q.toLocaleLowerCase().replace(/\s+/g, ' ').trim();

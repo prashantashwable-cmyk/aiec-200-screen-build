@@ -304,7 +304,7 @@ function routeFor(owner: User | undefined, adminRoute: string): string {
     case 'technician':
       return '/technician';
     case 'supplier':
-      return '/supplier';
+      return '/orders';
     case 'customer':
       return '/customer';
     default:
@@ -416,8 +416,9 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
         dueAt: plus(job.scheduledFor, -days(2)),
         state: job.technicianId ? ('done' as const) : ('open' as const),
         paused: job.status === 'on_hold',
-        actionRoute: '/admin/map',
-        oversightRoute: '/admin/map',
+        // Best match (020) is where a job with nobody gets its technician.
+        actionRoute: '/admin/routes',
+        oversightRoute: '/admin/routes',
       }));
     },
   },
@@ -503,7 +504,7 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
             state: po.acknowledgedAt ? ('done' as const) : ('open' as const),
             paused: false,
             completedAt: po.acknowledgedAt,
-            actionRoute: portalUser ? '/supplier' : `/admin/deals/${po.dealId}/purchase-orders`,
+            actionRoute: portalUser ? `/orders?poId=${po.id}` : `/admin/deals/${po.dealId}/purchase-orders`,
             oversightRoute: `/admin/deals/${po.dealId}/purchase-orders`,
           };
         });

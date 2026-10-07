@@ -1061,6 +1061,20 @@ export interface CustomerConfirmInput {
   consent: { whatsapp: boolean; sms: boolean; dataUsage: boolean };
 }
 
+/** Why someone is not offered for an assignment on 020, read from the records that decide it. */
+export type AssignmentBlock = 'not_active' | 'leaving' | 'training_incomplete' | 'tier_cannot_lead' | 'day_off' | 'booked_that_day' | 'missing_skill';
+
+/** What 020 needs to rank a person: their real open work and, when they cannot take this one, why. */
+export interface AssignmentFacts {
+  userId: string;
+  /** Surveyor: open leads they hold. Technician: unfinished jobs they lead or crew. */
+  openWork: number;
+  block: AssignmentBlock | null;
+  /** For a job: the drive skill it needs, and whether this person holds it. Null when the lift's drive maps to no tracked skill. */
+  skillNeeded: string | null;
+  hasSkill: boolean;
+}
+
 export interface SupplierInviteInput {
   name: string;
   contactName?: string;
@@ -8649,6 +8663,10 @@ export interface Repository {
   recordRoleRequest(input: { userId: string | null; userName: string; previousRole: Role | null; newRole: Role; isReapplication: boolean }): Promise<RoleAuditEntry>;
   /** Newest first. */
   listRoleAudit(limit?: number): Promise<RoleAuditEntry[]>;
+  /** 020: everyone of the role with their real open work and, for this task, whether and why they cannot take it (a job adds its day and drive skill). Admin only. */
+  getAssignmentFacts(target: { leadId: string } | { jobId: string }, adminId: string): Promise<AssignmentFacts[]>;
+  /** 020: puts a technician in charge of a job that has nobody. The same checks as every other way onto a job: active, not leaving, training clear, a tier that may lead, not off or already booked that day. Refuses `already_assigned` when someone got there first. Logged on the job's team history and told to the technician. */
+  assignJobLead(jobId: string, technicianId: string, adminId: string): Promise<Job>;
   /** 008: confirms the customer's account for a lead. With no customer on this
    *  phone it creates one (customers are approved on the spot); with one it
    *  links instead of duplicating (`existing: true`). Corrections go onto the

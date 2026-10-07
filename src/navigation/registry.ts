@@ -84,5 +84,5 @@ export const HOME_PATH_BY_ROLE: Record<Role, string> = {
   surveyor: '/surveyor',
   technician: '/technician',
   customer: '/customer',
-  supplier: '/supplier',
+  supplier: '/orders',
 };

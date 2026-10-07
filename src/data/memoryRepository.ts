@@ -1035,7 +1035,7 @@ import type { OverrideKind, OverrideProblem } from '@/features/override/rules';
 import { GENESIS as AUDIT_GENESIS, codeOf as auditCodeOf, hashOf as auditHashOf, verifyChain as auditVerify } from '@/features/audit/chain';
 import { BOT_DRIFT_POINTS as HC_BOT_DRIFT, BOT_MIN_SAMPLE as HC_BOT_MIN, ENGINE_DOWN_MS as HC_ENGINE_DOWN, INTEGRATIONS as HC_INTEGRATIONS, MAX_PROBES as HC_MAX_PROBES, STATUS_WINDOW_MS as HC_STATUS_WINDOW, NOTE_MIN as HC_NOTE_MIN, PROBE_EVERY_MS as HC_PROBE_EVERY, WINDOW_MS as HC_WINDOW, agreementOf as hcAgreement, causeOf as hcCause, integrationDef as hcDef, isHttpUrl as hcIsUrl, judge as hcJudge, recovered as hcRecovered, sharedCauseOf as hcShared, uptimeOf as hcUptime } from '@/features/health/system';
 import type { IntegrationDef as HcDef, Observation as HcObservation, TechStatus } from '@/features/health/system';
-import type { AccessPackageView, ConsentRegisterFilter, ConsentRegisterView, DataRequestFilter, DataRequestListView, DataRequestView, DeletionPlanResult, FulfilInput, PrivacyPolicyView, RetentionPreview, RetentionView, SubjectDetailView, SubjectRowView, MonitorAbsenceInput, MonitorBackupCandidate, MonitorCheckInput, MonitorConfigInput, MonitorPanelView, MonitorSignalView, AccessGrantsView, CustomRoleInput, MatrixRowView, PermissionLogFilter, PermissionLogView, PermissionMatrixFilter, PermissionMatrixView, PermissionOverview, PermissionRoleView, PermissionUserRow, RoleChangeInput, RoleChangePreview, UserAccessView, UserOverrideInput, BrandView, CompanyProfilePreview, CompanyProfilePublishInput, CompanyProfileVersionView, CompanyProfileView, CompanyUsage, SandboxRunView, SandboxPromotionPreview, SandboxPromotionRow, SandboxRuleRef, SandboxScenarioView, SandboxView, IntegrationManagementView, IntegrationSetupView, IsolationCheckView, OverrideCandidate, OverrideConsoleView, OverridePreviewView, AuditDetailView, AuditExportView, AuditFilter, AuditRowView, AuditSearchView, BotHealthView, SystemHealthIntegrationView, SystemHealthView, SecurityOverview, SecurityRoleRow, SecurityAttentionItem, AccountSecurityRow, AccountListView, AuthSessionView, AccountRecoveryView, AccountSecurityView, SecurityEventsView, SecurityConfigPreview, TwoFactorExceptionList, SessionCheck, GateStep, SessionContextInput, BackupOverview, ExportPreview, ExportInput, ExportListView, BillingOverview, BillingServiceView, BillingServiceDetail, BillingMonthView, TierChangePreview, LegalDocDetail, LegalDocRow, LegalOverview, LegalPropagation, LegalPropagationItem, LegalReviewInput, LegalReviewView, LegalRevisionInput, LegalRevisionPreview, LegalRevisionView, LegalStateInput, LegalStateRow, HelpAdminFilter, HelpAdminView, HelpArticleInput, HelpArticleView, HelpFeedbackInput, HelpRowView, HelpSearchInput, HelpSearchView, HelpStatsView, HelpSupportPath, AppInfoView, DeviceReport, ProductFeedbackBoardView, ProductFeedbackHandleInput, ProductFeedbackInboxFilter, ProductFeedbackInboxView, ProductFeedbackInput, ProductFeedbackView, ReleaseInput, ReleaseView, SimilarProductFeedbackView } from './repository';
+import type { AccessPackageView, ConsentRegisterFilter, ConsentRegisterView, DataRequestFilter, DataRequestListView, DataRequestView, DeletionPlanResult, FulfilInput, PrivacyPolicyView, RetentionPreview, RetentionView, SubjectDetailView, SubjectRowView, MonitorAbsenceInput, MonitorBackupCandidate, MonitorCheckInput, MonitorConfigInput, MonitorPanelView, MonitorSignalView, AccessGrantsView, CustomRoleInput, MatrixRowView, PermissionLogFilter, PermissionLogView, PermissionMatrixFilter, PermissionMatrixView, PermissionOverview, PermissionRoleView, PermissionUserRow, RoleChangeInput, RoleChangePreview, UserAccessView, UserOverrideInput, BrandView, CompanyProfilePreview, CompanyProfilePublishInput, CompanyProfileVersionView, CompanyProfileView, CompanyUsage, SandboxRunView, SandboxPromotionPreview, SandboxPromotionRow, SandboxRuleRef, SandboxScenarioView, SandboxView, IntegrationManagementView, IntegrationSetupView, IsolationCheckView, OverrideCandidate, OverrideConsoleView, OverridePreviewView, AuditDetailView, AuditExportView, AuditFilter, AuditRowView, AuditSearchView, BotHealthView, SystemHealthIntegrationView, SystemHealthView, SecurityOverview, SecurityRoleRow, SecurityAttentionItem, AccountSecurityRow, AccountListView, AuthSessionView, AccountRecoveryView, AccountSecurityView, SecurityEventsView, SecurityConfigPreview, TwoFactorExceptionList, SessionCheck, GateStep, SessionContextInput, BackupOverview, ExportPreview, ExportInput, ExportListView, BillingOverview, BillingServiceView, BillingServiceDetail, BillingMonthView, TierChangePreview, LegalDocDetail, LegalDocRow, LegalOverview, LegalPropagation, LegalPropagationItem, LegalReviewInput, LegalReviewView, LegalRevisionInput, LegalRevisionPreview, LegalRevisionView, LegalStateInput, LegalStateRow, HelpAdminFilter, HelpAdminView, HelpArticleInput, HelpArticleView, HelpFeedbackInput, HelpRowView, HelpSearchInput, HelpSearchView, HelpStatsView, HelpSupportPath, AppInfoView, DeviceReport, ProductFeedbackBoardView, ProductFeedbackHandleInput, ProductFeedbackInboxFilter, ProductFeedbackInboxView, ProductFeedbackInput, ProductFeedbackView, ReleaseInput, ReleaseView, SimilarProductFeedbackView, AssignmentBlock, AssignmentFacts } from './repository';
 import { SLA_CATEGORIES, WINDOW_DAYS as SLA_WINDOW_DAYS, elapsedMsOf as slaElapsedOf, pauseOf as slaPauseOf, ratioOf as slaRatioOf, rollupOf as slaRollupOf, statusOf as slaStatusOf, targetSignal as slaTargetSignal, trendOf as slaTrendOf, triageScore as slaTriageScore } from '@/features/sla/consolidated';
 import type { SlaItem } from '@/features/sla/consolidated';
 import type { SlaCategoryView, SlaItemView, SlaOverviewView } from './repository';
@@ -4515,7 +4515,7 @@ function cpSignals(now: number): { verify: { id: string; version: number; dueAt:
 
 /** The screens the app declares (one entry per route) and each role's home. The repository holds only decisions; every judgement is made against this table. */
 let accessCatalogue: PmScreenRef[] = [];
-let accessHomes: Record<Role, string> = { admin: '/admin', surveyor: '/surveyor', technician: '/technician', customer: '/customer', supplier: '/supplier' };
+let accessHomes: Record<Role, string> = { admin: '/admin', surveyor: '/surveyor', technician: '/technician', customer: '/customer', supplier: '/orders' };
 const customRoles: CustomRole[] = [];
 const roleDecisions = new Map<string, PmDecision>();
 const userRoleAssign = new Map<string, string[]>();
@@ -20212,6 +20212,69 @@ export const memoryRepository: Repository = {
         raiseAlert({ category: 'quality', severity: 'medium', titleKey: 'onbCustomer.alert.noDataConsent', context: `${name} · ${lead.siteName}`, relatedId: `custconsent:${user.id}`, sourceRoute: `/admin/leads/${lead.id}` });
       }
       return { user, existing, linkedDeals };
+    }),
+
+  getAssignmentFacts: (target, adminId) =>
+    simulateRead((): AssignmentFacts[] => {
+      adminOnly(adminId);
+      const now = Date.now();
+      if ('leadId' in target) {
+        if (!byId(leads, target.leadId)) throw new RepositoryError('not_found');
+        return users.filter((u) => u.role === 'surveyor').map((u) => ({
+          userId: u.id,
+          openWork: leads.filter((l) => l.surveyorId === u.id && l.stage !== 'won' && l.stage !== 'lost').length,
+          block: u.status !== 'active' ? 'not_active' : !acceptsNewWork(u.id) ? 'leaving' : null,
+          skillNeeded: null,
+          hasSkill: true,
+        }));
+      }
+      const job = byId(jobs, target.jobId);
+      if (!job) throw new RepositoryError('not_found');
+      const deal = byId(deals, job.dealId);
+      const spec = deal ? lockedSpecOf(deal.leadId) : null;
+      const skill = spec ? DRIVE_SKILL[spec.driveType] : null;
+      const day = qcDay(new Date(job.scheduledFor).getTime());
+      return users.filter((u) => u.role === 'technician').map((u) => {
+        const busy = inspectorBusyFacts(u.id);
+        const hasSkill = !skill || normalizeSkills(u.skills).includes(skill);
+        const block: AssignmentBlock | null =
+          u.status !== 'active' ? 'not_active'
+          : !acceptsNewWork(u.id) ? 'leaving'
+          : !trainingClear(u.id, now) ? 'training_incomplete'
+          : !tcCanLead(u.id) ? 'tier_cannot_lead'
+          : busy.unavailable.some((x) => x.date === day && x.window === 'all') ? 'day_off'
+          : busy.installDays.includes(day) ? 'booked_that_day'
+          : !hasSkill ? 'missing_skill'
+          : null;
+        return { userId: u.id, openWork: jobs.filter((j) => isOnJob(j, u.id) && j.status !== 'completed').length, block, skillNeeded: skill, hasSkill };
+      });
+    }),
+
+  assignJobLead: (jobId, technicianId, adminId) =>
+    simulateWrite((): Job => {
+      const admin = adminOnly(adminId);
+      const job = byId(jobs, jobId);
+      if (!job) throw new RepositoryError('not_found');
+      if (job.technicianId) throw new RepositoryError('already_assigned');
+      if (job.status === 'completed' || job.status === 'handover_pending' || job.status === 'qc_pending') throw new RepositoryError('job_finished');
+      const tech = byId(users, technicianId);
+      if (!tech || tech.role !== 'technician' || tech.status !== 'active') throw new RepositoryError('ineligible_assignee');
+      if (!acceptsNewWork(tech.id)) throw new RepositoryError('ineligible_assignee');
+      if (!trainingClear(tech.id)) throw new RepositoryError('training_incomplete');
+      if (!tcCanLead(tech.id)) throw new RepositoryError('tier_cannot_lead');
+      const day = qcDay(new Date(job.scheduledFor).getTime());
+      const busy = inspectorBusyFacts(tech.id);
+      if (busy.unavailable.some((x) => x.date === day && x.window === 'all')) throw new RepositoryError('day_off');
+      if (busy.installDays.includes(day)) throw new RepositoryError('booked_that_day');
+      const crew = (job.crew ?? []).filter((c) => c.userId !== tech.id);
+      const updated = logTeam(job, teamEvent('added', admin.name, tech.name, 'Put in charge of the job (020)'), { technicianId: tech.id, crew: [{ userId: tech.id, role: 'lead', stepIds: [] }, ...crew] });
+      // Tell them now rather than waiting for the start reminder.
+      const now = Date.now();
+      const at = new Date(now).toISOString();
+      syncCommitments(now);
+      const c = commitments.find((x) => x.kind === 'job_start' && x.subject.id === job.id && x.status === 'open');
+      if (c) notifyWork(tech.id, c, 'nudge', at);
+      return updated;
     }),
 
   suspendSupplier: (supplierId, reason, byName) =>
