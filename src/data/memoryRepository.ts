@@ -1033,7 +1033,7 @@ import type { OverrideKind, OverrideProblem } from '@/features/override/rules';
 import { GENESIS as AUDIT_GENESIS, codeOf as auditCodeOf, hashOf as auditHashOf, verifyChain as auditVerify } from '@/features/audit/chain';
 import { BOT_DRIFT_POINTS as HC_BOT_DRIFT, BOT_MIN_SAMPLE as HC_BOT_MIN, ENGINE_DOWN_MS as HC_ENGINE_DOWN, INTEGRATIONS as HC_INTEGRATIONS, MAX_PROBES as HC_MAX_PROBES, STATUS_WINDOW_MS as HC_STATUS_WINDOW, NOTE_MIN as HC_NOTE_MIN, PROBE_EVERY_MS as HC_PROBE_EVERY, WINDOW_MS as HC_WINDOW, agreementOf as hcAgreement, causeOf as hcCause, integrationDef as hcDef, isHttpUrl as hcIsUrl, judge as hcJudge, recovered as hcRecovered, sharedCauseOf as hcShared, uptimeOf as hcUptime } from '@/features/health/system';
 import type { IntegrationDef as HcDef, Observation as HcObservation, TechStatus } from '@/features/health/system';
-import type { AccessPackageView, ConsentRegisterFilter, ConsentRegisterView, DataRequestFilter, DataRequestListView, DataRequestView, DeletionPlanResult, FulfilInput, PrivacyPolicyView, RetentionPreview, RetentionView, SubjectDetailView, SubjectRowView, MonitorAbsenceInput, MonitorBackupCandidate, MonitorCheckInput, MonitorConfigInput, MonitorPanelView, MonitorSignalView, AccessGrantsView, CustomRoleInput, MatrixRowView, PermissionLogFilter, PermissionLogView, PermissionMatrixFilter, PermissionMatrixView, PermissionOverview, PermissionRoleView, PermissionUserRow, RoleChangeInput, RoleChangePreview, UserAccessView, UserOverrideInput, BrandView, CompanyProfilePreview, CompanyProfilePublishInput, CompanyProfileVersionView, CompanyProfileView, CompanyUsage, SandboxRunView, SandboxPromotionPreview, SandboxPromotionRow, SandboxRuleRef, SandboxScenarioView, SandboxView, IntegrationManagementView, IntegrationSetupView, IsolationCheckView, OverrideCandidate, OverrideConsoleView, OverridePreviewView, AuditDetailView, AuditExportView, AuditFilter, AuditRowView, AuditSearchView, BotHealthView, SystemHealthIntegrationView, SystemHealthView, SecurityOverview, SecurityRoleRow, SecurityAttentionItem, AccountSecurityRow, AccountListView, AuthSessionView, AccountRecoveryView, AccountSecurityView, SecurityEventsView, SecurityConfigPreview, TwoFactorExceptionList, SessionCheck, GateStep, SessionContextInput, BackupOverview, ExportPreview, ExportInput, ExportListView, BillingOverview, BillingServiceView, BillingServiceDetail, BillingMonthView, TierChangePreview, LegalDocDetail, LegalDocRow, LegalOverview, LegalPropagation, LegalPropagationItem, LegalReviewInput, LegalReviewView, LegalRevisionInput, LegalRevisionPreview, LegalRevisionView, LegalStateInput, LegalStateRow, HelpAdminFilter, HelpAdminView, HelpArticleInput, HelpArticleView, HelpFeedbackInput, HelpRowView, HelpSearchInput, HelpSearchView, HelpStatsView, HelpSupportPath } from './repository';
+import type { AccessPackageView, ConsentRegisterFilter, ConsentRegisterView, DataRequestFilter, DataRequestListView, DataRequestView, DeletionPlanResult, FulfilInput, PrivacyPolicyView, RetentionPreview, RetentionView, SubjectDetailView, SubjectRowView, MonitorAbsenceInput, MonitorBackupCandidate, MonitorCheckInput, MonitorConfigInput, MonitorPanelView, MonitorSignalView, AccessGrantsView, CustomRoleInput, MatrixRowView, PermissionLogFilter, PermissionLogView, PermissionMatrixFilter, PermissionMatrixView, PermissionOverview, PermissionRoleView, PermissionUserRow, RoleChangeInput, RoleChangePreview, UserAccessView, UserOverrideInput, BrandView, CompanyProfilePreview, CompanyProfilePublishInput, CompanyProfileVersionView, CompanyProfileView, CompanyUsage, SandboxRunView, SandboxPromotionPreview, SandboxPromotionRow, SandboxRuleRef, SandboxScenarioView, SandboxView, IntegrationManagementView, IntegrationSetupView, IsolationCheckView, OverrideCandidate, OverrideConsoleView, OverridePreviewView, AuditDetailView, AuditExportView, AuditFilter, AuditRowView, AuditSearchView, BotHealthView, SystemHealthIntegrationView, SystemHealthView, SecurityOverview, SecurityRoleRow, SecurityAttentionItem, AccountSecurityRow, AccountListView, AuthSessionView, AccountRecoveryView, AccountSecurityView, SecurityEventsView, SecurityConfigPreview, TwoFactorExceptionList, SessionCheck, GateStep, SessionContextInput, BackupOverview, ExportPreview, ExportInput, ExportListView, BillingOverview, BillingServiceView, BillingServiceDetail, BillingMonthView, TierChangePreview, LegalDocDetail, LegalDocRow, LegalOverview, LegalPropagation, LegalPropagationItem, LegalReviewInput, LegalReviewView, LegalRevisionInput, LegalRevisionPreview, LegalRevisionView, LegalStateInput, LegalStateRow, HelpAdminFilter, HelpAdminView, HelpArticleInput, HelpArticleView, HelpFeedbackInput, HelpRowView, HelpSearchInput, HelpSearchView, HelpStatsView, HelpSupportPath, AppInfoView, DeviceReport, ProductFeedbackBoardView, ProductFeedbackHandleInput, ProductFeedbackInboxFilter, ProductFeedbackInboxView, ProductFeedbackInput, ProductFeedbackView, ReleaseInput, ReleaseView, SimilarProductFeedbackView } from './repository';
 import { SLA_CATEGORIES, WINDOW_DAYS as SLA_WINDOW_DAYS, elapsedMsOf as slaElapsedOf, pauseOf as slaPauseOf, ratioOf as slaRatioOf, rollupOf as slaRollupOf, statusOf as slaStatusOf, targetSignal as slaTargetSignal, trendOf as slaTrendOf, triageScore as slaTriageScore } from '@/features/sla/consolidated';
 import type { SlaItem } from '@/features/sla/consolidated';
 import type { SlaCategoryView, SlaItemView, SlaOverviewView } from './repository';
@@ -1068,7 +1068,9 @@ import {
 } from '@/features/help/help';
 import type { HelpFlag } from '@/features/help/help';
 import { seedHelpArticles } from './helpSeed';
-import type { HelpArticle, HelpArticleVersion, HelpEscalation, HelpFeedback, HelpSearchMiss, HelpSuggestion, HelpText, LegalRevision, LegalReview, LegalState, ServiceSubscription, BillingInvoice, UsageMonth, TierChange, PaymentMethodChange, BackupRun, BackupConfigVersion, RestoreTest, ExportJob, AuthSession, SecurityEvent, TwoFactorEnrolment, TwoFactorException, AccountLock, AccountRecovery, SecurityPolicyVersion, TrustedPlace, GeoPoint, ConsentRecord, DataRequest, PrivacyPolicyVersion, RetentionPolicyVersion, RetentionRun, MonitorAbsence, MonitorCheck, MonitorConcern, MonitorConfig, CompanyProfileVersion, Role, CustomRole, PermissionChange, PermissionChangeKind, UserAccessOverride, SandboxBaseline, SandboxRun, SandboxScenario, IntegrationChange, IntegrationCredentialView, IntegrationSetup, AuditExportRecord, LeadStage, ManualOverride, IntegrationConfig, IntegrationIncident, IntegrationProbe, MessageStatus } from './types';
+import { seedReleases } from './releaseSeed';
+import { FEEDBACK_PER_DAY as AV_PER_DAY, KINDS as AV_KINDS, REVIEW_DUE_DAYS as AV_REVIEW_DAYS, NOTE_MIN as AV_NOTE_MIN, TITLE_MIN as AV_TITLE_MIN, compareVersions as compareAppVersions, feedbackProblem as AV_FEEDBACK_PROBLEM, isSimilar as AV_SIMILAR, itemForRoles, releaseProblem as AV_RELEASE_PROBLEM } from '@/features/appinfo/appinfo';
+import type { AppRelease, AppVersionReport, ProductFeedback, HelpArticle, HelpArticleVersion, HelpEscalation, HelpFeedback, HelpSearchMiss, HelpSuggestion, HelpText, LegalRevision, LegalReview, LegalState, ServiceSubscription, BillingInvoice, UsageMonth, TierChange, PaymentMethodChange, BackupRun, BackupConfigVersion, RestoreTest, ExportJob, AuthSession, SecurityEvent, TwoFactorEnrolment, TwoFactorException, AccountLock, AccountRecovery, SecurityPolicyVersion, TrustedPlace, GeoPoint, ConsentRecord, DataRequest, PrivacyPolicyVersion, RetentionPolicyVersion, RetentionRun, MonitorAbsence, MonitorCheck, MonitorConcern, MonitorConfig, CompanyProfileVersion, Role, CustomRole, PermissionChange, PermissionChangeKind, UserAccessOverride, SandboxBaseline, SandboxRun, SandboxScenario, IntegrationChange, IntegrationCredentialView, IntegrationSetup, AuditExportRecord, LeadStage, ManualOverride, IntegrationConfig, IntegrationIncident, IntegrationProbe, MessageStatus } from './types';
 import type { EscalationChainTier, EscalationChannel, EscalationContact, EscalationDelivery, EscalationDrill, EscalationDrillStep, EscalationLastResort, EscalationRun, EscalationScenarioConfig } from './types';
 import type { AlertEscalationView, EscalationGap, EscalationMatrixView, EscalationRunView, EscalationScenarioView } from './repository';
 import { VAULT_KINDS, validityState } from '@/features/documents/vault';
@@ -2926,6 +2928,7 @@ function commitmentSources(now: number): CommitmentSources {
     billing: blSignals(now),
     legal: lgSignals(now),
     help: hpSignals(now),
+    appFeedback: avSignals(),
     tds: tdsObligations(Date.now()),
     exits: exitSignals(),
     handoverReviews: handoverSignals().reviews,
@@ -6335,6 +6338,88 @@ function hpSignals(now: number): { content: { count: number; dueAt: string } | n
   };
 }
 
+/* ------------------------------------------------------------------ 200 — app version, changelog & product feedback */
+
+const appReleases: AppRelease[] = [];
+const appVersionReports: AppVersionReport[] = [];
+const productFeedback: ProductFeedback[] = [];
+const avN = { rel: 0, item: 0, fb: 0, seeded: false };
+const avDay = 86_400_000;
+const avIso = (ms: number): string => new Date(ms).toISOString();
+const avLetters = (s: string): number => s.replace(/[^\p{L}\p{N}]/gu, '').length;
+
+/** Seeds, built the first time they are needed: the app's own history, a few suggestions at different stages, and what a handful of devices reported. All wording is a first draft for the owner to check. */
+function avEnsure(): void {
+  if (avN.seeded) return;
+  avN.seeded = true;
+  const now = Date.now();
+  for (const r of [...seedReleases].sort((a, b) => compareAppVersions(a.version, b.version))) {
+    avN.rel += 1;
+    appReleases.push({ id: `rl-${avN.rel}`, version: r.version, releasedAt: avIso(now - r.daysAgo * avDay), byName: 'Prashant Vasant Wable', items: r.items.map((it) => { avN.item += 1; return { ...it, id: `ri-${avN.item}`, text: { ...it.text }, roles: [...it.roles] }; }), requires: r.version === '0.1.0' ? { chrome: 90, edge: 90, firefox: 88, safari: 14 } : {} });
+  }
+  const fb = (kind: ProductFeedback['kind'], role: string, userId: string, text: string, daysAgo: number, extra: Partial<ProductFeedback> = {}): ProductFeedback => { avN.fb += 1; const f: ProductFeedback = { id: `pf-${avN.fb}`, code: `AIEC-PF-${1000 + avN.fb}`, kind, text, area: 'overall', role, userId, at: avIso(now - daysAgo * avDay), version: '0.1.0', status: 'new', votes: [userId], ...extra }; productFeedback.push(f); return f; };
+  fb('idea', 'customer', 'seed-c1', 'Please send a reminder the day before the technician visit so I can be at home.', 20, { status: 'planned', note: 'Looking at how to do this without sending too many messages.', published: { title: 'A reminder the day before a service visit', note: 'We are looking at how to do this without sending too many messages.' }, votes: ['seed-c1', 'seed-c2', 'seed-c3'], handledBy: 'Prashant Vasant Wable', handledAt: avIso(now - 15 * avDay) });
+  const photo = fb('idea', 'surveyor', 'seed-s1', 'Let me attach a photo of the building when I capture a lead on site.', 9);
+  fb('idea', 'surveyor', 'seed-s2', 'Capture a photo of the building while adding a lead on site.', 4, { clusterOf: photo.id });
+  fb('problem', 'technician', 'seed-t1', 'Photos open slowly in the app when the signal is weak.', 6);
+  fb('idea', 'supplier', 'seed-p1', 'A way to upload many catalogue prices together from a spreadsheet.', 30, { status: 'done', note: 'Bulk upload is on the Catalog screen.', published: { title: 'Upload catalogue prices in bulk', note: 'Bulk upload is available on the Catalog screen.' }, votes: ['seed-p1', 'seed-p2'], handledBy: 'Prashant Vasant Wable', handledAt: avIso(now - 25 * avDay) });
+  const rep = (userId: string, role: string, version: string, device: AppVersionReport['device'], browser: string, major: number | null, compatible: boolean | null, ago: number): void => { appVersionReports.push({ userId, role, version, device, browser, major, compatible, at: avIso(now - ago * avDay) }); };
+  rep('u-cust-1', 'customer', '0.1.0', 'phone', 'chrome', 126, true, 1);
+  rep('u-srv-1', 'surveyor', '0.0.9', 'phone', 'chrome', 78, false, 2);
+  rep('u-tech-1', 'technician', '0.0.9', 'phone', 'chrome', 118, true, 2);
+  rep('u-sup-1', 'supplier', '0.0.8', 'desktop', 'safari', 13, false, 5);
+}
+
+const avKnownRoles = (): string[] => [...BUILT_IN_HELP_ROLES, ...customRoles.filter((c) => !c.retired).map((c) => c.id)];
+const avRolesOf = (u: User): string[] => [u.role, ...(userRoleAssign.get(u.id) ?? [])];
+const avUser = (userId: string): User => { const u = byId(users, userId); if (!u) throw new RepositoryError('forbidden'); return u; };
+const avAdmin = (userId: string): User => { const u = byId(users, userId); if (u?.role !== 'admin') throw new RepositoryError('forbidden'); return u; };
+const avLatest = (): AppRelease | null => [...appReleases].sort((a, b) => compareAppVersions(b.version, a.version))[0] ?? null;
+
+function avReleaseView(r: AppRelease, u: User, running: string): ReleaseView {
+  const roles = avRolesOf(u);
+  return { id: r.id, version: r.version, releasedAt: r.releasedAt, byName: r.byName, items: r.items.map((it) => ({ id: it.id, kind: it.kind, text: { ...it.text }, roles: [...it.roles], ...(it.route ? { route: it.route } : {}), relevant: u.role === 'admin' ? true : itemForRoles(it.roles, roles) })), requires: { ...r.requires }, ...(r.note ? { note: r.note } : {}), newer: compareAppVersions(r.version, running) > 0, current: compareAppVersions(r.version, running) === 0 };
+}
+
+function avInfo(u: User, running: string, now: number): AppInfoView {
+  avEnsure();
+  const latest = avLatest();
+  const releases = [...appReleases].sort((a, b) => compareAppVersions(b.version, a.version)).map((r) => avReleaseView(r, u, running));
+  const newer = releases.filter((r) => r.newer);
+  const relevant = newer.flatMap((r) => r.items.filter((i) => i.relevant));
+  const reps = appVersionReports;
+  const byVersion = [...new Set(reps.map((r) => r.version))].sort((a, b) => compareAppVersions(b, a)).map((v) => ({ version: v, count: reps.filter((r) => r.version === v).length, roles: reps.filter((r) => r.version === v).reduce<Record<string, number>>((m, r) => { m[r.role] = (m[r.role] ?? 0) + 1; return m; }, {}) }));
+  return JSON.parse(JSON.stringify({
+    latest: latest?.version ?? running, running, updateAvailable: !!latest && compareAppVersions(latest.version, running) > 0, releases,
+    whatsNew: { releases: newer.length, items: relevant.length, workflow: relevant.filter((i) => i.kind === 'workflow').length },
+    requires: latest?.requires ?? {}, lastCheckedAt: avIso(now),
+    adoption: u.role === 'admin' ? { reported: reps.length, onLatest: reps.filter((r) => latest && compareAppVersions(r.version, latest.version) >= 0).length, behind: reps.filter((r) => latest && compareAppVersions(r.version, latest.version) < 0).length, unsupported: reps.filter((r) => r.compatible === false).length, byVersion, lastReportAt: reps.map((r) => r.at).sort().pop() ?? null } : null,
+    roles: avKnownRoles(), roleNames: Object.fromEntries(customRoles.map((c) => [c.id, c.name])),
+  })) as AppInfoView;
+}
+
+function avFeedbackView(f: ProductFeedback, u: User, asPublic: boolean): ProductFeedbackView {
+  const mine = f.userId === u.id;
+  const cluster = productFeedback.filter((x) => x.clusterOf === f.id || x.id === f.id);
+  const votes = new Set([...f.votes, ...cluster.flatMap((x) => x.votes)]).size;
+  return { id: f.id, code: f.code, kind: f.kind, area: f.area, text: asPublic ? (f.published?.title ?? '') : f.text, status: f.status, ...(f.note && mine ? { note: f.note } : {}), ...(f.published ? { publicTitle: f.published.title, publicNote: f.published.note } : {}), votes, iVoted: f.votes.includes(u.id), mine, at: f.at };
+}
+const avPrimary = (f: ProductFeedback): ProductFeedback => (f.clusterOf ? byId(productFeedback, f.clusterOf) ?? f : f);
+
+function avAlerts(now: number): void {
+  avEnsure();
+  const open = productFeedback.filter((f) => f.status === 'new' && !f.clusterOf);
+  const a = alerts.find((x) => x.relatedId === 'av:feedback' && x.status !== 'resolved');
+  if (open.length > 0) raiseAlert({ titleKey: 'appInfo.alert.feedback', context: `${open.length} suggestion${open.length === 1 ? '' : 's'} about the app waiting to be looked at`, severity: 'low', category: 'automation', relatedId: 'av:feedback', sourceRoute: '/app-info?tab=inbox' });
+  else if (a) patchInPlace(alerts, a.id, { status: 'resolved', resolvedBy: 'system', resolvedAt: avIso(now), resolutionNote: 'Every suggestion has been looked at' });
+}
+const syncAppInfo = (now: number): void => avAlerts(now);
+function avSignals(): { count: number; dueAt: string } | null {
+  avEnsure();
+  const open = productFeedback.filter((f) => f.status === 'new' && !f.clusterOf);
+  return open.length ? { count: open.length, dueAt: avIso(Math.min(...open.map((f) => Date.parse(f.at))) + AV_REVIEW_DAYS * avDay) } : null;
+}
+
 const heartbeatCommitments = { notifications: 0, alerts: 0 };
 const HEARTBEAT: { id: string; run: (now: number) => void }[] = [
   { id: 'followUpTasks', run: () => reconcileFollowUpTasks() },
@@ -6404,6 +6489,7 @@ const HEARTBEAT: { id: string; run: (now: number) => void }[] = [
   { id: 'billing', run: (now) => syncBilling(now) },
   { id: 'legal', run: (now) => syncLegal(now) },
   { id: 'help', run: (now) => syncHelp(now) },
+  { id: 'appInfo', run: (now) => syncAppInfo(now) },
   {
     id: 'stageInvoices',
     run: () => {
@@ -29057,6 +29143,103 @@ export const memoryRepository: Repository = {
       if (!m) throw new RepositoryError('not_found');
       if (hpLetters(note) < HP_NOTE_MIN) throw new RepositoryError('note_short');
       m.handled = { byName: admin.name, at: hpIso(Date.now()), note: note.trim() };
+    }),
+
+  /* 200 — app version, changelog & product feedback */
+  getAppInfo: (userId, running) => simulateRead(() => avInfo(avUser(userId), running, Date.now())),
+  reportAppVersion: (userId, report) =>
+    simulateWrite(() => {
+      const u = avUser(userId);
+      avEnsure();
+      const rec: AppVersionReport = { userId: u.id, role: u.role, version: report.version, device: report.device, browser: report.browser, major: report.major, compatible: report.compatible, at: avIso(Date.now()) };
+      const i = appVersionReports.findIndex((r) => r.userId === u.id);
+      if (i >= 0) appVersionReports[i] = rec; else appVersionReports.push(rec);
+    }),
+  publishRelease: (userId, input) =>
+    simulateWrite(() => {
+      const admin = avAdmin(userId);
+      avEnsure();
+      const latest = avLatest();
+      const problem = AV_RELEASE_PROBLEM({ version: input.version, items: input.items, requires: input.requires }, latest?.version ?? null, avKnownRoles());
+      if (problem) throw new RepositoryError(problem);
+      const toText = (i: { en: string; hi: string; mr: string }): HelpText => ({ en: i.en.trim(), ...(i.hi.trim() ? { hi: i.hi.trim() } : {}), ...(i.mr.trim() ? { mr: i.mr.trim() } : {}) });
+      avN.rel += 1;
+      const rel: AppRelease = { id: `rl-${avN.rel}`, version: input.version.trim(), releasedAt: avIso(Date.now()), byName: admin.name, items: input.items.map((it) => { avN.item += 1; return { id: `ri-${avN.item}`, kind: it.kind as AppRelease['items'][number]['kind'], text: toText(it), roles: [...new Set(it.roles)], ...(it.route.trim() ? { route: it.route.trim() } : {}) }; }), requires: Object.fromEntries(Object.entries(input.requires).filter(([, v]) => typeof v === 'number')) };
+      appReleases.push(rel);
+      return avReleaseView(rel, admin, latest?.version ?? rel.version);
+    }),
+  findSimilarProductFeedback: (userId, text) =>
+    simulateRead(() => {
+      const u = avUser(userId);
+      avEnsure();
+      const sim = productFeedback.filter((f) => f.userId !== u.id && f.status !== 'declined' && AV_SIMILAR(f.text, text)).map((f) => avPrimary(f));
+      const uniq = [...new Map(sim.map((f) => [f.id, f])).values()];
+      return JSON.parse(JSON.stringify({ published: uniq.filter((f) => f.published && (f.status === 'planned' || f.status === 'done')).map((f) => avFeedbackView(f, u, true)), others: uniq.filter((f) => !(f.published && (f.status === 'planned' || f.status === 'done'))).length })) as SimilarProductFeedbackView;
+    }),
+  submitProductFeedback: (userId, input) =>
+    simulateWrite(() => {
+      const u = avUser(userId);
+      avEnsure();
+      const problem = AV_FEEDBACK_PROBLEM(input);
+      if (problem) throw new RepositoryError(problem);
+      const now = Date.now();
+      if (productFeedback.filter((f) => f.userId === u.id && now - Date.parse(f.at) < avDay).length >= AV_PER_DAY) throw new RepositoryError('too_many');
+      const text = input.text.trim();
+      const same = productFeedback.filter((f) => f.userId !== u.id && f.status !== 'declined' && AV_SIMILAR(f.text, text)).map((f) => avPrimary(f)).sort((a, b) => (a.at < b.at ? -1 : 1))[0];
+      avN.fb += 1;
+      const f: ProductFeedback = { id: `pf-${avN.fb}`, code: `AIEC-PF-${1000 + avN.fb}`, kind: input.kind as ProductFeedback['kind'], text, area: input.area, role: u.role, userId: u.id, at: avIso(now), version: avLatest()?.version ?? '0.0.0', status: same && same.status !== 'new' ? same.status : 'new', votes: [u.id], ...(same ? { clusterOf: same.id } : {}) };
+      productFeedback.push(f);
+      avAlerts(now);
+      return avFeedbackView(f, u, false);
+    }),
+  voteProductFeedback: (userId, feedbackId) =>
+    simulateWrite(() => {
+      const u = avUser(userId);
+      avEnsure();
+      const f = byId(productFeedback, feedbackId);
+      if (!f || !f.published || !(f.status === 'planned' || f.status === 'done')) throw new RepositoryError('not_found');
+      if (f.userId === u.id) throw new RepositoryError('own_feedback');
+      const next = f.votes.includes(u.id) ? f.votes.filter((x) => x !== u.id) : [...f.votes, u.id];
+      return avFeedbackView(patchInPlace(productFeedback, f.id, { votes: next }), u, true);
+    }),
+  getProductFeedbackBoard: (userId) =>
+    simulateRead(() => {
+      const u = avUser(userId);
+      avEnsure();
+      return JSON.parse(JSON.stringify({
+        mine: productFeedback.filter((f) => f.userId === u.id).sort((a, b) => (a.at < b.at ? 1 : -1)).map((f) => ({ ...avFeedbackView(f, u, false), ...(f.clusterOf ? { status: avPrimary(f).status, publicNote: avPrimary(f).published?.note ?? f.published?.note } : {}) })),
+        roadmap: productFeedback.filter((f) => !f.clusterOf && f.published && (f.status === 'planned' || f.status === 'done')).sort((a, b) => (a.handledAt ?? '') < (b.handledAt ?? '') ? 1 : -1).map((f) => avFeedbackView(f, u, true)),
+      })) as ProductFeedbackBoardView;
+    }),
+  getProductFeedbackInbox: (userId, filter) =>
+    simulateRead(() => {
+      avAdmin(userId);
+      avEnsure();
+      const prim = productFeedback.filter((f) => !f.clusterOf);
+      const rows = prim.filter((f) => (filter.status === 'all' || (filter.status === 'open' ? f.status === 'new' : f.status === filter.status)) && (filter.kind === 'all' || f.kind === filter.kind)).sort((a, b) => (a.status === 'new' ? 0 : 1) - (b.status === 'new' ? 0 : 1) || (a.at < b.at ? 1 : -1));
+      const counts = { new: 0, planned: 0, done: 0, declined: 0, duplicate: 0 } as Record<ProductFeedback['status'], number>;
+      for (const f of prim) counts[f.status] += 1;
+      return JSON.parse(JSON.stringify({
+        rows: rows.slice(filter.offset, filter.offset + filter.limit).map((f) => ({ id: f.id, code: f.code, kind: f.kind, area: f.area, text: f.text, role: f.role, at: f.at, version: f.version, status: f.status, ...(f.note ? { note: f.note } : {}), ...(f.published ? { published: f.published } : {}), votes: new Set([...f.votes, ...productFeedback.filter((x) => x.clusterOf === f.id).flatMap((x) => x.votes)]).size, members: productFeedback.filter((x) => x.clusterOf === f.id).map((x) => ({ id: x.id, code: x.code, text: x.text, role: x.role, at: x.at })) })),
+        total: rows.length, counts, at: avIso(Date.now()),
+      })) as ProductFeedbackInboxView;
+    }),
+  handleProductFeedback: (userId, feedbackId, input) =>
+    simulateWrite(() => {
+      const admin = avAdmin(userId);
+      avEnsure();
+      const f = byId(productFeedback, feedbackId);
+      if (!f) throw new RepositoryError('not_found');
+      if (!['planned', 'done', 'declined', 'duplicate'].includes(input.status)) throw new RepositoryError('status_unknown');
+      if (avLetters(input.note) < AV_NOTE_MIN) throw new RepositoryError('note_short');
+      if (input.status === 'duplicate' && (!input.duplicateOf || input.duplicateOf === f.id || !byId(productFeedback, input.duplicateOf))) throw new RepositoryError('duplicate_invalid');
+      if (input.publish && input.status !== 'planned' && input.status !== 'done') throw new RepositoryError('publish_invalid');
+      if (input.publish && avLetters(input.publicTitle) < AV_TITLE_MIN) throw new RepositoryError('title_short');
+      const now = avIso(Date.now());
+      const members = input.applyToCluster ? productFeedback.filter((x) => x.clusterOf === f.id) : [];
+      patchInPlace(productFeedback, f.id, { status: input.status, note: input.note.trim(), handledBy: admin.name, handledAt: now, ...(input.status === 'duplicate' ? { duplicateOf: input.duplicateOf as string } : {}), ...(input.publish ? { published: { title: input.publicTitle.trim(), note: input.publicNote.trim() } } : {}) });
+      for (const m of members) patchInPlace(productFeedback, m.id, { status: input.status, handledBy: admin.name, handledAt: now });
+      avAlerts(Date.now());
     }),
 
   /* 189 — integration management */

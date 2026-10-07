@@ -168,6 +168,8 @@ export interface CommitmentSources {
   /** Wording a legal review found a problem with, and wording whose review is owed (198). */
   /** Help articles that need a person (wrong, out of date, a link that no longer works) and topics people suggested (199). */
   help: { content: { count: number; dueAt: string } | null; suggestions: { count: number; dueAt: string } | null };
+  /** Suggestions about the app itself nobody has looked at (200). */
+  appFeedback: { count: number; dueAt: string } | null;
   legal: { fixes: { id: string; name: string; dueAt: string }[]; reviews: { id: string; name: string; dueAt: string }[] };
   monitor: { checks: { adminId: string; day: string; dueAt: string }[]; concerns: { id: string; adminId: string; note: string; reviewAt: string }[] };
   permissions: { reviews: { id: string; name: string; screen: string; dueAt: string }[] };
@@ -2828,6 +2830,30 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
         paused: false,
         actionRoute: '/help?tab=gaps',
         oversightRoute: '/help?tab=gaps',
+      }];
+    },
+  },
+  {
+    // Someone took the trouble to say how the app could be better: it is looked at within a fortnight, even if the answer is no (200).
+    kind: 'app_feedback_review',
+    nudgeBefore: days(2),
+    escalateAfter: days(7),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'automation',
+    collect(src) {
+      const c = src.appFeedback;
+      if (!c) return [];
+      return [{
+        ...base('app_feedback_review', 'alert', 'appinfo:feedback'),
+        ownerUserId: adminId(src),
+        titleKey: 'work.title.app_feedback_review',
+        titleParams: { count: String(c.count) },
+        dueAt: c.dueAt,
+        state: 'open' as const,
+        paused: false,
+        actionRoute: '/app-info?tab=inbox',
+        oversightRoute: '/app-info?tab=inbox',
       }];
     },
   },

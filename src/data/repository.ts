@@ -1,6 +1,7 @@
 import type { VaultKind } from '@/features/documents/vault';
 import type { LegalCategory, LegalReviewState } from '@/features/legal/legal';
 import type { HelpFlag, SupportKind } from '@/features/help/help';
+import type { BrowserRequirement, FeedbackKind as ProductFeedbackKind, FeedbackStatus as ProductFeedbackStatus, ReleaseItemKind } from './types';
 import type { Advice, BillingState, TierDef, TierRow, Tradeoff } from '@/features/billing/billing';
 import type { BackupConfig, BackupConfigProblem, BackupFailure, RestoreState } from '@/features/backup/backup';
 import type { ExportProblem } from '@/features/backup/backup';
@@ -7757,6 +7758,34 @@ export interface HelpAdminView {
 }
 export interface HelpArticleInput { id: string | null; category: string; roles: string[]; relatedRoutes: string[]; title: { en: string; hi: string; mr: string }; body: { en: string; hi: string; mr: string }; changeNote: string; publish: boolean }
 
+/* 200 — app version, changelog & product feedback */
+export interface ReleaseItemView { id: string; kind: ReleaseItemKind; text: HelpText; roles: string[]; route?: string; relevant: boolean }
+export interface ReleaseView { id: string; version: string; releasedAt: string; byName: string; items: ReleaseItemView[]; requires: BrowserRequirement; note?: HelpText; newer: boolean; current: boolean }
+export interface AppAdoptionView { reported: number; onLatest: number; behind: number; unsupported: number; byVersion: { version: string; count: number; roles: Record<string, number> }[]; lastReportAt: string | null }
+export interface AppInfoView {
+  latest: string;
+  running: string;
+  updateAvailable: boolean;
+  releases: ReleaseView[];
+  /** What the update brings for the signed-in role. */
+  whatsNew: { releases: number; items: number; workflow: number };
+  requires: BrowserRequirement;
+  lastCheckedAt: string;
+  adoption: AppAdoptionView | null;
+  roles: string[];
+  roleNames: Record<string, string>;
+}
+export interface DeviceReport { version: string; browser: string; major: number | null; device: 'phone' | 'tablet' | 'desktop'; compatible: boolean | null }
+export interface ProductFeedbackView { id: string; code: string; kind: ProductFeedbackKind; area: string; text: string; status: ProductFeedbackStatus; note?: string; publicTitle?: string; publicNote?: string; votes: number; iVoted: boolean; mine: boolean; at: string }
+export interface ProductFeedbackBoardView { mine: ProductFeedbackView[]; roadmap: ProductFeedbackView[] }
+export interface SimilarProductFeedbackView { published: ProductFeedbackView[]; others: number }
+export interface ProductFeedbackInput { kind: string; text: string; area: string }
+export interface ProductFeedbackInboxRow { id: string; code: string; kind: ProductFeedbackKind; area: string; text: string; role: string; at: string; version: string; status: ProductFeedbackStatus; note?: string; published?: { title: string; note: string }; votes: number; members: { id: string; code: string; text: string; role: string; at: string }[] }
+export interface ProductFeedbackInboxFilter { status: ProductFeedbackStatus | 'open' | 'all'; kind: ProductFeedbackKind | 'all'; offset: number; limit: number }
+export interface ProductFeedbackInboxView { rows: ProductFeedbackInboxRow[]; total: number; counts: Record<ProductFeedbackStatus, number>; at: string }
+export interface ProductFeedbackHandleInput { status: 'planned' | 'done' | 'declined' | 'duplicate'; note: string; publish: boolean; publicTitle: string; publicNote: string; duplicateOf: string | null; applyToCluster: boolean }
+export interface ReleaseInput { version: string; items: { kind: string; en: string; hi: string; mr: string; roles: string[]; route: string }[]; requires: BrowserRequirement }
+
 export interface TierChangeInput { tierId: string; when: 'renewal' | 'now'; reason: string; accepted: string[] }
 export interface TierChangePreview { fromTier: string; toTier: string; costFrom: number; costTo: number; avgDelta: number; tradeoffs: Tradeoff[]; lost: string[]; needConfirm: boolean; problems: string[]; effectiveAt: string }
 export interface PaymentMethodInput { last4: string; expiry: string }
@@ -9575,6 +9604,16 @@ export interface Repository {
   setHelpArticleStatus(userId: string, articleId: string, status: 'published' | 'draft' | 'retired', note: string): Promise<HelpArticleView>;
   handleHelpSuggestion(userId: string, suggestionId: string, status: 'planned' | 'done' | 'declined', note: string, articleId: string | null): Promise<void>;
   handleHelpMiss(userId: string, key: string, note: string): Promise<void>;
+  /* 200 — app version, changelog & product feedback */
+  getAppInfo(userId: string, running: string): Promise<AppInfoView>;
+  reportAppVersion(userId: string, report: DeviceReport): Promise<void>;
+  publishRelease(userId: string, input: ReleaseInput): Promise<ReleaseView>;
+  findSimilarProductFeedback(userId: string, text: string): Promise<SimilarProductFeedbackView>;
+  submitProductFeedback(userId: string, input: ProductFeedbackInput): Promise<ProductFeedbackView>;
+  voteProductFeedback(userId: string, feedbackId: string): Promise<ProductFeedbackView>;
+  getProductFeedbackBoard(userId: string): Promise<ProductFeedbackBoardView>;
+  getProductFeedbackInbox(userId: string, filter: ProductFeedbackInboxFilter): Promise<ProductFeedbackInboxView>;
+  handleProductFeedback(userId: string, feedbackId: string, input: ProductFeedbackHandleInput): Promise<void>;
   /** Before a sign-in code is accepted: is this account's sign-in paused after repeated failures? */
   precheckSignIn(userId: string): Promise<{ paused: boolean; until: string | null }>;
   recordLoginFailure(userId: string): Promise<{ paused: boolean; until: string | null; recent: number }>;

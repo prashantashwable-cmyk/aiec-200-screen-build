@@ -5060,7 +5060,7 @@ export type CommitmentKind =
   | 'exit_dispute_decide'
   | 'tier_review_due'
   | 'certification_renewal'
-  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup' | 'support_chat_reply' | 'feedback_outreach' | 'feedback_recognition' | 'referral_reward' | 'automation_pause_review' | 'escalation_drill_due' | 'escalation_gap_fix' | 'integration_followup' | 'integration_credential_rotation' | 'sandbox_promotion_pending' | 'sandbox_library_review' | 'company_profile_legal_verify' | 'permission_override_review' | 'monitor_daily_check' | 'monitor_concern_followup' | 'privacy_request_respond' | 'privacy_policy_notice' | 'privacy_retention_review' | 'security_place_review' | 'security_2fa_exception_decide' | 'security_2fa_exception_review' | 'security_account_recovery' | 'backup_failure_followup' | 'backup_restore_test' | 'export_collect' | 'billing_payment_fix' | 'billing_renewal_due' | 'legal_issue_fix' | 'legal_review_due' | 'help_content_attention' | 'help_suggestions_review'
+  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup' | 'support_chat_reply' | 'feedback_outreach' | 'feedback_recognition' | 'referral_reward' | 'automation_pause_review' | 'escalation_drill_due' | 'escalation_gap_fix' | 'integration_followup' | 'integration_credential_rotation' | 'sandbox_promotion_pending' | 'sandbox_library_review' | 'company_profile_legal_verify' | 'permission_override_review' | 'monitor_daily_check' | 'monitor_concern_followup' | 'privacy_request_respond' | 'privacy_policy_notice' | 'privacy_retention_review' | 'security_place_review' | 'security_2fa_exception_decide' | 'security_2fa_exception_review' | 'security_account_recovery' | 'backup_failure_followup' | 'backup_restore_test' | 'export_collect' | 'billing_payment_fix' | 'billing_renewal_due' | 'legal_issue_fix' | 'legal_review_due' | 'help_content_attention' | 'help_suggestions_review' | 'app_feedback_review'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'
@@ -6370,3 +6370,38 @@ export interface HelpSuggestion { id: string; code: string; text: string; search
 /** A search that found nothing, kept without who searched: the content gaps people actually hit. */
 export interface HelpSearchMiss { key: string; sample: string; count: number; roles: Record<string, number>; firstAt: string; lastAt: string; handled?: { byName: string; at: string; note: string } }
 export interface HelpEscalation { id: string; articleId: string | null; role: string; kind: 'chat' | 'ticket' | 'call' | 'messages' | 'safety'; at: string }
+
+/* ------------------------------------------------------------------ App version, changelog & product feedback (200) */
+
+export type ReleaseItemKind = 'workflow' | 'new' | 'improved' | 'fixed';
+export interface ReleaseItem { id: string; kind: ReleaseItemKind; text: HelpText; roles: string[]; route?: string }
+export interface BrowserRequirement { chrome?: number; edge?: number; firefox?: number; safari?: number }
+/** One published version of the app, written in plain words for the people who use it; a change to how someone works is marked as such. */
+export interface AppRelease { id: string; version: string; releasedAt: string; byName: string; items: ReleaseItem[]; requires: BrowserRequirement; note?: HelpText }
+/** What version and device a person last reported, so Admin can see who is behind. */
+export interface AppVersionReport { userId: string; role: string; version: string; device: 'phone' | 'tablet' | 'desktop'; browser: string; major: number | null; compatible: boolean | null; at: string }
+export type FeedbackKind = 'idea' | 'problem' | 'praise';
+export type FeedbackStatus = 'new' | 'planned' | 'done' | 'declined' | 'duplicate';
+/** A general idea or problem about the app itself, from any role. Others only ever see what Admin chose to publish about it, never the words as written. */
+export interface ProductFeedback {
+  id: string;
+  code: string;
+  kind: FeedbackKind;
+  text: string;
+  area: string;
+  role: string;
+  userId: string;
+  at: string;
+  version: string;
+  status: FeedbackStatus;
+  note?: string;
+  /** What Admin chose to show other people. */
+  published?: { title: string; note: string };
+  /** The earlier, similar suggestion this one was grouped under. */
+  clusterOf?: string;
+  duplicateOf?: string;
+  /** People who said "me too" on a published item. */
+  votes: string[];
+  handledBy?: string;
+  handledAt?: string;
+}
