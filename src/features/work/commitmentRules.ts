@@ -164,6 +164,7 @@ export interface CommitmentSources {
   privacy: { requests: { id: string; name: string; type: string; dueAt: string }[]; notices: { id: string; version: number; dueAt: string }[]; reviews: { id: string; count: number; since: string }[] };
   security: { places: { id: string; userId: string; name: string; dueAt: string }[]; requests: { id: string; name: string; dueAt: string }[]; exceptions: { id: string; name: string; until: string }[]; locks: { id: string; userId: string; name: string; dueAt: string }[] };
   backups: { failures: { id: string; code: string; at: string }[]; test: { dueAt: string } | null; exports: { id: string; code: string; dueAt: string }[] };
+  billing: { fixes: { id: string; name: string; dueAt: string }[]; renewals: { id: string; name: string; dueAt: string }[] };
   monitor: { checks: { adminId: string; day: string; dueAt: string }[]; concerns: { id: string; adminId: string; note: string; reviewAt: string }[] };
   permissions: { reviews: { id: string; name: string; screen: string; dueAt: string }[] };
   companyProfile: { verify: { id: string; version: number; dueAt: string }[] };
@@ -2687,6 +2688,50 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
         paused: false,
         actionRoute: '/backups?tab=exports',
         oversightRoute: '/backups?tab=exports',
+      }));
+    },
+  },
+  {
+    // A bill that failed, or a card about to stop working, can stop a service the whole app runs on: put right before it does (197).
+    kind: 'billing_payment_fix',
+    nudgeBefore: days(2),
+    escalateAfter: days(1),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'automation',
+    collect(src) {
+      return src.billing.fixes.map((x) => ({
+        ...base('billing_payment_fix', 'alert', x.id),
+        ownerUserId: adminId(src),
+        titleKey: 'work.title.billing_payment_fix',
+        titleParams: { name: x.name },
+        dueAt: x.dueAt,
+        state: 'open' as const,
+        paused: false,
+        actionRoute: `/billing?service=${x.id}`,
+        oversightRoute: '/billing',
+      }));
+    },
+  },
+  {
+    // A service that does not renew by itself has to be renewed by a person, in time (197).
+    kind: 'billing_renewal_due',
+    nudgeBefore: days(4),
+    escalateAfter: days(1),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'automation',
+    collect(src) {
+      return src.billing.renewals.map((x) => ({
+        ...base('billing_renewal_due', 'alert', x.id),
+        ownerUserId: adminId(src),
+        titleKey: 'work.title.billing_renewal_due',
+        titleParams: { name: x.name },
+        dueAt: x.dueAt,
+        state: 'open' as const,
+        paused: false,
+        actionRoute: `/billing?service=${x.id}`,
+        oversightRoute: '/billing',
       }));
     },
   },

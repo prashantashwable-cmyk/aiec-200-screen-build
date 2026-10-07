@@ -1033,7 +1033,7 @@ import type { OverrideKind, OverrideProblem } from '@/features/override/rules';
 import { GENESIS as AUDIT_GENESIS, codeOf as auditCodeOf, hashOf as auditHashOf, verifyChain as auditVerify } from '@/features/audit/chain';
 import { BOT_DRIFT_POINTS as HC_BOT_DRIFT, BOT_MIN_SAMPLE as HC_BOT_MIN, ENGINE_DOWN_MS as HC_ENGINE_DOWN, INTEGRATIONS as HC_INTEGRATIONS, MAX_PROBES as HC_MAX_PROBES, STATUS_WINDOW_MS as HC_STATUS_WINDOW, NOTE_MIN as HC_NOTE_MIN, PROBE_EVERY_MS as HC_PROBE_EVERY, WINDOW_MS as HC_WINDOW, agreementOf as hcAgreement, causeOf as hcCause, integrationDef as hcDef, isHttpUrl as hcIsUrl, judge as hcJudge, recovered as hcRecovered, sharedCauseOf as hcShared, uptimeOf as hcUptime } from '@/features/health/system';
 import type { IntegrationDef as HcDef, Observation as HcObservation, TechStatus } from '@/features/health/system';
-import type { AccessPackageView, ConsentRegisterFilter, ConsentRegisterView, DataRequestFilter, DataRequestListView, DataRequestView, DeletionPlanResult, FulfilInput, PrivacyPolicyView, RetentionPreview, RetentionView, SubjectDetailView, SubjectRowView, MonitorAbsenceInput, MonitorBackupCandidate, MonitorCheckInput, MonitorConfigInput, MonitorPanelView, MonitorSignalView, AccessGrantsView, CustomRoleInput, MatrixRowView, PermissionLogFilter, PermissionLogView, PermissionMatrixFilter, PermissionMatrixView, PermissionOverview, PermissionRoleView, PermissionUserRow, RoleChangeInput, RoleChangePreview, UserAccessView, UserOverrideInput, BrandView, CompanyProfilePreview, CompanyProfilePublishInput, CompanyProfileVersionView, CompanyProfileView, CompanyUsage, SandboxRunView, SandboxPromotionPreview, SandboxPromotionRow, SandboxRuleRef, SandboxScenarioView, SandboxView, IntegrationManagementView, IntegrationSetupView, IsolationCheckView, OverrideCandidate, OverrideConsoleView, OverridePreviewView, AuditDetailView, AuditExportView, AuditFilter, AuditRowView, AuditSearchView, BotHealthView, SystemHealthIntegrationView, SystemHealthView, SecurityOverview, SecurityRoleRow, SecurityAttentionItem, AccountSecurityRow, AccountListView, AuthSessionView, AccountRecoveryView, AccountSecurityView, SecurityEventsView, SecurityConfigPreview, TwoFactorExceptionList, SessionCheck, GateStep, SessionContextInput, BackupOverview, ExportPreview, ExportInput, ExportListView } from './repository';
+import type { AccessPackageView, ConsentRegisterFilter, ConsentRegisterView, DataRequestFilter, DataRequestListView, DataRequestView, DeletionPlanResult, FulfilInput, PrivacyPolicyView, RetentionPreview, RetentionView, SubjectDetailView, SubjectRowView, MonitorAbsenceInput, MonitorBackupCandidate, MonitorCheckInput, MonitorConfigInput, MonitorPanelView, MonitorSignalView, AccessGrantsView, CustomRoleInput, MatrixRowView, PermissionLogFilter, PermissionLogView, PermissionMatrixFilter, PermissionMatrixView, PermissionOverview, PermissionRoleView, PermissionUserRow, RoleChangeInput, RoleChangePreview, UserAccessView, UserOverrideInput, BrandView, CompanyProfilePreview, CompanyProfilePublishInput, CompanyProfileVersionView, CompanyProfileView, CompanyUsage, SandboxRunView, SandboxPromotionPreview, SandboxPromotionRow, SandboxRuleRef, SandboxScenarioView, SandboxView, IntegrationManagementView, IntegrationSetupView, IsolationCheckView, OverrideCandidate, OverrideConsoleView, OverridePreviewView, AuditDetailView, AuditExportView, AuditFilter, AuditRowView, AuditSearchView, BotHealthView, SystemHealthIntegrationView, SystemHealthView, SecurityOverview, SecurityRoleRow, SecurityAttentionItem, AccountSecurityRow, AccountListView, AuthSessionView, AccountRecoveryView, AccountSecurityView, SecurityEventsView, SecurityConfigPreview, TwoFactorExceptionList, SessionCheck, GateStep, SessionContextInput, BackupOverview, ExportPreview, ExportInput, ExportListView, BillingOverview, BillingServiceView, BillingServiceDetail, BillingMonthView, TierChangePreview } from './repository';
 import { SLA_CATEGORIES, WINDOW_DAYS as SLA_WINDOW_DAYS, elapsedMsOf as slaElapsedOf, pauseOf as slaPauseOf, ratioOf as slaRatioOf, rollupOf as slaRollupOf, statusOf as slaStatusOf, targetSignal as slaTargetSignal, trendOf as slaTrendOf, triageScore as slaTriageScore } from '@/features/sla/consolidated';
 import type { SlaItem } from '@/features/sla/consolidated';
 import type { SlaCategoryView, SlaItemView, SlaOverviewView } from './repository';
@@ -1051,7 +1051,12 @@ import {
   exportProblems as bkExportProblems, fileNameOf as bkFileName, latestSlot as bkLatestSlot, nextSlot as bkNextSlot, personalColumns as bkPersonal, restoreStateOf as bkRestoreState,
 } from '@/features/backup/backup';
 import type { BackupConfig, BackupFailure, DatasetDef, ExportPurpose } from '@/features/backup/backup';
-import type { BackupRun, BackupConfigVersion, RestoreTest, ExportJob, AuthSession, SecurityEvent, TwoFactorEnrolment, TwoFactorException, AccountLock, AccountRecovery, SecurityPolicyVersion, TrustedPlace, GeoPoint, ConsentRecord, DataRequest, PrivacyPolicyVersion, RetentionPolicyVersion, RetentionRun, MonitorAbsence, MonitorCheck, MonitorConcern, MonitorConfig, CompanyProfileVersion, Role, CustomRole, PermissionChange, PermissionChangeKind, UserAccessOverride, SandboxBaseline, SandboxRun, SandboxScenario, IntegrationChange, IntegrationCredentialView, IntegrationSetup, AuditExportRecord, LeadStage, ManualOverride, IntegrationConfig, IntegrationIncident, IntegrationProbe, MessageStatus } from './types';
+import {
+  GRACE_DAYS as _BL_GRACE, MAX_ATTEMPTS as BL_MAX_ATTEMPTS, NOTE_MIN as BL_NOTE_MIN, REASON_MIN as BL_REASON_MIN, RETRY_DAYS as BL_RETRY_DAYS, SERVICES as BL_SERVICES, SEVERE as BL_SEVERE, addMonthsMs as BL_ADD_MONTHS, adviceOf as BL_ADVICE,
+  billingStateOf as BL_STATE, costOf as blCost, isValidExpiry as BL_VALID_EXPIRY, isValidLast4 as BL_VALID_LAST4, monthIdOf as blMonthId, serviceDef as BL_SERVICE, spikeOf as BL_SPIKE, tierDef as BL_TIER,
+} from '@/features/billing/billing';
+import type { ServiceDef, TierDef, TierRow } from '@/features/billing/billing';
+import type { ServiceSubscription, BillingInvoice, UsageMonth, TierChange, PaymentMethodChange, BackupRun, BackupConfigVersion, RestoreTest, ExportJob, AuthSession, SecurityEvent, TwoFactorEnrolment, TwoFactorException, AccountLock, AccountRecovery, SecurityPolicyVersion, TrustedPlace, GeoPoint, ConsentRecord, DataRequest, PrivacyPolicyVersion, RetentionPolicyVersion, RetentionRun, MonitorAbsence, MonitorCheck, MonitorConcern, MonitorConfig, CompanyProfileVersion, Role, CustomRole, PermissionChange, PermissionChangeKind, UserAccessOverride, SandboxBaseline, SandboxRun, SandboxScenario, IntegrationChange, IntegrationCredentialView, IntegrationSetup, AuditExportRecord, LeadStage, ManualOverride, IntegrationConfig, IntegrationIncident, IntegrationProbe, MessageStatus } from './types';
 import type { EscalationChainTier, EscalationChannel, EscalationContact, EscalationDelivery, EscalationDrill, EscalationDrillStep, EscalationLastResort, EscalationRun, EscalationScenarioConfig } from './types';
 import type { AlertEscalationView, EscalationGap, EscalationMatrixView, EscalationRunView, EscalationScenarioView } from './repository';
 import { VAULT_KINDS, validityState } from '@/features/documents/vault';
@@ -2900,6 +2905,7 @@ function commitmentSources(now: number): CommitmentSources {
     privacy: pvSignals(now),
     security: secSignals(now),
     backups: bkSignals(now),
+    billing: blSignals(now),
     tds: tdsObligations(Date.now()),
     exits: exitSignals(),
     handoverReviews: handoverSignals().reviews,
@@ -5707,6 +5713,241 @@ function bkExportsTick(now: number): void {
   }
 }
 
+/* ------------------------------------------------------------------ 197 — what AIEC pays to keep its own software running */
+const serviceSubs: ServiceSubscription[] = [];
+const billingInvoices: BillingInvoice[] = [];
+const usageMonths: UsageMonth[] = [];
+const tierChanges: TierChange[] = [];
+const cardChanges: PaymentMethodChange[] = [];
+let blSeeded = false;
+const blN = { inv: 0, change: 0 };
+const blDay = 86_400_000;
+const blIso = (ms: number): string => new Date(ms).toISOString();
+const blLetters = secLetters;
+const BL_PROVIDERS: Record<string, string> = { hosting: 'Cloud hosting and database', whatsapp: 'WhatsApp Business API', sms: 'SMS provider', maps: 'Maps', payment_gateway: 'Payment gateway', id_verification: 'ID verification service' };
+
+function blSeedUsage(): Record<string, number[]> {
+  return {
+    hosting: [180, 210, 240, 270, 330, 390], whatsapp: [2100, 2400, 2300, 2600, 6200, 3300], sms: [5200, 5600, 6100, 5800, 7400, 6900],
+    maps: [14000, 15500, 17000, 19000, 22000, 24500], payment_gateway: [38, 41, 52, 47, 60, 55], id_verification: [20, 35, 18, 60, 24, 30],
+  };
+}
+const blSub = (id: string): ServiceSubscription => { const s = serviceSubs.find((x) => x.serviceId === id); if (!s) throw new RepositoryError('not_found'); return s; };
+const blMonthOf = (ms: number): string => blMonthId(ms);
+const blDaysIn = (ms: number): number => { const d = new Date(ms); return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); };
+
+function blEnsure(): void {
+  if (blSeeded) return;
+  blSeeded = true;
+  const now = Date.now();
+  const hist = blSeedUsage();
+  const tiers: Record<string, string> = { hosting: 'standard', whatsapp: 'growth', sms: 'bulk', maps: 'free_credit', payment_gateway: 'standard', id_verification: 'pay_go' };
+  const renew: Record<string, number> = { hosting: 11, whatsapp: 4, sms: 2, maps: 19, payment_gateway: 25, id_verification: 3 };
+  const thisMonth = blMonthOf(now);
+  const cardExpiry: Record<string, string> = { hosting: '2027-08', whatsapp: '2027-08', sms: thisMonth, maps: '2027-08', payment_gateway: '', id_verification: '2027-08' };
+  const cardLast4: Record<string, string> = { hosting: '4821', whatsapp: '4821', sms: '1177', maps: '4821', id_verification: '4821' };
+  const frac = new Date(now).getDate() / blDaysIn(now);
+  for (const def of BL_SERVICES) {
+    const full = hist[def.id];
+    const tierId = tiers[def.id];
+    serviceSubs.push({
+      serviceId: def.id, provider: BL_PROVIDERS[def.id], tierId, autoRenew: def.id !== 'id_verification', renewalDate: blIso(now + renew[def.id] * blDay), since: blIso(now - 400 * blDay), lastInvoiceStatus: 'paid',
+      card: def.payBy === 'card' ? { last4: cardLast4[def.id], expiry: cardExpiry[def.id] } : null,
+    });
+    // Five months of history, then this month so far.
+    for (let i = 0; i < full.length - 1; i += 1) {
+      const monthStart = new Date(new Date(now).getFullYear(), new Date(now).getMonth() - (full.length - 1 - i), 1).getTime();
+      const month = blMonthOf(monthStart);
+      const drivers = def.id === 'whatsapp' && i === 4 ? [{ key: 'recruitment', count: 2900 }, { key: 'payment_reminder', count: 1700 }, { key: 'shipment', count: 1600 }] : def.metric === 'messages' ? [{ key: 'payment_reminder', count: Math.round(full[i] * 0.45) }, { key: 'shipment', count: Math.round(full[i] * 0.35) }, { key: 'ticket', count: Math.round(full[i] * 0.2) }] : [];
+      usageMonths.push({ serviceId: def.id, month, tierId, used: full[i], drivers, note: def.id === 'whatsapp' && i === 4 ? { text: 'Recruitment drive in two cities: candidates were messaged about interviews and documents.', byName: 'Prashant Vasant Wable', at: blIso(monthStart + 35 * blDay) } : undefined });
+      const t = BL_TIER(def, tierId) as TierDef;
+      const amount = blCost(t, full[i]).total;
+      blN.inv += 1;
+      billingInvoices.push({ id: `bi-${blN.inv}`, code: `AIEC-BI-${1000 + blN.inv}`, serviceId: def.id, period: month, issuedAt: blIso(monthStart + 27 * blDay), amount, tierId, used: full[i], status: 'paid', attempt: 1, paidAt: blIso(monthStart + 27 * blDay) });
+    }
+    usageMonths.push({ serviceId: def.id, month: thisMonth, tierId, used: Math.round(full[full.length - 1] * frac), drivers: [] });
+  }
+}
+
+/** What has been used this month: the provider's own count, and for messaging also what this app itself sent, counted live from the messages. */
+function blAppSends(serviceId: string, now: number): number | null {
+  const channel = serviceId === 'whatsapp' ? 'whatsapp' : serviceId === 'sms' ? 'sms' : null;
+  if (!channel) return null;
+  const m = blMonthOf(now);
+  return commMessages.filter((x) => x.channel === channel && x.sender !== 'customer' && blMonthOf(Date.parse(x.at)) === m).length;
+}
+function blUsageSeries(serviceId: string, now: number): { month: string; used: number; tierId: string; row: UsageMonth }[] {
+  const m = blMonthOf(now);
+  return usageMonths.filter((u) => u.serviceId === serviceId).sort((a, b) => (a.month < b.month ? -1 : 1)).map((u) => ({ month: u.month, used: u.month === m ? u.used + (blAppSends(serviceId, now) ?? 0) : u.used, tierId: u.tierId, row: u }));
+}
+function blDriversNow(serviceId: string, now: number): { key: string; count: number }[] {
+  const channel = serviceId === 'whatsapp' ? 'whatsapp' : serviceId === 'sms' ? 'sms' : null;
+  if (!channel) return [];
+  const m = blMonthOf(now);
+  const by = new Map<string, number>();
+  for (const x of commMessages) if (x.channel === channel && x.sender !== 'customer' && blMonthOf(Date.parse(x.at)) === m) by.set(x.templateGroupId ?? 'other', (by.get(x.templateGroupId ?? 'other') ?? 0) + 1);
+  return [...by.entries()].map(([key, count]) => ({ key, count })).sort((a, b) => b.count - a.count).slice(0, 4);
+}
+
+const blForecast = (used: number, now: number): number => { const day = new Date(now).getDate(); return day >= 5 ? Math.round(used * (blDaysIn(now) / day)) : used; };
+
+function blView(sub: ServiceSubscription, now: number): BillingServiceView {
+  const def = BL_SERVICE(sub.serviceId) as ServiceDef;
+  const tier = BL_TIER(def, sub.tierId) as TierDef;
+  const series = blUsageSeries(sub.serviceId, now);
+  const cur = series[series.length - 1];
+  const usedNow = cur?.used ?? 0;
+  const forecastUsed = blForecast(usedNow, now);
+  const last = series[series.length - 2];
+  const hist = series.slice(0, -1).map((x) => x.used);
+  const adv = BL_ADVICE(def, sub.tierId, hist.concat(forecastUsed));
+  const st = BL_STATE({ payBy: def.payBy, autoRenew: sub.autoRenew, renewalDate: sub.renewalDate, card: sub.card, lastInvoiceStatus: sub.lastInvoiceStatus, charges: tier.priceMonthly > 0 || forecastUsed > tier.included }, now);
+  const sp = series.map((x, i) => ({ ...BL_SPIKE(series.map((y) => y.used), i), month: x.month })).filter((x) => x.spike).pop();
+  return {
+    serviceId: sub.serviceId, provider: sub.provider, critical: def.critical, metric: def.metric, payBy: def.payBy, tierId: sub.tierId, tierPrice: tier.priceMonthly, included: tier.included, usedNow, usedPct: tier.included > 0 ? Math.round((usedNow / tier.included) * 100) : null,
+    costNow: blCost(tier, usedNow).total, forecast: blCost(tier, forecastUsed).total, costLast: last ? blCost(BL_TIER(def, last.tierId) ?? tier, last.used).total : 0, renewalDate: sub.renewalDate, daysToRenewal: st.daysToRenewal, autoRenew: sub.autoRenew, card: sub.card ? { ...sub.card } : null,
+    cardDays: st.cardDays, state: st.state, lastInvoiceStatus: sub.lastInvoiceStatus, pending: sub.pending ? { ...sub.pending } : null, spike: sp && sp.month >= (series[series.length - 3]?.month ?? '') ? { month: sp.month, ratio: sp.ratio } : null,
+    advice: { direction: adv.direction, best: adv.best, savingMonthly: adv.savingMonthly, why: adv.why }, route: def.route,
+  };
+}
+
+function blOverview(now: number): BillingOverview {
+  blEnsure();
+  const services = serviceSubs.map((s) => blView(s, now));
+  const monthNow = services.reduce((a, s) => a + s.costNow, 0);
+  const forecast = services.reduce((a, s) => a + s.forecast, 0);
+  const monthLast = services.reduce((a, s) => a + s.costLast, 0);
+  const next = [...services].sort((a, b) => (a.renewalDate < b.renewalDate ? -1 : 1))[0];
+  return JSON.parse(JSON.stringify({
+    services,
+    totals: { monthNow, forecast, monthLast, deltaPct: monthLast > 0 ? Math.round(((forecast - monthLast) / monthLast) * 100) : null, yearProjected: forecast * 12, potentialSaving: services.filter((s) => s.advice.direction === 'down').reduce((a, s) => a + s.advice.savingMonthly, 0) },
+    attention: services.filter((s) => s.state !== 'ok').map((s) => ({ serviceId: s.serviceId, state: s.state })),
+    next: next ? { serviceId: next.serviceId, date: next.renewalDate } : null, at: blIso(now),
+  })) as BillingOverview;
+}
+
+function blDetail(id: string, now: number): BillingServiceDetail {
+  blEnsure();
+  const sub = blSub(id);
+  const def = BL_SERVICE(id) as ServiceDef;
+  const series = blUsageSeries(id, now);
+  const v = blView(sub, now);
+  const usage = series.map((x) => x.used);
+  const adv = BL_ADVICE(def, sub.tierId, usage.slice(0, -1).concat(blForecast(usage[usage.length - 1] ?? 0, now)));
+  const driversNow = blDriversNow(id, now);
+  const months: BillingMonthView[] = series.map((x, i) => {
+    const sp = BL_SPIKE(usage, i);
+    const t = (BL_TIER(def, x.tierId) ?? BL_TIER(def, sub.tierId)) as TierDef;
+    const cur = i === series.length - 1;
+    return { month: x.month, tierId: x.tierId, used: x.used, cost: blCost(t, x.used).total, spike: sp.spike, ratio: sp.ratio, drivers: cur ? driversNow : x.row.drivers.map((d) => ({ ...d })), note: x.row.note ? { ...x.row.note } : null, current: cur };
+  });
+  return JSON.parse(JSON.stringify({
+    ...v, tiers: def.tiers, months, adviceRows: adv.rows, invoices: billingInvoices.filter((i) => i.serviceId === id).sort((a, b) => (a.issuedAt < b.issuedAt ? 1 : -1)).slice(0, 12), changes: tierChanges.filter((c) => c.serviceId === id).sort((a, b) => (a.at < b.at ? 1 : -1)),
+    cardChanges: cardChanges.filter((c) => c.serviceId === id).sort((a, b) => (a.at < b.at ? 1 : -1)), peakPerMin: def.peakPerMin, appSends: blAppSends(id, now),
+  })) as BillingServiceDetail;
+}
+
+function blAlerts(now: number): void {
+  const done = (rel: string, note: string): void => { const a = alerts.find((x) => x.relatedId === rel && x.status !== 'resolved'); if (a) patchInPlace(alerts, a.id, { status: 'resolved', resolvedBy: 'system', resolvedAt: blIso(now), resolutionNote: note }); };
+  for (const sub of serviceSubs) {
+    const def = BL_SERVICE(sub.serviceId) as ServiceDef;
+    const v = blView(sub, now);
+    const name = sub.provider;
+    const route = `/billing?service=${sub.serviceId}`;
+    const severe = BL_SEVERE.includes(v.state);
+    if (severe) raiseAlert({ titleKey: 'billing.alert.paymentFailed', context: `${name} · ${v.state}`, severity: def.critical ? 'critical' : 'high', category: 'automation', relatedId: `bill:${sub.serviceId}:pay`, sourceRoute: route }); else done(`bill:${sub.serviceId}:pay`, 'The payment is in order again');
+    if (v.state === 'card_expiring') raiseAlert({ titleKey: 'billing.alert.cardExpiring', context: `${name} · card ending ${sub.card?.last4} expires ${sub.card?.expiry}`, severity: def.critical ? 'high' : 'medium', category: 'automation', relatedId: `bill:${sub.serviceId}:card`, sourceRoute: route }); else done(`bill:${sub.serviceId}:card`, 'The card is in order');
+    if (v.state === 'renewing_soon') raiseAlert({ titleKey: 'billing.alert.renewalDue', context: `${name} · renews ${sub.renewalDate.slice(0, 10)} and is not set to renew by itself`, severity: def.critical ? 'high' : 'medium', category: 'automation', relatedId: `bill:${sub.serviceId}:renew`, sourceRoute: route }); else done(`bill:${sub.serviceId}:renew`, 'The renewal is in hand');
+    if (v.spike && v.spike.month === blMonthOf(now)) raiseAlert({ titleKey: 'billing.alert.spike', context: `${name} · usage is ${v.spike.ratio}× the usual`, severity: 'medium', category: 'automation', relatedId: `bill:${sub.serviceId}:spike:${v.spike.month}`, sourceRoute: route });
+  }
+}
+
+/** The provider's side, stood in for: on a service's renewal date the bill is made and paid, or fails for a reason that is then said out loud. */
+function syncBilling(now: number): void {
+  blEnsure();
+  for (const sub of serviceSubs) {
+    if (Date.parse(sub.renewalDate) > now) continue;
+    const def = BL_SERVICE(sub.serviceId) as ServiceDef;
+    const tierId = sub.pending && Date.parse(sub.pending.at) <= now ? sub.pending.tierId : sub.tierId;
+    const tier = BL_TIER(def, tierId) as TierDef;
+    const series = blUsageSeries(sub.serviceId, now);
+    const used = series[series.length - 1]?.used ?? 0;
+    const period = blMonthOf(Date.parse(sub.renewalDate));
+    const open = billingInvoices.find((i) => i.serviceId === sub.serviceId && i.period === period && i.status !== 'paid');
+    let failure: BillingInvoice['failure'] | null = null;
+    if (!sub.autoRenew) failure = 'manual_due';
+    else if (def.payBy === 'card' && !sub.card) failure = 'no_card';
+    else if (def.payBy === 'card' && sub.declined) failure = 'card_declined';
+    else if (def.payBy === 'card' && BL_STATE({ payBy: 'card', autoRenew: true, renewalDate: sub.renewalDate, card: sub.card, lastInvoiceStatus: null, charges: true }, now).state === 'card_expired') failure = 'card_expired';
+    if (open && open.attempt >= BL_MAX_ATTEMPTS && failure !== null) { sub.lastInvoiceStatus = open.failure === 'manual_due' ? 'pending' : 'failed'; continue; }
+    if (open && failure !== null && now - Date.parse(open.issuedAt) < BL_RETRY_DAYS * blDay) { sub.lastInvoiceStatus = open.failure === 'manual_due' ? 'pending' : 'failed'; continue; }
+    if (failure === null) {
+      const amount = blCost(tier, used).total;
+      const inv = open ?? ((): BillingInvoice => { blN.inv += 1; const x: BillingInvoice = { id: `bi-${blN.inv}`, code: `AIEC-BI-${1000 + blN.inv}`, serviceId: sub.serviceId, period, issuedAt: blIso(now), amount, tierId, used, status: 'pending', attempt: 0 }; billingInvoices.push(x); return x; })();
+      Object.assign(inv, { status: 'paid', paidAt: blIso(now), amount, tierId, used, failure: undefined, attempt: inv.attempt + 1 });
+      sub.tierId = tierId; delete sub.pending; sub.lastInvoiceStatus = 'paid';
+      sub.renewalDate = blIso(BL_ADD_MONTHS(Date.parse(sub.renewalDate), 1));
+      logAutomatedAction({ sourceKey: 'billing.renewed', triggeringCondition: `${sub.provider} came up for renewal`, actionTaken: `Paid ${inv.code} (₹${amount}) and renewed to ${sub.renewalDate.slice(0, 10)}`, affectedRecordId: inv.id, affectedRecordType: 'other', subjectLabel: sub.provider });
+    } else {
+      const inv = open ?? ((): BillingInvoice => { blN.inv += 1; const x: BillingInvoice = { id: `bi-${blN.inv}`, code: `AIEC-BI-${1000 + blN.inv}`, serviceId: sub.serviceId, period, issuedAt: blIso(now), amount: blCost(tier, used).total, tierId, used, status: 'pending', attempt: 0 }; billingInvoices.push(x); return x; })();
+      const first = inv.attempt === 0;
+      Object.assign(inv, { status: failure === 'manual_due' ? 'pending' : 'failed', failure, attempt: inv.attempt + 1, issuedAt: first ? inv.issuedAt : blIso(now) });
+      sub.lastInvoiceStatus = failure === 'manual_due' ? 'pending' : 'failed';
+      logAutomatedAction({ sourceKey: 'billing.payment_failed', triggeringCondition: `${sub.provider} came up for renewal`, actionTaken: failure === 'manual_due' ? 'The renewal is waiting for a person: this service is not set to renew by itself' : `The payment failed (${failure}); it is tried again tomorrow, up to ${BL_MAX_ATTEMPTS} times`, affectedRecordId: inv.id, affectedRecordType: 'other', subjectLabel: sub.provider });
+    }
+  }
+  blAlerts(now);
+}
+
+function blSignals(now: number): { fixes: { id: string; name: string; dueAt: string }[]; renewals: { id: string; name: string; dueAt: string }[] } {
+  blEnsure();
+  const fixes: { id: string; name: string; dueAt: string }[] = [];
+  const renewals: { id: string; name: string; dueAt: string }[] = [];
+  for (const sub of serviceSubs) {
+    const v = blView(sub, now);
+    if (BL_SEVERE.includes(v.state)) fixes.push({ id: sub.serviceId, name: sub.provider, dueAt: blIso(Math.max(now, Date.parse(sub.renewalDate)) + blDay) });
+    else if (v.state === 'card_expiring') fixes.push({ id: sub.serviceId, name: sub.provider, dueAt: blIso(Math.min(Date.parse(`${sub.card?.expiry}-28`) - 3 * blDay, Date.parse(sub.renewalDate) - 2 * blDay)) });
+    else if (v.state === 'renewing_soon') renewals.push({ id: sub.serviceId, name: sub.provider, dueAt: blIso(Date.parse(sub.renewalDate) - blDay) });
+  }
+  return { fixes, renewals };
+}
+
+function blTierPreview(id: string, tierId: string, when: 'renewal' | 'now', now: number): TierChangePreview {
+  blEnsure();
+  const sub = blSub(id);
+  const def = BL_SERVICE(id) as ServiceDef;
+  const to = BL_TIER(def, tierId);
+  const problems: string[] = [];
+  if (!to) problems.push('tier_unknown');
+  if (when !== 'renewal' && when !== 'now') problems.push('when_invalid');
+  if (to && tierId === sub.tierId && !sub.pending) problems.push('same_tier');
+  const t = to ?? (BL_TIER(def, sub.tierId) as TierDef);
+  const series = blUsageSeries(id, now);
+  const usage = series.map((x) => x.used);
+  const adv = BL_ADVICE(def, sub.tierId, usage.slice(0, -1).concat(blForecast(usage[usage.length - 1] ?? 0, now)));
+  const row = adv.rows.find((r) => r.tierId === t.id) as TierRow;
+  const cur = adv.rows.find((r) => r.current) as TierRow;
+  const used = usage[usage.length - 1] ?? 0;
+  return { fromTier: sub.tierId, toTier: t.id, costFrom: blCost(BL_TIER(def, sub.tierId) as TierDef, used).total, costTo: blCost(t, used).total, avgDelta: row.avgCost - cur.avgCost, tradeoffs: row.tradeoffs, lost: row.lost, needConfirm: row.tradeoffs.length > 0, problems, effectiveAt: when === 'now' ? blIso(now) : sub.renewalDate };
+}
+
+/** Tries the payment for an open bill with what the service is set up with now. Returns why it failed, or null when it went through. */
+function blTryPay(sub: ServiceSubscription, inv: BillingInvoice, now: number, byName?: string): BillingInvoice['failure'] | null {
+  const def = BL_SERVICE(sub.serviceId) as ServiceDef;
+  let failure: BillingInvoice['failure'] | null = null;
+  if (def.payBy === 'card') {
+    if (!sub.card) failure = 'no_card';
+    else if (sub.declined) failure = 'card_declined';
+    else if (BL_STATE({ payBy: 'card', autoRenew: true, renewalDate: sub.renewalDate, card: sub.card, lastInvoiceStatus: null, charges: true }, now).state === 'card_expired') failure = 'card_expired';
+  }
+  inv.attempt += 1;
+  if (failure) { inv.status = 'failed'; inv.failure = failure; sub.lastInvoiceStatus = 'failed'; return failure; }
+  inv.status = 'paid'; inv.paidAt = blIso(now); inv.failure = undefined; if (byName) inv.byName = byName;
+  sub.lastInvoiceStatus = 'paid';
+  if (Date.parse(sub.renewalDate) <= now) { sub.tierId = sub.pending && Date.parse(sub.pending.at) <= now ? sub.pending.tierId : sub.tierId; delete sub.pending; sub.renewalDate = blIso(BL_ADD_MONTHS(Date.parse(sub.renewalDate), 1)); }
+  return null;
+}
+
 const heartbeatCommitments = { notifications: 0, alerts: 0 };
 const HEARTBEAT: { id: string; run: (now: number) => void }[] = [
   { id: 'followUpTasks', run: () => reconcileFollowUpTasks() },
@@ -5773,6 +6014,7 @@ const HEARTBEAT: { id: string; run: (now: number) => void }[] = [
   { id: 'privacy', run: (now) => syncPrivacy(now) },
   { id: 'security', run: (now) => syncSecurity(now) },
   { id: 'backups', run: (now) => syncBackups(now) },
+  { id: 'billing', run: (now) => syncBilling(now) },
   {
     id: 'stageInvoices',
     run: () => {
@@ -28067,6 +28309,129 @@ export const memoryRepository: Repository = {
       j.status = 'cancelled'; exportPending.delete(id);
       const all = [...exportJobs].reverse();
       return JSON.parse(JSON.stringify({ rows: all.slice(0, 15), total: all.length, running: all.filter((x) => x.status === 'queued' || x.status === 'running').length })) as ExportListView;
+    }),
+  /* 197 — what AIEC pays to keep its own software running */
+  getBillingOverview: (userId) => simulateRead(() => { intAdmin(userId); return blOverview(Date.now()); }),
+  getServiceBilling: (userId, serviceId) => simulateRead(() => { intAdmin(userId); return blDetail(serviceId, Date.now()); }),
+  previewTierChange: (userId, serviceId, tierId, when) => simulateRead(() => { intAdmin(userId); return blTierPreview(serviceId, tierId, when, Date.now()); }),
+  changeServiceTier: (userId, serviceId, input) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      blEnsure();
+      const now = Date.now();
+      const sub = blSub(serviceId);
+      const pv = blTierPreview(serviceId, input.tierId, input.when, now);
+      if (pv.problems.length) throw new RepositoryError(pv.problems[0]);
+      if (blLetters(input.reason) < BL_REASON_MIN) throw new RepositoryError('reason_short');
+      // Every trade-off the move brings has to be seen and accepted, one by one: a cheaper plan can slow or limit real work.
+      const need = [...pv.tradeoffs, ...pv.lost.map((f) => `feature:${f}`)];
+      if (need.some((n) => !input.accepted.includes(n))) throw new RepositoryError('tradeoffs_unconfirmed');
+      blN.change += 1;
+      tierChanges.push({ id: `tc-${blN.change}`, serviceId, from: sub.tierId, to: input.tierId, at: blIso(now), byName: admin.name, effective: input.when, effectiveAt: pv.effectiveAt, reason: input.reason.trim(), monthlyDelta: pv.avgDelta, accepted: [...input.accepted] });
+      if (input.when === 'now') {
+        sub.tierId = input.tierId; delete sub.pending;
+        const m = blMonthOf(now);
+        const row = usageMonths.find((u) => u.serviceId === serviceId && u.month === m);
+        if (row) row.tierId = input.tierId;
+      } else sub.pending = { tierId: input.tierId, at: sub.renewalDate };
+      blAlerts(now);
+      return blDetail(serviceId, now);
+    }),
+  updatePaymentMethod: (userId, serviceId, input) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      blEnsure();
+      const now = Date.now();
+      const sub = blSub(serviceId);
+      if ((BL_SERVICE(serviceId) as ServiceDef).payBy !== 'card') throw new RepositoryError('no_card_needed');
+      if (!BL_VALID_LAST4(input.last4)) throw new RepositoryError('last4_invalid');
+      if (!BL_VALID_EXPIRY(input.expiry)) throw new RepositoryError('expiry_invalid');
+      if (Date.parse(`${input.expiry}-01`) < Date.parse(`${blMonthOf(now)}-01`)) throw new RepositoryError('expiry_past');
+      cardChanges.push({ id: `pc-${cardChanges.length + 1}`, serviceId, at: blIso(now), byName: admin.name, from: sub.card?.last4 ?? null, to: input.last4 });
+      sub.card = { last4: input.last4, expiry: input.expiry };
+      sub.declined = false;
+      // A bill that failed is tried again at once with the new card.
+      const open = billingInvoices.find((i) => i.serviceId === serviceId && i.status === 'failed');
+      if (open) blTryPay(sub, open, now, admin.name);
+      blAlerts(now);
+      return blDetail(serviceId, now);
+    }),
+  retryServicePayment: (userId, serviceId) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      blEnsure();
+      const now = Date.now();
+      const sub = blSub(serviceId);
+      const open = billingInvoices.find((i) => i.serviceId === serviceId && i.status === 'failed');
+      if (!open) throw new RepositoryError('nothing_to_retry');
+      const failure = blTryPay(sub, open, now, admin.name);
+      blAlerts(now);
+      if (failure) throw new RepositoryError(failure);
+      return blDetail(serviceId, now);
+    }),
+  setServiceAutoRenew: (userId, serviceId, on, reason) =>
+    simulateWrite(() => {
+      intAdmin(userId);
+      blEnsure();
+      const sub = blSub(serviceId);
+      if (sub.autoRenew === on) throw new RepositoryError('no_change');
+      if (blLetters(reason) < BL_REASON_MIN) throw new RepositoryError('reason_short');
+      sub.autoRenew = on;
+      blAlerts(Date.now());
+      return blDetail(serviceId, Date.now());
+    }),
+  markServiceRenewed: (userId, serviceId, note) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      blEnsure();
+      const now = Date.now();
+      const sub = blSub(serviceId);
+      if (blLetters(note) < BL_NOTE_MIN) throw new RepositoryError('note_short');
+      const def = BL_SERVICE(serviceId) as ServiceDef;
+      const tier = BL_TIER(def, sub.pending && Date.parse(sub.pending.at) <= Date.parse(sub.renewalDate) ? sub.pending.tierId : sub.tierId) as TierDef;
+      const series = blUsageSeries(serviceId, now);
+      const used = series[series.length - 1]?.used ?? 0;
+      const period = blMonthOf(Date.parse(sub.renewalDate));
+      let inv = billingInvoices.find((i) => i.serviceId === serviceId && i.period === period && i.status !== 'paid');
+      if (!inv) { blN.inv += 1; inv = { id: `bi-${blN.inv}`, code: `AIEC-BI-${1000 + blN.inv}`, serviceId, period, issuedAt: blIso(now), amount: blCost(tier, used).total, tierId: tier.id, used, status: 'pending', attempt: 0 }; billingInvoices.push(inv); }
+      Object.assign(inv, { status: 'paid', paidAt: blIso(now), byName: admin.name, failure: undefined, attempt: inv.attempt + 1, tierId: tier.id });
+      sub.tierId = tier.id; delete sub.pending; sub.lastInvoiceStatus = 'paid';
+      sub.renewalDate = blIso(BL_ADD_MONTHS(Math.max(Date.parse(sub.renewalDate), now - 20 * blDay), 1));
+      blAlerts(now);
+      return blDetail(serviceId, now);
+    }),
+  noteServiceUsage: (userId, serviceId, month, note) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      blEnsure();
+      const row = usageMonths.find((u) => u.serviceId === serviceId && u.month === month);
+      if (!row) throw new RepositoryError('not_found');
+      if (blLetters(note) < BL_NOTE_MIN) throw new RepositoryError('note_short');
+      row.note = { text: note.trim(), byName: admin.name, at: new Date().toISOString() };
+      return blDetail(serviceId, Date.now());
+    }),
+  simulateBillingProblem: (userId, serviceId, kind) =>
+    simulateWrite(() => {
+      intAdmin(userId);
+      blEnsure();
+      const now = Date.now();
+      const sub = blSub(serviceId);
+      const def = BL_SERVICE(serviceId) as ServiceDef;
+      if (def.payBy !== 'card') throw new RepositoryError('no_card_needed');
+      if (kind === 'declined') {
+        sub.declined = true;
+        const tier = BL_TIER(def, sub.tierId) as TierDef;
+        const series = blUsageSeries(serviceId, now);
+        const used = series[series.length - 1]?.used ?? 0;
+        const period = blMonthOf(now);
+        let inv = billingInvoices.find((i) => i.serviceId === serviceId && i.period === period && i.status === 'failed');
+        if (!inv) { blN.inv += 1; inv = { id: `bi-${blN.inv}`, code: `AIEC-BI-${1000 + blN.inv}`, serviceId, period, issuedAt: blIso(now), amount: blCost(tier, used).total, tierId: tier.id, used, status: 'pending', attempt: 0 }; billingInvoices.push(inv); }
+        blTryPay(sub, inv, now);
+      } else if (kind === 'expired') {
+        if (sub.card) sub.card = { ...sub.card, expiry: blMonthOf(now - 40 * blDay) };
+      } else sub.declined = false;
+      blAlerts(now);
+      return blDetail(serviceId, now);
     }),
   /* 189 — integration management */
   getIntegrationManagement: (userId) => simulateRead(() => { intAdmin(userId); syncIntegrationManagement(Date.now()); return igView(Date.now()); }),

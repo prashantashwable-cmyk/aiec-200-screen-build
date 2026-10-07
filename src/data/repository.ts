@@ -1,4 +1,5 @@
 import type { VaultKind } from '@/features/documents/vault';
+import type { Advice, BillingState, TierDef, TierRow, Tradeoff } from '@/features/billing/billing';
 import type { BackupConfig, BackupConfigProblem, BackupFailure, RestoreState } from '@/features/backup/backup';
 import type { ExportProblem } from '@/features/backup/backup';
 import type { ConfigProblem as SecConfigProblem, PasswordPolicy, SecurityConfig, SecondFactorMethod, TwoFactorState } from '@/features/security/security';
@@ -328,6 +329,10 @@ import type {
   BackupConfigVersion,
   RestoreTest,
   ExportJob,
+  ServiceSubscription,
+  BillingInvoice,
+  TierChange,
+  PaymentMethodChange,
 } from './types';
 import type { SlotDay } from '@/features/logistics/deliverySlots';
 import type { ArrivalWindow, CapacityWeek, ReadinessStatus } from '@/features/logistics/transit';
@@ -7517,6 +7522,58 @@ export interface ExportListView { rows: ExportJob[]; total: number; running: num
 export interface ExportFile { fileName: string; mime: string; content: string }
 export interface DatasetCountView { id: string; total: number }
 
+/* ------------------------------------------------------------------ Subscriptions & billing (197) */
+
+export interface BillingServiceView {
+  serviceId: string;
+  provider: string;
+  critical: boolean;
+  metric: string;
+  payBy: 'card' | 'settlement';
+  tierId: string;
+  tierPrice: number;
+  included: number;
+  usedNow: number;
+  usedPct: number | null;
+  /** What the month has cost so far, and what it is heading for at the current pace. */
+  costNow: number;
+  forecast: number;
+  costLast: number;
+  renewalDate: string;
+  daysToRenewal: number;
+  autoRenew: boolean;
+  card: { last4: string; expiry: string } | null;
+  cardDays: number | null;
+  state: BillingState;
+  lastInvoiceStatus: 'paid' | 'failed' | 'pending' | null;
+  pending: { tierId: string; at: string } | null;
+  spike: { month: string; ratio: number } | null;
+  advice: { direction: Advice['direction']; best: string; savingMonthly: number; why: Advice['why'] };
+  route: string | null;
+}
+export interface BillingOverview {
+  services: BillingServiceView[];
+  totals: { monthNow: number; forecast: number; monthLast: number; deltaPct: number | null; yearProjected: number; potentialSaving: number };
+  attention: { serviceId: string; state: BillingState }[];
+  next: { serviceId: string; date: string } | null;
+  at: string;
+}
+export interface BillingMonthView { month: string; tierId: string; used: number; cost: number; spike: boolean; ratio: number; drivers: { key: string; count: number }[]; note: { text: string; byName: string; at: string } | null; current: boolean }
+export interface BillingServiceDetail extends BillingServiceView {
+  tiers: TierDef[];
+  months: BillingMonthView[];
+  adviceRows: TierRow[];
+  invoices: BillingInvoice[];
+  changes: TierChange[];
+  cardChanges: PaymentMethodChange[];
+  peakPerMin: number;
+  /** Messages the app itself sent this month on the channel (messaging services), as a cross-check on the provider's count. */
+  appSends: number | null;
+}
+export interface TierChangeInput { tierId: string; when: 'renewal' | 'now'; reason: string; accepted: string[] }
+export interface TierChangePreview { fromTier: string; toTier: string; costFrom: number; costTo: number; avgDelta: number; tradeoffs: Tradeoff[]; lost: string[]; needConfirm: boolean; problems: string[]; effectiveAt: string }
+export interface PaymentMethodInput { last4: string; expiry: string }
+
 /* ------------------------------------------------------------------ Integration management (189) */
 
 export interface IntegrationSetupView {
@@ -9298,6 +9355,17 @@ export interface Repository {
   listExports(userId: string, offset: number, limit: number): Promise<ExportListView>;
   downloadExport(userId: string, id: string): Promise<ExportFile>;
   cancelExport(userId: string, id: string): Promise<ExportListView>;
+  /* 197 — what AIEC pays to keep its own software running */
+  getBillingOverview(userId: string): Promise<BillingOverview>;
+  getServiceBilling(userId: string, serviceId: string): Promise<BillingServiceDetail>;
+  previewTierChange(userId: string, serviceId: string, tierId: string, when: 'renewal' | 'now'): Promise<TierChangePreview>;
+  changeServiceTier(userId: string, serviceId: string, input: TierChangeInput): Promise<BillingServiceDetail>;
+  updatePaymentMethod(userId: string, serviceId: string, input: PaymentMethodInput): Promise<BillingServiceDetail>;
+  retryServicePayment(userId: string, serviceId: string): Promise<BillingServiceDetail>;
+  setServiceAutoRenew(userId: string, serviceId: string, on: boolean, reason: string): Promise<BillingServiceDetail>;
+  markServiceRenewed(userId: string, serviceId: string, note: string): Promise<BillingServiceDetail>;
+  noteServiceUsage(userId: string, serviceId: string, month: string, note: string): Promise<BillingServiceDetail>;
+  simulateBillingProblem(userId: string, serviceId: string, kind: 'declined' | 'expired' | 'clear'): Promise<BillingServiceDetail>;
   /** Before a sign-in code is accepted: is this account's sign-in paused after repeated failures? */
   precheckSignIn(userId: string): Promise<{ paused: boolean; until: string | null }>;
   recordLoginFailure(userId: string): Promise<{ paused: boolean; until: string | null; recent: number }>;

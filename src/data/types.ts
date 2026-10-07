@@ -5060,7 +5060,7 @@ export type CommitmentKind =
   | 'exit_dispute_decide'
   | 'tier_review_due'
   | 'certification_renewal'
-  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup' | 'support_chat_reply' | 'feedback_outreach' | 'feedback_recognition' | 'referral_reward' | 'automation_pause_review' | 'escalation_drill_due' | 'escalation_gap_fix' | 'integration_followup' | 'integration_credential_rotation' | 'sandbox_promotion_pending' | 'sandbox_library_review' | 'company_profile_legal_verify' | 'permission_override_review' | 'monitor_daily_check' | 'monitor_concern_followup' | 'privacy_request_respond' | 'privacy_policy_notice' | 'privacy_retention_review' | 'security_place_review' | 'security_2fa_exception_decide' | 'security_2fa_exception_review' | 'security_account_recovery' | 'backup_failure_followup' | 'backup_restore_test' | 'export_collect'
+  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup' | 'support_chat_reply' | 'feedback_outreach' | 'feedback_recognition' | 'referral_reward' | 'automation_pause_review' | 'escalation_drill_due' | 'escalation_gap_fix' | 'integration_followup' | 'integration_credential_rotation' | 'sandbox_promotion_pending' | 'sandbox_library_review' | 'company_profile_legal_verify' | 'permission_override_review' | 'monitor_daily_check' | 'monitor_concern_followup' | 'privacy_request_respond' | 'privacy_policy_notice' | 'privacy_retention_review' | 'security_place_review' | 'security_2fa_exception_decide' | 'security_2fa_exception_review' | 'security_account_recovery' | 'backup_failure_followup' | 'backup_restore_test' | 'export_collect' | 'billing_payment_fix' | 'billing_renewal_due'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'
@@ -6240,3 +6240,46 @@ export interface ExportJob {
   downloads: number;
   error?: string;
 }
+
+
+/* ------------------------------------------------------------------ Subscriptions & billing of AIEC's own software (197) */
+
+export interface ServiceSubscription {
+  serviceId: string;
+  provider: string;
+  tierId: string;
+  /** A plan change that takes effect at the next renewal. */
+  pending?: { tierId: string; at: string };
+  autoRenew: boolean;
+  renewalDate: string;
+  card: { last4: string; expiry: string } | null;
+  lastInvoiceStatus: 'paid' | 'failed' | 'pending' | null;
+  /** Demo: the provider declines the card on the next attempt. */
+  declined?: boolean;
+  since: string;
+}
+export interface BillingInvoice {
+  id: string;
+  code: string;
+  serviceId: string;
+  period: string;
+  issuedAt: string;
+  amount: number;
+  tierId: string;
+  used: number;
+  status: 'paid' | 'failed' | 'pending';
+  attempt: number;
+  failure?: 'card_declined' | 'card_expired' | 'no_card' | 'manual_due';
+  paidAt?: string;
+  byName?: string;
+}
+export interface UsageMonth {
+  serviceId: string;
+  month: string;
+  tierId: string;
+  used: number;
+  drivers: { key: string; count: number }[];
+  note?: { text: string; byName: string; at: string };
+}
+export interface TierChange { id: string; serviceId: string; from: string; to: string; at: string; byName: string; effective: 'renewal' | 'now'; effectiveAt: string; reason: string; monthlyDelta: number; accepted: string[] }
+export interface PaymentMethodChange { id: string; serviceId: string; at: string; byName: string; from: string | null; to: string }
