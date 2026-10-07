@@ -1559,7 +1559,7 @@ restore a backup, pay a provider, enforce a rule on a server) the stand-in says 
   that explains what is new for the person's role and is honest about the device (too old is said, unknown is said), adoption for
   Admin, and general product feedback that groups close suggestions and shows others only what Admin chose to publish.
 
-**Cross-cutting facts added by this module.** Two new heartbeat units are protected (`commitments`): `security`, `backups`, `billing`,
+**Cross-cutting facts added by this module.** Four new heartbeat units are protected (`commitments`, cannot be paused): `security`, `backups`, `billing`,
 `legal`; `help` and `appInfo` sit with customer care. The Chip component does not forward `data-*` (tests wrap chips in a span).
 Links between screens must use the router, not `<a href>`, because a reload wipes the in-memory repository (198 had this and was fixed
 in 199). `ds-badge--wrap` was added to the design system for long labels.
