@@ -1016,6 +1016,8 @@ import { MANY_AT as WF_MANY_AT, MAX_PER_RUN as WF_MAX_PER_RUN, conflictsOf as wf
 import type { RecordValues, RuleDraft, SubjectId as WfSubject } from '@/features/automation/customRules';
 import { CHANNELS as INT_CHANNELS, CORE_TYPES as INT_CORE, DEFAULT_URGENCY_CHANNELS as INT_DEFAULTS, NO_CHANNELS as INT_NONE, atLeast as intAtLeast, channelProblems as intChannelProblems, contentProblems as intContentProblems, fatigueOf as intFatigueOf, isBlocking as intIsBlocking, reducesReach as intReducesReach, severityFloorOf as intSeverityFloor, urgencyOfSeverity as intUrgencyOfSeverity } from '@/features/notifications/internal';
 import type { Urgency as IntUrgency } from '@/features/notifications/internal';
+import { BUILT_IN as SB_BUILT_IN, ENGINES as SB_ENGINES, EXPECT_SCHEMA as SB_EXPECT, NOTE_MIN as SB_NOTE_MIN, PROMOTE_NUDGE_DAYS as SB_PROMOTE_NUDGE, REVIEW_EVERY_DAYS as SB_REVIEW_EVERY, compareOutcome as sbCompare, hashText as SB_HASH, promotionStatus as sbPromotionStatus, reviewDue as sbReviewDue, reviewDueAt as sbReviewDueAt, scenarioProblem as SB_SCENARIO_PROBLEM, statusOfComparisons as sbStatus } from '@/features/sandbox/testing';
+import type { Engine, Facts, Outcome } from '@/features/sandbox/testing';
 import { MANAGED_IDS as IG_MANAGED, REASON_MIN as IG_REASON_MIN, ROTATION_MS as IG_ROTATION_MS, ageDaysOf as igAge, credentialProblem as igCredentialProblem, dueForRotation as igDue, endpointFor as igEndpointFor, isManaged as igIsManaged, last4Of as igLast4, maskOf as igMask, modeProblem as igModeProblem, rotationDueAt as igDueAt, sandboxInProduction as igSandboxInProd } from '@/features/integrations/management';
 import type { AppEnvironment as IgEnvironment } from '@/features/integrations/management';
 import { OVERRIDE_KINDS as MO_KINDS, PATTERN_DAYS as MO_PATTERN_DAYS, PROTECTED_KINDS as MO_PROTECTED, PROTECTED_ROUTE as MO_PROTECTED_ROUTE, RULE_ROUTE as MO_RULE_ROUTE, STUCK_DAYS as MO_STUCK_DAYS, commitmentProtected as moProtectedCommitment, isBackwards as moBackwards, isProtected as moIsProtected, leadStageProblem as moLeadStageProblem, patternsOf as moPatterns, reasonProblem as moReasonProblem, skippedStages as moSkipped, untilProblem as moUntilProblem } from '@/features/override/rules';
@@ -1023,12 +1025,12 @@ import type { OverrideKind, OverrideProblem } from '@/features/override/rules';
 import { GENESIS as AUDIT_GENESIS, codeOf as auditCodeOf, hashOf as auditHashOf, verifyChain as auditVerify } from '@/features/audit/chain';
 import { BOT_DRIFT_POINTS as HC_BOT_DRIFT, BOT_MIN_SAMPLE as HC_BOT_MIN, ENGINE_DOWN_MS as HC_ENGINE_DOWN, INTEGRATIONS as HC_INTEGRATIONS, MAX_PROBES as HC_MAX_PROBES, STATUS_WINDOW_MS as HC_STATUS_WINDOW, NOTE_MIN as HC_NOTE_MIN, PROBE_EVERY_MS as HC_PROBE_EVERY, WINDOW_MS as HC_WINDOW, agreementOf as hcAgreement, causeOf as hcCause, integrationDef as hcDef, isHttpUrl as hcIsUrl, judge as hcJudge, recovered as hcRecovered, sharedCauseOf as hcShared, uptimeOf as hcUptime } from '@/features/health/system';
 import type { IntegrationDef as HcDef, Observation as HcObservation, TechStatus } from '@/features/health/system';
-import type { IntegrationManagementView, IntegrationSetupView, IsolationCheckView, OverrideCandidate, OverrideConsoleView, OverridePreviewView, AuditDetailView, AuditExportView, AuditFilter, AuditRowView, AuditSearchView, BotHealthView, SystemHealthIntegrationView, SystemHealthView } from './repository';
+import type { SandboxRunView, SandboxPromotionPreview, SandboxPromotionRow, SandboxRuleRef, SandboxScenarioView, SandboxView, IntegrationManagementView, IntegrationSetupView, IsolationCheckView, OverrideCandidate, OverrideConsoleView, OverridePreviewView, AuditDetailView, AuditExportView, AuditFilter, AuditRowView, AuditSearchView, BotHealthView, SystemHealthIntegrationView, SystemHealthView } from './repository';
 import { SLA_CATEGORIES, WINDOW_DAYS as SLA_WINDOW_DAYS, elapsedMsOf as slaElapsedOf, pauseOf as slaPauseOf, ratioOf as slaRatioOf, rollupOf as slaRollupOf, statusOf as slaStatusOf, targetSignal as slaTargetSignal, trendOf as slaTrendOf, triageScore as slaTriageScore } from '@/features/sla/consolidated';
 import type { SlaItem } from '@/features/sla/consolidated';
 import type { SlaCategoryView, SlaItemView, SlaOverviewView } from './repository';
 import { BACKUP_KEYS as ESC_BACKUP_KEYS, DEMO_CONFIRM_MS as ESC_DEMO_CONFIRM_MS, DEMO_SILENCE_MS as ESC_DEMO_SILENCE_MS, DRILL_GAP_TITLE as ESC_DRILL_GAP_TITLE, ESC_CHANNELS, EXHAUSTED_TITLE as ESC_EXHAUSTED_TITLE, MAX_BACKUPS as ESC_MAX_BACKUPS, NOTE_MIN as ESC_NOTE_MIN, PRIMARY as ESC_PRIMARY, SCENARIOS as ESC_SCENARIOS, SCENARIO_NAMES as ESC_NAMES, chainProblems as escChainProblems, drillDueAt as escDrillDueAt, drillStepsOf as escDrillStepsOf, exhaustedAfterMinutes as escExhaustedAfter, offsetsOf as escOffsets, phoneProblem as escPhoneBad, railOutcome as escRailOutcome, repeatOffsets as escRepeatOffsets, scenarioDef as escDef, scenarioIdOf as escScenarioIdOf, withTierIds as escTierIds } from '@/features/escalation/matrix';
-import type { IntegrationChange, IntegrationCredentialView, IntegrationSetup, AuditExportRecord, LeadStage, ManualOverride, IntegrationConfig, IntegrationIncident, IntegrationProbe, MessageStatus } from './types';
+import type { SandboxBaseline, SandboxRun, SandboxScenario, IntegrationChange, IntegrationCredentialView, IntegrationSetup, AuditExportRecord, LeadStage, ManualOverride, IntegrationConfig, IntegrationIncident, IntegrationProbe, MessageStatus } from './types';
 import type { EscalationChainTier, EscalationChannel, EscalationContact, EscalationDelivery, EscalationDrill, EscalationDrillStep, EscalationLastResort, EscalationRun, EscalationScenarioConfig } from './types';
 import type { AlertEscalationView, EscalationGap, EscalationMatrixView, EscalationRunView, EscalationScenarioView } from './repository';
 import { VAULT_KINDS, validityState } from '@/features/documents/vault';
@@ -2854,6 +2856,7 @@ function commitmentSources(now: number): CommitmentSources {
     automationPauses: automationPauseSignals(),
     escalation: escSignals(now),
     integrations: { ...hcSignals(), ...igSignals(now) },
+    sandbox: sbSignals(now),
     tds: tdsObligations(Date.now()),
     exits: exitSignals(),
     handoverReviews: handoverSignals().reviews,
@@ -3153,6 +3156,22 @@ function wfRule(id: string): CustomRule {
   const r = customRules.find((x) => x.id === id);
   if (!r) throw new RepositoryError('not_found');
   return r;
+}
+
+/** Putting a tested rule live (182, and from the sandbox in 190): the test must be of exactly this version, conflicts acknowledged, and a rule that would act on many records at once confirmed or started "from now on". */
+function wfActivate(admin: User, r: CustomRule, options: CustomRuleActivateOptions, now: number): CustomRuleView {
+  const draft = wfDraftOf(r);
+  const problem = wfDraftProblems(draft)[0];
+  if (problem) throw new RepositoryError(problem);
+  if (!r.simulated || r.simulated.hash !== wfHashOf(r)) throw new RepositoryError('not_simulated');
+  if (wfConflictsOf(draft, wfInPlay(r.id)).length > 0 && !options.acknowledgeConflicts) throw new RepositoryError('conflicts_unacknowledged');
+  const hits = wfSubjectsOf(r.subject, now).filter((x) => wfMatches(draft, x.values));
+  if (hits.length >= WF_MANY_AT && !options.fromNow && !options.confirmMany) throw new RepositoryError('many_unconfirmed');
+  r.armed = options.fromNow ? hits.map((x) => x.id) : [];
+  r.status = 'active';
+  r.activatedAt = new Date(now).toISOString();
+  wfEvent(r, 'activated', admin.name, options.fromNow ? `From now on: ${hits.length} existing matches left alone` : `${hits.length} matches act now`);
+  return wfView(r, now);
 }
 
 /** One action, through the existing paths. Returns true when something was actually done. */
@@ -4189,6 +4208,134 @@ function syncIntegrationManagement(now: number): void {
 function igSignals(now: number): { rotations: { id: string; name: string; dueAt: string }[] } {
   igEnsure();
   return { rotations: integrationSetups.flatMap((s) => { const c = igActiveSlot(s); return c ? [{ id: `${s.id}:${s.mode}`, name: hcDef(s.id)?.provider ?? s.id, dueAt: igDueAt(c.rotatedAt) }] : []; }) };
+}
+
+/* ============================================ Automation sandbox (190) */
+
+/**
+ * Scenario-based testing of rules before and after they change. Every test reads a rule and a scenario and works out an outcome with the same pure evaluators the live system uses; nothing is
+ * applied to a real record, and each run counts the real records it could have touched to prove it touched none. A rule is "tested" only at exactly its current definition.
+ */
+const sandboxScenarios: SandboxScenario[] = [];
+const sandboxReviews = new Map<string, { at: string; byName: string }>();
+const sandboxRuns: SandboxRun[] = [];
+const sandboxAccepted = new Set<string>();
+const sandboxBaselines = new Map<string, SandboxBaseline>();
+let sandboxCounter = 0;
+let sbSeeded = false;
+
+const sbAgo = (days: number): string => new Date(Date.now() - days * 86_400_000).toISOString();
+function sbEnsure(): void {
+  if (sbSeeded) return;
+  sbSeeded = true;
+  // Reviewed a month ago, except two that have gone stale so the library's own review has something to say (placeholders).
+  for (const b of SB_BUILT_IN) sandboxReviews.set(b.id, { at: sbAgo(b.id === 'delivery_delay' ? 210 : b.id === 'com_residential' ? 190 : 30), byName: 'Prashant Vasant Wable' });
+}
+const sbScenarioList = (): { id: string; engine: string; builtIn: boolean; name: string; facts: Facts; reviewedAt: string; reviewedByName: string; createdByName: string }[] => {
+  sbEnsure();
+  return [
+    ...SB_BUILT_IN.map((b) => ({ id: b.id, engine: b.engine, builtIn: true, name: '', facts: { ...b.facts }, reviewedAt: sandboxReviews.get(b.id)!.at, reviewedByName: sandboxReviews.get(b.id)!.byName, createdByName: 'AIEC' })),
+    ...sandboxScenarios.map((s) => ({ ...s, facts: { ...s.facts } })),
+  ];
+};
+const sbScenario = (id: string) => { const s = sbScenarioList().find((x) => x.id === id); if (!s) throw new RepositoryError('not_found'); return s; };
+
+/** What counts as "real" here: every store a test could change if it were not a test. */
+const sbRealCount = (): number => alerts.length + followUpTasks.length + commMessages.length + automatedActionLog.length + commissions.length + customRules.reduce((n, r) => n + r.firedTotal, 0) + leadTimeline.length;
+
+function sbRuleHash(engine: string, ref: string, now: number): string {
+  if (engine === 'custom_rule') return wfHashOf(wfRule(ref));
+  if (engine === 'escalation') { const e = escEffective(ref); return SB_HASH(JSON.stringify([e.tiers.map((t) => [t.targets, t.channels, t.afterMinutes]), e.lastResort, escBackups.map((b) => !!b)])); }
+  return SB_HASH(JSON.stringify(crRatesSnapshot(now)));
+}
+const crRatesSnapshot = (now: number): unknown => { const r = crRates(now); return ['site_visit', 'lead_qualified', 'conversion', 'referral_bonus', 'sales_close', 'install_pool', 'qc_fee'].map((id) => r.paramsOf(id as CrRuleId)); };
+
+function sbEvaluate(engine: string, ref: string, facts: Facts, now: number): Outcome {
+  if (engine === 'custom_rule') {
+    const rule = wfRule(ref);
+    if (facts.subject !== rule.subject) throw new RepositoryError('scenario_not_applicable');
+    const { subject: _subject, ...values } = facts;
+    void _subject;
+    const draft = wfDraftOf(rule);
+    const hit = wfMatches(draft, values as RecordValues);
+    return { fires: hit, action: hit ? rule.action.kind : 'none', failedConditions: wfFailedConditions(draft, values as RecordValues).length };
+  }
+  if (engine === 'escalation') {
+    if (!escDef(ref)) throw new RepositoryError('not_found');
+    if (facts.kind !== ref) throw new RepositoryError('scenario_not_applicable');
+    const eff = escEffective(ref);
+    const age = Number(facts.ageMinutes);
+    const offsets = escOffsets(eff.tiers);
+    const fired = eff.tiers.filter((_t, i) => offsets[i] <= age);
+    const unfilled = fired.reduce((n, t) => n + t.targets.filter((k) => k !== ESC_PRIMARY && !escContactOf(k)).length, 0);
+    const exhaustedAt = escExhaustedAfter(eff.tiers, eff.lastResort) + Math.max(1, eff.lastResort.repeatEveryMinutes);
+    return { tiersFired: fired.length, reachesBackup: fired.some((t) => t.targets.some((k) => k !== ESC_PRIMARY && !!escContactOf(k))), skippedUnfilled: unfilled, exhausted: age >= exhaustedAt };
+  }
+  if (engine === 'commission') {
+    const input = { dealValue: Number(facts.dealValue), source: facts.source === 'referral' ? ('referral' as const) : ('field' as const), surveyorTier: String(facts.surveyorTier), closer: !!facts.closer, closerIsOriginal: false, crew: [{ id: 'tech-1', isLead: true, minutes: Number(facts.leadMinutes) }, { id: 'tech-2', isLead: false, minutes: Number(facts.assistantMinutes) }], inspectors: Number(facts.inspectors) };
+    const r = crSimulate(input, crRates(now));
+    const sum = (p: (l: { party: string }) => boolean) => r.lines.filter(p).reduce((n, l) => n + l.amount, 0);
+    return { total: r.total, surveyor: sum((l) => l.party === 'surveyor'), technicians: sum((l) => l.party === 'technician_lead' || l.party === 'technician'), burdenPct: Math.round(r.burdenPct * 100) / 100 };
+  }
+  throw new RepositoryError('not_found');
+}
+
+function sbRunOne(admin: User, engine: string, ref: string, scenarioId: string, expected: Outcome | null, now: number): SandboxRun {
+  const sc = sbScenario(scenarioId);
+  if (sc.engine !== engine) throw new RepositoryError('scenario_not_applicable');
+  const before = sbRealCount();
+  const actual = sbEvaluate(engine, ref, sc.facts, now);
+  const sideEffects = Math.abs(sbRealCount() - before);
+  const baseline = sandboxBaselines.get(`${engine}|${ref}|${scenarioId}`);
+  const expectedFrom: SandboxRun['expectedFrom'] = expected ? 'declared' : baseline ? 'baseline' : 'none';
+  const wanted = expected ?? (baseline ? baseline.outcome : null);
+  const comparisons = wanted ? sbCompare(wanted, actual) : [];
+  sandboxCounter += 1;
+  const label = engine === 'custom_rule' ? `${wfRule(ref).code} ${wfRule(ref).name}` : ref;
+  const run: SandboxRun = Object.freeze({ id: `sbr-${sandboxCounter}`, code: `AIEC-TR-${1000 + sandboxCounter}`, engine, ruleRef: ref, ruleLabel: label, scenarioId, scenarioName: sc.builtIn ? scenarioId : sc.name, facts: { ...sc.facts }, expected: wanted, expectedFrom, actual, comparisons, status: sbStatus(wanted ? comparisons : null), ruleHash: sbRuleHash(engine, ref, now), at: new Date(now).toISOString(), byName: admin.name, sideEffects }) as SandboxRun;
+  sandboxRuns.push(run);
+  return run;
+}
+
+/** A run counts as a pass when it matched, or when it had nothing to compare to and Admin accepted it as the baseline. */
+const sbPassed = (r: SandboxRun): boolean => r.status === 'matched' || sandboxAccepted.has(r.id);
+function sbCustomRequired(rule: CustomRule): string[] {
+  return sbScenarioList().filter((s) => s.engine === 'custom_rule' && s.facts.subject === rule.subject).map((s) => s.id);
+}
+function sbPromotion(rule: CustomRule): SandboxPromotionRow {
+  const hash = wfHashOf(rule);
+  const mine = sandboxRuns.filter((r) => r.engine === 'custom_rule' && r.ruleRef === rule.id);
+  const required = sbCustomRequired(rule);
+  const atHash = mine.filter((r) => r.ruleHash === hash);
+  const latest = new Map<string, SandboxRun>();
+  for (const r of atHash) latest.set(r.scenarioId, r);
+  const passed = required.filter((id) => latest.has(id) && sbPassed(latest.get(id)!)).length;
+  const lastAny = mine[mine.length - 1];
+  const allRun = required.every((id) => latest.has(id));
+  const status = sbPromotionStatus({ ruleStatus: rule.status, testedHash: lastAny ? lastAny.ruleHash : null, currentHash: hash, passed: allRun && passed === required.length });
+  const passedAt = status === 'tested_passed' ? [...latest.values()].map((r) => r.at).sort().pop() ?? null : null;
+  return { ruleId: rule.id, label: `${rule.code} · ${rule.name}`, subject: rule.subject, ruleStatus: rule.status, status, required: required.length, passed, testedAt: lastAny?.at ?? null, passedAt, nudge: !!passedAt && Date.now() - Date.parse(passedAt) >= SB_PROMOTE_NUDGE * 86_400_000 };
+}
+
+function sbView(now: number): SandboxView {
+  sbEnsure();
+  const rules: SandboxRuleRef[] = [
+    ...customRules.filter((r) => r.status !== 'retired').map((r) => ({ engine: 'custom_rule', ref: r.id, label: `${r.code} · ${r.name}`, status: r.status, subject: r.subject, hash: wfHashOf(r) })),
+    ...ESC_SCENARIOS.map((e) => ({ engine: 'escalation', ref: e.id, label: e.id, status: 'active', subject: null, hash: sbRuleHash('escalation', e.id, now) })),
+    { engine: 'commission', ref: 'commission', label: 'commission', status: 'active', subject: null, hash: sbRuleHash('commission', 'commission', now) },
+  ];
+  const scenarios: SandboxScenarioView[] = sbScenarioList().map((s) => ({ ...s, stale: sbReviewDue(s.reviewedAt, now), subject: s.engine === 'custom_rule' ? String(s.facts.subject) : null }));
+  const promotions = customRules.filter((r) => r.status === 'draft' || r.status === 'paused').map(sbPromotion);
+  const stale = scenarios.filter((s) => s.stale);
+  return JSON.parse(JSON.stringify({ rules, scenarios, runs: [...sandboxRuns].reverse().slice(0, 40).map((r) => ({ ...r, accepted: sandboxAccepted.has(r.id) })), baselines: sandboxBaselines.size, promotions, review: { dueCount: stale.length, oldestAt: scenarios.map((s) => s.reviewedAt).sort()[0] ?? null, everyDays: SB_REVIEW_EVERY }, at: new Date(now).toISOString() })) as SandboxView;
+}
+
+function sbSignals(now: number): { promotions: { id: string; name: string; since: string }[]; review: { dueAt: string } | null } {
+  sbEnsure();
+  const promotions = customRules.filter((r) => r.status === 'draft' || r.status === 'paused').map(sbPromotion).filter((p) => p.status === 'tested_passed' && p.passedAt).map((p) => ({ id: p.ruleId, name: p.label, since: p.passedAt! }));
+  const oldest = sbScenarioList().map((s) => s.reviewedAt).sort()[0];
+  return { promotions, review: oldest ? { dueAt: sbReviewDueAt(oldest) } : null };
+  void now;
 }
 
 const heartbeatCommitments = { notifications: 0, alerts: 0 };
@@ -25541,6 +25688,95 @@ export const memoryRepository: Repository = {
 
   /* --------------------------------- Notification templates & channels (183) */
   getInternalNotifications: (userId) => simulateRead(() => { intAdmin(userId); return intOverview(Date.now()); }),
+  /* 190 — automation sandbox */
+  getSandbox: (userId) => simulateRead(() => { intAdmin(userId); return sbView(Date.now()); }),
+  runSandboxTest: (userId, input) =>
+    simulateWrite((): SandboxRunView[] => {
+      const admin = intAdmin(userId);
+      const now = Date.now();
+      if (!(SB_ENGINES as readonly string[]).includes(input.engine)) throw new RepositoryError('not_found');
+      if (input.engine === 'custom_rule') wfRule(input.ruleRef);
+      else if (input.engine === 'escalation' && !escDef(input.ruleRef)) throw new RepositoryError('not_found');
+      else if (input.engine === 'commission' && input.ruleRef !== 'commission') throw new RepositoryError('not_found');
+      if (input.scenarioIds.length === 0) throw new RepositoryError('nothing_to_run');
+      if (input.expected && input.scenarioIds.length !== 1) throw new RepositoryError('expected_needs_one');
+      const schema = SB_EXPECT[input.engine as Engine];
+      if (input.expected) for (const [k, v] of Object.entries(input.expected)) { const f = schema.find((x) => x.id === k); if (!f || (f.kind === 'number' || f.kind === 'money' ? typeof v !== 'number' || !Number.isFinite(v) : f.kind === 'bool' ? typeof v !== 'boolean' : !(f.options ?? []).includes(String(v)))) throw new RepositoryError('expected_invalid'); }
+      const out: SandboxRun[] = [];
+      for (const id of input.scenarioIds) {
+        const sc = sbScenario(id);
+        const applicable = sc.engine === input.engine && (input.engine !== 'custom_rule' || sc.facts.subject === wfRule(input.ruleRef).subject) && (input.engine !== 'escalation' || sc.facts.kind === input.ruleRef);
+        if (!applicable) { if (input.scenarioIds.length === 1) throw new RepositoryError('scenario_not_applicable'); continue; }
+        out.push(sbRunOne(admin, input.engine, input.ruleRef, id, input.expected ?? null, now));
+      }
+      return JSON.parse(JSON.stringify(out.map((r) => ({ ...r, accepted: sandboxAccepted.has(r.id) })))) as SandboxRunView[];
+    }),
+  acceptSandboxBaseline: (userId, runId, note) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      const run = byId(sandboxRuns, runId);
+      if (!run) throw new RepositoryError('not_found');
+      sandboxBaselines.set(`${run.engine}|${run.ruleRef}|${run.scenarioId}`, { key: `${run.engine}|${run.ruleRef}|${run.scenarioId}`, engine: run.engine, ruleRef: run.ruleRef, scenarioId: run.scenarioId, outcome: { ...run.actual }, ruleHash: run.ruleHash, acceptedAt: new Date().toISOString(), byName: admin.name, note: note?.trim() || undefined });
+      sandboxAccepted.add(run.id);
+      return sbView(Date.now());
+    }),
+  saveSandboxScenario: (userId, input) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      const problem = SB_SCENARIO_PROBLEM(input, sandboxScenarios.length);
+      if (problem) throw new RepositoryError(problem);
+      const at = new Date().toISOString();
+      const existing = input.id ? sandboxScenarios.find((s) => s.id === input.id) : undefined;
+      if (input.id && !existing) throw new RepositoryError(SB_BUILT_IN.some((b) => b.id === input.id) ? 'built_in_locked' : 'not_found');
+      if (existing) Object.assign(existing, { name: input.name.trim(), facts: { ...input.facts }, reviewedAt: at, reviewedByName: admin.name });
+      else { sandboxCounter += 1; sandboxScenarios.push({ id: `sbs-${sandboxCounter}`, engine: input.engine, builtIn: false, name: input.name.trim(), facts: { ...input.facts }, reviewedAt: at, reviewedByName: admin.name, createdByName: admin.name }); }
+      return sbView(Date.now());
+    }),
+  deleteSandboxScenario: (userId, id) =>
+    simulateWrite(() => {
+      intAdmin(userId);
+      const i = sandboxScenarios.findIndex((s) => s.id === id);
+      if (i < 0) throw new RepositoryError(SB_BUILT_IN.some((b) => b.id === id) ? 'built_in_locked' : 'not_found');
+      sandboxScenarios.splice(i, 1);
+      return sbView(Date.now());
+    }),
+  reviewSandboxScenarios: (userId, ids, note) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      if (note.replace(/[^\p{L}]/gu, '').length < SB_NOTE_MIN) throw new RepositoryError('note_short');
+      sbEnsure();
+      const at = new Date().toISOString();
+      for (const id of ids) {
+        if (SB_BUILT_IN.some((b) => b.id === id)) sandboxReviews.set(id, { at, byName: admin.name });
+        else { const s = sandboxScenarios.find((x) => x.id === id); if (s) { s.reviewedAt = at; s.reviewedByName = admin.name; } }
+      }
+      return sbView(Date.now());
+    }),
+  previewRulePromotion: (userId, ruleId) =>
+    simulateRead((): SandboxPromotionPreview => {
+      intAdmin(userId);
+      const r = wfRule(ruleId);
+      const now = Date.now();
+      const draft = wfDraftOf(r);
+      const hits = wfSubjectsOf(r.subject, now).filter((x) => wfMatches(draft, x.values));
+      return { promotion: sbPromotion(r), matching: hits.length, many: hits.length >= WF_MANY_AT, conflicts: wfConflictsOf(draft, wfInPlay(r.id)).length };
+    }),
+  promoteRule: (userId, ruleId, options) =>
+    simulateWrite(() => {
+      const admin = wfAdmin(userId);
+      const r = wfRule(ruleId);
+      if (r.status === 'retired') throw new RepositoryError('rule_retired');
+      if (r.status === 'active') throw new RepositoryError('already_active');
+      if (sbPromotion(r).status !== 'tested_passed') throw new RepositoryError('not_tested');
+      const now = Date.now();
+      // The same real-records check 182 asks for runs as part of promotion, so activation's own precondition holds for exactly this version.
+      const hash = wfHashOf(r);
+      const recs = wfSubjectsOf(r.subject, now);
+      r.simulated = { hash, at: new Date(now).toISOString(), matched: recs.filter((x) => wfMatches(wfDraftOf(r), x.values)).length };
+      wfEvent(r, 'simulated', admin.name, 'Passed its standard scenarios in the sandbox');
+      wfActivate(admin, r, options, now);
+      return sbView(now);
+    }),
   /* 189 — integration management */
   getIntegrationManagement: (userId) => simulateRead(() => { intAdmin(userId); syncIntegrationManagement(Date.now()); return igView(Date.now()); }),
   saveIntegrationCredential: (userId, id, input) => simulateWrite(() => { const admin = intAdmin(userId); igRotate(admin, id, input, Date.now()); return igView(Date.now()); }),
@@ -25897,20 +26133,7 @@ export const memoryRepository: Repository = {
       const r = wfRule(ruleId);
       if (r.status === 'retired') throw new RepositoryError('rule_retired');
       if (r.status === 'active') throw new RepositoryError('already_active');
-      const draft = wfDraftOf(r);
-      const problem = wfDraftProblems(draft)[0];
-      if (problem) throw new RepositoryError(problem);
-      const now = Date.now();
-      // The test must be of exactly this version: examine before you commit.
-      if (!r.simulated || r.simulated.hash !== wfHashOf(r)) throw new RepositoryError('not_simulated');
-      if (wfConflictsOf(draft, wfInPlay(r.id)).length > 0 && !options.acknowledgeConflicts) throw new RepositoryError('conflicts_unacknowledged');
-      const hits = wfSubjectsOf(r.subject, now).filter((x) => wfMatches(draft, x.values));
-      if (hits.length >= WF_MANY_AT && !options.fromNow && !options.confirmMany) throw new RepositoryError('many_unconfirmed');
-      r.armed = options.fromNow ? hits.map((x) => x.id) : [];
-      r.status = 'active';
-      r.activatedAt = new Date(now).toISOString();
-      wfEvent(r, 'activated', admin.name, options.fromNow ? `From now on: ${hits.length} existing matches left alone` : `${hits.length} matches act now`);
-      return wfView(r, now);
+      return wfActivate(admin, r, options, Date.now());
     }),
   pauseCustomRule: (userId, ruleId) =>
     simulateWrite(() => {

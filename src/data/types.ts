@@ -5056,7 +5056,7 @@ export type CommitmentKind =
   | 'exit_dispute_decide'
   | 'tier_review_due'
   | 'certification_renewal'
-  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup' | 'support_chat_reply' | 'feedback_outreach' | 'feedback_recognition' | 'referral_reward' | 'automation_pause_review' | 'escalation_drill_due' | 'escalation_gap_fix' | 'integration_followup' | 'integration_credential_rotation'
+  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup' | 'support_chat_reply' | 'feedback_outreach' | 'feedback_recognition' | 'referral_reward' | 'automation_pause_review' | 'escalation_drill_due' | 'escalation_gap_fix' | 'integration_followup' | 'integration_credential_rotation' | 'sandbox_promotion_pending' | 'sandbox_library_review'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'
@@ -5884,4 +5884,55 @@ export interface IntegrationChange {
   kind: 'mode' | 'rotation' | 'rotation_completed' | 'rotation_cancelled' | 'credential_added' | 'environment';
   summary: string;
   reason?: string;
+}
+
+/* ------------------------------------------------------------------ Automation sandbox (190) */
+
+export type SandboxValue = string | number | boolean;
+export interface SandboxScenario {
+  id: string;
+  engine: string;
+  builtIn: boolean;
+  /** Built-ins are named by a translation key; one an Admin added has its own words. */
+  name: string;
+  facts: Record<string, SandboxValue>;
+  reviewedAt: string;
+  reviewedByName: string;
+  createdByName: string;
+}
+/** One scenario run through one rule. Nothing here is ever applied to real data. */
+export interface SandboxRun {
+  id: string;
+  /** `AIEC-TR-####`. */
+  code: string;
+  engine: string;
+  ruleRef: string;
+  ruleLabel: string;
+  scenarioId: string;
+  scenarioName: string;
+  facts: Record<string, SandboxValue>;
+  /** What was expected: declared by hand, or the baseline last accepted for this scenario; null when there is no baseline yet. */
+  expected: Record<string, SandboxValue> | null;
+  expectedFrom: 'declared' | 'baseline' | 'none';
+  actual: Record<string, SandboxValue>;
+  comparisons: { field: string; expected: SandboxValue | null; actual: SandboxValue; match: boolean }[];
+  status: 'matched' | 'differs' | 'new';
+  /** The rule's definition when it was tested: a later change makes the test stale. */
+  ruleHash: string;
+  at: string;
+  byName: string;
+  /** Real records the run created or changed: always zero, and checked, not assumed. */
+  sideEffects: number;
+  baselineAccepted?: boolean;
+}
+export interface SandboxBaseline {
+  key: string;
+  engine: string;
+  ruleRef: string;
+  scenarioId: string;
+  outcome: Record<string, SandboxValue>;
+  ruleHash: string;
+  acceptedAt: string;
+  byName: string;
+  note?: string;
 }

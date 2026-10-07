@@ -160,6 +160,8 @@ export interface CommitmentSources {
   /** The escalation matrix (184): a drill is owed on each scenario's own rhythm, and a gap a drill found is Admin's to put right within a day. */
   /** What a recovered outage left behind that still needs a person (186). */
   integrations: { followUps: { id: string; name: string; since: string; count: number }[]; rotations: { id: string; name: string; dueAt: string }[] };
+  /** A rule that passed its sandbox tests and is still not live, and a scenario library nobody has reviewed in a while (190). */
+  sandbox: { promotions: { id: string; name: string; since: string }[]; review: { dueAt: string } | null };
   escalation: { drills: { id: string; name: string; dueAt: string }[]; gaps: { id: string; scenarioId: string; name: string; since: string }[] };
   referrals: { rewards: { id: string; userId: string; friend: string; at: string }[] };
   supportChats: { waiting: { id: string; name: string; since: string; urgent: boolean }[] };
@@ -2438,6 +2440,52 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
         actionRoute: `/integrations?integration=${x.id.split(':')[0]}`,
         oversightRoute: '/integrations',
       }));
+    },
+  },
+  {
+    // A good change should not get lost (190): a rule that passed its standard scenarios and is still not live is Admin's to promote or put aside, within a week.
+    kind: 'sandbox_promotion_pending',
+    nudgeBefore: days(1),
+    escalateAfter: days(7),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'automation',
+    collect(src) {
+      return src.sandbox.promotions.map((x) => ({
+        ...base('sandbox_promotion_pending', 'alert', x.id),
+        ownerUserId: adminId(src),
+        titleKey: 'work.title.sandbox_promotion_pending',
+        titleParams: { name: x.name },
+        dueAt: new Date(Date.parse(x.since) + days(7)).toISOString(),
+        state: 'open' as const,
+        paused: false,
+        actionRoute: `/automation-sandbox?rule=${x.id}`,
+        oversightRoute: '/automation-sandbox',
+      }));
+    },
+  },
+  {
+    // Standard scenarios drift as the business does (190): the library is looked at again every few months.
+    kind: 'sandbox_library_review',
+    nudgeBefore: days(14),
+    escalateAfter: days(30),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'automation',
+    collect(src) {
+      return src.sandbox.review
+        ? [{
+            ...base('sandbox_library_review', 'alert', 'library'),
+            ownerUserId: adminId(src),
+            titleKey: 'work.title.sandbox_library_review',
+            titleParams: {},
+            dueAt: src.sandbox.review.dueAt,
+            state: 'open' as const,
+            paused: false,
+            actionRoute: '/automation-sandbox?tab=library',
+            oversightRoute: '/automation-sandbox',
+          }]
+        : [];
     },
   },
   {

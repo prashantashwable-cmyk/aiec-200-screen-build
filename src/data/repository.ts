@@ -133,6 +133,8 @@ import type {
   InternalChannel,
   InternalChannelSet,
   EscalationContact,
+  SandboxScenario,
+  SandboxRun,
   IntegrationSetup,
   IntegrationChange,
   ManualOverride,
@@ -7163,6 +7165,38 @@ export interface InternalNotificationsView {
 }
 export interface InternalTypeInput { urgency: InternalUrgency | null; roles: Record<string, InternalChannelSet> | null; enabled: boolean; content: Partial<Record<Language, InternalContent>> }
 
+/* ------------------------------------------------------------------ Automation sandbox (190) */
+
+export interface SandboxRuleRef { engine: string; ref: string; label: string; status: string; subject: string | null; hash: string }
+export interface SandboxScenarioView { id: string; engine: string; builtIn: boolean; name: string; facts: SandboxScenario['facts']; reviewedAt: string; reviewedByName: string; createdByName: string; stale: boolean; subject: string | null }
+export interface SandboxRunView extends SandboxRun { accepted: boolean }
+export interface SandboxPromotionRow {
+  ruleId: string;
+  label: string;
+  subject: string;
+  ruleStatus: string;
+  status: 'untested' | 'tested_passed' | 'tested_failed' | 'stale' | 'promoted';
+  /** The standard scenarios for this kind of record, and how many have passed at the rule's present definition. */
+  required: number;
+  passed: number;
+  testedAt: string | null;
+  passedAt: string | null;
+  /** Passed, still not live, and for longer than a week: a good change going nowhere. */
+  nudge: boolean;
+}
+export interface SandboxPromotionPreview { promotion: SandboxPromotionRow; matching: number; many: boolean; conflicts: number }
+export interface SandboxView {
+  rules: SandboxRuleRef[];
+  scenarios: SandboxScenarioView[];
+  runs: SandboxRunView[];
+  baselines: number;
+  promotions: SandboxPromotionRow[];
+  review: { dueCount: number; oldestAt: string | null; everyDays: number };
+  at: string;
+}
+export interface SandboxRunInput { engine: string; ruleRef: string; scenarioIds: string[]; /** Declared by hand for one scenario; omit to compare with the accepted baseline. */ expected?: Record<string, string | number | boolean> | null }
+export interface SandboxScenarioInput { id?: string; engine: string; name: string; facts: Record<string, string | number | boolean> }
+
 /* ------------------------------------------------------------------ Integration management (189) */
 
 export interface IntegrationSetupView {
@@ -8834,6 +8868,15 @@ export interface Repository {
   getVaultBundle(userId: string): Promise<VaultDocument[]>;
   /** 174: the customer's payment picture for one project (the first needing attention when none is named). */
   getCustomerPayments(dealId: string | null, userId: string): Promise<CustomerPayView>;
+  /* 190 — scenario-based testing of rules: expected against simulated outcome, a standard library, baselines for regression, and a promotion path from tested to live. */
+  getSandbox(userId: string): Promise<SandboxView>;
+  runSandboxTest(userId: string, input: SandboxRunInput): Promise<SandboxRunView[]>;
+  acceptSandboxBaseline(userId: string, runId: string, note?: string): Promise<SandboxView>;
+  saveSandboxScenario(userId: string, input: SandboxScenarioInput): Promise<SandboxView>;
+  deleteSandboxScenario(userId: string, id: string): Promise<SandboxView>;
+  reviewSandboxScenarios(userId: string, ids: string[], note: string): Promise<SandboxView>;
+  previewRulePromotion(userId: string, ruleId: string): Promise<SandboxPromotionPreview>;
+  promoteRule(userId: string, ruleId: string, options: CustomRuleActivateOptions): Promise<SandboxView>;
   /* 189 — the configuration root of every external connection: credentials (only ever masked), test and live mode, rotation without a scattered failure, and proof that demo traffic is isolated. */
   getIntegrationManagement(userId: string): Promise<IntegrationManagementView>;
   saveIntegrationCredential(userId: string, id: string, input: IntegrationCredentialInput): Promise<IntegrationManagementView>;
