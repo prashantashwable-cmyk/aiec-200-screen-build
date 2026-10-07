@@ -21,6 +21,7 @@ import type { ContestMetric, ContestPhase } from '@/features/rewards/standings';
 import type { DisbursementKind, DisbursementMethod, DisbursementStatus, FailureReason as DisbursementFailure, RetryProblem } from '@/features/commission/disbursement';
 import type { HoldKind as PayoutHoldKind, PayoutFlag, QueueState as PayoutQueueState, SkipReason as PayoutSkipReason } from '@/features/commission/payoutApproval';
 import type { AttentionKind as PayoutAttentionKind, PayoutCategory, PayoutStatus, Spike as PayoutSpike, Trend as PayoutTrend } from '@/features/commission/payoutTracker';
+import type { RecordValues, RuleDraft } from '@/features/automation/customRules';
 import type { NotificationCategory, OptionalChoices } from '@/features/notifications/center';
 import type { Check as CommissionCheck, CommissionParams, CommissionRuleId, ParamDef as CommissionParamDef, RuleGroup, RuleLedger, RuleTrigger, Scenario as CommissionScenario, SimInput as CommissionSimInput, SimResult as CommissionSimResult, StackGroup as CommissionStackGroup } from '@/features/commission/rules';
 import type { ScriptGroup, WalkthroughMode, WalkthroughProblem } from '@/features/qc/walkthrough';
@@ -127,6 +128,7 @@ import type {
   AutomatedActionLogEntry,
   AutomationPause,
   AutomationRule,
+  CustomRule,
   Commitment,
   BotConfig,
   CallLogEntry,
@@ -7109,6 +7111,37 @@ export interface VisitTracking {
   at: string;
 }
 
+/* ------------------------------------------------------------------ Workflow trigger builder (182) */
+
+export interface CustomRuleView extends CustomRule {
+  /** Overlaps with a dedicated screen or another rule, worked out now from the rules still in play. */
+  conflicts: CustomConflict[];
+  /** True when the test on record is of exactly this version. */
+  testCurrent: boolean;
+  /** How many records match it right now. */
+  matchedNow: number;
+}
+export interface CustomConflict { kind: 'specialised' | 'duplicate'; target: string; route: string | null; ruleId?: string }
+export interface CustomRuleSimulation {
+  hash: string;
+  at: string;
+  mode: 'real' | 'sample';
+  /** Real data: the records looked at and those that match. */
+  total: number;
+  matched: number;
+  /** What it would do the moment it is switched on (those already acted on are not counted for a live rule). */
+  wouldAct: number;
+  sample: { id: string; label: string; detail: string }[];
+  /** Sample mode: whether the record matches, and which conditions it missed (indexes). */
+  result: { matches: boolean; failed: number[] } | null;
+}
+export interface CustomRulesView {
+  rules: CustomRuleView[];
+  templates: { groupId: string; name: string }[];
+  at: string;
+}
+export interface CustomRuleActivateOptions { fromNow: boolean; confirmMany: boolean; acknowledgeConflicts: boolean }
+
 /* ------------------------------------------------------------------ Master automation dashboard (181) */
 
 export interface AutomationCategoryView {
@@ -8542,6 +8575,14 @@ export interface Repository {
   getVaultBundle(userId: string): Promise<VaultDocument[]>;
   /** 174: the customer's payment picture for one project (the first needing attention when none is named). */
   getCustomerPayments(dealId: string | null, userId: string): Promise<CustomerPayView>;
+  /* 182 — workflow trigger builder: plain-language rules that run through the same actions as every other automation, tested before they go live. */
+  listCustomRules(userId: string): Promise<CustomRulesView>;
+  saveCustomRule(userId: string, ruleId: string | null, draft: RuleDraft): Promise<CustomRuleView>;
+  simulateCustomRule(userId: string, draft: RuleDraft, ruleId: string | null, sample: RecordValues | null): Promise<CustomRuleSimulation>;
+  activateCustomRule(userId: string, ruleId: string, options: CustomRuleActivateOptions): Promise<CustomRuleView>;
+  pauseCustomRule(userId: string, ruleId: string): Promise<CustomRuleView>;
+  retireCustomRule(userId: string, ruleId: string, reason: string): Promise<CustomRuleView>;
+  copyCustomRule(userId: string, ruleId: string): Promise<CustomRuleView>;
   /* 181 — master automation dashboard: every category of automation, its health (the Health Monitor's own telemetry) and an emergency pause. */
   getAutomationOverview(userId: string): Promise<AutomationOverviewView>;
   pauseAutomationCategory(userId: string, category: string, reason: string): Promise<AutomationOverviewView>;

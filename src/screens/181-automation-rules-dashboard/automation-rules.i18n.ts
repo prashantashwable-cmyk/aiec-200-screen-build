@@ -103,6 +103,10 @@ const translations: ScreenTranslations = {
           name: 'Follow-ups',
           hint: 'The engine that keeps every promise on someone\'s list and escalates what is late.',
         },
+        custom: {
+          name: 'Custom rules',
+          hint: 'Plain-language rules you built yourself.',
+        },
         other: {
           name: 'Other',
           hint: 'Automations that do not belong to a named category yet.',
@@ -287,6 +291,10 @@ const translations: ScreenTranslations = {
           name: 'फ़ॉलो-अप',
           hint: 'वह इंजन जो हर वादे को किसी की सूची में रखता है और देर से हुई चीज़ों को आगे बढ़ाता है।',
         },
+        custom: {
+          name: 'कस्टम नियम',
+          hint: 'आपके खुद बनाए सादे भाषा वाले नियम।',
+        },
         other: {
           name: 'अन्य',
           hint: 'ऐसे ऑटोमेशन जो अभी किसी नामित श्रेणी में नहीं हैं।',
@@ -470,6 +478,10 @@ const translations: ScreenTranslations = {
         commitments: {
           name: 'पाठपुरावा',
           hint: 'प्रत्येक वचन कुणाच्या तरी यादीत ठेवणारे आणि उशिरा झालेल्या गोष्टी पुढे नेणारे इंजिन.',
+        },
+        custom: {
+          name: 'कस्टम नियम',
+          hint: 'तुम्ही स्वतः बनवलेले सोप्या भाषेतील नियम.',
         },
         other: {
           name: 'इतर',

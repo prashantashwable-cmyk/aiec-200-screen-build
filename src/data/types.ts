@@ -5601,3 +5601,41 @@ export interface AutomationPause {
   skippedRuns?: number;
   isDemo: boolean;
 }
+
+
+/* ------------------------------------------------------------------ Custom rules (182) */
+
+export type CustomRuleStatus = 'draft' | 'active' | 'paused' | 'retired';
+export interface CustomRuleEvent {
+  at: string;
+  kind: 'created' | 'edited' | 'simulated' | 'activated' | 'paused' | 'resumed' | 'retired' | 'copied' | 'capped';
+  byName: string;
+  detail?: string;
+}
+/** A rule an Admin built in plain language. Never deleted: a retired one keeps its conditions, action and whole history. `armed` is the records it has already acted on while they still match, which is what makes it act once and not every minute. */
+export interface CustomRule {
+  id: string;
+  /** `AIEC-CR-####`. */
+  code: string;
+  name: string;
+  subject: 'lead' | 'payment' | 'job' | 'ticket';
+  logic: 'all' | 'any';
+  conditions: { field: string; op: 'gte' | 'lte' | 'eq' | 'is' | 'isNot' | 'contains'; value: string }[];
+  action: { kind: 'alert' | 'task' | 'message'; severity?: 'low' | 'medium' | 'high'; note?: string; dueInDays?: number; templateGroupId?: string };
+  status: CustomRuleStatus;
+  version: number;
+  createdAt: string;
+  createdByName: string;
+  updatedAt: string;
+  activatedAt?: string;
+  retiredAt?: string;
+  retiredReason?: string;
+  /** The test of exactly this version: what it would have matched, and when. Activation needs `hash` to equal the rule's own. */
+  simulated?: { hash: string; at: string; matched: number };
+  armed: string[];
+  firedTotal: number;
+  firings: { at: string; subjectId: string; label: string }[];
+  runs: { at: string; matched: number; acted: number }[];
+  events: CustomRuleEvent[];
+  isDemo: boolean;
+}

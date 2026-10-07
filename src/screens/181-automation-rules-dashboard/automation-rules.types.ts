@@ -102,6 +102,10 @@ export const AUTOMATION_RULES_KEYS = {
       name: 'automationRules.category.commitments.name',
       hint: 'automationRules.category.commitments.hint',
     },
+    custom: {
+      name: 'automationRules.category.custom.name',
+      hint: 'automationRules.category.custom.hint',
+    },
     other: {
       name: 'automationRules.category.other.name',
       hint: 'automationRules.category.other.hint',

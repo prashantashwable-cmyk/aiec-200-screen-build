@@ -27,6 +27,7 @@ export const CATEGORIES: CategoryDef[] = [
   { id: 'payouts', name: 'Partner payouts', route: '/payout-disbursement' },
   { id: 'rewards', name: 'Rewards', route: '/contest-setup' },
   { id: 'customerCare', name: 'Customer care', route: '/service-requests' },
+  { id: 'custom', name: 'Custom rules', route: '/workflow-rules' },
   { id: 'commitments', name: 'Follow-ups', route: '/admin/escalations', protected: true },
 ];
 
@@ -34,6 +35,7 @@ export interface UnitDef { id: string; category: string; name: string; route?: s
 
 /** One entry per step of the heartbeat. `name` is plain English because the Health Monitor prints a rule's name as it is. */
 export const UNITS: UnitDef[] = [
+  { id: 'customRules', category: 'custom', name: 'Custom rules' },
   { id: 'followUpTasks', category: 'commitments', name: 'Follow-up task reconciliation' },
   { id: 'paymentReminders', category: 'payments', name: 'Payment reminders' },
   { id: 'scheduledQuotations', category: 'communications', name: 'Scheduled quotation sends' },
@@ -116,6 +118,7 @@ const SOURCE_CATEGORY: [RegExp, string][] = [
   [/^(payout|tds|commission)/, 'payouts'],
   [/^(contest|badge|leaderboard)/, 'rewards'],
   [/^(service|support_chat|maintenance|feedback|warranty|referral)/, 'customerCare'],
+  [/^custom_rule/, 'custom'],
   [/^(commitment|escalation|alert)/, 'commitments'],
 ];
 export function categoryOfSource(sourceKey: string): string {

@@ -299,6 +299,10 @@ import type {
   MaintenanceBooking,
   MaintenanceDeskView,
   AutomationActivityView,
+  CustomRuleActivateOptions,
+  CustomRuleSimulation,
+  CustomRuleView,
+  CustomRulesView,
   AutomationCategoryView,
   AutomationOverviewView,
   NotificationCenterView,
@@ -611,6 +615,8 @@ import type {
   Alert,
   AutomatedActionLogEntry,
   AutomationPause,
+  CustomRule,
+  CustomRuleEvent,
   AutoPoRules,
   AutoPoSimulationResult,
   CategoryMatchResult,
@@ -998,6 +1004,8 @@ import type { NotificationCategory, OptionalCategory, OptionalChoices } from '@/
 import { CATEGORIES as AUTO_CATEGORIES, UNITS, categoryDef, isProtectedUnit, categoryName, categoryOfRule, categoryOfSource, unitDef } from '@/features/automation/registry';
 import { healthOf as autoHealthOf, rollUp as autoRollUp } from '@/features/automation/health';
 import { foldActivity } from '@/features/automation/activity';
+import { MANY_AT as WF_MANY_AT, MAX_PER_RUN as WF_MAX_PER_RUN, conflictsOf as wfConflictsOf, draftHash as wfDraftHash, draftProblems as wfDraftProblems, matches as wfMatches, failedConditions as wfFailedConditions } from '@/features/automation/customRules';
+import type { RecordValues, RuleDraft, SubjectId as WfSubject } from '@/features/automation/customRules';
 import { VAULT_KINDS, validityState } from '@/features/documents/vault';
 import type { VaultKind } from '@/features/documents/vault';
 import { MONTHS_OFFERED as PH_MONTHS, PAGE as PH_PAGE, QUERY_DUE as PH_QUERY_DUE, answerProblem as phAnswerProblem, countsAsEarned as phCountsAsEarned, filterOf as phFilterOf, fyOf as phFyOf, inPeriod as phInPeriod, monthIdOf as phMonthId, periodOf as phPeriodOf, queryProblem as phQueryProblem, stageOf as phStageOf } from '@/features/payout/history';
@@ -2967,6 +2975,111 @@ function sendDueScheduledQuotations(now: number): void {
   }
 }
 
+/* ------------------------------------------------------------------ Custom rules (182) */
+
+/**
+ * A custom rule runs through the same machinery as every other automation: the heartbeat unit `customRules` evaluates the active ones, and a match acts through the existing
+ * alert, follow-up task and Communication Engine paths (so opt-outs, the in-app fallback and the audit log all apply). A rule acts once per record and is re-armed when the
+ * record stops matching; one run never acts on more than `MAX_PER_RUN` records.
+ */
+const customRules: CustomRule[] = [];
+let customRuleCounter = 0;
+let customTaskCounter = 0;
+
+interface WfRecord { id: string; label: string; values: RecordValues; leadId: string; ownerId: string; route: string }
+function wfSubjectsOf(subject: WfSubject, now: number): WfRecord[] {
+  const day = 86_400_000;
+  const leadOfDeal = (dealId: string): Lead | null => { const d = byId(deals, dealId); return d ? resolveLead(d.leadId) ?? null : null; };
+  if (subject === 'lead') {
+    return leads.filter((l) => l.stage !== 'won' && l.stage !== 'lost').map((l) => ({
+      id: l.id, label: `${l.siteName} (${l.code})`, leadId: l.id, ownerId: l.surveyorId || 'u-admin-1', route: '/admin/leads',
+      values: { daysUntouched: Math.max(0, Math.floor((now - Date.parse(l.updatedAt)) / day)), daysInStage: Math.max(0, Math.floor((now - Date.parse(l.stageEnteredAt)) / day)), stage: l.stage, value: l.estimatedValue, city: l.city, source: l.source, score: l.score ?? 0, unassigned: l.surveyorId ? 'no' : 'yes' },
+    }));
+  }
+  if (subject === 'payment') {
+    return payments.filter(isOutstanding).flatMap((p) => {
+      const lead = leadOfDeal(p.dealId);
+      return lead ? [{ id: p.id, label: `${p.code} · ${lead.siteName}`, leadId: lead.id, ownerId: lead.surveyorId || 'u-admin-1', route: '/admin/analytics/collections', values: { daysOverdue: Math.max(0, daysOverdue(p, now)), remaining: remainingBalance(p), status: p.status, stage: p.stage } }] : [];
+    });
+  }
+  if (subject === 'job') {
+    return jobs.filter((j) => j.status !== 'completed').flatMap((j) => {
+      const lead = leadOfDeal(j.dealId);
+      return lead ? [{ id: j.id, label: `${j.code} · ${j.siteName}`, leadId: lead.id, ownerId: j.technicianId || 'u-admin-1', route: '/admin/tracking', values: { status: j.status, daysSinceStart: j.startedAt ? Math.max(0, Math.floor((now - Date.parse(j.startedAt)) / day)) : 0, daysSinceBooked: Math.max(0, Math.floor((now - Date.parse(j.scheduledFor)) / day)) } }] : [];
+    });
+  }
+  return serviceTickets.filter((t) => t.status === 'submitted' || t.status === 'assigned' || t.status === 'in_progress').flatMap((t) => {
+    const lead = leadOfDeal(t.dealId);
+    return lead ? [{ id: t.id, label: `${t.code} · ${t.siteName}`, leadId: lead.id, ownerId: 'u-admin-1', route: `/service-requests/${t.id}`, values: { ageHours: Math.max(0, Math.floor((now - Date.parse(t.createdAt)) / 3_600_000)), urgency: t.urgency, status: t.status, category: t.category } }] : [];
+  });
+}
+const wfDraftOf = (r: CustomRule): RuleDraft => ({ name: r.name, subject: r.subject, logic: r.logic, conditions: r.conditions.map((c) => ({ ...c })), action: { ...r.action } });
+const wfHashOf = (r: CustomRule): string => wfDraftHash(wfDraftOf(r));
+const wfInPlay = (excludeId?: string) => customRules.filter((r) => r.status !== 'retired' && r.id !== excludeId).map((r) => ({ id: r.id, draft: wfDraftOf(r) }));
+
+function wfView(r: CustomRule, now: number): CustomRuleView {
+  const draft = wfDraftOf(r);
+  const matchedNow = r.status === 'retired' ? 0 : wfSubjectsOf(r.subject, now).filter((x) => wfMatches(draft, x.values)).length;
+  return JSON.parse(JSON.stringify({ ...r, conflicts: wfConflictsOf(draft, wfInPlay(r.id)), testCurrent: !!r.simulated && r.simulated.hash === wfHashOf(r), matchedNow })) as CustomRuleView;
+}
+function wfEvent(r: CustomRule, kind: CustomRuleEvent['kind'], byName: string, detail?: string): void {
+  r.events.push({ at: new Date().toISOString(), kind, byName, ...(detail ? { detail } : {}) });
+  r.updatedAt = new Date().toISOString();
+}
+function wfAdmin(userId: string): User {
+  const u = byId(users, userId);
+  if (u?.role !== 'admin') throw new RepositoryError('forbidden');
+  return u;
+}
+function wfRule(id: string): CustomRule {
+  const r = customRules.find((x) => x.id === id);
+  if (!r) throw new RepositoryError('not_found');
+  return r;
+}
+
+/** One action, through the existing paths. Returns true when something was actually done. */
+function wfAct(r: CustomRule, rec: WfRecord, now: number): boolean {
+  const at = new Date(now).toISOString();
+  const note = r.action.note?.trim() ? ` — ${r.action.note.trim()}` : '';
+  if (r.action.kind === 'alert') {
+    raiseAlert({ titleKey: 'workflowRules.alert.fired', context: `${r.name} · ${rec.label}${note}`, severity: r.action.severity ?? 'medium', category: 'automation', relatedId: `cr:${r.id}:${rec.id}`, sourceRoute: rec.route });
+  } else if (r.action.kind === 'task') {
+    customTaskCounter += 1;
+    followUpTasks.push({ id: `ft-cr-${customTaskCounter}`, leadId: rec.leadId, title: `${r.name}: ${rec.label}${note}`, dueDate: new Date(now + (r.action.dueInDays ?? 1) * 86_400_000).toISOString(), assignedTo: rec.ownerId, status: 'open', source: 'auto', ...(r.subject === 'payment' ? { purpose: 'collection' as const } : {}), createdAt: at, isDemo: true });
+  } else {
+    const lead = byId(leads, rec.leadId);
+    if (!lead || !r.action.templateGroupId || !messageLeadFromTemplate(lead, r.action.templateGroupId, {}, at)) return false;
+  }
+  logAutomatedAction({ ruleId: r.id, sourceKey: 'custom_rule.fired', triggeringCondition: `${r.code} ${r.name}: ${rec.label} matched`, actionTaken: `${r.action.kind === 'alert' ? 'Raised an alert' : r.action.kind === 'task' ? `Created a follow-up task due in ${r.action.dueInDays ?? 1} day(s)` : 'Sent a message'} for ${rec.label}`, affectedRecordId: rec.id, affectedRecordType: r.subject === 'lead' ? 'lead' : r.subject === 'payment' ? 'payment' : 'other', subjectLabel: r.code });
+  return true;
+}
+
+function syncCustomRules(now: number): void {
+  for (const r of customRules) {
+    if (r.status !== 'active') continue;
+    const draft = wfDraftOf(r);
+    const matching = wfSubjectsOf(r.subject, now).filter((x) => wfMatches(draft, x.values));
+    const ids = new Set(matching.map((x) => x.id));
+    // A record that stopped matching is re-armed, so it can fire again if it later matches again.
+    r.armed = r.armed.filter((id) => ids.has(id));
+    const fresh = matching.filter((x) => !r.armed.includes(x.id));
+    let acted = 0;
+    for (const rec of fresh.slice(0, WF_MAX_PER_RUN)) {
+      r.armed.push(rec.id);
+      if (wfAct(r, rec, now)) { acted += 1; r.firedTotal += 1; r.firings.unshift({ at: new Date(now).toISOString(), subjectId: rec.id, label: rec.label }); }
+    }
+    r.firings = r.firings.slice(0, 30);
+    if (fresh.length > WF_MAX_PER_RUN) {
+      const today = new Date(now).toISOString().slice(0, 10);
+      if (!r.events.some((e) => e.kind === 'capped' && e.at.slice(0, 10) === today)) {
+        wfEvent(r, 'capped', 'System', `${fresh.length} records matched; acted on ${WF_MAX_PER_RUN}, the rest wait for the next run`);
+        raiseAlert({ titleKey: 'workflowRules.alert.capped', context: `${r.code} ${r.name}: ${fresh.length} records matched at once`, severity: 'low', category: 'automation', relatedId: `crcap:${r.id}`, sourceRoute: `/workflow-rules/${r.id}` });
+      }
+    }
+    if (acted > 0) { r.runs.unshift({ at: new Date(now).toISOString(), matched: matching.length, acted }); r.runs = r.runs.slice(0, 30); }
+  }
+}
+
 /* ------------------------------------------------------------------ Automation units (181) */
 
 /**
@@ -3158,6 +3271,7 @@ const HEARTBEAT: { id: string; run: (now: number) => void }[] = [
   { id: 'shipments', run: (now) => advanceShipments(now) },
   // 105: a delivery running late is noticed, and one that caught up is cleared, without anyone looking.
   { id: 'delayCases', run: (now) => syncDelayCases(now) },
+  { id: 'customRules', run: (now) => syncCustomRules(now) },
   {
     id: 'stageInvoices',
     run: () => {
@@ -24441,6 +24555,113 @@ export const memoryRepository: Repository = {
     simulateRead((): VaultDocument[] => {
       const docs = vdDocsOf(vdCustomer(userId), Date.now());
       return JSON.parse(JSON.stringify(docs.map((d) => ({ row: d.row, sections: d.sections, versions: docs.filter((x) => x.row.chainId === d.row.chainId).map((x) => x.row), issuedBy: d.issuedBy })))) as VaultDocument[];
+    }),
+
+  /* --------------------------------- Workflow trigger builder (182) */
+  listCustomRules: (userId) =>
+    simulateRead(() => {
+      wfAdmin(userId);
+      const now = Date.now();
+      const seen = new Set<string>();
+      const templates = commTemplates.filter((t) => t.status === 'active' && t.language === 'en' && !seen.has(t.groupId) && seen.add(t.groupId)).map((t) => ({ groupId: t.groupId, name: t.name }));
+      return JSON.parse(JSON.stringify({ rules: [...customRules].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1)).map((r) => wfView(r, now)), templates, at: new Date(now).toISOString() })) as CustomRulesView;
+    }),
+  saveCustomRule: (userId, ruleId, draft) =>
+    simulateWrite(() => {
+      const admin = wfAdmin(userId);
+      const problem = wfDraftProblems(draft)[0];
+      if (problem) throw new RepositoryError(problem);
+      const at = new Date().toISOString();
+      if (!ruleId) {
+        customRuleCounter += 1;
+        const created: CustomRule = { id: `cr-${customRuleCounter}`, code: `AIEC-CR-${1000 + customRuleCounter}`, name: draft.name.trim(), subject: draft.subject, logic: draft.logic, conditions: draft.conditions.map((c) => ({ ...c, value: c.value.trim() })), action: { ...draft.action }, status: 'draft', version: 1, createdAt: at, createdByName: admin.name, updatedAt: at, armed: [], firedTotal: 0, firings: [], runs: [], events: [], isDemo: true };
+        customRules.push(created);
+        wfEvent(created, 'created', admin.name);
+        return wfView(created, Date.now());
+      }
+      const r = wfRule(ruleId);
+      if (r.status === 'retired') throw new RepositoryError('rule_retired');
+      if (r.status === 'active') throw new RepositoryError('rule_active');
+      const before = wfHashOf(r);
+      Object.assign(r, { name: draft.name.trim(), subject: draft.subject, logic: draft.logic, conditions: draft.conditions.map((c) => ({ ...c, value: c.value.trim() })), action: { ...draft.action } });
+      if (wfHashOf(r) !== before) { r.version += 1; r.simulated = undefined; r.armed = []; wfEvent(r, 'edited', admin.name, `Version ${r.version}`); }
+      return wfView(r, Date.now());
+    }),
+  simulateCustomRule: (userId, draft, ruleId, sample) =>
+    simulateWrite(() => {
+      wfAdmin(userId);
+      const problem = wfDraftProblems(draft)[0];
+      if (problem) throw new RepositoryError(problem);
+      const now = Date.now();
+      const hash = wfDraftHash(draft);
+      const at = new Date(now).toISOString();
+      if (sample) {
+        const m = wfMatches(draft, sample);
+        return { hash, at, mode: 'sample', total: 1, matched: m ? 1 : 0, wouldAct: m ? 1 : 0, sample: [], result: { matches: m, failed: wfFailedConditions(draft, sample) } } as CustomRuleSimulation;
+      }
+      const recs = wfSubjectsOf(draft.subject, now);
+      const hits = recs.filter((x) => wfMatches(draft, x.values));
+      const existing = ruleId ? customRules.find((r) => r.id === ruleId) : undefined;
+      // A test of exactly the saved rule is what activation looks for.
+      if (existing && wfHashOf(existing) === hash) { existing.simulated = { hash, at, matched: hits.length }; wfEvent(existing, 'simulated', 'Admin', `${hits.length} of ${recs.length} match`); }
+      const armed = new Set(existing && existing.status === 'active' ? existing.armed : []);
+      return {
+        hash, at, mode: 'real', total: recs.length, matched: hits.length, wouldAct: hits.filter((x) => !armed.has(x.id)).length,
+        sample: hits.slice(0, 8).map((x) => ({ id: x.id, label: x.label, detail: Object.entries(x.values).filter(([k]) => draft.conditions.some((c) => c.field === k)).map(([k, v]) => `${k}: ${v}`).join(' · ') })), result: null,
+      } as CustomRuleSimulation;
+    }),
+  activateCustomRule: (userId, ruleId, options) =>
+    simulateWrite(() => {
+      const admin = wfAdmin(userId);
+      const r = wfRule(ruleId);
+      if (r.status === 'retired') throw new RepositoryError('rule_retired');
+      if (r.status === 'active') throw new RepositoryError('already_active');
+      const draft = wfDraftOf(r);
+      const problem = wfDraftProblems(draft)[0];
+      if (problem) throw new RepositoryError(problem);
+      const now = Date.now();
+      // The test must be of exactly this version: examine before you commit.
+      if (!r.simulated || r.simulated.hash !== wfHashOf(r)) throw new RepositoryError('not_simulated');
+      if (wfConflictsOf(draft, wfInPlay(r.id)).length > 0 && !options.acknowledgeConflicts) throw new RepositoryError('conflicts_unacknowledged');
+      const hits = wfSubjectsOf(r.subject, now).filter((x) => wfMatches(draft, x.values));
+      if (hits.length >= WF_MANY_AT && !options.fromNow && !options.confirmMany) throw new RepositoryError('many_unconfirmed');
+      r.armed = options.fromNow ? hits.map((x) => x.id) : [];
+      r.status = 'active';
+      r.activatedAt = new Date(now).toISOString();
+      wfEvent(r, 'activated', admin.name, options.fromNow ? `From now on: ${hits.length} existing matches left alone` : `${hits.length} matches act now`);
+      return wfView(r, now);
+    }),
+  pauseCustomRule: (userId, ruleId) =>
+    simulateWrite(() => {
+      const admin = wfAdmin(userId);
+      const r = wfRule(ruleId);
+      if (r.status !== 'active') throw new RepositoryError('not_active');
+      r.status = 'paused';
+      wfEvent(r, 'paused', admin.name);
+      return wfView(r, Date.now());
+    }),
+  retireCustomRule: (userId, ruleId, reason) =>
+    simulateWrite(() => {
+      const admin = wfAdmin(userId);
+      const r = wfRule(ruleId);
+      if (r.status === 'retired') throw new RepositoryError('rule_retired');
+      if (reason.replace(/[^\p{L}]/gu, '').length < 10) throw new RepositoryError('reason_short');
+      r.status = 'retired';
+      r.retiredAt = new Date().toISOString();
+      r.retiredReason = reason.trim();
+      wfEvent(r, 'retired', admin.name, reason.trim());
+      return wfView(r, Date.now());
+    }),
+  copyCustomRule: (userId, ruleId) =>
+    simulateWrite(() => {
+      const admin = wfAdmin(userId);
+      const from = wfRule(ruleId);
+      customRuleCounter += 1;
+      const at = new Date().toISOString();
+      const created: CustomRule = { ...JSON.parse(JSON.stringify(from)), id: `cr-${customRuleCounter}`, code: `AIEC-CR-${1000 + customRuleCounter}`, name: `${from.name} (copy)`, status: 'draft', version: 1, createdAt: at, createdByName: admin.name, updatedAt: at, activatedAt: undefined, retiredAt: undefined, retiredReason: undefined, simulated: undefined, armed: [], firedTotal: 0, firings: [], runs: [], events: [] };
+      customRules.push(created);
+      wfEvent(created, 'copied', admin.name, `From ${from.code}`);
+      return wfView(created, Date.now());
     }),
 
   /* --------------------------------- Automation dashboard (181) */
