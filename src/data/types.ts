@@ -4956,7 +4956,27 @@ export interface AutomatedActionLogEntry {
   /** The heartbeat step that took the action, when one did (181): what ties an action to its category. */
   unitId?: string;
   at: string;
+  /** Position in the log (1, 2, 3…): the log is append-only, so a gap or a change shows (187). */
+  seq?: number;
+  /** The fingerprint of the entry before it, and of this one: a chain that makes later tampering visible. */
+  prevHash?: string;
+  hash?: string;
   isDemo: boolean;
+}
+
+/** Who took a copy of the log out of the app, and what it covered: the audit of the audit (187). Append-only. */
+export interface AuditExportRecord {
+  id: string;
+  at: string;
+  byName: string;
+  kind: 'csv' | 'record_bundle';
+  count: number;
+  /** What was asked for, in words. */
+  scope: string;
+  fromSeq: number | null;
+  toSeq: number | null;
+  /** The fingerprint at the head of the log when it was taken, so a copy can later be checked against the log. */
+  headHash: string;
 }
 
 /* ---------------------------------------------------- Manager layer: work */

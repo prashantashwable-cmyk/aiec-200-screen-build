@@ -1009,21 +1009,22 @@ import type { Intent as SupportIntent, Parsed as SupportParsed } from '@/feature
 import { DIMENSIONS_FOR as FEEDBACK_DIMENSIONS, MIN_SAMPLE as FEEDBACK_MIN_SAMPLE, NEGATIVE_AT as FEEDBACK_NEGATIVE_AT, OUTREACH_DUE as FEEDBACK_OUTREACH_DUE, OUTREACH_NOTE_MIN as FEEDBACK_OUTREACH_NOTE_MIN, WEAK_AT as FEEDBACK_WEAK_AT, WEAK_DUE as FEEDBACK_WEAK_DUE, availability as feedbackAvailability, blendedRating as feedbackBlendedRating, dueWindowOf as feedbackDueWindow, feedbackProblem as feedbackProblemOf, flagsOf as feedbackFlagsOf, parseRequestId as feedbackParse, requestIdOf as feedbackRequestIdOf, staffMentions as feedbackMentions } from '@/features/feedback/feedback';
 import { CATEGORIES as NC_CATEGORIES, DEFAULT_CHOICES, NEW_MS as NC_NEW_MS, PAGE as NC_PAGE, categoryOfGroup as ncCategoryOfGroup, categoryOfKind as ncCategoryOfKind, dayLabelOf as ncDayLabelOf, deliveryOf as ncDeliveryOf, essentialInAppOnly as ncEssentialInAppOnly, isEssential as ncIsEssential } from '@/features/notifications/center';
 import type { NotificationCategory, OptionalCategory, OptionalChoices } from '@/features/notifications/center';
-import { CATEGORIES as AUTO_CATEGORIES, UNITS, categoryDef, isProtectedUnit, categoryName, categoryOfRule, categoryOfSource, unitDef } from '@/features/automation/registry';
+import { CATEGORIES as AUTO_CATEGORIES, UNITS, categoryDef, isProtectedUnit, categoryName, categoryOfRule, categoryOfSource, humanise, unitDef } from '@/features/automation/registry';
 import { healthOf as autoHealthOf, rollUp as autoRollUp } from '@/features/automation/health';
 import { foldActivity } from '@/features/automation/activity';
 import { MANY_AT as WF_MANY_AT, MAX_PER_RUN as WF_MAX_PER_RUN, conflictsOf as wfConflictsOf, draftHash as wfDraftHash, draftProblems as wfDraftProblems, matches as wfMatches, failedConditions as wfFailedConditions } from '@/features/automation/customRules';
 import type { RecordValues, RuleDraft, SubjectId as WfSubject } from '@/features/automation/customRules';
 import { CHANNELS as INT_CHANNELS, CORE_TYPES as INT_CORE, DEFAULT_URGENCY_CHANNELS as INT_DEFAULTS, NO_CHANNELS as INT_NONE, atLeast as intAtLeast, channelProblems as intChannelProblems, contentProblems as intContentProblems, fatigueOf as intFatigueOf, isBlocking as intIsBlocking, reducesReach as intReducesReach, severityFloorOf as intSeverityFloor, urgencyOfSeverity as intUrgencyOfSeverity } from '@/features/notifications/internal';
 import type { Urgency as IntUrgency } from '@/features/notifications/internal';
+import { GENESIS as AUDIT_GENESIS, codeOf as auditCodeOf, hashOf as auditHashOf, verifyChain as auditVerify } from '@/features/audit/chain';
 import { BOT_DRIFT_POINTS as HC_BOT_DRIFT, BOT_MIN_SAMPLE as HC_BOT_MIN, ENGINE_DOWN_MS as HC_ENGINE_DOWN, INTEGRATIONS as HC_INTEGRATIONS, MAX_PROBES as HC_MAX_PROBES, STATUS_WINDOW_MS as HC_STATUS_WINDOW, NOTE_MIN as HC_NOTE_MIN, PROBE_EVERY_MS as HC_PROBE_EVERY, WINDOW_MS as HC_WINDOW, agreementOf as hcAgreement, causeOf as hcCause, integrationDef as hcDef, isHttpUrl as hcIsUrl, judge as hcJudge, recovered as hcRecovered, sharedCauseOf as hcShared, uptimeOf as hcUptime } from '@/features/health/system';
 import type { IntegrationDef as HcDef, Observation as HcObservation, TechStatus } from '@/features/health/system';
-import type { BotHealthView, SystemHealthIntegrationView, SystemHealthView } from './repository';
+import type { AuditDetailView, AuditExportView, AuditFilter, AuditRowView, AuditSearchView, BotHealthView, SystemHealthIntegrationView, SystemHealthView } from './repository';
 import { SLA_CATEGORIES, WINDOW_DAYS as SLA_WINDOW_DAYS, elapsedMsOf as slaElapsedOf, pauseOf as slaPauseOf, ratioOf as slaRatioOf, rollupOf as slaRollupOf, statusOf as slaStatusOf, targetSignal as slaTargetSignal, trendOf as slaTrendOf, triageScore as slaTriageScore } from '@/features/sla/consolidated';
 import type { SlaItem } from '@/features/sla/consolidated';
 import type { SlaCategoryView, SlaItemView, SlaOverviewView } from './repository';
 import { BACKUP_KEYS as ESC_BACKUP_KEYS, DEMO_CONFIRM_MS as ESC_DEMO_CONFIRM_MS, DEMO_SILENCE_MS as ESC_DEMO_SILENCE_MS, DRILL_GAP_TITLE as ESC_DRILL_GAP_TITLE, ESC_CHANNELS, EXHAUSTED_TITLE as ESC_EXHAUSTED_TITLE, MAX_BACKUPS as ESC_MAX_BACKUPS, NOTE_MIN as ESC_NOTE_MIN, PRIMARY as ESC_PRIMARY, SCENARIOS as ESC_SCENARIOS, SCENARIO_NAMES as ESC_NAMES, chainProblems as escChainProblems, drillDueAt as escDrillDueAt, drillStepsOf as escDrillStepsOf, exhaustedAfterMinutes as escExhaustedAfter, offsetsOf as escOffsets, phoneProblem as escPhoneBad, railOutcome as escRailOutcome, repeatOffsets as escRepeatOffsets, scenarioDef as escDef, scenarioIdOf as escScenarioIdOf, withTierIds as escTierIds } from '@/features/escalation/matrix';
-import type { IntegrationConfig, IntegrationIncident, IntegrationProbe, MessageStatus } from './types';
+import type { AuditExportRecord, IntegrationConfig, IntegrationIncident, IntegrationProbe, MessageStatus } from './types';
 import type { EscalationChainTier, EscalationChannel, EscalationContact, EscalationDelivery, EscalationDrill, EscalationDrillStep, EscalationLastResort, EscalationRun, EscalationScenarioConfig } from './types';
 import type { AlertEscalationView, EscalationGap, EscalationMatrixView, EscalationRunView, EscalationScenarioView } from './repository';
 import { VAULT_KINDS, validityState } from '@/features/documents/vault';
@@ -1394,7 +1395,11 @@ const intSetOk = (c: unknown): c is InternalChannelSet => !!c && INT_CHANNELS.ev
 /** The one write path for "the automation did something on its own". */
 function logAutomatedAction(input: AutomatedActionInput): AutomatedActionLogEntry {
   automatedActionLogCounter += 1;
-  const entry = buildAutomatedActionEntry(currentUnitId && !input.unitId ? { ...input, unitId: currentUnitId } : input, `aal-${automatedActionLogCounter}`, new Date().toISOString());
+  const built = buildAutomatedActionEntry(currentUnitId && !input.unitId ? { ...input, unitId: currentUnitId } : input, `aal-${automatedActionLogCounter}`, new Date().toISOString());
+  // Append-only and chained (187): each entry carries its position and the fingerprint of the one before it, and is frozen so nothing can edit it in place.
+  const prevHash = automatedActionLog[automatedActionLog.length - 1]?.hash ?? AUDIT_GENESIS;
+  const seq = automatedActionLog.length + 1;
+  const entry = Object.freeze({ ...built, seq, prevHash, hash: auditHashOf(prevHash, { ...built, seq }) });
   automatedActionLog.push(entry);
   return entry;
 }
@@ -3823,6 +3828,77 @@ function hcSignals(): { followUps: { id: string; name: string; since: string; co
   return { followUps: integrationIncidents.filter((i) => i.status === 'recovered' && i.followUp && i.followUp.count > 0 && !i.followUp.done).map((i) => ({ id: i.id, name: hcDef(i.integrationId)?.provider ?? i.integrationId, since: i.endedAt ?? i.startedAt, count: i.followUp!.count })) };
 }
 
+/* ============================================ Audit log of automated actions (187) */
+
+/**
+ * The permanent record of everything the automation did on its own initiative. Read-only here: entries are written only by `logAutomatedAction`, chained and frozen. Search is built on a lowercase
+ * text per entry, kept so a log of many thousands stays quick to filter; the screen asks for a page at a time.
+ */
+const auditExports: AuditExportRecord[] = [];
+const auditHaystack = new Map<string, string>();
+const auditExportCounter = { n: 0 };
+
+function auditRecordRoute(type: string, id: string): string | null {
+  if (type === 'lead') return `/admin/leads/${id}`;
+  if (type === 'purchase_order') return `/orders?po=${id}`;
+  if (type === 'payment') return '/admin/analytics/collections';
+  if (type === 'quotation') return '/admin/quotes';
+  if (type === 'alert') return '/admin/alerts';
+  return null;
+}
+function auditRowOf(e: AutomatedActionLogEntry): AuditRowView {
+  return {
+    id: e.id, seq: e.seq ?? 0, code: auditCodeOf(e.seq ?? 0), at: e.at, sourceKey: e.sourceKey, sourceName: humanise(e.sourceKey.replace(/\./g, ' ')), category: entryCategory(e), unitId: e.unitId ?? null, unitName: e.unitId ? unitDef(e.unitId)?.name ?? null : null,
+    triggeringCondition: e.triggeringCondition, actionTaken: e.actionTaken, affectedRecordId: e.affectedRecordId, affectedRecordType: e.affectedRecordType, subjectLabel: e.subjectLabel ?? null, route: auditRecordRoute(e.affectedRecordType, e.affectedRecordId), hash: e.hash ?? '', prevHash: e.prevHash ?? '',
+  };
+}
+function auditText(e: AutomatedActionLogEntry): string {
+  let h = auditHaystack.get(e.id);
+  if (h === undefined) { h = [e.sourceKey.replace(/[._]/g, ' '), e.sourceKey, e.subjectLabel ?? '', e.affectedRecordId, e.affectedRecordType, e.triggeringCondition, e.actionTaken, auditCodeOf(e.seq ?? 0), e.unitId ?? ''].join(' ').toLowerCase(); auditHaystack.set(e.id, h); }
+  return h;
+}
+function auditMatches(e: AutomatedActionLogEntry, f: AuditFilter, skip?: 'category' | 'source'): boolean {
+  if (f.q) { const hay = auditText(e); for (const tok of f.q.toLowerCase().split(/\s+/).filter(Boolean)) if (!hay.includes(tok)) return false; }
+  if (skip !== 'category' && f.category && entryCategory(e) !== f.category) return false;
+  if (skip !== 'source' && f.source && e.sourceKey !== f.source) return false;
+  if (f.record) { const r = f.record.toLowerCase().trim(); if (!(e.affectedRecordId.toLowerCase().includes(r) || (e.subjectLabel ?? '').toLowerCase().includes(r))) return false; }
+  if (f.from && e.at < `${f.from}T00:00:00`) return false;
+  if (f.to) { const end = new Date(`${f.to}T00:00:00`); end.setDate(end.getDate() + 1); if (e.at >= end.toISOString()) return false; }
+  return true;
+}
+const auditFilterWords = (f: AuditFilter): string => [f.q ? `"${f.q}"` : '', f.category ? `category ${f.category}` : '', f.source ? `source ${f.source}` : '', f.record ? `record ${f.record}` : '', f.from ? `from ${f.from}` : '', f.to ? `to ${f.to}` : ''].filter(Boolean).join(', ') || 'everything';
+
+function auditSearch(f: AuditFilter, now: number): AuditSearchView {
+  const matching = automatedActionLog.filter((e) => auditMatches(e, f));
+  const newestFirst = [...matching].reverse();
+  const limit = f.limit === 0 ? newestFirst.length : Math.max(1, Math.min(200, f.limit ?? 25));
+  const offset = Math.max(0, f.offset ?? 0);
+  const forCat = automatedActionLog.filter((e) => auditMatches(e, f, 'category'));
+  const forSrc = automatedActionLog.filter((e) => auditMatches(e, f, 'source'));
+  const count = (list: AutomatedActionLogEntry[], key: (e: AutomatedActionLogEntry) => string): { id: string; count: number }[] => {
+    const m = new Map<string, number>();
+    for (const e of list) m.set(key(e), (m.get(key(e)) ?? 0) + 1);
+    return [...m.entries()].map(([id, n]) => ({ id, count: n })).sort((a, b) => b.count - a.count || (a.id < b.id ? -1 : 1));
+  };
+  const days: { day: string; count: number }[] = [];
+  for (let i = 13; i >= 0; i -= 1) { const d = new Date(now - i * 86_400_000).toISOString().slice(0, 10); days.push({ day: d, count: automatedActionLog.filter((e) => e.at.slice(0, 10) === d).length }); }
+  const chain = auditVerify(automatedActionLog);
+  return JSON.parse(JSON.stringify({
+    rows: newestFirst.slice(offset, offset + limit).map(auditRowOf), total: matching.length, all: automatedActionLog.length,
+    categories: count(forCat, (e) => entryCategory(e)), sources: count(forSrc, (e) => e.sourceKey).slice(0, 40), perDay: days,
+    chain: { ok: chain.ok, count: chain.count, headHash: chain.headHash, brokenAtSeq: chain.brokenAtSeq },
+    exports: [...auditExports].reverse().slice(0, 8), at: new Date(now).toISOString(),
+  })) as AuditSearchView;
+}
+
+/** The chain is checked on every heartbeat as well as on read: a break raises a critical alert, since nothing in the app is allowed to change this log. */
+function syncAuditChain(now: number): void {
+  const chain = auditVerify(automatedActionLog);
+  const open = alerts.find((a) => a.titleKey === 'auditLog.alert.chainBroken' && a.status !== 'resolved');
+  if (!chain.ok && !open) raiseAlert({ titleKey: 'auditLog.alert.chainBroken', context: `Entry ${chain.brokenAtSeq ?? '?'} no longer matches what was written`, severity: 'critical', category: 'safety', relatedId: 'audit-chain', sourceRoute: '/audit-log' });
+  void now;
+}
+
 const heartbeatCommitments = { notifications: 0, alerts: 0 };
 const HEARTBEAT: { id: string; run: (now: number) => void }[] = [
   { id: 'followUpTasks', run: () => reconcileFollowUpTasks() },
@@ -3881,6 +3957,7 @@ const HEARTBEAT: { id: string; run: (now: number) => void }[] = [
   { id: 'escalationMatrix', run: (now) => syncEscalationMatrix(now) },
   { id: 'slaMonitor', run: (now) => syncSlaBreaches(now) },
   { id: 'integrationHealth', run: (now) => syncIntegrationHealth(now) },
+  { id: 'auditChain', run: (now) => syncAuditChain(now) },
   {
     id: 'stageInvoices',
     run: () => {
@@ -25170,6 +25247,29 @@ export const memoryRepository: Repository = {
 
   /* --------------------------------- Notification templates & channels (183) */
   getInternalNotifications: (userId) => simulateRead(() => { intAdmin(userId); return intOverview(Date.now()); }),
+  /* 187 — audit log of automated actions */
+  searchAutomatedActions: (userId, filter) => simulateRead(() => { intAdmin(userId); return auditSearch(filter, Date.now()); }),
+  getAutomatedActionDetail: (userId, id) =>
+    simulateRead((): AuditDetailView => {
+      intAdmin(userId);
+      const e = automatedActionLog.find((x) => x.id === id);
+      if (!e) throw new RepositoryError('not_found');
+      const row = auditRowOf(e);
+      const same = automatedActionLog.filter((x) => x.id !== e.id && x.affectedRecordId === e.affectedRecordId).sort((a, b) => (a.at < b.at ? -1 : 1)).slice(-30).map(auditRowOf);
+      const rule = e.ruleId ? byId(automations, e.ruleId) : undefined;
+      const custom = e.ruleId ? customRules.find((r) => r.id === e.ruleId) : undefined;
+      return JSON.parse(JSON.stringify({ row, related: same, rule: rule ? { id: rule.id, name: rule.name } : custom ? { id: custom.id, name: custom.name } : null, ruleChangedSince: custom ? custom.updatedAt > e.at : false })) as AuditDetailView;
+    }),
+  exportAutomatedActions: (userId, filter, kind) =>
+    simulateWrite((): AuditExportView => {
+      const admin = intAdmin(userId);
+      const matching = automatedActionLog.filter((e) => auditMatches(e, filter));
+      const chain = auditVerify(automatedActionLog);
+      auditExportCounter.n += 1;
+      const record: AuditExportRecord = { id: `ax-${auditExportCounter.n}`, at: new Date().toISOString(), byName: admin.name, kind, count: matching.length, scope: auditFilterWords(filter), fromSeq: matching[0]?.seq ?? null, toSeq: matching[matching.length - 1]?.seq ?? null, headHash: chain.headHash };
+      auditExports.push(record);
+      return JSON.parse(JSON.stringify({ rows: matching.map(auditRowOf), record, chain: { ok: chain.ok, count: chain.count, headHash: chain.headHash, brokenAtSeq: chain.brokenAtSeq } })) as AuditExportView;
+    }),
   /* 186 — system health and bot monitoring */
   getSystemHealth: (userId) => simulateRead(() => { intAdmin(userId); return systemHealthView(Date.now()); }),
   recordProviderStatus: (userId, integrationId, status, note) =>

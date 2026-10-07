@@ -133,6 +133,7 @@ import type {
   InternalChannel,
   InternalChannelSet,
   EscalationContact,
+  AuditExportRecord,
   IntegrationConfig,
   IntegrationIncident,
   EscalationDrill,
@@ -7159,6 +7160,42 @@ export interface InternalNotificationsView {
 }
 export interface InternalTypeInput { urgency: InternalUrgency | null; roles: Record<string, InternalChannelSet> | null; enabled: boolean; content: Partial<Record<Language, InternalContent>> }
 
+/* ------------------------------------------------------------------ Audit log of automated actions (187) */
+
+export interface AuditFilter { q?: string; category?: string; source?: string; record?: string; from?: string; to?: string; offset?: number; /** 0 = everything that matches (for an export). */ limit?: number }
+export interface AuditRowView {
+  id: string;
+  seq: number;
+  code: string;
+  at: string;
+  sourceKey: string;
+  sourceName: string;
+  category: string;
+  unitId: string | null;
+  unitName: string | null;
+  triggeringCondition: string;
+  actionTaken: string;
+  affectedRecordId: string;
+  affectedRecordType: string;
+  subjectLabel: string | null;
+  route: string | null;
+  hash: string;
+  prevHash: string;
+}
+export interface AuditSearchView {
+  rows: AuditRowView[];
+  total: number;
+  all: number;
+  categories: { id: string; count: number }[];
+  sources: { id: string; count: number }[];
+  perDay: { day: string; count: number }[];
+  chain: { ok: boolean; count: number; headHash: string; brokenAtSeq: number | null };
+  exports: AuditExportRecord[];
+  at: string;
+}
+export interface AuditDetailView { row: AuditRowView; related: AuditRowView[]; rule: { id: string; name: string } | null; ruleChangedSince: boolean }
+export interface AuditExportView { rows: AuditRowView[]; record: AuditExportRecord; chain: AuditSearchView['chain'] }
+
 /* ------------------------------------------------------------------ System health (186) */
 
 export interface SystemHealthIntegrationView {
@@ -8748,6 +8785,10 @@ export interface Repository {
   getVaultBundle(userId: string): Promise<VaultDocument[]>;
   /** 174: the customer's payment picture for one project (the first needing attention when none is named). */
   getCustomerPayments(dealId: string | null, userId: string): Promise<CustomerPayView>;
+  /* 187 — the permanent, chained record of everything the automation did on its own initiative: searched, read in full, and exported with a note of who took it. */
+  searchAutomatedActions(userId: string, filter: AuditFilter): Promise<AuditSearchView>;
+  getAutomatedActionDetail(userId: string, id: string): Promise<AuditDetailView>;
+  exportAutomatedActions(userId: string, filter: AuditFilter, kind: AuditExportRecord['kind']): Promise<AuditExportView>;
   /* 186 — the technical plumbing: each integration judged on AIEC's own calls, the provider's word beside it, incidents, and the bot. */
   getSystemHealth(userId: string): Promise<SystemHealthView>;
   recordProviderStatus(userId: string, integrationId: string, status: IntegrationConfig['reported']['status'], note?: string): Promise<SystemHealthView>;
