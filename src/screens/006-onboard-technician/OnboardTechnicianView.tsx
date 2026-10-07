@@ -41,6 +41,7 @@ export function OnboardTechnicianView() {
       next={s.wizard.next}
       back={s.wizard.back}
       onSubmit={() => void s.submit()}
+      errorKey={s.submitError}
     >
       {stepIndex === 0 && (
         <>

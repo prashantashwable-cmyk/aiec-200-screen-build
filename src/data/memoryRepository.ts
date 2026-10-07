@@ -807,6 +807,8 @@ import type {
   PayoutRun,
   PayoutDisbursement,
   PayoutAccount,
+  DocumentRef,
+  RoleAuditEntry,
   CommMessage,
   CommSequence,
   CommTemplate,
@@ -1195,6 +1197,9 @@ const suppliers = [...seedSuppliers];
 const activity = [...seedActivity];
 const alerts = [...seedAlerts];
 const zones = [...seedZones];
+/** 004's role-change audit trail (append-only). */
+const roleAudit: RoleAuditEntry[] = [];
+let roleAuditCounter = 0;
 const routePlans = [...seedRoutePlans];
 const commissions = [...seedCommissions];
 const automations = [...seedAutomations];
@@ -20051,6 +20056,117 @@ export const memoryRepository: Repository = {
       });
       return supplier;
     }),
+
+  submitFieldPartnerOnboarding: (input) =>
+    simulateWrite(() => {
+      const name = input.name.trim();
+      const phone = input.phone.replace(/\D/g, '').slice(-10);
+      const city = input.city.trim();
+      if (input.role !== 'surveyor' && input.role !== 'technician') throw new RepositoryError('invalid_input');
+      if (name.length < 3 || !/^[6-9]\d{9}$/.test(phone) || !city) throw new RepositoryError('invalid_input');
+      // Only the last four digits may ever reach AIEC; anything longer is refused rather than trimmed, so a caller cannot send the whole number by mistake.
+      if (input.aadhaarLast4 !== undefined && !/^\d{4}$/.test(input.aadhaarLast4)) throw new RepositoryError('invalid_input');
+      const pan = input.panNumber?.trim().toUpperCase();
+      if (pan && !/^[A-Z]{5}\d{4}[A-Z]$/.test(pan)) throw new RepositoryError('invalid_input');
+      if (input.role === 'surveyor' && !(input.preferredZoneIds ?? []).length) throw new RepositoryError('invalid_input');
+      if (input.role === 'technician' && !(input.skills ?? []).length && !(input.unverifiedSkills ?? []).length) throw new RepositoryError('invalid_input');
+      if (input.bank) {
+        const b = input.bank;
+        if (b.holderName.trim().length < 3 || !/^\d{9,18}$/.test(b.accountNumber) || !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(b.ifsc.trim().toUpperCase())) throw new RepositoryError('invalid_input');
+      }
+      const samePhone = users.filter((u) => u.phone.replace(/\D/g, '').slice(-10) === phone);
+      const sameRole = samePhone.find((u) => u.role === input.role);
+      if (samePhone.some((u) => u.role !== input.role)) throw new RepositoryError('phone_taken');
+      if (sameRole && sameRole.status === 'pending_approval') throw new RepositoryError('already_applied');
+      if (sameRole && sameRole.status !== 'rejected') throw new RepositoryError('phone_taken');
+
+      const now = new Date().toISOString();
+      const documents: DocumentRef[] = input.documents.map((d, i) => ({ id: `doc-${Date.now().toString(36)}-${i}`, kind: d.kind, label: d.label, status: 'uploaded', uploadedAt: d.capturedAt || now }));
+      const skills = input.role === 'technician' ? [...new Set(input.skills ?? [])] : undefined;
+      const fields: Partial<User> = {
+        name,
+        phone,
+        city,
+        status: 'pending_approval',
+        joinedAt: now,
+        documents,
+        skills,
+        reportsTo: escAdminUser()?.id,
+        onboarding: {
+          submittedAt: now,
+          preferredZoneIds: input.role === 'surveyor' ? [...new Set(input.preferredZoneIds ?? [])] : undefined,
+          unverifiedSkills: input.role === 'technician' ? [...new Set(input.unverifiedSkills ?? [])] : undefined,
+          yearsExperience: input.yearsExperience?.trim() || undefined,
+          insuranceExpiry: input.insuranceExpiry || undefined,
+          ownsTwoWheeler: input.ownsTwoWheeler,
+          aadhaarLast4: input.aadhaarLast4,
+          panNumber: pan || undefined,
+          bankVerified: input.bank ? input.bank.verified : undefined,
+          reapplication: Boolean(sameRole),
+        },
+      };
+      let user: User;
+      if (sameRole) {
+        user = patchInPlace(users, sameRole.id, fields);
+      } else {
+        userCounter += 1;
+        user = {
+          id: `u-${input.role === 'surveyor' ? 'srv' : 'tech'}-new-${userCounter}`,
+          role: input.role,
+          preferredLanguage: 'en',
+          themePreference: 'light',
+          isDemo: true,
+          ...fields,
+        } as User;
+        users.push(user);
+      }
+      if (input.bank) {
+        const account: PayoutAccount = {
+          userId: user.id,
+          holderName: input.bank.holderName.trim(),
+          accountNumber: input.bank.accountNumber,
+          ifsc: input.bank.ifsc.trim().toUpperCase(),
+          verifiedAt: input.bank.verified ? now : undefined,
+          updatedAt: now,
+          updatedByName: name,
+          isDemo: true,
+        };
+        const at = payoutAccounts.findIndex((a) => a.userId === user.id);
+        if (at >= 0) payoutAccounts[at] = account; else payoutAccounts.push(account);
+      }
+      return user;
+    }),
+
+  decidePendingUser: (userId, approve, adminId) =>
+    simulateWrite(() => {
+      const admin = byId(users, adminId);
+      if (!admin || admin.role !== 'admin' || admin.status !== 'active') throw new RepositoryError('forbidden');
+      const target = byId(users, userId);
+      if (!target) throw new RepositoryError('not_found');
+      if (target.status !== 'pending_approval') throw new RepositoryError('not_pending');
+      // A supplier's account goes live with its KYC decision in the directory (091), never on its own.
+      if (target.role === 'supplier') throw new RepositoryError('supplier_kyc');
+      const updated = patchInPlace(users, userId, { status: approve ? 'active' : 'rejected' });
+      if (approve && target.role === 'surveyor') {
+        for (const zoneId of target.onboarding?.preferredZoneIds ?? []) {
+          const zone = zones.find((z) => z.id === zoneId);
+          if (zone && zone.status === 'active' && !zone.assignedUserIds.includes(userId)) zone.assignedUserIds = [...zone.assignedUserIds, userId];
+        }
+      }
+      roleAuditCounter += 1;
+      roleAudit.push({ id: `ra-${roleAuditCounter}`, userId, userName: target.name, previousRole: target.role, newRole: target.role, changedByAdminId: adminId, decision: approve ? 'approved' : 'rejected', at: new Date().toISOString(), isReapplication: Boolean(target.onboarding?.reapplication), isDemo: true });
+      return updated;
+    }),
+
+  recordRoleRequest: (input) =>
+    simulateWrite(() => {
+      roleAuditCounter += 1;
+      const entry: RoleAuditEntry = { id: `ra-${roleAuditCounter}`, userId: input.userId ?? 'applicant', userName: input.userName.trim(), previousRole: input.previousRole, newRole: input.newRole, changedByAdminId: null, at: new Date().toISOString(), isReapplication: input.isReapplication, isDemo: true };
+      roleAudit.push(entry);
+      return entry;
+    }),
+
+  listRoleAudit: (limit = 50) => simulateRead(() => [...roleAudit].reverse().slice(0, limit)),
 
   suspendSupplier: (supplierId, reason, byName) =>
     simulateWrite(() => {

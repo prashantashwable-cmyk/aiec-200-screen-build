@@ -1747,6 +1747,33 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
     },
   },
   {
+    // Someone who applied through 005 / 006 / 007 waits in 004's queue for Admin's yes or no; a person left waiting is a partner lost.
+    // Applications older than 30 days with no decision are history, not chased.
+    kind: 'onboarding_review',
+    nudgeBefore: hours(12),
+    escalateAfter: hours(24),
+    escalates: true,
+    raisesAlert: true,
+    alertCategory: 'staffing',
+    collect(src) {
+      return src.users
+        .filter((u) => u.status === 'pending_approval' && u.role !== 'admin' && u.role !== 'customer' && u.joinedAt && src.now - Date.parse(u.joinedAt) < days(30))
+        // A supplier is decided by its KYC review in the directory (091); once that is decided this is no longer owed.
+        .filter((u) => u.role !== 'supplier' || src.suppliers.some((sp) => sp.gstin && sp.gstin === u.gstin && sp.kycStatus === 'pending'))
+        .map((u) => ({
+          ...base('onboarding_review', 'application', `user:${u.id}`),
+          ownerUserId: adminId(src),
+          titleKey: 'work.title.onboarding_review',
+          titleParams: { name: u.name, role: u.role },
+          dueAt: plus(u.joinedAt as string, days(2)),
+          state: 'open' as const,
+          paused: false,
+          actionRoute: u.role === 'supplier' ? '/admin/suppliers' : '/onboarding/role',
+          oversightRoute: u.role === 'supplier' ? '/admin/suppliers' : '/onboarding/role',
+        }));
+    },
+  },
+  {
     // Submitted applications wait for a first look (143). One promise for the whole queue, so a surge is one line to act on, not sixty; it is due
     // when the oldest one has waited the screening window, and it moves as the oldest are cleared.
     kind: 'application_screening',

@@ -61,6 +61,8 @@ interface OnboardSurveyorState {
   /** True once bank verification has failed — payouts stay blocked until fixed. */
   payoutsBlocked: boolean;
   submit: () => Promise<void>;
+  /** Why the last submit was refused, when the reason is the applicant's to act on. */
+  submitError: 'already_applied' | 'phone_taken' | null;
 }
 
 export function useOnboardSurveyor(): OnboardSurveyorState {
@@ -112,18 +114,41 @@ export function useOnboardSurveyor(): OnboardSurveyorState {
     update({ pennyDrop: fails ? 'failed' : 'verified' });
   }, [draft.accountNumber, update]);
 
+  const [submitError, setSubmitError] = useState<'already_applied' | 'phone_taken' | null>(null);
+
   const submit = useCallback(async () => {
     wizard.setStatus('submitting');
+    setSubmitError(null);
     try {
       // A new applicant lands in pending_approval; an admin resolves them on
-      // screen 004. Nothing here makes the account live.
-      await new Promise((resolve) => setTimeout(resolve, 700));
+      // screen 004. Nothing here makes the account live. Only the last four
+      // digits of an Aadhaar number leave this phone.
+      const aadhaar = draft.aadhaarNumber.replace(/\D/g, '');
+      const docs = [
+        draft.aadhaarDoc && isValidAadhaar(draft.aadhaarNumber) ? { kind: 'aadhaar' as const, doc: draft.aadhaarDoc } : null,
+        draft.panDoc && isValidPan(draft.panNumber) ? { kind: 'pan' as const, doc: draft.panDoc } : null,
+        draft.bankDoc ? { kind: 'bank' as const, doc: draft.bankDoc } : null,
+      ].filter((d): d is { kind: 'aadhaar' | 'pan' | 'bank'; doc: NonNullable<SurveyorDraft['bankDoc']> } => d !== null);
+      await repository.submitFieldPartnerOnboarding({
+        role: 'surveyor',
+        name: draft.fullName,
+        phone: draft.phone,
+        city: draft.city,
+        preferredZoneIds: draft.preferredZoneIds,
+        ownsTwoWheeler: draft.twoWheelerOwned,
+        aadhaarLast4: isValidAadhaar(draft.aadhaarNumber) ? aadhaar.slice(-4) : undefined,
+        panNumber: isValidPan(draft.panNumber) ? draft.panNumber : undefined,
+        documents: docs.map((d) => ({ kind: d.kind, label: d.doc.fileName, fileName: d.doc.fileName, capturedAt: d.doc.capturedAt })),
+        bank: { holderName: draft.accountHolder, accountNumber: draft.accountNumber, ifsc: draft.ifsc, verified: draft.pennyDrop === 'verified' },
+      });
       wizard.setStatus('submitted');
       localStorage.removeItem(SURVEYOR_DRAFT_KEY);
-    } catch {
+    } catch (err) {
+      const code = err instanceof Error ? err.message : '';
+      setSubmitError(code === 'already_applied' || code === 'phone_taken' ? code : null);
       wizard.setStatus('error');
     }
-  }, [wizard]);
+  }, [wizard, repository, draft]);
 
   return {
     wizard,
@@ -134,5 +159,6 @@ export function useOnboardSurveyor(): OnboardSurveyorState {
     runPennyDrop,
     payoutsBlocked: draft.pennyDrop === 'failed',
     submit,
+    submitError,
   };
 }

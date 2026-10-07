@@ -320,6 +320,8 @@ import type {
   TemplateStat,
   TriggerRule,
   User,
+  DocumentRef,
+  RoleAuditEntry,
   WorkNotification,
   AuthSession,
   SecurityEvent,
@@ -1019,6 +1021,30 @@ export interface SupplierOnboardingInput {
   city: string;
   signatoryName: string;
   signatoryPhone: string;
+}
+
+/** What a surveyor or technician submits about themselves through 005 / 006.
+ *  Only the last four digits of an Aadhaar number are ever sent: the full
+ *  number stays on the applicant's own phone (UIDAI does not allow AIEC to
+ *  keep it). */
+export interface FieldPartnerOnboardingInput {
+  role: 'surveyor' | 'technician';
+  name: string;
+  phone: string;
+  city: string;
+  /** Surveyor: the areas they asked for. Admin assigns zones on approval. */
+  preferredZoneIds?: string[];
+  /** Technician: skills backed by a certificate (only these count for jobs). */
+  skills?: string[];
+  /** Technician: skills claimed with no certificate yet, kept for review. */
+  unverifiedSkills?: string[];
+  yearsExperience?: string;
+  insuranceExpiry?: string;
+  ownsTwoWheeler?: boolean;
+  aadhaarLast4?: string;
+  panNumber?: string;
+  documents: { kind: DocumentRef['kind']; label: string; fileName: string; capturedAt: string }[];
+  bank?: { holderName: string; accountNumber: string; ifsc: string; verified: boolean };
 }
 
 export interface SupplierInviteInput {
@@ -8593,6 +8619,22 @@ export interface Repository {
    *  PO eligibility stays gated on 091's KYC approval. Throws
    *  `duplicate_gstin` / `phone_taken` rather than creating a second record. */
   submitSupplierOnboarding(input: SupplierOnboardingInput): Promise<Supplier>;
+  /** A surveyor's or technician's own onboarding (005 / 006): creates a
+   *  `pending_approval` User that 004's Admin queue resolves, and the payout
+   *  account when bank details were given. A previously rejected applicant
+   *  for the same role is reopened, not duplicated. Throws `invalid_input`,
+   *  `phone_taken` (someone else, or already active in this role) or
+   *  `already_applied` (still waiting). */
+  submitFieldPartnerOnboarding(input: FieldPartnerOnboardingInput): Promise<User>;
+  /** Admin approves or rejects someone waiting in 004's queue. Approving a
+   *  surveyor also puts them on the active zones they asked for, so new leads
+   *  can reach them. Refuses `not_pending` when someone else already decided,
+   *  `forbidden` for anyone but an active Admin. Writes the audit line. */
+  decidePendingUser(userId: string, approve: boolean, adminId: string): Promise<User>;
+  /** An applicant's own role request (004), kept on the audit trail. */
+  recordRoleRequest(input: { userId: string | null; userName: string; previousRole: Role | null; newRole: Role; isReapplication: boolean }): Promise<RoleAuditEntry>;
+  /** Newest first. */
+  listRoleAudit(limit?: number): Promise<RoleAuditEntry[]>;
   /** Approves or rejects a pending supplier's KYC. Approving also moves
    *  `status` to `'active'` — the two are set together here since nothing
    *  else in this build ever brings a supplier live without it. Rejecting

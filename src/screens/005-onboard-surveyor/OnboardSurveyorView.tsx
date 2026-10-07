@@ -51,6 +51,7 @@ export function OnboardSurveyorView() {
       next={s.wizard.next}
       back={s.wizard.back}
       onSubmit={() => void s.submit()}
+      errorKey={s.submitError}
     >
       {/* A failed penny-drop follows the applicant through the rest of the
           wizard — it does not block progress, it blocks money. */}

@@ -1,6 +1,7 @@
 /** Screen 004 — Role Selection. Types and translation keys only. */
 
 import type { Role } from '@/data/types';
+export type { RoleAuditEntry } from '@/data/types';
 
 /**
  * The screen serves two different people:
@@ -27,20 +28,7 @@ export const ONBOARDING_PATH_BY_ROLE: Record<Role, string> = {
 };
 
 export const STORAGE_PENDING_SELECTION = 'aiec.pendingRoleSelection';
-export const STORAGE_ROLE_AUDIT = 'aiec.roleAudit';
 
-/** Who changed whose role, when, and from what to what. */
-export interface RoleAuditEntry {
-  id: string;
-  userId: string;
-  userName: string;
-  previousRole: Role | null;
-  newRole: Role;
-  changedByAdminId: string | null;
-  at: string;
-  /** True when a previously rejected applicant asks for the same role again. */
-  isReapplication: boolean;
-}
 
 export const ROLE_SELECT_KEYS = {
   title: 'roleSelect.title',
@@ -70,6 +58,17 @@ export const ROLE_SELECT_KEYS = {
     auditTitle: 'roleSelect.queue.auditTitle',
     auditEntry: 'roleSelect.queue.auditEntry',
     auditEmpty: 'roleSelect.queue.auditEmpty',
+    details: 'roleSelect.queue.details',
+    zones: 'roleSelect.queue.zones',
+    certified: 'roleSelect.queue.certified',
+    uncertified: 'roleSelect.queue.uncertified',
+    aadhaar: 'roleSelect.queue.aadhaar',
+    pan: 'roleSelect.queue.pan',
+    bankVerified: 'roleSelect.queue.bankVerified',
+    bankUnverified: 'roleSelect.queue.bankUnverified',
+    auditDecision: 'roleSelect.queue.auditDecision',
+    supplierKyc: 'roleSelect.queue.supplierKyc',
+    decision: { approved: 'roleSelect.queue.decision.approved', rejected: 'roleSelect.queue.decision.rejected' },
   },
   loading: 'roleSelect.loading',
   error: { title: 'roleSelect.error.title', body: 'roleSelect.error.body' },

@@ -83,6 +83,40 @@ export interface User {
    *  owner — only meaningful for Admin. Unset means nobody backs Admin up
    *  yet, which is a real business decision, not a default. */
   backupUserId?: string;
+  /** What a surveyor or technician said about themselves on 005 / 006, kept for
+   *  the Admin who approves them (004). Never the full Aadhaar number. */
+  onboarding?: FieldPartnerOnboarding;
+}
+
+/** One line in the role-change audit (004): an applicant asking for a role, or Admin deciding. Append-only. */
+export interface RoleAuditEntry {
+  id: string;
+  userId: string;
+  userName: string;
+  previousRole: Role | null;
+  newRole: Role;
+  /** Null when the applicant themself asked. */
+  changedByAdminId: string | null;
+  /** What Admin decided; absent for an applicant's own request. */
+  decision?: 'approved' | 'rejected';
+  at: string;
+  /** True when a previously rejected applicant asks for the same role again. */
+  isReapplication: boolean;
+  isDemo: boolean;
+}
+
+export interface FieldPartnerOnboarding {
+  submittedAt: string;
+  preferredZoneIds?: string[];
+  unverifiedSkills?: string[];
+  yearsExperience?: string;
+  insuranceExpiry?: string;
+  ownsTwoWheeler?: boolean;
+  aadhaarLast4?: string;
+  panNumber?: string;
+  /** The bank check's answer when they applied; undefined when no account was given. */
+  bankVerified?: boolean;
+  reapplication: boolean;
 }
 
 /* ------------------------------------------------------------------- Leads */
@@ -4996,6 +5030,7 @@ export interface AuditExportRecord {
  * than a queue of its own.
  */
 export type CommitmentKind =
+  | 'onboarding_review'
   | 'payment_due'
   | 'payment_collect'
   | 'job_assign'
