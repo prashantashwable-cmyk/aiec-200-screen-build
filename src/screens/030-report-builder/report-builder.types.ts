@@ -39,16 +39,14 @@ export interface ReportRow {
   value: number;
 }
 
+/** A saved definition, kept in the repository for the person who saved it. */
 export interface SavedReport {
   id: string;
   name: string;
   metric: MetricId;
   dimension: DimensionId;
   range: RangePreset;
-  scheduleFrequency: 'none' | 'daily' | 'weekly' | 'monthly';
 }
-
-export const SAVED_REPORTS_KEY = 'aiec.savedReports';
 
 /** More than this many rows is a warning, not a block — but it says so first. */
 export const WIDE_REPORT_ROW_WARNING = 20;
@@ -91,13 +89,7 @@ export const REPORT_BUILDER_KEYS = {
   savedReports: 'reportBuilder.savedReports',
   load: 'reportBuilder.load',
   delete: 'reportBuilder.delete',
-  schedule: 'reportBuilder.schedule',
-  scheduleFrequency: {
-    none: 'reportBuilder.scheduleFrequency.none',
-    daily: 'reportBuilder.scheduleFrequency.daily',
-    weekly: 'reportBuilder.scheduleFrequency.weekly',
-    monthly: 'reportBuilder.scheduleFrequency.monthly',
-  },
+  saveFailed: { name_taken: 'reportBuilder.saveFailed.name_taken', too_many: 'reportBuilder.saveFailed.too_many', generic: 'reportBuilder.saveFailed.generic' },
   scheduleNote: 'reportBuilder.scheduleNote',
   exportCsv: 'reportBuilder.exportCsv',
   exportPdfNote: 'reportBuilder.exportPdfNote',

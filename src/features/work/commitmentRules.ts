@@ -4058,18 +4058,23 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
     alertCategory: 'sla_breach',
     collect(src) {
       const admin = adminId(src);
-      return src.alerts.map((alert) => ({
-        ...base('alert_acknowledge', 'alert', alert.id),
-        ownerUserId: admin,
-        titleKey: 'work.title.alert_acknowledge',
-        titleParams: { code: alert.code, context: alert.context },
-        dueAt: plus(alert.raisedAt, ALERT_ACK_WINDOW[alert.severity]),
-        state: alert.status === 'open' ? ('open' as const) : ('done' as const),
-        paused: false,
-        completedAt: alert.resolvedAt,
-        actionRoute: alert.severity === 'critical' || alert.severity === 'high' ? '/admin/escalations' : '/admin/alerts',
-        oversightRoute: alert.sourceRoute ?? '/admin/alerts',
-      }));
+      return src.alerts.map((alert) => {
+        // Handed to someone else on 029: they own it while they are active; it comes back to Admin otherwise.
+        const delegate = activeUser(src, alert.delegatedToUserId);
+        return {
+          ...base('alert_acknowledge', 'alert', alert.id),
+          ownerUserId: delegate?.id ?? admin,
+          titleKey: 'work.title.alert_acknowledge',
+          titleParams: { code: alert.code, context: alert.context },
+          dueAt: plus(alert.raisedAt, ALERT_ACK_WINDOW[alert.severity]),
+          state: alert.status === 'open' ? ('open' as const) : ('done' as const),
+          // A snooze pauses the reminder, never the alert: the escalation matrix (184) still walks a critical one.
+          paused: !!alert.snoozedUntil && Date.parse(alert.snoozedUntil) > src.now,
+          completedAt: alert.resolvedAt,
+          actionRoute: delegate && delegate.role !== 'admin' ? alert.sourceRoute ?? '/admin/alerts' : alert.severity === 'critical' || alert.severity === 'high' ? '/admin/escalations' : '/admin/alerts',
+          oversightRoute: alert.sourceRoute ?? '/admin/alerts',
+        };
+      });
     },
   },
   {

@@ -322,6 +322,7 @@ import type {
   User,
   DocumentRef,
   RoleAuditEntry,
+  SavedReportDefinition,
   WorkNotification,
   AuthSession,
   SecurityEvent,
@@ -8663,6 +8664,14 @@ export interface Repository {
   recordRoleRequest(input: { userId: string | null; userName: string; previousRole: Role | null; newRole: Role; isReapplication: boolean }): Promise<RoleAuditEntry>;
   /** Newest first. */
   listRoleAudit(limit?: number): Promise<RoleAuditEntry[]>;
+  /** 030: the reports this person saved, newest first. */
+  listSavedReports(userId: string): Promise<SavedReportDefinition[]>;
+  /** 030: saves a report definition for this person. Name 1 to 60 letters and not already used by them (`name_taken`); at most 30 each (`too_many`). Admin only. */
+  saveReportDefinition(userId: string, input: { name: string; metric: string; dimension: string; range: string }): Promise<SavedReportDefinition>;
+  /** 030: removes one of the person's own saved reports. */
+  deleteSavedReport(userId: string, reportId: string): Promise<void>;
+  /** 026: puts a supplier on, or takes them off, the manual watchlist (kept on the supplier, seen by every Admin). */
+  setSupplierWatch(supplierId: string, on: boolean, byUserId: string): Promise<Supplier>;
   /** 020: everyone of the role with their real open work and, for this task, whether and why they cannot take it (a job adds its day and drive skill). Admin only. */
   getAssignmentFacts(target: { leadId: string } | { jobId: string }, adminId: string): Promise<AssignmentFacts[]>;
   /** 020: puts a technician in charge of a job that has nobody. The same checks as every other way onto a job: active, not leaving, training clear, a tier that may lead, not off or already booked that day. Refuses `already_assigned` when someone got there first. Logged on the job's team history and told to the technician. */
@@ -8954,6 +8963,10 @@ export interface Repository {
   listActivity(limit?: number): Promise<ActivityEvent[]>;
   listAlerts(filter?: { status?: Alert['status'][]; severity?: Alert['severity'][] }): Promise<Alert[]>;
   acknowledgeAlert(id: string, byUserId: string): Promise<Alert>;
+  /** 029: hides an open alert from the board and pauses its acknowledge reminder for 1 to 72 hours. Admin only. */
+  snoozeAlert(id: string, hours: number, byUserId: string): Promise<Alert>;
+  /** 029: hands an open alert to another active staff member (Admin, surveyor or technician), who then owns its follow-up and is told at once. `null` takes it back. Admin only. */
+  delegateAlert(id: string, toUserId: string | null, byUserId: string): Promise<Alert>;
   /** Closes an alert with the resolver's own note — a real, persisted
    *  resolution rather than local screen state. */
   resolveAlert(id: string, byUserId: string, note: string): Promise<Alert>;

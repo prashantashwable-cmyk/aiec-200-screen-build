@@ -178,9 +178,14 @@ export function ReportBuilderView() {
                 icon={<FloppyDisk size={16} />}
                 disabled={!reportName.trim()}
                 onClick={() => {
-                  s.saveCurrent(reportName.trim());
-                  setReportName('');
-                  toast.push(t(K.saved), 'success');
+                  void s.saveCurrent(reportName.trim()).then((problem) => {
+                    if (problem) {
+                      toast.push(t(K.saveFailed[problem]), 'error');
+                      return;
+                    }
+                    setReportName('');
+                    toast.push(t(K.saved), 'success');
+                  });
                 }}
               >
                 {t(K.save)}
@@ -199,17 +204,14 @@ export function ReportBuilderView() {
                 key={report.id}
                 report={report}
                 onLoad={() => s.loadSaved(report)}
-                onDelete={() => s.deleteSaved(report.id)}
-                onSchedule={(freq) => s.setSchedule(report.id, freq)}
+                onDelete={() => void s.deleteSaved(report.id)}
               />
             ))}
           </Card>
         </>
       )}
 
-      {s.saved.some((r) => r.scheduleFrequency !== 'none') && (
-        <p className="t-xs t-muted mt-2">{t(K.scheduleNote)}</p>
-      )}
+      {s.saved.length > 0 && <p className="t-xs t-muted mt-2">{t(K.scheduleNote)}</p>}
       <p className="t-xs t-muted mt-4">{t(K.governedNote)}</p>
     </Screen>
   );
@@ -219,12 +221,10 @@ function SavedReportRow({
   report,
   onLoad,
   onDelete,
-  onSchedule,
 }: {
   report: SavedReport;
   onLoad: () => void;
   onDelete: () => void;
-  onSchedule: (freq: SavedReport['scheduleFrequency']) => void;
 }) {
   const { t } = useTranslation();
   return (
@@ -233,19 +233,6 @@ function SavedReportRow({
       subtitle={`${t(`reportBuilder.metric.${report.metric}`)} × ${t(`reportBuilder.dimension.${report.dimension}`)}`}
       trailing={
         <span className="row gap-2">
-          {report.scheduleFrequency !== 'none' && (
-            <Badge tone="accent">{t(K.scheduleFrequency[report.scheduleFrequency])}</Badge>
-          )}
-          <Select
-            value={report.scheduleFrequency}
-            onChange={(e) => onSchedule(e.target.value as SavedReport['scheduleFrequency'])}
-            style={{ minHeight: 36, padding: '0 var(--space-2)' }}
-          >
-            <option value="none">{t(K.scheduleFrequency.none)}</option>
-            <option value="daily">{t(K.scheduleFrequency.daily)}</option>
-            <option value="weekly">{t(K.scheduleFrequency.weekly)}</option>
-            <option value="monthly">{t(K.scheduleFrequency.monthly)}</option>
-          </Select>
           <Button size="sm" variant="ghost" onClick={onLoad}>
             {t(K.load)}
           </Button>

@@ -809,6 +809,7 @@ import type {
   PayoutAccount,
   DocumentRef,
   RoleAuditEntry,
+  SavedReportDefinition,
   CommMessage,
   CommSequence,
   CommTemplate,
@@ -1197,6 +1198,9 @@ const suppliers = [...seedSuppliers];
 const activity = [...seedActivity];
 const alerts = [...seedAlerts];
 const zones = [...seedZones];
+/** 030's saved report definitions, per person. */
+const savedReports: SavedReportDefinition[] = [];
+let savedReportCounter = 0;
 /** 004's role-change audit trail (append-only). */
 const roleAudit: RoleAuditEntry[] = [];
 let roleAuditCounter = 0;
@@ -20168,6 +20172,36 @@ export const memoryRepository: Repository = {
 
   listRoleAudit: (limit = 50) => simulateRead(() => [...roleAudit].reverse().slice(0, limit)),
 
+  listSavedReports: (userId) => simulateRead(() => savedReports.filter((r) => r.ownerUserId === userId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((r) => ({ ...r }))),
+
+  saveReportDefinition: (userId, input) =>
+    simulateWrite(() => {
+      adminOnly(userId);
+      const name = input.name.trim();
+      if (!name || name.length > 60 || !input.metric || !input.dimension || !input.range) throw new RepositoryError('invalid_input');
+      const mine = savedReports.filter((r) => r.ownerUserId === userId);
+      if (mine.some((r) => r.name.toLowerCase() === name.toLowerCase())) throw new RepositoryError('name_taken');
+      if (mine.length >= 30) throw new RepositoryError('too_many');
+      savedReportCounter += 1;
+      const report: SavedReportDefinition = { id: `rep-${savedReportCounter}`, ownerUserId: userId, name, metric: input.metric, dimension: input.dimension, range: input.range, createdAt: new Date().toISOString(), isDemo: true };
+      savedReports.push(report);
+      return { ...report };
+    }),
+
+  deleteSavedReport: (userId, reportId) =>
+    simulateWrite(() => {
+      const at = savedReports.findIndex((r) => r.id === reportId && r.ownerUserId === userId);
+      if (at < 0) throw new RepositoryError('not_found');
+      savedReports.splice(at, 1);
+    }),
+
+  setSupplierWatch: (supplierId, on, byUserId) =>
+    simulateWrite(() => {
+      const admin = adminOnly(byUserId);
+      if (!byId(suppliers, supplierId)) throw new RepositoryError('not_found');
+      return patchInPlace(suppliers, supplierId, { watchlist: on ? { at: new Date().toISOString(), byName: admin.name } : undefined });
+    }),
+
   confirmCustomerAccount: (input) =>
     simulateWrite(() => {
       const lead = byId(leads, input.leadId);
@@ -21637,6 +21671,34 @@ export const memoryRepository: Repository = {
     simulateWrite(() =>
       patchInPlace(alerts, id, { status: 'acknowledged', acknowledgedBy: byUserId }),
     ),
+
+  snoozeAlert: (id, hours, byUserId) =>
+    simulateWrite(() => {
+      const admin = adminOnly(byUserId);
+      const alert = byId(alerts, id);
+      if (!alert) throw new RepositoryError('not_found');
+      if (alert.status === 'resolved') throw new RepositoryError('invalid_state');
+      if (!Number.isFinite(hours) || hours < 1 || hours > 72) throw new RepositoryError('invalid_input');
+      return patchInPlace(alerts, id, { snoozedUntil: new Date(Date.now() + hours * 3_600_000).toISOString(), snoozedByName: admin.name });
+    }),
+
+  delegateAlert: (id, toUserId, byUserId) =>
+    simulateWrite(() => {
+      const admin = adminOnly(byUserId);
+      const alert = byId(alerts, id);
+      if (!alert) throw new RepositoryError('not_found');
+      if (alert.status === 'resolved') throw new RepositoryError('invalid_state');
+      if (toUserId === null) return patchInPlace(alerts, id, { delegatedToUserId: undefined, delegatedAt: undefined, delegatedByName: undefined });
+      const to = byId(users, toUserId);
+      if (!to || to.status !== 'active' || !['admin', 'surveyor', 'technician'].includes(to.role)) throw new RepositoryError('ineligible_assignee');
+      const at = new Date().toISOString();
+      const updated = patchInPlace(alerts, id, { delegatedToUserId: to.id, delegatedAt: at, delegatedByName: admin.name });
+      // Tell them now: the follow-up engine owns the reminder from here.
+      syncCommitments(Date.now());
+      const c = commitments.find((x) => x.kind === 'alert_acknowledge' && x.subject.id === id && x.status === 'open');
+      if (c && c.ownerUserId === to.id) notifyWork(to.id, c, 'nudge', at);
+      return updated;
+    }),
 
   resolveAlert: (id, byUserId, note) =>
     simulateWrite(() => {

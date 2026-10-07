@@ -107,6 +107,18 @@ export interface RoleAuditEntry {
   isDemo: boolean;
 }
 
+/** A report definition someone saved on 030 (their own; read live each time it is opened). */
+export interface SavedReportDefinition {
+  id: string;
+  ownerUserId: string;
+  name: string;
+  metric: string;
+  dimension: string;
+  range: string;
+  createdAt: string;
+  isDemo: boolean;
+}
+
 export interface FieldPartnerOnboarding {
   submittedAt: string;
   preferredZoneIds?: string[];
@@ -4500,6 +4512,8 @@ export interface Supplier {
   /** A negotiated arrangement that doesn't fit the tier (100). */
   paymentTermsOverride?: SupplierPaymentTermsOverride;
   isDemo: boolean;
+  /** Put on the watchlist by hand on 026 (a low score over two months puts a supplier there by itself). */
+  watchlist?: { at: string; byName: string };
 }
 
 /* --------------------------------------------------- Operational telemetry */
@@ -4564,6 +4578,13 @@ export interface Alert {
    *  without a per-category switch. */
   sourceRoute?: string;
   location?: GeoPoint;
+  /** Hidden from the board, and its acknowledge reminder paused, until then (029). The alert itself is unchanged. */
+  snoozedUntil?: string;
+  snoozedByName?: string;
+  /** Someone Admin handed this to: they own the follow-up until it is acknowledged (029). */
+  delegatedToUserId?: string;
+  delegatedAt?: string;
+  delegatedByName?: string;
   isDemo: boolean;
 }
 

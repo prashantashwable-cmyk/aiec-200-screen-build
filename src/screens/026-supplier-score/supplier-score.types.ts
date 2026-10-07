@@ -30,7 +30,6 @@ export interface SupplierScoreRow {
   isEarlyData: boolean;
   onWatchlist: boolean;
   monthsBelowThreshold: number;
-  trend: number[];
 }
 
 export const SUPPLIER_SCORE_KEYS = {
