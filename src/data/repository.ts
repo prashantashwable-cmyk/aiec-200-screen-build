@@ -133,6 +133,8 @@ import type {
   InternalChannel,
   InternalChannelSet,
   EscalationContact,
+  IntegrationConfig,
+  IntegrationIncident,
   EscalationDrill,
   EscalationRailState,
   EscalationRun,
@@ -7157,6 +7159,44 @@ export interface InternalNotificationsView {
 }
 export interface InternalTypeInput { urgency: InternalUrgency | null; roles: Record<string, InternalChannelSet> | null; enabled: boolean; content: Partial<Record<Language, InternalContent>> }
 
+/* ------------------------------------------------------------------ System health (186) */
+
+export interface SystemHealthIntegrationView {
+  id: string;
+  group: string;
+  provider: string;
+  monitor: 'probe' | 'derived';
+  route: string | null;
+  statusPage: string | null;
+  /** AIEC's own judgement from its own calls. */
+  status: 'operational' | 'degraded' | 'down';
+  rate: number | null;
+  calls: number;
+  errors: number;
+  uptimePct: number | null;
+  lastProbeAt: string | null;
+  recent: boolean[];
+  /** What the provider says, recorded by Admin. */
+  reported: IntegrationConfig['reported'];
+  agreement: 'agree' | 'provider_better' | 'provider_worse' | 'unknown';
+  cause: 'third_party' | 'ours' | 'unknown' | null;
+  demo: IntegrationConfig['demo'];
+  openIncidentId: string | null;
+  lastIncidentAt: string | null;
+  /** Work an outage left behind that nobody has closed. */
+  followUp: { incidentId: string; kind: 'messages' | 'payouts' | 'statements'; count: number; route: string | null } | null;
+}
+export interface BotHealthView { replies: number; handoffs: number; handoffRate: number | null; expectedRate: number; drift: boolean; sample: number; failedSends: number; windowDays: number; confidenceThreshold: number }
+export interface SystemHealthView {
+  integrations: SystemHealthIntegrationView[];
+  shared: { ids: string[]; likely: 'ours' | 'mixed' } | null;
+  incidents: IntegrationIncident[];
+  engine: { lastBeatAt: string | null; beatsLastHour: number; longestGapMin: number; steps: number; failing: { id: string; name: string; error: string }[] };
+  bot: BotHealthView;
+  totals: { operational: number; degraded: number; down: number; followUps: number };
+  at: string;
+}
+
 /* ------------------------------------------------------------------ SLA monitor (185) */
 
 export interface SlaItemView {
@@ -8708,6 +8748,13 @@ export interface Repository {
   getVaultBundle(userId: string): Promise<VaultDocument[]>;
   /** 174: the customer's payment picture for one project (the first needing attention when none is named). */
   getCustomerPayments(dealId: string | null, userId: string): Promise<CustomerPayView>;
+  /* 186 — the technical plumbing: each integration judged on AIEC's own calls, the provider's word beside it, incidents, and the bot. */
+  getSystemHealth(userId: string): Promise<SystemHealthView>;
+  recordProviderStatus(userId: string, integrationId: string, status: IntegrationConfig['reported']['status'], note?: string): Promise<SystemHealthView>;
+  setIntegrationStatusPage(userId: string, integrationId: string, url: string | null): Promise<SystemHealthView>;
+  setIntegrationDemo(userId: string, integrationId: string, state: IntegrationConfig['demo']): Promise<SystemHealthView>;
+  runIntegrationCheck(userId: string, integrationId: string): Promise<SystemHealthView>;
+  closeIntegrationFollowUp(userId: string, incidentId: string, note: string): Promise<SystemHealthView>;
   /* 185 — one view over every SLA-governed process: status against target, the breaches to start with, the trend, and whether a target still fits. */
   getSlaOverview(userId: string): Promise<SlaOverviewView>;
   /* 184 — the escalation matrix: who hears, in what order and after what delay, with a backup path and drills that prove it works. */

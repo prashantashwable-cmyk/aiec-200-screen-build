@@ -5032,7 +5032,7 @@ export type CommitmentKind =
   | 'exit_dispute_decide'
   | 'tier_review_due'
   | 'certification_renewal'
-  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup' | 'support_chat_reply' | 'feedback_outreach' | 'feedback_recognition' | 'referral_reward' | 'automation_pause_review' | 'escalation_drill_due' | 'escalation_gap_fix'
+  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup' | 'support_chat_reply' | 'feedback_outreach' | 'feedback_recognition' | 'referral_reward' | 'automation_pause_review' | 'escalation_drill_due' | 'escalation_gap_fix' | 'integration_followup'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'
@@ -5777,4 +5777,32 @@ export interface EscalationDrill {
   finishedAt?: string;
   gapAlertId?: string;
   accepted?: { at: string; byName: string; note: string };
+}
+
+/* ------------------------------------------------------------------ System health (186) */
+
+export type IntegrationProviderStatus = 'operational' | 'degraded' | 'down' | 'unknown';
+/** What Admin has recorded of an integration: its status page, what the provider says, and (demo only) how the stand-in gateway answers AIEC's own checks. */
+export interface IntegrationConfig {
+  id: string;
+  statusPage: string | null;
+  reported: { status: IntegrationProviderStatus; at: string | null; byName: string | null; note?: string };
+  demo: 'working' | 'degraded' | 'failing';
+}
+export interface IntegrationProbe { id: string; integrationId: string; at: string; ok: boolean }
+export interface IntegrationIncident {
+  id: string;
+  code: string;
+  integrationId: string;
+  startedAt: string;
+  endedAt?: string;
+  status: 'open' | 'recovered';
+  cause: 'third_party' | 'ours' | 'unknown';
+  peakStatus: 'degraded' | 'down';
+  peakRate: number | null;
+  /** False when it was already failing the first time AIEC looked, so its start was not seen. */
+  onsetKnown: boolean;
+  /** Work the outage left behind (messages that did not go, payouts that failed): counted when it recovered, closed only by a person. */
+  followUp?: { kind: 'messages' | 'payouts' | 'statements'; count: number; route: string | null; done?: { at: string; byName: string; note: string } };
+  alertId?: string;
 }

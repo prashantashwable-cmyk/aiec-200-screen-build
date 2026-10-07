@@ -1016,10 +1016,14 @@ import { MANY_AT as WF_MANY_AT, MAX_PER_RUN as WF_MAX_PER_RUN, conflictsOf as wf
 import type { RecordValues, RuleDraft, SubjectId as WfSubject } from '@/features/automation/customRules';
 import { CHANNELS as INT_CHANNELS, CORE_TYPES as INT_CORE, DEFAULT_URGENCY_CHANNELS as INT_DEFAULTS, NO_CHANNELS as INT_NONE, atLeast as intAtLeast, channelProblems as intChannelProblems, contentProblems as intContentProblems, fatigueOf as intFatigueOf, isBlocking as intIsBlocking, reducesReach as intReducesReach, severityFloorOf as intSeverityFloor, urgencyOfSeverity as intUrgencyOfSeverity } from '@/features/notifications/internal';
 import type { Urgency as IntUrgency } from '@/features/notifications/internal';
+import { BOT_DRIFT_POINTS as HC_BOT_DRIFT, BOT_MIN_SAMPLE as HC_BOT_MIN, ENGINE_DOWN_MS as HC_ENGINE_DOWN, INTEGRATIONS as HC_INTEGRATIONS, MAX_PROBES as HC_MAX_PROBES, STATUS_WINDOW_MS as HC_STATUS_WINDOW, NOTE_MIN as HC_NOTE_MIN, PROBE_EVERY_MS as HC_PROBE_EVERY, WINDOW_MS as HC_WINDOW, agreementOf as hcAgreement, causeOf as hcCause, integrationDef as hcDef, isHttpUrl as hcIsUrl, judge as hcJudge, recovered as hcRecovered, sharedCauseOf as hcShared, uptimeOf as hcUptime } from '@/features/health/system';
+import type { IntegrationDef as HcDef, Observation as HcObservation, TechStatus } from '@/features/health/system';
+import type { BotHealthView, SystemHealthIntegrationView, SystemHealthView } from './repository';
 import { SLA_CATEGORIES, WINDOW_DAYS as SLA_WINDOW_DAYS, elapsedMsOf as slaElapsedOf, pauseOf as slaPauseOf, ratioOf as slaRatioOf, rollupOf as slaRollupOf, statusOf as slaStatusOf, targetSignal as slaTargetSignal, trendOf as slaTrendOf, triageScore as slaTriageScore } from '@/features/sla/consolidated';
 import type { SlaItem } from '@/features/sla/consolidated';
 import type { SlaCategoryView, SlaItemView, SlaOverviewView } from './repository';
 import { BACKUP_KEYS as ESC_BACKUP_KEYS, DEMO_CONFIRM_MS as ESC_DEMO_CONFIRM_MS, DEMO_SILENCE_MS as ESC_DEMO_SILENCE_MS, DRILL_GAP_TITLE as ESC_DRILL_GAP_TITLE, ESC_CHANNELS, EXHAUSTED_TITLE as ESC_EXHAUSTED_TITLE, MAX_BACKUPS as ESC_MAX_BACKUPS, NOTE_MIN as ESC_NOTE_MIN, PRIMARY as ESC_PRIMARY, SCENARIOS as ESC_SCENARIOS, SCENARIO_NAMES as ESC_NAMES, chainProblems as escChainProblems, drillDueAt as escDrillDueAt, drillStepsOf as escDrillStepsOf, exhaustedAfterMinutes as escExhaustedAfter, offsetsOf as escOffsets, phoneProblem as escPhoneBad, railOutcome as escRailOutcome, repeatOffsets as escRepeatOffsets, scenarioDef as escDef, scenarioIdOf as escScenarioIdOf, withTierIds as escTierIds } from '@/features/escalation/matrix';
+import type { IntegrationConfig, IntegrationIncident, IntegrationProbe, MessageStatus } from './types';
 import type { EscalationChainTier, EscalationChannel, EscalationContact, EscalationDelivery, EscalationDrill, EscalationDrillStep, EscalationLastResort, EscalationRun, EscalationScenarioConfig } from './types';
 import type { AlertEscalationView, EscalationGap, EscalationMatrixView, EscalationRunView, EscalationScenarioView } from './repository';
 import { VAULT_KINDS, validityState } from '@/features/documents/vault';
@@ -1923,7 +1927,7 @@ function sendReminderMessage(payment: Payment, lead: Lead, byName: string, chann
     body,
     templateGroupId,
     ...(wanted !== channel ? { fallbackFrom: wanted } : {}),
-    status: 'sent',
+    status: hcMessageStatus(channel),
     at: now,
     handled: true,
   };
@@ -2840,6 +2844,7 @@ function commitmentSources(now: number): CommitmentSources {
     referrals: referralSignals(),
     automationPauses: automationPauseSignals(),
     escalation: escSignals(now),
+    integrations: hcSignals(),
     tds: tdsObligations(Date.now()),
     exits: exitSignals(),
     handoverReviews: handoverSignals().reviews,
@@ -3634,6 +3639,190 @@ function syncSlaBreaches(now: number): void {
   }
 }
 
+/* ============================================ System health (186) */
+
+/**
+ * The technical plumbing the automation stands on. AIEC's own observations (probes on a rhythm, plus the real outcomes of messages, payouts and statements) are what status is judged on; the
+ * provider's own word is recorded beside it and is not trusted over them. The stand-in gateway is a demo: nothing real is called.
+ */
+const integrationConfigs: IntegrationConfig[] = [];
+const integrationProbes: IntegrationProbe[] = [];
+const integrationIncidents: IntegrationIncident[] = [];
+/** Integrations seen operational at least once: a fault is a cluster candidate only if its start was actually observed. */
+const hcSeenWell = new Set<string>();
+const heartbeatBeats: number[] = [];
+let healthCounter = 0;
+const healthId = (p: string): string => `${p}-${(healthCounter += 1)}`;
+const HEALTH_SHARED_TITLE = 'systemHealth.alert.shared';
+
+/** A message goes out, or (while the stand-in gateway for that channel is set to fail) does not: the same outcome every automation that sends one sees, so an outage leaves real failed messages to reprocess. */
+function hcMessageStatus(channel: CommChannel): MessageStatus {
+  const cfg = (channel === 'sms' || channel === 'whatsapp') ? integrationConfigs.find((c) => c.id === channel) : undefined;
+  return cfg?.demo === 'failing' ? 'failed' : 'sent';
+}
+function hcConfigOf(id: string): IntegrationConfig {
+  let c = integrationConfigs.find((x) => x.id === id);
+  if (!c) { c = { id, statusPage: hcDef(id)?.statusPage ?? null, reported: { status: 'unknown', at: null, byName: null }, demo: 'working' }; integrationConfigs.push(c); }
+  return c;
+}
+/** State the owning process already keeps, read straight from it. */
+function hcDirect(id: string): TechStatus | null {
+  if (id === 'bank_feed') return bankFeed.status === 'unavailable' ? 'down' : 'operational';
+  if (id === 'payout_rail') return payoutRail.status === 'unavailable' ? 'down' : 'operational';
+  if (id === 'id_verification') return verificationService.status === 'down' ? 'down' : 'operational';
+  if (id === 'carrier_tracking') {
+    const live = deliveryPartners.filter((p) => p.liveTrackingSupported && p.status === 'active');
+    const out = live.filter((p) => p.feedStatus === 'outage').length;
+    return live.length > 0 && out === live.length ? 'down' : out > 0 ? 'degraded' : 'operational';
+  }
+  if (id === 'engine') {
+    const last = heartbeatBeats[heartbeatBeats.length - 1];
+    if (last !== undefined && Date.now() - last > HC_ENGINE_DOWN) return 'down';
+    return [...unitTelemetry.values()].some((t) => t.consecutiveFailures > 0) ? 'degraded' : 'operational';
+  }
+  return null;
+}
+/** The real outcomes of work that went through an integration, over the window: no probe needed, no number invented. */
+function hcUsage(id: string, since: number): { calls: number; errors: number } {
+  if (id === 'whatsapp' || id === 'sms') {
+    const mine = commMessages.filter((m) => m.channel === id && m.sender !== 'customer' && Date.parse(m.at) >= since);
+    return { calls: mine.length, errors: mine.filter((m) => m.status === 'failed').length };
+  }
+  if (id === 'payout_rail') {
+    const mine = payoutDisbursements.filter((d) => d.status !== 'cancelled' && Date.parse(d.createdAt) >= since);
+    return { calls: mine.length, errors: mine.filter((d) => d.status === 'failed' && (d.failure === 'bank_unavailable' || d.failure === 'interrupted')).length };
+  }
+  if (id === 'bank_feed') {
+    const mine = reconRuns.filter((r) => Date.parse(r.runAt) >= since);
+    return { calls: mine.length, errors: mine.filter((r) => r.status === 'could_not_run').length };
+  }
+  if (id === 'engine') {
+    let runs = 0; let failures = 0;
+    for (const t of unitTelemetry.values()) { runs += t.runs; failures += t.failures; }
+    return { calls: runs, errors: failures };
+  }
+  return { calls: 0, errors: 0 };
+}
+const hcProbesOf = (id: string, since: number): IntegrationProbe[] => integrationProbes.filter((p) => p.integrationId === id && Date.parse(p.at) >= since);
+
+function hcObserve(id: string, now: number): { obs: HcObservation; probes: IntegrationProbe[]; usage: { calls: number; errors: number } } {
+  const since = now - HC_STATUS_WINDOW;
+  const probes = hcProbesOf(id, since);
+  const usage = hcUsage(id, since);
+  return { obs: { probes: probes.map((p) => p.ok), usageCalls: usage.calls, usageErrors: usage.errors, direct: hcDirect(id) }, probes, usage };
+}
+
+/** Counts what an outage left behind: messages that failed since it began, payouts that failed for a technical reason, statements that could not be fetched. */
+function hcFollowUpCount(kind: 'messages' | 'payouts' | 'statements', integrationId: string, since: number): number {
+  if (kind === 'messages') return commMessages.filter((m) => m.channel === integrationId && m.sender !== 'customer' && m.status === 'failed' && Date.parse(m.at) >= since).length;
+  if (kind === 'payouts') return payoutDisbursements.filter((d) => d.status === 'failed' && (d.failure === 'bank_unavailable' || d.failure === 'interrupted') && Date.parse(d.createdAt) >= since).length;
+  return reconRuns.filter((r) => r.status === 'could_not_run' && Date.parse(r.runAt) >= since).length;
+}
+
+function hcProbe(id: string, now: number): void {
+  const cfg = hcConfigOf(id);
+  const n = integrationProbes.filter((p) => p.integrationId === id).length;
+  // The stand-in answers per the demo state: working always, degraded every third check fails, failing always.
+  const ok = cfg.demo === 'working' ? true : cfg.demo === 'failing' ? false : n % 3 !== 0;
+  integrationProbes.push({ id: healthId('prb'), integrationId: id, at: new Date(now).toISOString(), ok });
+  if (integrationProbes.length > HC_MAX_PROBES) integrationProbes.splice(0, integrationProbes.length - HC_MAX_PROBES);
+}
+
+function hcIntegrationView(def: HcDef, now: number): SystemHealthIntegrationView {
+  const cfg = hcConfigOf(def.id);
+  const { obs, probes } = hcObserve(def.id, now);
+  const verdict = hcJudge(obs);
+  const open = integrationIncidents.find((i) => i.integrationId === def.id && i.status === 'open');
+  const last = [...integrationIncidents].filter((i) => i.integrationId === def.id).sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1))[0];
+  const owed = integrationIncidents.find((i) => i.integrationId === def.id && i.status === 'recovered' && i.followUp && i.followUp.count > 0 && !i.followUp.done);
+  const lastProbe = probes[probes.length - 1];
+  return {
+    id: def.id, group: def.group, provider: def.provider, monitor: def.monitor, route: def.route, statusPage: cfg.statusPage, status: verdict.status, rate: verdict.rate === null ? null : Math.round(verdict.rate * 1000) / 1000,
+    calls: obs.usageCalls + obs.probes.length, errors: obs.usageErrors + obs.probes.filter((ok) => !ok).length, uptimePct: hcUptime(probes.map((p) => p.ok)), lastProbeAt: lastProbe?.at ?? null, recent: probes.slice(-10).map((p) => p.ok),
+    reported: { ...cfg.reported }, agreement: hcAgreement(verdict.status, cfg.reported.status), cause: hcCause(verdict.status, cfg.reported.status), demo: cfg.demo,
+    openIncidentId: open?.id ?? null, lastIncidentAt: last?.startedAt ?? null, followUp: owed?.followUp ? { incidentId: owed.id, kind: owed.followUp.kind, count: owed.followUp.count, route: owed.followUp.route } : null,
+  };
+}
+
+function hcBotView(now: number): BotHealthView {
+  const since = now - HC_WINDOW;
+  const recent = commMessages.filter((m) => Date.parse(m.at) >= since);
+  const bot = recent.filter((m) => m.sender === 'bot' && !m.templateGroupId);
+  const handoffs = recent.filter((m) => m.sender === 'customer' && m.requiresHumanReview).length;
+  const answered = bot.length;
+  const sample = answered + handoffs;
+  const rate = sample > 0 ? Math.round((handoffs / sample) * 100) : null;
+  const expected = Math.round(botConfig.escalatedRatePct <= 1 ? botConfig.escalatedRatePct * 100 : botConfig.escalatedRatePct);
+  return { replies: answered, handoffs, handoffRate: rate, expectedRate: expected, drift: rate !== null && sample >= HC_BOT_MIN && Math.abs(rate - expected) >= HC_BOT_DRIFT, sample, failedSends: recent.filter((m) => m.sender === 'bot' && m.status === 'failed').length, windowDays: Math.round(HC_WINDOW / 86_400_000), confidenceThreshold: botConfig.escalationConfidenceThreshold };
+}
+
+function systemHealthView(now: number): SystemHealthView {
+  syncIntegrationHealth(now);
+  const integrations = HC_INTEGRATIONS.map((d) => hcIntegrationView(d, now));
+  const faults = integrations.filter((i) => i.status !== 'operational').map((i) => ({ integrationId: i.id, startedAt: integrationIncidents.find((x) => x.id === i.openIncidentId)?.startedAt ?? new Date(now).toISOString(), reported: i.reported.status, onsetKnown: integrationIncidents.find((x) => x.id === i.openIncidentId)?.onsetKnown ?? false }));
+  const shared = hcShared(faults);
+  const beats = heartbeatBeats.filter((b) => now - b <= 3_600_000);
+  let longest = 0;
+  for (let k = 1; k < heartbeatBeats.length; k += 1) if (now - heartbeatBeats[k] <= 86_400_000) longest = Math.max(longest, heartbeatBeats[k] - heartbeatBeats[k - 1]);
+  const failing = [...unitTelemetry.entries()].filter(([, t]) => t.consecutiveFailures > 0).map(([id, t]) => ({ id, name: unitDef(id)?.name ?? id, error: t.lastError ?? '' }));
+  return JSON.parse(JSON.stringify({
+    integrations, shared,
+    incidents: [...integrationIncidents].sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1)).slice(0, 20),
+    engine: { lastBeatAt: heartbeatBeats.length ? new Date(heartbeatBeats[heartbeatBeats.length - 1]).toISOString() : null, beatsLastHour: beats.length, longestGapMin: Math.round(longest / 60_000), steps: HEARTBEAT.length, failing },
+    bot: hcBotView(now),
+    totals: { operational: integrations.filter((i) => i.status === 'operational').length, degraded: integrations.filter((i) => i.status === 'degraded').length, down: integrations.filter((i) => i.status === 'down').length, followUps: integrations.filter((i) => i.followUp).length },
+    at: new Date(now).toISOString(),
+  })) as SystemHealthView;
+}
+
+/** Probes on a rhythm; opens an incident when something stops being operational, closes it after a clean run, counts what it left behind. Idempotent. */
+function syncIntegrationHealth(now: number): void {
+  for (const def of HC_INTEGRATIONS) {
+    if (def.monitor === 'probe') {
+      const last = integrationProbes.filter((p) => p.integrationId === def.id).pop();
+      if (!last || now - Date.parse(last.at) >= HC_PROBE_EVERY) hcProbe(def.id, now);
+    }
+    const cfg = hcConfigOf(def.id);
+    const { obs } = hcObserve(def.id, now);
+    const verdict = hcJudge(obs);
+    const open = integrationIncidents.find((i) => i.integrationId === def.id && i.status === 'open');
+    const at = new Date(now).toISOString();
+    const name = def.provider;
+    if (verdict.status === 'operational') hcSeenWell.add(def.id);
+    if (verdict.status !== 'operational') {
+      const cause = hcCause(verdict.status, cfg.reported.status) ?? 'unknown';
+      if (!open) {
+        const inc: IntegrationIncident = { id: healthId('inc'), code: `AIEC-IN-${1000 + integrationIncidents.length + 1}`, integrationId: def.id, startedAt: at, status: 'open', cause, peakStatus: verdict.status, peakRate: verdict.rate, onsetKnown: hcSeenWell.has(def.id) };
+        const alert = raiseAlert({ titleKey: verdict.status === 'down' ? 'systemHealth.alert.down' : 'systemHealth.alert.degraded', context: `${name} · ${cause === 'ours' ? 'the provider says it is fine, our calls say otherwise' : cause === 'third_party' ? 'the provider reports a problem' : 'cause not known yet'}`, severity: verdict.status === 'down' ? 'high' : 'medium', category: 'automation', relatedId: `integ:${def.id}`, sourceRoute: `/system-health?integration=${def.id}` });
+        inc.alertId = alert.id;
+        integrationIncidents.push(inc);
+        logAutomatedAction({ sourceKey: 'health.incident_opened', triggeringCondition: `${name} is ${verdict.status} by AIEC's own calls`, actionTaken: `Opened ${inc.code} and raised ${alert.code}`, affectedRecordId: alert.id, affectedRecordType: 'alert', subjectLabel: inc.code });
+      } else {
+        const worse = verdict.status === 'down' && open.peakStatus !== 'down';
+        patchInPlace(integrationIncidents, open.id, { cause, peakStatus: worse ? 'down' : open.peakStatus, peakRate: Math.max(open.peakRate ?? 0, verdict.rate ?? 0) || null });
+      }
+    } else if (open && hcRecovered(obs.probes, obs.direct)) {
+      const kind = def.followUp;
+      const count = kind ? hcFollowUpCount(kind, def.id, Date.parse(open.startedAt)) : 0;
+      patchInPlace(integrationIncidents, open.id, { status: 'recovered', endedAt: at, followUp: kind && count > 0 ? { kind, count, route: def.route } : undefined });
+      const a = open.alertId ? byId(alerts, open.alertId) : undefined;
+      if (a && a.status !== 'resolved') patchInPlace(alerts, a.id, { status: 'resolved', resolvedBy: 'system', resolvedAt: at, resolutionNote: count > 0 ? `Recovered; ${count} item(s) still need reprocessing` : 'Recovered' });
+      logAutomatedAction({ sourceKey: 'health.incident_closed', triggeringCondition: `${name} was operational on AIEC's own calls again`, actionTaken: count > 0 ? `Closed ${open.code}; ${count} item(s) left to reprocess` : `Closed ${open.code}`, affectedRecordId: open.id, affectedRecordType: 'other', subjectLabel: open.code });
+    }
+  }
+  // One shared-cause note when several integrations failed together.
+  const faults = integrationIncidents.filter((i) => i.status === 'open').map((i) => ({ integrationId: i.integrationId, startedAt: i.startedAt, reported: hcConfigOf(i.integrationId).reported.status, onsetKnown: i.onsetKnown }));
+  const shared = hcShared(faults);
+  const sharedAlert = alerts.find((a) => a.titleKey === HEALTH_SHARED_TITLE && a.status !== 'resolved');
+  if (shared && !sharedAlert) {
+    raiseAlert({ titleKey: HEALTH_SHARED_TITLE, context: `${shared.ids.length} integrations · ${shared.likely === 'ours' ? 'check AIEC\'s own network and hosting first' : 'separate outages that coincided'}`, severity: 'high', category: 'automation', relatedId: 'integ-shared', sourceRoute: '/system-health' });
+  } else if (!shared && sharedAlert) patchInPlace(alerts, sharedAlert.id, { status: 'resolved', resolvedBy: 'system', resolvedAt: new Date(now).toISOString(), resolutionNote: 'The failures no longer line up' });
+}
+
+function hcSignals(): { followUps: { id: string; name: string; since: string; count: number }[] } {
+  return { followUps: integrationIncidents.filter((i) => i.status === 'recovered' && i.followUp && i.followUp.count > 0 && !i.followUp.done).map((i) => ({ id: i.id, name: hcDef(i.integrationId)?.provider ?? i.integrationId, since: i.endedAt ?? i.startedAt, count: i.followUp!.count })) };
+}
+
 const heartbeatCommitments = { notifications: 0, alerts: 0 };
 const HEARTBEAT: { id: string; run: (now: number) => void }[] = [
   { id: 'followUpTasks', run: () => reconcileFollowUpTasks() },
@@ -3691,6 +3880,7 @@ const HEARTBEAT: { id: string; run: (now: number) => void }[] = [
   { id: 'customRules', run: (now) => syncCustomRules(now) },
   { id: 'escalationMatrix', run: (now) => syncEscalationMatrix(now) },
   { id: 'slaMonitor', run: (now) => syncSlaBreaches(now) },
+  { id: 'integrationHealth', run: (now) => syncIntegrationHealth(now) },
   {
     id: 'stageInvoices',
     run: () => {
@@ -3713,6 +3903,8 @@ const HEARTBEAT: { id: string; run: (now: number) => void }[] = [
 ];
 
 function runFollowUpEngineSync(now: number): FollowUpEngineRun {
+  heartbeatBeats.push(now);
+  if (heartbeatBeats.length > 1500) heartbeatBeats.splice(0, heartbeatBeats.length - 1500);
   const actionsBefore = automatedActionLog.length;
   heartbeatCommitments.notifications = 0;
   heartbeatCommitments.alerts = 0;
@@ -4299,7 +4491,7 @@ function notifyCustomerOfMilestone(legId: string, milestone: ShipmentMilestone):
     conversations.push(conversation);
   }
   messageCounter += 1;
-  commMessages.push({ id: `cm-new-${messageCounter}`, conversationId: conversation.id, channel, sender: 'bot', body, templateGroupId: groupId, ...(channel !== template.channel ? { fallbackFrom: template.channel } : {}), status: 'sent', at: now, handled: true });
+  commMessages.push({ id: `cm-new-${messageCounter}`, conversationId: conversation.id, channel, sender: 'bot', body, templateGroupId: groupId, ...(channel !== template.channel ? { fallbackFrom: template.channel } : {}), status: hcMessageStatus(channel), at: now, handled: true });
   patchInPlace(conversations, conversation.id, { lastMessageAt: now });
   mark({ customerNotifiedAt: now });
   logAutomatedAction({
@@ -8632,7 +8824,7 @@ function syncWarrantyReminders(now: number): void {
         conversations.push(conversation);
       }
       messageCounter += 1;
-      commMessages.push({ id: `cm-new-${messageCounter}`, conversationId: conversation.id, channel, sender: 'bot', body, templateGroupId: groupId, ...(channel !== template.channel ? { fallbackFrom: template.channel } : {}), status: 'sent', at, handled: true });
+      commMessages.push({ id: `cm-new-${messageCounter}`, conversationId: conversation.id, channel, sender: 'bot', body, templateGroupId: groupId, ...(channel !== template.channel ? { fallbackFrom: template.channel } : {}), status: hcMessageStatus(channel), at, handled: true });
       patchInPlace(conversations, conversation.id, { lastMessageAt: at });
       r.sentAt = at;
       logAutomatedAction({ sourceKey: 'warranty.reminder', triggeringCondition: `${r.kind.replace('_', ' ')} for ${job.code} came due`, actionTaken: `Messaged ${lead.contactName} on ${template.channel}`, affectedRecordId: job.id, affectedRecordType: 'other', subjectLabel: job.code });
@@ -11713,7 +11905,7 @@ function tkMessageCustomer(t: ServiceTicket, groupId: string, params: Record<str
     conversations.push(conversation);
   }
   messageCounter += 1;
-  commMessages.push({ id: `cm-new-${messageCounter}`, conversationId: conversation.id, channel, sender: 'bot', body, templateGroupId: groupId, ...(channel !== template.channel ? { fallbackFrom: template.channel } : {}), status: 'sent', at, handled: true });
+  commMessages.push({ id: `cm-new-${messageCounter}`, conversationId: conversation.id, channel, sender: 'bot', body, templateGroupId: groupId, ...(channel !== template.channel ? { fallbackFrom: template.channel } : {}), status: hcMessageStatus(channel), at, handled: true });
   patchInPlace(conversations, conversation.id, { lastMessageAt: at });
   logAutomatedAction({ sourceKey: `service_ticket.${groupId.replace('tpl-ticket-', '')}`, triggeringCondition: `${t.code} ${groupId.replace('tpl-ticket-', '')}`, actionTaken: `Messaged ${lead.contactName} on ${template.channel}`, affectedRecordId: t.id, affectedRecordType: 'other', subjectLabel: t.code });
 }
@@ -14412,7 +14604,7 @@ function messageLeadFromTemplate(lead: Lead, groupId: string, fields: Record<str
     conversations.push(conversation);
   }
   messageCounter += 1;
-  commMessages.push({ id: `cm-new-${messageCounter}`, conversationId: conversation.id, channel, sender: 'bot', body: renderTemplateBody(template.body, { customerName: lead.contactName, buildingName: lead.siteName, ...fields }), templateGroupId: groupId, ...(channel !== template.channel ? { fallbackFrom: template.channel } : {}), status: 'sent', at, handled: true });
+  commMessages.push({ id: `cm-new-${messageCounter}`, conversationId: conversation.id, channel, sender: 'bot', body: renderTemplateBody(template.body, { customerName: lead.contactName, buildingName: lead.siteName, ...fields }), templateGroupId: groupId, ...(channel !== template.channel ? { fallbackFrom: template.channel } : {}), status: hcMessageStatus(channel), at, handled: true });
   patchInPlace(conversations, conversation.id, { lastMessageAt: at });
   return channel;
 }
@@ -19352,7 +19544,7 @@ export const memoryRepository: Repository = {
         conversations.push(conversation);
       }
       messageCounter += 1;
-      commMessages.push({ id: `cm-new-${messageCounter}`, conversationId: conversation.id, channel: template.channel, sender: 'agent', body: view.customerPreview, templateGroupId: template.groupId, status: 'sent', at, handled: true });
+      commMessages.push({ id: `cm-new-${messageCounter}`, conversationId: conversation.id, channel: template.channel, sender: 'agent', body: view.customerPreview, templateGroupId: template.groupId, status: hcMessageStatus(template.channel), at, handled: true });
       patchInPlace(conversations, conversation.id, { lastMessageAt: at });
       patchInPlace(discrepancyReports, r.id, { customerNotifiedAt: at, events: reportEvent(r, 'customer_told', actor.name) });
       return { notified: true };
@@ -24978,6 +25170,51 @@ export const memoryRepository: Repository = {
 
   /* --------------------------------- Notification templates & channels (183) */
   getInternalNotifications: (userId) => simulateRead(() => { intAdmin(userId); return intOverview(Date.now()); }),
+  /* 186 — system health and bot monitoring */
+  getSystemHealth: (userId) => simulateRead(() => { intAdmin(userId); return systemHealthView(Date.now()); }),
+  recordProviderStatus: (userId, integrationId, status, note) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      if (!hcDef(integrationId)) throw new RepositoryError('not_found');
+      const c = hcConfigOf(integrationId);
+      c.reported = { status, at: new Date().toISOString(), byName: admin.name, note: note?.trim() || undefined };
+      return systemHealthView(Date.now());
+    }),
+  setIntegrationStatusPage: (userId, integrationId, url) =>
+    simulateWrite(() => {
+      intAdmin(userId);
+      if (!hcDef(integrationId)) throw new RepositoryError('not_found');
+      if (url !== null && url.trim() !== '' && !hcIsUrl(url)) throw new RepositoryError('invalid_url');
+      hcConfigOf(integrationId).statusPage = url && url.trim() ? url.trim() : null;
+      return systemHealthView(Date.now());
+    }),
+  setIntegrationDemo: (userId, integrationId, state) =>
+    simulateWrite(() => {
+      intAdmin(userId);
+      const d = hcDef(integrationId);
+      if (!d) throw new RepositoryError('not_found');
+      if (d.monitor !== 'probe') throw new RepositoryError('not_probed');
+      hcConfigOf(integrationId).demo = state;
+      return systemHealthView(Date.now());
+    }),
+  runIntegrationCheck: (userId, integrationId) =>
+    simulateWrite(() => {
+      intAdmin(userId);
+      const d = hcDef(integrationId);
+      if (!d) throw new RepositoryError('not_found');
+      if (d.monitor === 'probe') hcProbe(integrationId, Date.now());
+      return systemHealthView(Date.now());
+    }),
+  closeIntegrationFollowUp: (userId, incidentId, note) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      const inc = byId(integrationIncidents, incidentId);
+      if (!inc || !inc.followUp) throw new RepositoryError('not_found');
+      if (inc.status !== 'recovered' || inc.followUp.done) throw new RepositoryError('invalid_state');
+      if (note.trim().length < HC_NOTE_MIN) throw new RepositoryError('reason_required');
+      inc.followUp = { ...inc.followUp, done: { at: new Date().toISOString(), byName: admin.name, note: note.trim() } };
+      return systemHealthView(Date.now());
+    }),
   /* 185 — SLA monitor */
   getSlaOverview: (userId) => simulateRead(() => { intAdmin(userId); return slaOverview(Date.now()); }),
   /* 184 — escalation matrix */
@@ -27087,7 +27324,7 @@ export const memoryRepository: Repository = {
             conversations.push(conversation);
           }
           messageCounter += 1;
-          commMessages.push({ id: `cm-new-${messageCounter}`, conversationId: conversation.id, channel, sender: 'agent', body: message.body, templateGroupId: message.template.groupId, ...(channel !== message.channel ? { fallbackFrom: message.channel } : {}), status: 'sent', at, handled: true });
+          commMessages.push({ id: `cm-new-${messageCounter}`, conversationId: conversation.id, channel, sender: 'agent', body: message.body, templateGroupId: message.template.groupId, ...(channel !== message.channel ? { fallbackFrom: message.channel } : {}), status: hcMessageStatus(channel), at, handled: true });
           patchInPlace(conversations, conversation.id, { lastMessageAt: at });
           told.add(message.lead.id);
           result.notified += 1;

@@ -158,6 +158,8 @@ export interface CommitmentSources {
   /** A category of automation someone paused (181): a stop is not meant to be forgotten, so Admin is asked a day later whether it is still on purpose. */
   automationPauses: { category: string; name: string; since: string; byName: string }[];
   /** The escalation matrix (184): a drill is owed on each scenario's own rhythm, and a gap a drill found is Admin's to put right within a day. */
+  /** What a recovered outage left behind that still needs a person (186). */
+  integrations: { followUps: { id: string; name: string; since: string; count: number }[] };
   escalation: { drills: { id: string; name: string; dueAt: string }[]; gaps: { id: string; scenarioId: string; name: string; since: string }[] };
   referrals: { rewards: { id: string; userId: string; friend: string; at: string }[] };
   supportChats: { waiting: { id: string; name: string; since: string; urgent: boolean }[] };
@@ -2391,6 +2393,28 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
         paused: false,
         actionRoute: `/escalation-matrix?scenario=${x.scenarioId}`,
         oversightRoute: '/escalation-matrix',
+      }));
+    },
+  },
+  {
+    // A provider coming back is not the end of an outage (186): messages that did not go, payouts that failed or statements that were not fetched are owed a person until Admin closes them.
+    kind: 'integration_followup',
+    nudgeBefore: hours(4),
+    escalateAfter: hours(24),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'automation',
+    collect(src) {
+      return src.integrations.followUps.map((x) => ({
+        ...base('integration_followup', 'alert', x.id),
+        ownerUserId: adminId(src),
+        titleKey: 'work.title.integration_followup',
+        titleParams: { name: x.name, count: String(x.count) },
+        dueAt: new Date(Date.parse(x.since) + hours(24)).toISOString(),
+        state: 'open' as const,
+        paused: false,
+        actionRoute: `/system-health?incident=${x.id}`,
+        oversightRoute: '/system-health',
       }));
     },
   },
