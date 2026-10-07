@@ -1450,3 +1450,72 @@ service request has no checklist or Job-level service job; Admin has no nav tab 
 commitments and the assistant lead there); a referral reward has no payout details until Admin records them (164's "needs details"),
 no TDS is deducted for a customer payee, and a voided deal closure does not take the reward back; the notification fallback is an
 in-app copy only (there is no push), and 174's reminder list still labels an opted-out channel as skipped.
+
+## Module 19 — Automation Rules & Notification Engine (`181`–`190`, checkpoint-verified)
+
+Ten Admin-only screens that turn the automation the app already runs into something that can be seen, configured, audited,
+overridden, tested and trusted. They add almost no new business logic of their own: each reads, or configures, the machinery
+the earlier modules built, and the rules each screen enforces are pure modules under `@/features/*` that the repository and the
+screen share.
+
+| # | Screen | Route | What it owns |
+|---|---|---|---|
+| 181 | Automation Rules Dashboard | `/automation-rules` | The heartbeat as a table of units and categories; one telemetry for 027 and 181; a pause with a stated, narrow effect |
+| 182 | Workflow Trigger Builder | `/workflow-rules` | Custom rules as data: subject, up to four conditions, one action; examine before you commit; retire, never delete |
+| 183 | Notification Templates (staff) | `/notification-settings` | Urgency, per-role channels, wording per language, cutting reach confirmed, a test send |
+| 184 | Escalation Matrix | `/escalation-matrix` | How an unanswered alert climbs: chains, last resort, backups, drills that prove it |
+| 185 | SLA Monitor | `/sla-monitor` | One view over every SLA-governed timer, held to its own process's target; triage and trend |
+| 186 | System Health | `/system-health` | Technical health of ten connections; AIEC's own calls decide, the provider's word is recorded beside it |
+| 187 | Automation Audit Log | `/audit-log` | The one permanent record, chained and tamper-evident; searchable at volume; exports are themselves recorded |
+| 188 | Manual Override Console | `/override-console` | Four things Admin may force, five nobody may; reason, preview, confirmation, every time |
+| 189 | Integration Management | `/integrations` | Credentials (masked), test and live, rotation without a scattered failure, demo isolation |
+| 190 | Automation Testing & Sandbox | `/automation-sandbox` | Scenario tests that provably touch nothing; expected vs actual; tested-then-live |
+
+**Decisions that shape everything else**
+
+- **Units are what categories are made of.** `HEARTBEAT` / `UNITS` / `CATEGORIES` (181) mean a new automation is one entry in each,
+  and a feature shipped later appears on the dashboard by itself (an unknown source key becomes a category of its own).
+- **One record, now chained.** `logAutomatedAction` is still the only write path, but every entry carries `seq`, `prevHash`
+  and `hash` and is frozen (187). A person's override is written into the same chain tagged "by hand" (188). Tamper-evident,
+  not tamper-proof: the hash is a fast non-cryptographic one, and a real backend would add write-once storage.
+- **Never a silent dead end.** An alert climbs 184's chain on its own; when the last repeat has had time to be answered the run is
+  `exhausted` and a critical alert says so. A broken audit chain, a failing heartbeat unit, a rotation that lapsed, a sandbox
+  connection serving real customers and a lapsed SLA each raise one alert and a commitment, never a queue only its own screen reads.
+- **A pause, an override and a test each say exactly what they do.** A paused category's own-clock steps do not run and nothing
+  already done is undone (181); an override needs a reason, a preview and a tick, and five kinds (QC, safety, handover gate,
+  compliance, training gate) have no override path at all (188); a sandbox run counts the real records it could have changed to
+  prove it changed none (190).
+- **AIEC's own observations beat a third party's word.** 186 judges a connection from probes and real usage and records the
+  provider's status page beside it; a provider that says all is well while our calls fail points at our side, and several failures
+  starting within minutes read as one cause.
+- **Secrets never leave the repository.** 189 keeps test and live credentials apart, shows only a key name and a mask, and demo
+  traffic is handed the test key whatever the mode (and is proven so).
+- **Tested means tested at exactly this definition.** 190 hashes a rule's definition; any edit makes earlier results stale. Going
+  live reuses 182's own activation path with its `fromNow` / `confirmMany` / `acknowledgeConflicts` options.
+
+**Checkpoint (as of this module).** All ten screens were opened as Admin at 390, 820 and 1440 with no horizontal overflow, no raw
+translation keys and no console errors. The paths that matter were exercised: a rule built in 182, tested in 190 against its
+standard scenarios, accepted as a baseline, edited (the baseline then differs and the old tests go stale), re-tested and taken live
+(182 then shows it active, the rule keeps a `simulated` and `activated` event); a declared expectation that the rule does not meet
+(not acceptable away); the library's 180-day review and a custom scenario added and removed; the 184 chain, 185 timers, 186
+incidents, 187 chain and exports, 188 refusals and 189's rotation and isolation check as exercised while each was built. Spot checks
+of earlier screens that these modules reach into, 019 (Emergency alerts: now shows the real chain), 027 (Automation health: shares
+181's telemetry), 028 (Cash flow), 057 (Reply inbox: feeds 185) and 090 (Refund & dispute), loaded clean with nothing regressed.
+Nothing needed fixing at the checkpoint beyond wording found in 190 itself (a declared expectation that differs no longer offers
+"accept as baseline").
+
+**Placeholder business decisions to confirm (flagged on screen where they show)**
+
+- 181: the pause reason length, the failing-unit threshold. 182: four conditions, 20 records per run, 25 matches = "many".
+- 183: the 39 core types' urgency, the noisy threshold, SMS segment counts. 184: every default chain, the repeat counts, the drill
+  cadence (30 / 60 / 90 days), the demo gateway's timings.
+- 185: consequence weights 3–5, the 75% "close" line, the trend and target-fit thresholds. 186: probe rhythm (5 min), degraded 10% /
+  down 50%, the cluster window, provider names and status pages.
+- 187: the page size and hash. 188: 14 days = stuck, 30 days, 20-letter reasons, three overrides in 30 days. 189: 90-day rotation, the
+  2-minute window, the 16-character minimum. 190: the 14 standard scenarios, the 180-day review, the one-week nudge, the tolerances.
+
+**Honest limits.** Every gateway, probe, rail and credential in this module is a demo stand-in: nothing real is called and no provider
+receives a secret. The heartbeat runs only while someone has the app open, the audit log lives in memory like every other store,
+and Admin has no nav entry for most of these screens (the alerts, commitments and the assistant lead there; 190 and 188 are reached
+by their routes). 190 tests rules against today's settings only; escalation and commission cannot be "promoted", and a scenario for
+a rule that waits N days then acts cannot exist because 182 has no chaining.
