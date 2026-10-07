@@ -1,4 +1,6 @@
 import type { VaultKind } from '@/features/documents/vault';
+import type { BackupConfig, BackupConfigProblem, BackupFailure, RestoreState } from '@/features/backup/backup';
+import type { ExportProblem } from '@/features/backup/backup';
 import type { ConfigProblem as SecConfigProblem, PasswordPolicy, SecurityConfig, SecondFactorMethod, TwoFactorState } from '@/features/security/security';
 import type { BrandDraft, ContrastCheck } from '@/features/brand/brand';
 import type { ConsentStatus, Purpose as PrivacyPurpose, RequestChannel as PrivacyChannel, RequestType as PrivacyRequestType, RetentionRules as PrivacyRules, SlaState as PrivacySla, SubjectKind, PlanRow as PrivacyPlanView, VerifyMethod as PrivacyVerifyMethod } from '@/features/privacy/privacy';
@@ -322,6 +324,10 @@ import type {
   AccountLock,
   AccountRecovery,
   SecurityPolicyVersion,
+  BackupRun,
+  BackupConfigVersion,
+  RestoreTest,
+  ExportJob,
 } from './types';
 import type { SlotDay } from '@/features/logistics/deliverySlots';
 import type { ArrivalWindow, CapacityWeek, ReadinessStatus } from '@/features/logistics/transit';
@@ -7482,6 +7488,35 @@ export interface SessionCheck {
   at: string;
 }
 
+/* ------------------------------------------------------------------ Backups & data export (196) */
+
+export interface RestorePointView { at: string; runId: string; code: string; ageHours: number; state: RestoreState; verified: boolean; counts: Record<string, number>; sizeBytes: number }
+export interface BackupOverview {
+  config: BackupConfig;
+  version: number;
+  service: { state: 'working' | 'failing'; reason: BackupFailure | null };
+  restorePoint: RestorePointView | null;
+  /** The newest run, whatever it was. */
+  latest: BackupRun | null;
+  nextAt: string | null;
+  retries: { used: number; max: number } | null;
+  lastTest: RestoreTest | null;
+  testDueAt: string;
+  restorePoints: number;
+  runs: BackupRun[];
+  history: BackupConfigVersion[];
+  tests: RestoreTest[];
+  counts: { runs30: number; failed30: number };
+  at: string;
+}
+export interface BackupConfigInput { config: BackupConfig; reason: string; confirmWeaken: boolean }
+export interface BackupConfigPreview { problems: BackupConfigProblem[]; weakenings: string[]; changed: boolean }
+export interface ExportPreview { rowCount: number; columns: string[]; personalColumns: string[]; excessColumns: string[]; problems: ExportProblem[]; background: boolean; estimateBytes: number }
+export interface ExportInput { datasetId: string; purpose: string; purposeNote: string; format: 'csv' | 'json'; columns: string[]; from: string | null; to: string | null; justification?: string; confirmed?: boolean }
+export interface ExportListView { rows: ExportJob[]; total: number; running: number }
+export interface ExportFile { fileName: string; mime: string; content: string }
+export interface DatasetCountView { id: string; total: number }
+
 /* ------------------------------------------------------------------ Integration management (189) */
 
 export interface IntegrationSetupView {
@@ -9250,6 +9285,19 @@ export interface Repository {
   answerPlaceCheck(sessionId: string, answer: 'me' | 'not_me'): Promise<SessionCheck>;
   redeemRecoveryCode(sessionId: string, code: string): Promise<SessionCheck>;
   requestTwoFactorException(sessionId: string, note: string): Promise<SessionCheck>;
+  /* 196 — backups and data exports */
+  getBackupOverview(userId: string): Promise<BackupOverview>;
+  runBackupNow(userId: string): Promise<BackupOverview>;
+  previewBackupConfig(userId: string, config: BackupConfig): Promise<BackupConfigPreview>;
+  saveBackupConfig(userId: string, input: BackupConfigInput): Promise<BackupOverview>;
+  recordRestoreTest(userId: string, runId: string, outcome: 'ok' | 'problems', note: string): Promise<BackupOverview>;
+  setBackupService(userId: string, state: 'working' | 'failing', reason: BackupFailure | null): Promise<BackupOverview>;
+  getDatasetCounts(userId: string): Promise<DatasetCountView[]>;
+  previewExport(userId: string, input: ExportInput): Promise<ExportPreview>;
+  createExport(userId: string, input: ExportInput): Promise<ExportJob>;
+  listExports(userId: string, offset: number, limit: number): Promise<ExportListView>;
+  downloadExport(userId: string, id: string): Promise<ExportFile>;
+  cancelExport(userId: string, id: string): Promise<ExportListView>;
   /** Before a sign-in code is accepted: is this account's sign-in paused after repeated failures? */
   precheckSignIn(userId: string): Promise<{ paused: boolean; until: string | null }>;
   recordLoginFailure(userId: string): Promise<{ paused: boolean; until: string | null; recent: number }>;

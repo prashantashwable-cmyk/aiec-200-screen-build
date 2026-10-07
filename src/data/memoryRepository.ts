@@ -1033,7 +1033,7 @@ import type { OverrideKind, OverrideProblem } from '@/features/override/rules';
 import { GENESIS as AUDIT_GENESIS, codeOf as auditCodeOf, hashOf as auditHashOf, verifyChain as auditVerify } from '@/features/audit/chain';
 import { BOT_DRIFT_POINTS as HC_BOT_DRIFT, BOT_MIN_SAMPLE as HC_BOT_MIN, ENGINE_DOWN_MS as HC_ENGINE_DOWN, INTEGRATIONS as HC_INTEGRATIONS, MAX_PROBES as HC_MAX_PROBES, STATUS_WINDOW_MS as HC_STATUS_WINDOW, NOTE_MIN as HC_NOTE_MIN, PROBE_EVERY_MS as HC_PROBE_EVERY, WINDOW_MS as HC_WINDOW, agreementOf as hcAgreement, causeOf as hcCause, integrationDef as hcDef, isHttpUrl as hcIsUrl, judge as hcJudge, recovered as hcRecovered, sharedCauseOf as hcShared, uptimeOf as hcUptime } from '@/features/health/system';
 import type { IntegrationDef as HcDef, Observation as HcObservation, TechStatus } from '@/features/health/system';
-import type { AccessPackageView, ConsentRegisterFilter, ConsentRegisterView, DataRequestFilter, DataRequestListView, DataRequestView, DeletionPlanResult, FulfilInput, PrivacyPolicyView, RetentionPreview, RetentionView, SubjectDetailView, SubjectRowView, MonitorAbsenceInput, MonitorBackupCandidate, MonitorCheckInput, MonitorConfigInput, MonitorPanelView, MonitorSignalView, AccessGrantsView, CustomRoleInput, MatrixRowView, PermissionLogFilter, PermissionLogView, PermissionMatrixFilter, PermissionMatrixView, PermissionOverview, PermissionRoleView, PermissionUserRow, RoleChangeInput, RoleChangePreview, UserAccessView, UserOverrideInput, BrandView, CompanyProfilePreview, CompanyProfilePublishInput, CompanyProfileVersionView, CompanyProfileView, CompanyUsage, SandboxRunView, SandboxPromotionPreview, SandboxPromotionRow, SandboxRuleRef, SandboxScenarioView, SandboxView, IntegrationManagementView, IntegrationSetupView, IsolationCheckView, OverrideCandidate, OverrideConsoleView, OverridePreviewView, AuditDetailView, AuditExportView, AuditFilter, AuditRowView, AuditSearchView, BotHealthView, SystemHealthIntegrationView, SystemHealthView, SecurityOverview, SecurityRoleRow, SecurityAttentionItem, AccountSecurityRow, AccountListView, AuthSessionView, AccountRecoveryView, AccountSecurityView, SecurityEventsView, SecurityConfigPreview, TwoFactorExceptionList, SessionCheck, GateStep, SessionContextInput } from './repository';
+import type { AccessPackageView, ConsentRegisterFilter, ConsentRegisterView, DataRequestFilter, DataRequestListView, DataRequestView, DeletionPlanResult, FulfilInput, PrivacyPolicyView, RetentionPreview, RetentionView, SubjectDetailView, SubjectRowView, MonitorAbsenceInput, MonitorBackupCandidate, MonitorCheckInput, MonitorConfigInput, MonitorPanelView, MonitorSignalView, AccessGrantsView, CustomRoleInput, MatrixRowView, PermissionLogFilter, PermissionLogView, PermissionMatrixFilter, PermissionMatrixView, PermissionOverview, PermissionRoleView, PermissionUserRow, RoleChangeInput, RoleChangePreview, UserAccessView, UserOverrideInput, BrandView, CompanyProfilePreview, CompanyProfilePublishInput, CompanyProfileVersionView, CompanyProfileView, CompanyUsage, SandboxRunView, SandboxPromotionPreview, SandboxPromotionRow, SandboxRuleRef, SandboxScenarioView, SandboxView, IntegrationManagementView, IntegrationSetupView, IsolationCheckView, OverrideCandidate, OverrideConsoleView, OverridePreviewView, AuditDetailView, AuditExportView, AuditFilter, AuditRowView, AuditSearchView, BotHealthView, SystemHealthIntegrationView, SystemHealthView, SecurityOverview, SecurityRoleRow, SecurityAttentionItem, AccountSecurityRow, AccountListView, AuthSessionView, AccountRecoveryView, AccountSecurityView, SecurityEventsView, SecurityConfigPreview, TwoFactorExceptionList, SessionCheck, GateStep, SessionContextInput, BackupOverview, ExportPreview, ExportInput, ExportListView } from './repository';
 import { SLA_CATEGORIES, WINDOW_DAYS as SLA_WINDOW_DAYS, elapsedMsOf as slaElapsedOf, pauseOf as slaPauseOf, ratioOf as slaRatioOf, rollupOf as slaRollupOf, statusOf as slaStatusOf, targetSignal as slaTargetSignal, trendOf as slaTrendOf, triageScore as slaTriageScore } from '@/features/sla/consolidated';
 import type { SlaItem } from '@/features/sla/consolidated';
 import type { SlaCategoryView, SlaItemView, SlaOverviewView } from './repository';
@@ -1045,7 +1045,13 @@ import {
   last10 as secLast10, lettersOf as secLetters, locationVerdict as secLocationVerdict, maskPhone as secMaskPhone, pauseOf as secPauseState, twoFactorStateOf as secTwoFactorState, weakenings as secWeakenings,
 } from '@/features/security/security';
 import type { FailureLine, SecRole, SecondFactorMethod, SecurityConfig, SecurityEventKind, TwoFactorState } from '@/features/security/security';
-import type { AuthSession, SecurityEvent, TwoFactorEnrolment, TwoFactorException, AccountLock, AccountRecovery, SecurityPolicyVersion, TrustedPlace, GeoPoint, ConsentRecord, DataRequest, PrivacyPolicyVersion, RetentionPolicyVersion, RetentionRun, MonitorAbsence, MonitorCheck, MonitorConcern, MonitorConfig, CompanyProfileVersion, Role, CustomRole, PermissionChange, PermissionChangeKind, UserAccessOverride, SandboxBaseline, SandboxRun, SandboxScenario, IntegrationChange, IntegrationCredentialView, IntegrationSetup, AuditExportRecord, LeadStage, ManualOverride, IntegrationConfig, IntegrationIncident, IntegrationProbe, MessageStatus } from './types';
+import {
+  CHUNK_ROWS as BK_CHUNK, DATASETS as BK_DATASETS, DEFAULT_BACKUP as BK_DEFAULT, KEEP_DAYS as BK_KEEP_DAYS, MAX_RETRIES as BK_MAX_RETRIES, NOTE_MIN as BK_NOTE_MIN, PURPOSES as BK_PURPOSES, REASON_MIN as BK_REASON_MIN, RESTORE_TEST_DAYS as BK_TEST_DAYS,
+  RETRY_MINUTES as BK_RETRY_MINUTES, allowedColumns as _bkAllowed, backupConfigProblems as bkConfigProblems, backupWeakenings as bkWeakenings, checksumOf as bkChecksum, csvEscape as bkCsv, datasetDef as bkDataset, excessColumns as bkExcess,
+  exportProblems as bkExportProblems, fileNameOf as bkFileName, latestSlot as bkLatestSlot, nextSlot as bkNextSlot, personalColumns as bkPersonal, restoreStateOf as bkRestoreState,
+} from '@/features/backup/backup';
+import type { BackupConfig, BackupFailure, DatasetDef, ExportPurpose } from '@/features/backup/backup';
+import type { BackupRun, BackupConfigVersion, RestoreTest, ExportJob, AuthSession, SecurityEvent, TwoFactorEnrolment, TwoFactorException, AccountLock, AccountRecovery, SecurityPolicyVersion, TrustedPlace, GeoPoint, ConsentRecord, DataRequest, PrivacyPolicyVersion, RetentionPolicyVersion, RetentionRun, MonitorAbsence, MonitorCheck, MonitorConcern, MonitorConfig, CompanyProfileVersion, Role, CustomRole, PermissionChange, PermissionChangeKind, UserAccessOverride, SandboxBaseline, SandboxRun, SandboxScenario, IntegrationChange, IntegrationCredentialView, IntegrationSetup, AuditExportRecord, LeadStage, ManualOverride, IntegrationConfig, IntegrationIncident, IntegrationProbe, MessageStatus } from './types';
 import type { EscalationChainTier, EscalationChannel, EscalationContact, EscalationDelivery, EscalationDrill, EscalationDrillStep, EscalationLastResort, EscalationRun, EscalationScenarioConfig } from './types';
 import type { AlertEscalationView, EscalationGap, EscalationMatrixView, EscalationRunView, EscalationScenarioView } from './repository';
 import { VAULT_KINDS, validityState } from '@/features/documents/vault';
@@ -2893,6 +2899,7 @@ function commitmentSources(now: number): CommitmentSources {
     monitor: mnSignalsForCommitments(now),
     privacy: pvSignals(now),
     security: secSignals(now),
+    backups: bkSignals(now),
     tds: tdsObligations(Date.now()),
     exits: exitSignals(),
     handoverReviews: handoverSignals().reviews,
@@ -5502,6 +5509,204 @@ function secSignals(now: number): { places: { id: string; userId: string; name: 
 }
 
 
+/* ------------------------------------------------------------------ 196 — backups & data export */
+const backupRuns: BackupRun[] = [];
+const backupConfigs: BackupConfigVersion[] = [];
+const restoreTests: RestoreTest[] = [];
+const exportJobs: ExportJob[] = [];
+const exportFiles = new Map<string, string>();
+const exportPending = new Map<string, { header: string[]; lines: unknown[][]; rows: unknown[][] }>();
+let bkService: { state: 'working' | 'failing'; reason: BackupFailure | null } = { state: 'working', reason: null };
+let bkSeeded = false;
+const bkN = { run: 0, exp: 0 };
+const bkIso = (ms: number): string => new Date(ms).toISOString();
+const bkDay = 86_400_000;
+const bkLetters = secLetters;
+const bkConfigAt = (): BackupConfigVersion => backupConfigs[backupConfigs.length - 1];
+
+function bkSources(): Record<string, unknown[]> {
+  return { leads, deals, payments, invoices, payouts: commissions, tds: tdsDeductions, supplier_payments: supplierPayments, suppliers, people: users, audit_log: automatedActionLog };
+}
+function bkSnapshot(): { counts: Record<string, number>; sizeBytes: number; checksum: string } {
+  const src = bkSources();
+  const counts: Record<string, number> = {};
+  for (const [k, v] of Object.entries(src)) counts[k] = v.length;
+  counts.jobs = jobs.length; counts.quotations = quotations.length; counts.purchase_orders = supplierPurchaseOrders.length;
+  // Indicative size: what the main records would take written out. A real backend reports the size of what it stored.
+  let sizeBytes = 0;
+  for (const k of ['leads', 'deals', 'payments', 'invoices', 'payouts', 'suppliers', 'people']) sizeBytes += JSON.stringify(src[k]).length;
+  sizeBytes += JSON.stringify(quotations).length;
+  const ids = leads.map((l) => l.id).join(',') + deals.map((d) => d.id).join(',') + payments.map((x) => x.id).join(',');
+  return { counts, sizeBytes, checksum: bkChecksum(JSON.stringify(counts) + ids) };
+}
+
+function bkRun(trigger: BackupRun['trigger'], slot: string | undefined, attempt: number, byName: string | undefined, now: number): BackupRun {
+  bkN.run += 1;
+  const cfg = bkConfigAt().config;
+  const base = { id: `bk-${bkN.run}`, code: `AIEC-BK-${1000 + bkN.run}`, startedAt: bkIso(now), finishedAt: bkIso(now + 1_500), trigger, slot, attempt, byName };
+  let run: BackupRun;
+  if (bkService.state === 'failing') {
+    run = { ...base, status: 'failed', failure: bkService.reason ?? 'storage_unreachable' };
+  } else {
+    const snap = bkSnapshot();
+    run = { ...base, status: 'success', counts: snap.counts, sizeBytes: snap.sizeBytes, checksum: snap.checksum, verified: cfg.verifyEach ? bkSnapshot().checksum === snap.checksum : false };
+  }
+  backupRuns.push(run);
+  bkAlerts(now);
+  return run;
+}
+const bkLastSuccess = (): BackupRun | null => [...backupRuns].reverse().find((r) => r.status === 'success') ?? null;
+
+function bkAlerts(now: number): void {
+  const cfg = bkConfigAt().config;
+  const latest = backupRuns[backupRuns.length - 1];
+  const done = (rel: string, note: string): void => { const a = alerts.find((x) => x.relatedId === rel && x.status !== 'resolved'); if (a) patchInPlace(alerts, a.id, { status: 'resolved', resolvedBy: 'system', resolvedAt: bkIso(now), resolutionNote: note }); };
+  if (latest && latest.status === 'failed') raiseAlert({ titleKey: 'backups.alert.failed', context: `${latest.code} · ${latest.failure}`, severity: 'critical', category: 'automation', relatedId: 'bk:failed', sourceRoute: '/backups' });
+  else done('bk:failed', 'A backup has since succeeded');
+  const last = bkLastSuccess();
+  const rs = bkRestoreState(last?.finishedAt ?? null, cfg, now);
+  if (cfg.enabled && (rs.state === 'stale' || rs.state === 'none')) raiseAlert({ titleKey: 'backups.alert.stale', context: last ? `Newest restore point ${Math.round(rs.ageHours ?? 0)} h old` : 'No restore point yet', severity: 'high', category: 'automation', relatedId: 'bk:stale', sourceRoute: '/backups' });
+  else done('bk:stale', 'A recent restore point exists');
+  if (!cfg.enabled) raiseAlert({ titleKey: 'backups.alert.off', context: 'Scheduled backups are switched off', severity: 'high', category: 'automation', relatedId: 'bk:off', sourceRoute: '/backups' });
+  else done('bk:off', 'Backups are on again');
+}
+
+function bkEnsure(): void {
+  if (bkSeeded) return;
+  bkSeeded = true;
+  const now = Date.now();
+  backupConfigs.push({ id: 'bc-1', version: 1, at: bkIso(now - 200 * bkDay), byName: 'Prashant Vasant Wable', reason: 'The starting schedule: a nightly backup kept for 30 days, for the owner to review.', config: JSON.parse(JSON.stringify(BK_DEFAULT)) as BackupConfig, weakened: [] });
+  const snap = bkSnapshot();
+  const d0 = new Date(now);
+  const slotOf = (daysAgo: number): number => new Date(d0.getFullYear(), d0.getMonth(), d0.getDate() - daysAgo, BK_DEFAULT.atHour).getTime();
+  for (let d = 14; d >= 1; d -= 1) {
+    const slot = slotOf(d);
+    const scale = 0.72 + 0.28 * ((14 - d) / 13);
+    const counts: Record<string, number> = {};
+    for (const [k, v] of Object.entries(snap.counts)) counts[k] = Math.max(0, Math.floor(v * scale));
+    const mk = (trigger: BackupRun['trigger'], attempt: number, at: number, ok: boolean): BackupRun => {
+      bkN.run += 1;
+      return { id: `bk-${bkN.run}`, code: `AIEC-BK-${1000 + bkN.run}`, startedAt: bkIso(at), finishedAt: bkIso(at + 90_000 + d * 4_000), trigger, slot: bkIso(slot), attempt, status: ok ? 'success' : 'failed', failure: ok ? undefined : 'storage_unreachable', counts: ok ? counts : undefined, sizeBytes: ok ? Math.floor(snap.sizeBytes * scale) : undefined, checksum: ok ? bkChecksum(`${d}${JSON.stringify(counts)}`) : undefined, verified: ok ? true : undefined };
+    };
+    if (d === 6) { backupRuns.push(mk('scheduled', 1, slot + 240_000, false)); backupRuns.push(mk('retry', 2, slot + 240_000 + 31 * 60_000, true)); } else backupRuns.push(mk('scheduled', 1, slot + 240_000, true));
+  }
+  restoreTests.push({ id: 'rt-1', at: bkIso(now - 40 * bkDay), byName: 'Prashant Vasant Wable', runId: backupRuns[Math.max(0, backupRuns.length - 40)]?.id ?? backupRuns[0].id, outcome: 'ok', note: 'Restored last month\'s copy into a test setup and checked a sample of leads, payments and invoices against the live ones.' });
+}
+
+function bkPublicRun(r: BackupRun): BackupRun { return JSON.parse(JSON.stringify(r)) as BackupRun; }
+
+function bkOverview(now: number): BackupOverview {
+  bkEnsure();
+  const ver = bkConfigAt();
+  const cfg = ver.config;
+  const last = bkLastSuccess();
+  const rs = bkRestoreState(last?.finishedAt ?? null, cfg, now);
+  const latest = backupRuns[backupRuns.length - 1] ?? null;
+  const chain = latest?.slot ? backupRuns.filter((r) => r.slot === latest.slot) : [];
+  const lastTest = restoreTests[restoreTests.length - 1] ?? null;
+  const within = backupRuns.filter((r) => r.status === 'success' && now - Date.parse(r.finishedAt) <= cfg.retainDays * bkDay).length;
+  const recent = backupRuns.filter((r) => now - Date.parse(r.finishedAt) <= 30 * bkDay);
+  return JSON.parse(JSON.stringify({
+    config: cfg, version: ver.version, service: { ...bkService },
+    restorePoint: last ? { at: last.finishedAt, runId: last.id, code: last.code, ageHours: rs.ageHours ?? 0, state: rs.state, verified: !!last.verified, counts: last.counts ?? {}, sizeBytes: last.sizeBytes ?? 0 } : null,
+    latest, nextAt: cfg.enabled ? bkIso(bkNextSlot(cfg, now)) : null,
+    retries: latest && latest.status === 'failed' ? { used: Math.max(0, chain.length - 1), max: BK_MAX_RETRIES } : null,
+    lastTest, testDueAt: bkIso((lastTest ? Date.parse(lastTest.at) : now) + BK_TEST_DAYS * bkDay), restorePoints: within,
+    runs: [...backupRuns].reverse().slice(0, 40), history: [...backupConfigs].reverse(), tests: [...restoreTests].reverse(),
+    counts: { runs30: recent.length, failed30: recent.filter((r) => r.status === 'failed').length }, at: bkIso(now),
+  })) as BackupOverview;
+}
+
+function syncBackups(now: number): void {
+  bkEnsure();
+  const cfg = bkConfigAt().config;
+  if (cfg.enabled) {
+    const slotMs = bkLatestSlot(cfg, now);
+    const slot = bkIso(slotMs);
+    const chain = backupRuns.filter((r) => r.slot === slot);
+    if (chain.length === 0) {
+      const r = bkRun('scheduled', slot, 1, undefined, now);
+      logAutomatedAction({ sourceKey: r.status === 'success' ? 'backup.completed' : 'backup.failed', triggeringCondition: 'A scheduled backup was due', actionTaken: r.status === 'success' ? `Backed up the data (${r.code}), restore point ${r.finishedAt}` : `The backup failed (${r.failure}); it will be retried`, affectedRecordId: r.id, affectedRecordType: 'other', subjectLabel: r.code });
+    } else {
+      const last = chain[chain.length - 1];
+      if (last.status === 'failed' && chain.length < 1 + BK_MAX_RETRIES && now - Date.parse(last.finishedAt) >= BK_RETRY_MINUTES * 60_000) {
+        const r = bkRun('retry', slot, chain.length + 1, undefined, now);
+        logAutomatedAction({ sourceKey: r.status === 'success' ? 'backup.completed' : 'backup.failed', triggeringCondition: `The backup failed (${last.code}); retrying`, actionTaken: r.status === 'success' ? `The retry succeeded (${r.code})` : `Retry ${r.attempt - 1} of ${BK_MAX_RETRIES} failed (${r.failure})`, affectedRecordId: r.id, affectedRecordType: 'other', subjectLabel: r.code });
+      }
+    }
+  }
+  bkAlerts(now);
+  bkExportsTick(now);
+}
+
+function bkSignals(now: number): { failures: { id: string; code: string; at: string }[]; test: { dueAt: string } | null; exports: { id: string; code: string; dueAt: string }[] } {
+  bkEnsure();
+  const latest = backupRuns[backupRuns.length - 1];
+  const lastTest = restoreTests[restoreTests.length - 1];
+  void now;
+  return {
+    failures: latest && latest.status === 'failed' ? [{ id: latest.id, code: latest.code, at: latest.finishedAt }] : [],
+    test: { dueAt: bkIso((lastTest ? Date.parse(lastTest.at) : Date.now()) + BK_TEST_DAYS * bkDay) },
+    exports: exportJobs.filter((j) => j.status === 'ready' && !j.downloadedAt && j.expiresAt).map((j) => ({ id: j.id, code: j.code, dueAt: bkIso(Date.parse(j.expiresAt as string) - bkDay) })),
+  };
+}
+
+/* exports */
+type BkRow = Record<string, unknown>;
+function bkRowsOf(datasetId: string, from: string | null, to: string | null): BkRow[] {
+  const ds = bkDataset(datasetId);
+  if (!ds) throw new RepositoryError('dataset_unknown');
+  const src = (bkSources()[datasetId] ?? []) as BkRow[];
+  const f = from ? Date.parse(from) : null;
+  const t = to ? Date.parse(to) + bkDay - 1 : null;
+  return src.filter((r) => {
+    if (!ds.dateField || (f === null && t === null)) return true;
+    const v = r[ds.dateField];
+    const ms = typeof v === 'string' ? Date.parse(v) : NaN;
+    if (!Number.isFinite(ms)) return false;
+    return (f === null || ms >= f) && (t === null || ms <= t);
+  });
+}
+function bkPreviewOf(input: ExportInput): ExportPreview {
+  const ds = bkDataset(input.datasetId);
+  if (!ds) return { rowCount: 0, columns: [], personalColumns: [], excessColumns: [], problems: ['dataset_unknown'], background: false, estimateBytes: 0 };
+  const rowCount = bkRowsOf(input.datasetId, input.from, input.to).length;
+  const problems = bkExportProblems(input, rowCount);
+  const purpose = input.purpose as ExportPurpose;
+  return { rowCount, columns: input.columns, personalColumns: bkPersonal(ds, input.columns), excessColumns: (BK_PURPOSES as string[]).includes(purpose) ? bkExcess(purpose, ds, input.columns) : [], problems, background: rowCount > BK_CHUNK, estimateBytes: rowCount * Math.max(1, input.columns.length) * 12 };
+}
+function bkFinish(j: ExportJob, now: number): void {
+  const p = exportPending.get(j.id);
+  if (!p) return;
+  const ds = bkDataset(j.datasetId) as DatasetDef;
+  let content: string;
+  if (j.format === 'csv') content = `﻿${[p.header.map(bkCsv).join(','), ...p.lines.map((l) => l.map(bkCsv).join(','))].join('\r\n')}\r\n`;
+  else content = JSON.stringify({ meta: { export: j.code, dataset: j.datasetId, purpose: j.purpose, from: j.from, to: j.to, rows: j.rowCount, columns: j.columns, personalColumns: j.personalColumns, builtAt: bkIso(now) }, rows: p.lines.map((l) => Object.fromEntries(p.header.map((h, i) => [h, l[i]]))) }, null, 2);
+  exportFiles.set(j.id, content);
+  exportPending.delete(j.id);
+  j.status = 'ready'; j.builtAt = bkIso(now); j.sizeBytes = content.length; j.checksum = bkChecksum(content); j.expiresAt = bkIso(now + BK_KEEP_DAYS * bkDay);
+  j.fileName = bkFileName(j.datasetId, j.from, j.to, j.format, j.code);
+  void ds;
+}
+/** Builds a chunk of every job still being made. Called by the heartbeat and by every read of the list, so a long export keeps moving whoever is looking. */
+function bkExportsTick(now: number): void {
+  for (const j of exportJobs) {
+    if (j.status === 'ready' && j.expiresAt && Date.parse(j.expiresAt) <= now) {
+      j.status = 'expired'; exportFiles.delete(j.id);
+      logAutomatedAction({ sourceKey: 'export.expired', triggeringCondition: `An export file was kept for ${BK_KEEP_DAYS} days`, actionTaken: `Removed the file of ${j.code}; the record of who took what stays`, affectedRecordId: j.id, affectedRecordType: 'other', subjectLabel: j.code });
+      continue;
+    }
+    if (j.status !== 'queued' && j.status !== 'running') continue;
+    const p = exportPending.get(j.id);
+    if (!p) { j.status = 'failed'; j.error = 'lost'; continue; }
+    j.status = 'running';
+    const next = p.rows.slice(j.rowsDone, j.rowsDone + BK_CHUNK);
+    p.lines.push(...next);
+    j.rowsDone += next.length;
+    if (j.rowsDone >= j.rowCount) bkFinish(j, now);
+  }
+}
+
 const heartbeatCommitments = { notifications: 0, alerts: 0 };
 const HEARTBEAT: { id: string; run: (now: number) => void }[] = [
   { id: 'followUpTasks', run: () => reconcileFollowUpTasks() },
@@ -5567,6 +5772,7 @@ const HEARTBEAT: { id: string; run: (now: number) => void }[] = [
   { id: 'permissions', run: (now) => syncPermissions(now) },
   { id: 'privacy', run: (now) => syncPrivacy(now) },
   { id: 'security', run: (now) => syncSecurity(now) },
+  { id: 'backups', run: (now) => syncBackups(now) },
   {
     id: 'stageInvoices',
     run: () => {
@@ -27758,6 +27964,109 @@ export const memoryRepository: Repository = {
       for (const s of open) secEnd(s, 'revoked', 'system', 'password changed', now);
       secEvent({ kind: 'password_reset', userId, detail: `${open.length}` });
       return { sessionsEnded: open.length };
+    }),
+  /* 196 — backups and data exports */
+  getBackupOverview: (userId) => simulateRead(() => { intAdmin(userId); return bkOverview(Date.now()); }),
+  runBackupNow: (userId) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      bkEnsure();
+      bkRun('manual', undefined, 1, admin.name, Date.now());
+      return bkOverview(Date.now());
+    }),
+  previewBackupConfig: (userId, config) =>
+    simulateRead(() => {
+      intAdmin(userId);
+      bkEnsure();
+      const cur = bkConfigAt().config;
+      return { problems: bkConfigProblems(config), weakenings: bkWeakenings(cur, config), changed: JSON.stringify(cur) !== JSON.stringify(config) };
+    }),
+  saveBackupConfig: (userId, input) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      bkEnsure();
+      const cur = bkConfigAt();
+      const problems = bkConfigProblems(input.config);
+      if (problems.length) throw new RepositoryError(problems[0]);
+      if (JSON.stringify(cur.config) === JSON.stringify(input.config)) throw new RepositoryError('no_change');
+      if (bkLetters(input.reason) < BK_REASON_MIN) throw new RepositoryError('reason_short');
+      const weak = bkWeakenings(cur.config, input.config);
+      if (weak.length > 0 && !input.confirmWeaken) throw new RepositoryError('weaken_unconfirmed');
+      backupConfigs.push({ id: `bc-${backupConfigs.length + 1}`, version: cur.version + 1, at: new Date().toISOString(), byName: admin.name, reason: input.reason.trim(), config: JSON.parse(JSON.stringify(input.config)) as BackupConfig, weakened: weak });
+      bkAlerts(Date.now());
+      return bkOverview(Date.now());
+    }),
+  recordRestoreTest: (userId, runId, outcome, note) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      bkEnsure();
+      const run = backupRuns.find((r) => r.id === runId);
+      if (!run || run.status !== 'success') throw new RepositoryError('run_invalid');
+      if (outcome !== 'ok' && outcome !== 'problems') throw new RepositoryError('outcome_invalid');
+      if (bkLetters(note) < BK_NOTE_MIN) throw new RepositoryError('note_short');
+      restoreTests.push({ id: `rt-${restoreTests.length + 1}`, at: new Date().toISOString(), byName: admin.name, runId, outcome, note: note.trim() });
+      if (outcome === 'problems') raiseAlert({ titleKey: 'backups.alert.testProblems', context: `${run.code}: ${note.trim().slice(0, 120)}`, severity: 'high', category: 'automation', relatedId: `bk:test:${restoreTests.length}`, sourceRoute: '/backups' });
+      return bkOverview(Date.now());
+    }),
+  setBackupService: (userId, state, reason) =>
+    simulateWrite(() => {
+      intAdmin(userId);
+      bkEnsure();
+      if (state !== 'working' && state !== 'failing') throw new RepositoryError('state_invalid');
+      bkService = { state, reason: state === 'failing' ? reason ?? 'storage_unreachable' : null };
+      return bkOverview(Date.now());
+    }),
+  getDatasetCounts: (userId) => simulateRead(() => { intAdmin(userId); const src = bkSources(); return BK_DATASETS.map((d) => ({ id: d.id, total: (src[d.id] ?? []).length })); }),
+  previewExport: (userId, input) => simulateRead(() => { intAdmin(userId); return bkPreviewOf(input); }),
+  createExport: (userId, input) =>
+    simulateWrite(() => {
+      const admin = intAdmin(userId);
+      bkEnsure();
+      const pv = bkPreviewOf(input);
+      if (pv.problems.length) throw new RepositoryError(pv.problems[0]);
+      const ds = bkDataset(input.datasetId) as DatasetDef;
+      const rows = bkRowsOf(input.datasetId, input.from, input.to);
+      const columns = ds.columns.map((c) => c.key).filter((k) => input.columns.includes(k));
+      bkN.exp += 1;
+      const now = Date.now();
+      const job: ExportJob = {
+        id: `ex-${bkN.exp}`, code: `AIEC-DX-${1000 + bkN.exp}`, requestedAt: bkIso(now), byName: admin.name, datasetId: input.datasetId, from: input.from, to: input.to, format: input.format, purpose: input.purpose, purposeNote: input.purposeNote.trim(),
+        columns, personalColumns: bkPersonal(ds, columns), justification: pv.excessColumns.length ? input.justification?.trim() : undefined, status: 'queued', rowCount: rows.length, rowsDone: 0, downloads: 0,
+      };
+      exportJobs.push(job);
+      exportPending.set(job.id, { header: columns, lines: [], rows: rows.map((r) => columns.map((k) => { const v = r[k]; return v === undefined ? '' : v; })) });
+      if (rows.length === 0) bkFinish(job, now);
+      else bkExportsTick(now);
+      return JSON.parse(JSON.stringify(job)) as ExportJob;
+    }),
+  listExports: (userId, offset, limit) =>
+    simulateRead(() => {
+      intAdmin(userId);
+      bkEnsure();
+      bkExportsTick(Date.now());
+      const all = [...exportJobs].reverse();
+      return JSON.parse(JSON.stringify({ rows: all.slice(offset, offset + limit), total: all.length, running: all.filter((j) => j.status === 'queued' || j.status === 'running').length })) as ExportListView;
+    }),
+  downloadExport: (userId, id) =>
+    simulateWrite(() => {
+      intAdmin(userId);
+      const j = exportJobs.find((x) => x.id === id);
+      if (!j) throw new RepositoryError('not_found');
+      if (j.status === 'expired') throw new RepositoryError('expired');
+      const content = exportFiles.get(id);
+      if (j.status !== 'ready' || content === undefined || !j.fileName) throw new RepositoryError('not_ready');
+      j.downloads += 1; j.downloadedAt = new Date().toISOString();
+      return { fileName: j.fileName, mime: j.format === 'csv' ? 'text/csv;charset=utf-8' : 'application/json', content };
+    }),
+  cancelExport: (userId, id) =>
+    simulateWrite(() => {
+      intAdmin(userId);
+      const j = exportJobs.find((x) => x.id === id);
+      if (!j) throw new RepositoryError('not_found');
+      if (j.status !== 'queued' && j.status !== 'running') throw new RepositoryError('not_running');
+      j.status = 'cancelled'; exportPending.delete(id);
+      const all = [...exportJobs].reverse();
+      return JSON.parse(JSON.stringify({ rows: all.slice(0, 15), total: all.length, running: all.filter((x) => x.status === 'queued' || x.status === 'running').length })) as ExportListView;
     }),
   /* 189 — integration management */
   getIntegrationManagement: (userId) => simulateRead(() => { intAdmin(userId); syncIntegrationManagement(Date.now()); return igView(Date.now()); }),

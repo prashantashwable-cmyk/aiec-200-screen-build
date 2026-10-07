@@ -10,6 +10,7 @@
  * strings so seeded data is diffable and locale formatting stays in one place.
  */
 import type { SecurityConfig } from '@/features/security/security';
+import type { BackupConfig } from '@/features/backup/backup';
 
 export type Role = 'admin' | 'surveyor' | 'technician' | 'customer' | 'supplier';
 
@@ -5059,7 +5060,7 @@ export type CommitmentKind =
   | 'exit_dispute_decide'
   | 'tier_review_due'
   | 'certification_renewal'
-  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup' | 'support_chat_reply' | 'feedback_outreach' | 'feedback_recognition' | 'referral_reward' | 'automation_pause_review' | 'escalation_drill_due' | 'escalation_gap_fix' | 'integration_followup' | 'integration_credential_rotation' | 'sandbox_promotion_pending' | 'sandbox_library_review' | 'company_profile_legal_verify' | 'permission_override_review' | 'monitor_daily_check' | 'monitor_concern_followup' | 'privacy_request_respond' | 'privacy_policy_notice' | 'privacy_retention_review' | 'security_place_review' | 'security_2fa_exception_decide' | 'security_2fa_exception_review' | 'security_account_recovery'
+  | 'training_assignment' | 'compliance_review' | 'sop_rollout_ack' | 'sop_rollout_close' | 'training_feedback_urgent' | 'training_feedback_review' | 'commission_rule_notice' | 'payout_approval' | 'payout_hold_review' | 'payout_disbursement_attention' | 'contest_live' | 'contest_closing' | 'contest_result' | 'payout_query_answer' | 'payout_query_reply' | 'tds_deposit' | 'tds_return' | 'payout_dispute_resolve' | 'payout_rule_review' | 'service_ticket_respond' | 'service_visit' | 'service_claim_review' | 'service_visit_followup' | 'support_chat_reply' | 'feedback_outreach' | 'feedback_recognition' | 'referral_reward' | 'automation_pause_review' | 'escalation_drill_due' | 'escalation_gap_fix' | 'integration_followup' | 'integration_credential_rotation' | 'sandbox_promotion_pending' | 'sandbox_library_review' | 'company_profile_legal_verify' | 'permission_override_review' | 'monitor_daily_check' | 'monitor_concern_followup' | 'privacy_request_respond' | 'privacy_policy_notice' | 'privacy_retention_review' | 'security_place_review' | 'security_2fa_exception_decide' | 'security_2fa_exception_review' | 'security_account_recovery' | 'backup_failure_followup' | 'backup_restore_test' | 'export_collect'
   | 'qc_finding_explain'
   | 'lead_signoff'
   | 'discrepancy_report_review'
@@ -6189,3 +6190,53 @@ export interface SecurityPolicyVersion {
   weakened: string[];
 }
 export interface TrustedPlace { userId: string; city: string; until: string; byName: string }
+
+
+/* ------------------------------------------------------------------ Backups & data export (196) */
+
+export interface BackupRun {
+  id: string;
+  code: string;
+  startedAt: string;
+  finishedAt: string;
+  trigger: 'scheduled' | 'retry' | 'manual';
+  /** The scheduled moment this run answers (a retry carries the slot it is retrying). */
+  slot?: string;
+  attempt: number;
+  status: 'success' | 'failed';
+  failure?: string;
+  /** What the backup held: how many records of each kind, and how large. */
+  counts?: Record<string, number>;
+  sizeBytes?: number;
+  checksum?: string;
+  verified?: boolean;
+  byName?: string;
+}
+export interface BackupConfigVersion { id: string; version: number; at: string; byName: string; reason: string; config: BackupConfig; weakened: string[] }
+export interface RestoreTest { id: string; at: string; byName: string; runId: string; outcome: 'ok' | 'problems'; note: string }
+export interface ExportJob {
+  id: string;
+  code: string;
+  requestedAt: string;
+  byName: string;
+  datasetId: string;
+  from: string | null;
+  to: string | null;
+  format: 'csv' | 'json';
+  purpose: string;
+  purposeNote: string;
+  columns: string[];
+  personalColumns: string[];
+  justification?: string;
+  status: 'queued' | 'running' | 'ready' | 'failed' | 'cancelled' | 'expired';
+  rowCount: number;
+  rowsDone: number;
+  builtAt?: string;
+  sizeBytes?: number;
+  checksum?: string;
+  fileName?: string;
+  expiresAt?: string;
+  downloadedAt?: string;
+  downloads: number;
+  error?: string;
+}

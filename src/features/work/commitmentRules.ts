@@ -163,6 +163,7 @@ export interface CommitmentSources {
   /** A rule that passed its sandbox tests and is still not live, and a scenario library nobody has reviewed in a while (190). */
   privacy: { requests: { id: string; name: string; type: string; dueAt: string }[]; notices: { id: string; version: number; dueAt: string }[]; reviews: { id: string; count: number; since: string }[] };
   security: { places: { id: string; userId: string; name: string; dueAt: string }[]; requests: { id: string; name: string; dueAt: string }[]; exceptions: { id: string; name: string; until: string }[]; locks: { id: string; userId: string; name: string; dueAt: string }[] };
+  backups: { failures: { id: string; code: string; at: string }[]; test: { dueAt: string } | null; exports: { id: string; code: string; dueAt: string }[] };
   monitor: { checks: { adminId: string; day: string; dueAt: string }[]; concerns: { id: string; adminId: string; note: string; reviewAt: string }[] };
   permissions: { reviews: { id: string; name: string; screen: string; dueAt: string }[] };
   companyProfile: { verify: { id: string; version: number; dueAt: string }[] };
@@ -2620,6 +2621,72 @@ export const COMMITMENT_RULES: CommitmentRule[] = [
         paused: false,
         actionRoute: `/security?tab=accounts&account=${x.userId}`,
         oversightRoute: '/security?tab=accounts',
+      }));
+    },
+  },
+  {
+    // A backup that failed is a gap in the one thing that saves the business in a disaster: it is put right, or its cause understood, within hours (196).
+    kind: 'backup_failure_followup',
+    nudgeBefore: minutes(30),
+    escalateAfter: hours(4),
+    escalates: true,
+    raisesAlert: false,
+    alertCategory: 'automation',
+    collect(src) {
+      return src.backups.failures.map((x) => ({
+        ...base('backup_failure_followup', 'alert', x.id),
+        ownerUserId: adminId(src),
+        titleKey: 'work.title.backup_failure_followup',
+        titleParams: { code: x.code },
+        dueAt: new Date(Date.parse(x.at) + hours(4)).toISOString(),
+        state: 'open' as const,
+        paused: false,
+        actionRoute: '/backups',
+        oversightRoute: '/backups',
+      }));
+    },
+  },
+  {
+    // A backup nobody has ever restored is a hope, not a backup: a restore is tried and recorded on a rhythm (196).
+    kind: 'backup_restore_test',
+    nudgeBefore: days(7),
+    escalateAfter: days(14),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'automation',
+    collect(src) {
+      return src.backups.test ? [{
+        ...base('backup_restore_test', 'alert', 'restore-test'),
+        ownerUserId: adminId(src),
+        titleKey: 'work.title.backup_restore_test',
+        titleParams: {},
+        dueAt: src.backups.test.dueAt,
+        state: 'open' as const,
+        paused: false,
+        actionRoute: '/backups',
+        oversightRoute: '/backups',
+      }] : [];
+    },
+  },
+  {
+    // A finished export is personal or financial data sitting ready: it is collected, or it is removed, never left (196).
+    kind: 'export_collect',
+    nudgeBefore: hours(12),
+    escalateAfter: days(1),
+    escalates: false,
+    raisesAlert: false,
+    alertCategory: 'automation',
+    collect(src) {
+      return src.backups.exports.map((x) => ({
+        ...base('export_collect', 'alert', x.id),
+        ownerUserId: adminId(src),
+        titleKey: 'work.title.export_collect',
+        titleParams: { code: x.code },
+        dueAt: x.dueAt,
+        state: 'open' as const,
+        paused: false,
+        actionRoute: '/backups?tab=exports',
+        oversightRoute: '/backups?tab=exports',
       }));
     },
   },
