@@ -35,6 +35,9 @@ export const CUSTOMER_KEYS = {
   subtitle: 'onbCustomer.subtitle',
   fromLead: 'onbCustomer.fromLead',
   loading: 'onbCustomer.loading',
+  existingPhone: 'onbCustomer.existingPhone',
+  saveFailed: 'onbCustomer.saveFailed',
+  passwordLater: 'onbCustomer.passwordLater',
   section: {
     details: 'onbCustomer.section.details',
     access: 'onbCustomer.section.access',

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useData } from '@/data/DataProvider';
 import { isValidIndianMobile } from '@/features/onboarding/validators';
-import type { Lead, User } from '@/data/types';
+import type { Language, Lead, User } from '@/data/types';
 import type {
   CustomerConsent,
   CustomerSignupDraft,
@@ -36,6 +37,8 @@ interface OnboardCustomerHook {
   submit: () => Promise<void>;
   linkToExisting: () => Promise<void>;
   reload: () => Promise<void>;
+  /** Why the last confirmation did not go through. */
+  submitError: 'existingPhone' | 'saveFailed' | null;
 }
 
 /**
@@ -45,6 +48,7 @@ interface OnboardCustomerHook {
  */
 export function useOnboardCustomer(): OnboardCustomerHook {
   const repository = useData();
+  const { i18n } = useTranslation();
   const [searchParams] = useSearchParams();
   const leadId = searchParams.get('leadId') ?? FALLBACK_LEAD_ID;
 
@@ -52,6 +56,7 @@ export function useOnboardCustomer(): OnboardCustomerHook {
   const [draft, setDraft] = useState<CustomerSignupDraft>(EMPTY_DRAFT);
   const [lead, setLead] = useState<Lead | null>(null);
   const [existingCustomer, setExistingCustomer] = useState<User | null>(null);
+  const [submitError, setSubmitError] = useState<'existingPhone' | 'saveFailed' | null>(null);
 
   const reload = useCallback(async () => {
     setState('loading');
@@ -75,7 +80,8 @@ export function useOnboardCustomer(): OnboardCustomerHook {
       // A builder buying a second lift must end up with one account holding
       // two projects, not two accounts holding one each.
       const customers = await repository.listUsers({ role: 'customer' });
-      const match = customers.find((c) => c.phone === found.contactPhone) ?? null;
+      const last10 = (p: string) => p.replace(/\D/g, '').slice(-10);
+      const match = customers.find((c) => last10(c.phone) === last10(found.contactPhone)) ?? null;
       setExistingCustomer(match);
       setState(match ? 'linking' : 'ready');
     } catch {
@@ -95,34 +101,34 @@ export function useOnboardCustomer(): OnboardCustomerHook {
     setDraft((current) => ({ ...current, consent: { ...current.consent, ...patch } }));
   }, []);
 
-  const canSubmit =
-    draft.name.trim().length >= 3 &&
-    isValidIndianMobile(draft.phone) &&
-    (draft.loginPreference === 'otp' || draft.password.length >= 6);
+  // Sign-in is by a one-time code; there is no password to choose here.
+  const canSubmit = draft.name.trim().length >= 3 && isValidIndianMobile(draft.phone);
 
-  const submit = useCallback(async () => {
+  const confirm = useCallback(async () => {
+    if (!lead) return;
+    const back = existingCustomer ? 'linking' : 'ready';
     setState('submitting');
+    setSubmitError(null);
     try {
-      // Account creation is triggered by the deal closing, so there is nothing
-      // for the customer to seek out — this only confirms and corrects it.
-      // Declining consent is recorded, not blocked: every downstream automated
-      // sequence reads these flags before it sends anything.
-      await new Promise((resolve) => setTimeout(resolve, 600));
+      // Declining a channel is recorded, not blocked: every automated message
+      // reads these choices before it sends anything.
+      await repository.confirmCustomerAccount({
+        leadId: lead.id,
+        name: draft.name,
+        phone: draft.phone,
+        email: draft.email,
+        siteAddress: draft.siteAddress,
+        city: draft.city,
+        pincode: draft.pincode,
+        language: (['en', 'hi', 'mr'].includes(i18n.language) ? i18n.language : 'en') as Language,
+        consent: draft.consent,
+      });
       setState('done');
-    } catch {
-      setState('error');
+    } catch (err) {
+      setSubmitError(err instanceof Error && err.message === 'phone_taken' ? 'existingPhone' : 'saveFailed');
+      setState(back);
     }
-  }, []);
-
-  const linkToExisting = useCallback(async () => {
-    setState('submitting');
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      setState('done');
-    } catch {
-      setState('error');
-    }
-  }, []);
+  }, [repository, lead, draft, existingCustomer, i18n.language]);
 
   return {
     state,
@@ -132,8 +138,9 @@ export function useOnboardCustomer(): OnboardCustomerHook {
     lead,
     existingCustomer,
     canSubmit,
-    submit,
-    linkToExisting,
+    submit: confirm,
+    linkToExisting: confirm,
     reload,
+    submitError,
   };
 }

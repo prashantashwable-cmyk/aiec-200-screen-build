@@ -66,7 +66,7 @@ export function OnboardCustomerView() {
     );
   }
 
-  if (s.state === 'linking' && s.existingCustomer) {
+  if ((s.state === 'linking' || s.state === 'submitting') && s.existingCustomer) {
     return (
       <div className="ds-screen ds-screen--narrow stack center gap-4" style={{ minHeight: '100dvh' }}>
         <span className="ds-state__icon">
@@ -79,7 +79,8 @@ export function OnboardCustomerView() {
             site: s.lead?.siteName ?? '',
           })}
         </p>
-        <Button onClick={() => void s.linkToExisting()}>{t(K.existing.action)}</Button>
+        {s.submitError && <p className="t-sm t-error t-center" role="alert">{t(K[s.submitError])}</p>}
+        <Button loading={s.state === 'submitting'} onClick={() => void s.linkToExisting()}>{t(K.existing.action)}</Button>
       </div>
     );
   }
@@ -190,48 +191,13 @@ export function OnboardCustomerView() {
 
       <h2 className="label mt-5 mb-2">{t(K.section.access)}</h2>
       <div className="stack gap-2">
-        <Card
-          selected={draft.loginPreference === 'otp'}
-          onClick={() => update({ loginPreference: 'otp' })}
-        >
+        <Card>
           <span className="stack gap-1">
             <span className="t-medium">{t(K.login.otp)}</span>
             <span className="t-xs t-muted">{t(K.login.otpHint)}</span>
           </span>
         </Card>
-        <Card
-          selected={draft.loginPreference === 'password'}
-          onClick={() => update({ loginPreference: 'password' })}
-        >
-          <span className="stack gap-1">
-            <span className="t-medium">{t(K.login.password)}</span>
-            <span className="t-xs t-muted">{t(K.login.passwordHint)}</span>
-          </span>
-        </Card>
-
-        {draft.loginPreference === 'password' && (
-          <Field
-            label={t(K.field.password)}
-            required
-            error={
-              draft.password.length > 0 && draft.password.length < 6
-                ? t(K.invalid.password)
-                : undefined
-            }
-          >
-            {({ id, describedBy, invalid }) => (
-              <Input
-                id={id}
-                aria-describedby={describedBy}
-                invalid={invalid}
-                type="password"
-                autoComplete="new-password"
-                value={draft.password}
-                onChange={(e) => update({ password: e.target.value })}
-              />
-            )}
-          </Field>
-        )}
+        <p className="t-xs t-muted">{t(K.passwordLater)}</p>
       </div>
 
       <h2 className="label mt-5 mb-2">{t(K.section.consent)}</h2>
@@ -264,6 +230,12 @@ export function OnboardCustomerView() {
 
       {(!draft.consent.whatsapp || !draft.consent.sms) && (
         <p className="t-xs t-muted mt-3">{t(K.consent.declineNote)}</p>
+      )}
+
+      {s.submitError && (
+        <Card className="mt-3">
+          <p className="t-sm t-error" role="alert">{t(K[s.submitError])}</p>
+        </Card>
       )}
 
       <ActionBar>

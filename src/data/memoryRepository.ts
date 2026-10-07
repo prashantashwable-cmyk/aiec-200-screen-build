@@ -20168,6 +20168,52 @@ export const memoryRepository: Repository = {
 
   listRoleAudit: (limit = 50) => simulateRead(() => [...roleAudit].reverse().slice(0, limit)),
 
+  confirmCustomerAccount: (input) =>
+    simulateWrite(() => {
+      const lead = byId(leads, input.leadId);
+      if (!lead) throw new RepositoryError('not_found');
+      const name = input.name.trim();
+      const phone = input.phone.replace(/\D/g, '').slice(-10);
+      if (name.length < 3 || !/^[6-9]\d{9}$/.test(phone)) throw new RepositoryError('invalid_input');
+      if (input.pincode.trim() && !/^[1-9]\d{5}$/.test(input.pincode.trim())) throw new RepositoryError('invalid_input');
+      const email = input.email?.trim();
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new RepositoryError('invalid_input');
+      const samePhone = users.filter((u) => vdLast10(u.phone) === phone);
+      if (samePhone.some((u) => u.role !== 'customer')) throw new RepositoryError('phone_taken');
+      const now = new Date().toISOString();
+      let user = samePhone[0];
+      const existing = Boolean(user);
+      if (!user) {
+        userCounter += 1;
+        user = { id: `u-cust-new-${userCounter}`, role: 'customer', name, phone, email: email || undefined, status: 'active', preferredLanguage: input.language, themePreference: 'light', isDemo: true, city: input.city.trim() || lead.city, joinedAt: now };
+        users.push(user);
+      }
+      user = patchInPlace(users, user.id, { serviceDataConsent: { granted: input.consent.dataUsage, at: now } });
+      // The survey's details, as the customer corrected them.
+      patchInPlace(leads, lead.id, {
+        contactName: name,
+        contactEmail: email || lead.contactEmail,
+        address: input.siteAddress.trim() || lead.address,
+        city: input.city.trim() || lead.city,
+        pincode: input.pincode.trim() || lead.pincode,
+      });
+      let linkedDeals = 0;
+      for (const d of deals) if (d.leadId === lead.id && d.status === 'won' && !d.customerId) { patchInPlace(deals, d.id, { customerId: user.id }); linkedDeals += 1; }
+      for (const channel of ['sms', 'whatsapp'] as const) {
+        const wants = input.consent[channel];
+        const out = isOptedOutSync(phone, channel);
+        if (wants === !out) continue;
+        // A number on the do-not-disturb registry stays there whatever is ticked here.
+        const dnd = optOutEvents.some((e) => vdLast10(e.contactPhone) === phone && (e.channel === channel || e.channel === 'all') && e.source === 'dnd_registry');
+        if (wants && dnd) continue;
+        optOutEvents.unshift({ id: `oo-new-${(optOutCounter += 1)}`, contactPhone: phone, contactName: name, channel, type: wants ? 'opted_in' : 'opted_out', source: 'customer_request', reason: 'Chosen when confirming their account (008)', at: now, recordedBy: name, isDemo: true });
+      }
+      if (!input.consent.dataUsage) {
+        raiseAlert({ category: 'quality', severity: 'medium', titleKey: 'onbCustomer.alert.noDataConsent', context: `${name} · ${lead.siteName}`, relatedId: `custconsent:${user.id}`, sourceRoute: `/admin/leads/${lead.id}` });
+      }
+      return { user, existing, linkedDeals };
+    }),
+
   suspendSupplier: (supplierId, reason, byName) =>
     simulateWrite(() => {
       const supplier = byId(suppliers, supplierId);

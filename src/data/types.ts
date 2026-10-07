@@ -86,6 +86,8 @@ export interface User {
   /** What a surveyor or technician said about themselves on 005 / 006, kept for
    *  the Admin who approves them (004). Never the full Aadhaar number. */
   onboarding?: FieldPartnerOnboarding;
+  /** A customer's answer on 008 to sharing their project details with the people doing the work. */
+  serviceDataConsent?: { granted: boolean; at: string };
 }
 
 /** One line in the role-change audit (004): an applicant asking for a role, or Admin deciding. Append-only. */

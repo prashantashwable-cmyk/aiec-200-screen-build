@@ -1047,6 +1047,20 @@ export interface FieldPartnerOnboardingInput {
   bank?: { holderName: string; accountNumber: string; ifsc: string; verified: boolean };
 }
 
+/** A customer confirming the account their deal created (008). */
+export interface CustomerConfirmInput {
+  leadId: string;
+  name: string;
+  phone: string;
+  email?: string;
+  siteAddress: string;
+  city: string;
+  pincode: string;
+  /** The customer's language at the time, kept as their preference. */
+  language: Language;
+  consent: { whatsapp: boolean; sms: boolean; dataUsage: boolean };
+}
+
 export interface SupplierInviteInput {
   name: string;
   contactName?: string;
@@ -8635,6 +8649,15 @@ export interface Repository {
   recordRoleRequest(input: { userId: string | null; userName: string; previousRole: Role | null; newRole: Role; isReapplication: boolean }): Promise<RoleAuditEntry>;
   /** Newest first. */
   listRoleAudit(limit?: number): Promise<RoleAuditEntry[]>;
+  /** 008: confirms the customer's account for a lead. With no customer on this
+   *  phone it creates one (customers are approved on the spot); with one it
+   *  links instead of duplicating (`existing: true`). Corrections go onto the
+   *  lead, the lead's won deals are linked to the account, and SMS / WhatsApp
+   *  choices are recorded as opt-out events (so every send obeys them).
+   *  Declining to share project details raises an alert for Admin, since the
+   *  installation cannot be done without it. Throws `not_found`,
+   *  `invalid_input`, `phone_taken` (the number belongs to a non-customer). */
+  confirmCustomerAccount(input: CustomerConfirmInput): Promise<{ user: User; existing: boolean; linkedDeals: number }>;
   /** Approves or rejects a pending supplier's KYC. Approving also moves
    *  `status` to `'active'` — the two are set together here since nothing
    *  else in this build ever brings a supplier live without it. Rejecting
