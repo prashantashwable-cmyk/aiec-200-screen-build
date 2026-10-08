@@ -5,6 +5,7 @@ import { formatINRCompact, formatPercent } from '@/design-system';
 import type { SurveyorScore, TechnicianScore } from '@/data/repository';
 import {
   NEW_JOINER_DAYS,
+  TREND_WEEKS,
   SURVEYOR_METRICS,
   TECHNICIAN_METRICS,
 } from './leaderboard.types';
@@ -32,14 +33,29 @@ function joinedWithin(joinedAt: string | undefined, days: number): boolean {
   return Date.now() - new Date(joinedAt).getTime() < days * 86_400_000;
 }
 
-/** Deterministic-looking movement derived from the person's own id, not Math.random. */
-function sparklineFor(seed: string, base: number): number[] {
-  let x = [...seed].reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
-  const next = () => {
-    x = (x * 1103515245 + 12345) & 0x7fffffff;
-    return (x % 100) / 100;
-  };
-  return Array.from({ length: 8 }, (_, i) => Math.max(0, base * (0.6 + next() * 0.7) * (0.7 + i * 0.05)));
+/** The weekly series behind a metric (oldest first, real dated records). A rate has none: a share of a few events per week would only wobble. */
+function seriesOf(metricId: MetricId, s: SurveyorScore | TechnicianScore): number[] {
+  if ('leadsCaptured' in s) {
+    if (metricId === 'revenue') return s.weeklyRevenue;
+    if (metricId === 'leadsConverted') return s.weeklyConversions;
+    return [];
+  }
+  return metricId === 'jobsCompleted' ? s.weeklyJobs : [];
+}
+
+/** The count series "rising stars" compares, also for a rate metric (its underlying wins or finished jobs). */
+function trendSeriesOf(metricId: MetricId, s: SurveyorScore | TechnicianScore): number[] {
+  if ('leadsCaptured' in s) return metricId === 'revenue' ? s.weeklyRevenue : s.weeklyConversions;
+  return s.weeklyJobs;
+}
+
+const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+
+/** The last `TREND_WEEKS` weeks against the ones before. Null when there was nothing before to compare with. */
+function improvementOf(series: number[]): number | null {
+  const recent = sum(series.slice(-TREND_WEEKS));
+  const before = sum(series.slice(-2 * TREND_WEEKS, -TREND_WEEKS));
+  return before > 0 ? (recent - before) / before : null;
 }
 
 /**
@@ -95,7 +111,10 @@ export function useLeaderboard(): LeaderboardState {
   }, []);
 
   const rows = useMemo<LeaderboardRow[]>(() => {
-    const buildValue = (metricId: MetricId, s: SurveyorScore | TechnicianScore): number => {
+    // Counts follow the chosen period from the weekly records (last 7 days, last 4 weeks, everything); a rate is always all time.
+    const buildValue = (metricId: MetricId, s: SurveyorScore | TechnicianScore): number | null => {
+      const series = seriesOf(metricId, s);
+      if (series.length > 0 && period !== 'allTime') return sum(series.slice(period === 'week' ? -1 : -TREND_WEEKS));
       if ('leadsCaptured' in s) {
         if (metricId === 'leadsConverted') return s.conversions;
         if (metricId === 'conversionRate') return s.conversionRate;
@@ -106,7 +125,8 @@ export function useLeaderboard(): LeaderboardState {
       if (metricId === 'qualityScore') return s.qcPassRate;
       return 0;
     };
-    const displayValue = (metricId: MetricId, value: number): string => {
+    const displayValue = (metricId: MetricId, value: number | null): string | null => {
+      if (value === null) return null;
       if (metricId === 'conversionRate' || metricId === 'qualityScore') return formatPercent(value, 0);
       if (metricId === 'revenue') return formatINRCompact(value);
       return String(value);
@@ -123,15 +143,14 @@ export function useLeaderboard(): LeaderboardState {
       const secondaryValue = s.rating;
       const joinedAt = joinDates[userId];
       const isNewJoiner = joinedWithin(joinedAt, NEW_JOINER_DAYS);
-      const sparkline = sparklineFor(userId, primaryValue || 1);
-      const improvementPct =
-        sparkline[0] > 0 ? (sparkline[sparkline.length - 1] - sparkline[0]) / sparkline[0] : 0;
+      const sparkline = seriesOf(metric, s);
+      const improvementPct = improvementOf(trendSeriesOf(metric, s));
 
       return {
         userId,
         name: users[userId] ?? s.name,
         rank: 0,
-        primaryValue,
+        primaryValue: primaryValue ?? -1,
         primaryDisplay: displayValue(metric, primaryValue),
         secondaryValue,
         secondaryDisplay: secondaryValue.toFixed(1),
@@ -143,23 +162,29 @@ export function useLeaderboard(): LeaderboardState {
       };
     });
 
+    // Only someone with something on record takes a place; "not rated yet" is listed after, without a place or a medal.
     const ranked = withValues
-      .filter((r) => !r.excluded)
+      .filter((r) => !r.excluded && r.primaryDisplay !== null)
       .sort((a, b) => b.primaryValue - a.primaryValue || b.secondaryValue - a.secondaryValue)
       .map((r, i) => ({ ...r, rank: i + 1 }));
-
+    const unrated = withValues.filter((r) => !r.excluded && r.primaryDisplay === null).map((r) => ({ ...r, rank: 0 }));
     const excludedRows = withValues.filter((r) => r.excluded).map((r) => ({ ...r, rank: 0 }));
 
-    const list = [...ranked, ...excludedRows];
-
     if (view === 'risingStars') {
-      return [...list]
-        .filter((r) => !r.excluded)
-        .sort((a, b) => b.improvementPct - a.improvementPct)
+      // A rising star actually rose: only a real increase takes a place; a fall or no history is listed after, unranked.
+      const active = withValues.filter((r) => !r.excluded);
+      const rising = active
+        .filter((r) => r.improvementPct !== null && r.improvementPct > 0)
+        .sort((a, b) => (b.improvementPct ?? 0) - (a.improvementPct ?? 0) || b.secondaryValue - a.secondaryValue)
         .map((r, i) => ({ ...r, rank: i + 1 }));
+      const rest = active
+        .filter((r) => !(r.improvementPct !== null && r.improvementPct > 0))
+        .sort((a, b) => (b.improvementPct ?? -Infinity) - (a.improvementPct ?? -Infinity) || b.secondaryValue - a.secondaryValue)
+        .map((r) => ({ ...r, rank: 0 }));
+      return [...rising, ...rest];
     }
-    return list;
-  }, [cohort, metric, view, surveyorScores, technicianScores, users, joinDates, exclusions]);
+    return [...ranked, ...unrated, ...excludedRows];
+  }, [cohort, metric, period, view, surveyorScores, technicianScores, users, joinDates, exclusions]);
 
   const excludeWorker = useCallback((userId: string, reason: string) => {
     if (!user) return;

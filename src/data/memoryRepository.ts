@@ -1007,6 +1007,7 @@ import { ADHOC_NOTE_MIN as BOOKING_ADHOC_NOTE_MIN, FAR_DAYS, FRESH_LOCATION as B
 import type { Candidate as BookingCandidate } from '@/features/service/booking';
 import { DRIVE_SKILL } from '@/features/training/skills';
 import { isEmail, isIndianMobile, isPincode } from '@/features/validation/india';
+import { randomCode, randomToken } from '@/features/ids/clientId';
 import { addDays } from '@/features/qc/inspectors';
 import { HUMAN_HOLD as SUPPORT_HUMAN_HOLD, MAX_MESSAGE as SUPPORT_MAX_MESSAGE, QUEUE_BUSY as SUPPORT_QUEUE_BUSY, REPLY_TARGET_MIN as SUPPORT_REPLY_TARGET_MIN, decide as supportDecide, handlingOf as supportHandlingOf, intentOf as supportIntentOf, queueOf as supportQueueOf } from '@/features/support/chat';
 import type { Intent as SupportIntent, Parsed as SupportParsed } from '@/features/support/chat';
@@ -9166,18 +9167,61 @@ const DECISION_WORDS: Record<SupplierDisputeDecision, string> = { uphold: 'AIEC 
 
 /** One technician's row on 024's leaderboard. Everything that shows a technician's quality reads this, so the number they see on
  *  their own home is the one Admin is judging them on. */
+/** A technician's record, read from what was done on their jobs (the ones they led). Null means nothing on record yet, never a guess. */
 function technicianScoreOf(u: User): TechnicianScore {
   const own = jobs.filter((j) => j.technicianId === u.id);
   const done = own.filter((j) => j.status === 'completed');
+  // Quality: of every item the independent inspector checked (132 / 133) on their jobs, the share that passed at the first attempt.
+  let checked = 0;
+  let firstPass = 0;
+  for (const j of own) {
+    for (const c of [qcMechChecks.find((x) => x.jobId === j.id), qcElecChecks.find((x) => x.jobId === j.id)]) {
+      for (const list of Object.values(c?.attempts ?? {})) {
+        if (!list || list.length === 0) continue;
+        checked += 1;
+        if (list[0].verdict === 'pass') firstPass += 1;
+      }
+    }
+  }
+  // Time: start to completion of their finished jobs, against the typical duration 129 plans with (a day's grace).
+  const spans = done.filter((j) => j.startedAt && j.completedAt).map((j) => Date.parse(j.completedAt as string) - Date.parse(j.startedAt as string)).filter((ms) => ms > 0);
+  const planned = plannedDuration(jobs.filter((j) => j.status === 'completed')).ms;
   return {
     userId: u.id,
     name: u.name,
     jobsCompleted: done.length,
-    onTimeRate: done.length ? 0.8 + (u.id.charCodeAt(u.id.length - 1) % 3) * 0.06 : 0,
-    qcPassRate: 0.85 + (u.id.charCodeAt(u.id.length - 1) % 4) * 0.035,
-    avgDaysPerJob: 16 + (u.id.charCodeAt(u.id.length - 1) % 5),
+    onTimeRate: spans.length ? spans.filter((ms) => ms <= planned + 86_400_000).length / spans.length : null,
+    qcPassRate: checked ? firstPass / checked : null,
+    avgDaysPerJob: spans.length ? Math.round((spans.reduce((a, b) => a + b, 0) / spans.length / 86_400_000) * 10) / 10 : null,
+    weeklyJobs: weeklyCounts(done.map((j) => j.completedAt)),
     rating: ratingOf(u),
   };
+}
+
+/** How many dated events fell in each of the last `SCORE_WEEKS` weeks, oldest first: the real series behind a leaderboard sparkline. */
+const SCORE_WEEKS = 8;
+function weeklyCounts(dates: (string | undefined)[], values?: number[], now = Date.now()): number[] {
+  const out = Array.from({ length: SCORE_WEEKS }, () => 0);
+  dates.forEach((d, i) => {
+    if (!d) return;
+    const weeksAgo = Math.floor((now - Date.parse(d)) / (7 * 86_400_000));
+    if (weeksAgo >= 0 && weeksAgo < SCORE_WEEKS) out[SCORE_WEEKS - 1 - weeksAgo] += values ? values[i] : 1;
+  });
+  return out;
+}
+
+/** Hours from a lead's capture to its surveyor's first contact or stage move (median over their leads); null with none recorded. */
+function responseHoursOf(surveyorLeads: Lead[]): number | null {
+  const hours: number[] = [];
+  for (const l of surveyorLeads) {
+    const first = leadTimeline
+      .filter((e) => e.leadId === l.id && (e.kind === 'communication_sent' || e.kind === 'stage_changed') && Date.parse(e.at) >= Date.parse(l.createdAt))
+      .sort((a, b) => a.at.localeCompare(b.at))[0];
+    if (first) hours.push((Date.parse(first.at) - Date.parse(l.createdAt)) / 3_600_000);
+  }
+  if (hours.length === 0) return null;
+  hours.sort((a, b) => a - b);
+  return Math.round(hours[Math.floor(hours.length / 2)] * 10) / 10;
 }
 
 /* ============================== Technician home (121) */
@@ -12303,7 +12347,8 @@ function tcMetrics(id: string, now: number): Metrics {
   if (u.role === 'technician') {
     m.completedInstalls = jobs.filter((j) => j.status === 'completed' && (j.technicianId === id || (j.crew ?? []).some((c) => c.userId === id))).length;
     m.verifiedSkills = normalizeSkills(u.skills).length;
-    m.qcPassRate = Math.round(technicianScoreOf(u).qcPassRate * 100);
+    // No QC on record reads as 0 here: a tier that asks for a pass rate is earned on real checks, never assumed.
+    m.qcPassRate = Math.round((technicianScoreOf(u).qcPassRate ?? 0) * 100);
     m.openSafetyIssues = reworkRequests.filter((r) => r.severity === 'safety_critical' && !['verified', 'waived', 'withdrawn'].includes(r.status) && (r.ownerId === id || byId(jobs, r.jobId)?.technicianId === id)).length;
   }
   return m;
@@ -15515,7 +15560,7 @@ function pdRolesOf(now: number): { phone: string; name: string; role: DirectoryR
     } else {
       const own = jobs.filter((j) => j.technicianId === u.id || (j.crew ?? []).some((c) => c.userId === u.id));
       const sc = technicianScoreOf(u);
-      out.push({ phone: u.phone, name: u.name, role: { ...base, type: 'technician', territory: normalizeSkills(u.skills).map((v) => ({ kind: 'skill' as const, value: v })), perf: { jobsCompleted: sc.jobsCompleted, qcPassRate: sc.jobsCompleted ? Math.round(sc.qcPassRate * 100) : null }, inFlight: own.filter((j) => j.status !== 'completed').length, profileRoute: `/admin/tracking/technician/${u.id}` } });
+      out.push({ phone: u.phone, name: u.name, role: { ...base, type: 'technician', territory: normalizeSkills(u.skills).map((v) => ({ kind: 'skill' as const, value: v })), perf: { jobsCompleted: sc.jobsCompleted, qcPassRate: sc.qcPassRate === null ? null : Math.round(sc.qcPassRate * 100) }, inFlight: own.filter((j) => j.status !== 'completed').length, profileRoute: `/admin/tracking/technician/${u.id}` } });
     }
   }
   for (const sup of suppliers) {
@@ -23714,7 +23759,7 @@ export const memoryRepository: Repository = {
         id: `ap-${applicationCounter}`,
         code: `AIEC-AP-${2000 + applicationCounter}`,
         interestId: interest.id,
-        accessKey: `k${Math.random().toString(36).slice(2, 10)}${Math.random().toString(36).slice(2, 10)}`,
+        accessKey: `k${randomToken(10)}`,
         role: interest.role,
         status: 'draft',
         startedAt: at,
@@ -28697,7 +28742,7 @@ export const memoryRepository: Repository = {
         newMasked = secMaskPhone(next);
       }
       for (const r of accountRecoveries) if (r.lockId === lock.id && r.status === 'issued') { r.status = 'cancelled'; r.cancelNote = 'A newer code was issued.'; }
-      const plain = String(Math.floor(10 ** (SEC_RECOVERY_LEN - 1) + Math.random() * 9 * 10 ** (SEC_RECOVERY_LEN - 1)));
+      const plain = randomCode(SEC_RECOVERY_LEN);
       secN.recovery += 1;
       const rec: AccountRecovery = {
         id: `ar-${secN.recovery}`, code: `AIEC-AR-${1000 + secN.recovery}`, userId: u.id, lockId: lock.id, startedAt: secIso(now), byName: admin.name, method: input.method, note: input.note.trim(), oldPhoneMasked: oldMasked,
@@ -32884,6 +32929,8 @@ export const memoryRepository: Repository = {
           const own = leads.filter((l) => l.surveyorId === u.id);
           const won = own.filter((l) => l.stage === 'won');
           const closed = own.filter((l) => l.stage === 'won' || l.stage === 'lost');
+          // When each win happened: its deal's closing, else the lead's last change.
+          const wonAt = won.map((l) => deals.find((d) => d.leadId === l.id && d.status === 'won')?.closedAt ?? l.updatedAt);
           return {
             userId: u.id,
             name: u.name,
@@ -32894,7 +32941,9 @@ export const memoryRepository: Repository = {
             commissionEarned: commissions
               .filter((c) => c.userId === u.id && c.status !== 'forfeited')
               .reduce((sum, c) => sum + c.amount, 0),
-            avgResponseHours: 4 + (u.id.charCodeAt(u.id.length - 1) % 7),
+            avgResponseHours: responseHoursOf(own),
+            weeklyConversions: weeklyCounts(wonAt),
+            weeklyRevenue: weeklyCounts(wonAt, won.map((l) => l.estimatedValue)),
             rating: u.rating ?? 0,
           };
         })

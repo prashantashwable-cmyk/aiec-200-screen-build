@@ -26,13 +26,15 @@ export interface LeaderboardRow {
   name: string;
   rank: number;
   primaryValue: number;
-  primaryDisplay: string;
+  /** Null when nothing is on record to judge (e.g. no quality check yet): shown as "not rated yet", ranked last. */
+  primaryDisplay: string | null;
   /** The tiebreaker, shown so a tie never looks arbitrary. */
   secondaryValue: number;
   secondaryDisplay: string;
+  /** Real weekly counts, oldest first; empty for a rate metric. */
   sparkline: number[];
-  /** Change vs the start of the period — what powers "rising stars". */
-  improvementPct: number;
+  /** Last 4 weeks against the 4 before, from dated records; null when there was nothing before. Powers "rising stars". */
+  improvementPct: number | null;
   isNewJoiner: boolean;
   /** Set when an admin has pulled this person out of ranking pending review. */
   excluded: boolean;
@@ -41,6 +43,9 @@ export interface LeaderboardRow {
 
 /** Below this tenure, comparing a full period's numbers is unfair. */
 export const NEW_JOINER_DAYS = 14;
+
+/** Weeks compared for "rising stars" and counted for the 4-week period. */
+export const TREND_WEEKS = 4;
 
 export const LEADERBOARD_KEYS = {
   title: 'leaderboard.title',
@@ -66,6 +71,9 @@ export const LEADERBOARD_KEYS = {
   excludeReasonPrompt: 'leaderboard.excludeReasonPrompt',
   rewardsSyncNote: 'leaderboard.rewardsSyncNote',
   improvement: 'leaderboard.improvement',
+  noTrend: 'leaderboard.noTrend',
+  notRated: 'leaderboard.notRated',
+  rateAllTime: 'leaderboard.rateAllTime',
   small: 'leaderboard.small',
   empty: { title: 'leaderboard.empty.title', body: 'leaderboard.empty.body' },
   error: { title: 'leaderboard.error.title', body: 'leaderboard.error.body' },

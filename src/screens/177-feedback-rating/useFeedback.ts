@@ -5,11 +5,12 @@ import { useSession } from '@/session/SessionProvider';
 import type { FeedbackBoard, FeedbackDeskView, FeedbackDetail, FeedbackSubmitResult } from '@/data/repository';
 import type { FeedbackDimension } from '@/data/types';
 import { POLL_MS, draftKey, viewKey } from './feedback-rating.types';
+import { newClientId } from '@/features/ids/clientId';
 
 export type FeedbackState = ReturnType<typeof useFeedback>;
 export interface Draft { overall: number | null; dimensions: Partial<Record<FeedbackDimension, number>>; comment: string }
 const EMPTY: Draft = { overall: null, dimensions: {}, comment: '' };
-const newId = (): string => `f-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+const newId = (): string => newClientId('f-');
 function readJson<T>(key: string, fallback: T): T { try { const v = JSON.parse(localStorage.getItem(key) ?? 'null'); return v ?? fallback; } catch { return fallback; } }
 function writeJson(key: string, value: unknown): void { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* the phone may refuse; the screen still works */ } }
 const problemOf = (e: unknown): string => (e instanceof Error && e.message && e.message !== 'repository_failed' ? e.message : 'generic');

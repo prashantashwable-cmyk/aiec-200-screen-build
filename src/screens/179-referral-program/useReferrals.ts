@@ -5,12 +5,13 @@ import { useData } from '@/data/DataProvider';
 import { useSession } from '@/session/SessionProvider';
 import type { ReferralDeskView, ReferralInput, ReferralLandingView, ReferralRowView, ReferralSubmitResult } from '@/data/repository';
 import { POLL_MS, inviteDraftKey, viewKey } from './referral-program.types';
+import { newClientId } from '@/features/ids/clientId';
 
 export type ReferralsState = ReturnType<typeof useReferrals>;
 export type LandingState = ReturnType<typeof useReferralLanding>;
 export interface FormDraft { name: string; phone: string; city: string; note: string; consent: boolean }
 export const emptyDraft: FormDraft = { name: '', phone: '', city: '', note: '', consent: false };
-const newId = (): string => `rf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+const newId = (): string => newClientId('rf-');
 function readJson<T>(key: string, fallback: T): T { try { const v = JSON.parse(localStorage.getItem(key) ?? 'null'); return v ?? fallback; } catch { return fallback; } }
 function writeJson(key: string, value: unknown): void { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* the phone may refuse; the screen still works */ } }
 const problemOf = (e: unknown): string => (e instanceof Error && e.message && e.message !== 'repository_failed' ? e.message : 'generic');

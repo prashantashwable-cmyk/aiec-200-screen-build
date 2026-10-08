@@ -63,12 +63,14 @@ function Forbidden() {
   const navigate = useNavigate();
   return (
     <Screen width="narrow">
-      <EmptyState
-        title={t('forbidden.title')}
-        body={t('forbidden.body')}
-        actionLabel={t('forbidden.home')}
-        onAction={() => navigate(role ? HOME_PATH_BY_ROLE[role] : '/login', { replace: true })}
-      />
+      <div data-refused>
+        <EmptyState
+          title={t('forbidden.title')}
+          body={t('forbidden.body')}
+          actionLabel={t('forbidden.home')}
+          onAction={() => navigate(role ? HOME_PATH_BY_ROLE[role] : '/login', { replace: true })}
+        />
+      </div>
     </Screen>
   );
 }

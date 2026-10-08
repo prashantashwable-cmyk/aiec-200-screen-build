@@ -12,6 +12,7 @@ import { isCleared } from '@/features/technician/safety';
 import { useSopWork } from '@/features/technician/useSopWork';
 import type { SafetyStatus } from './safety-checklist.types';
 import { FINAL_ERRORS, POLL_MS, SAFETY_KEYS as K, jobPath, queueKey, viewKey } from './safety-checklist.types';
+import { newClientId } from '@/features/ids/clientId';
 
 export interface FailedChange {
   id: string;
@@ -24,7 +25,7 @@ export interface ActionResult {
 }
 
 const isFinal = (code: string) => (FINAL_ERRORS as readonly string[]).includes(code);
-const newId = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+const newId = (): string => newClientId();
 const codeOf = (e: unknown) => (e instanceof Error ? e.message : 'generic');
 
 function readQueue(key: string): SafetyQueueItem[] {

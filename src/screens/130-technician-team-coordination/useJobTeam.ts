@@ -7,6 +7,7 @@ import { useToast } from '@/design-system';
 import type { JobTeamView, TeamHandoffView, TeamMessageView } from '@/data/repository';
 import type { TeamStatus, TeamTab } from './job-team.types';
 import { FINAL_ERRORS, POLL_MS, TABS, TEAM_KEYS as K, outboxKey, viewKey } from './job-team.types';
+import { newClientId } from '@/features/ids/clientId';
 
 interface OutItem {
   id: string;
@@ -26,7 +27,7 @@ export interface FailedItem {
   code: string;
 }
 
-const newId = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+const newId = (): string => newClientId();
 const codeOf = (e: unknown) => (e instanceof Error ? e.message : 'generic');
 const isFinal = (code: string) => (FINAL_ERRORS as readonly string[]).includes(code);
 function readJson<T>(key: string): T | null {

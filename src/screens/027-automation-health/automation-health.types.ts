@@ -11,7 +11,10 @@ export interface FailureLogEntry {
   id: string;
   ruleId: string;
   ruleName: string;
-  reasonKey: string;
+  /** The error the step itself recorded, shown as written; null when none was kept. */
+  reasonText: string | null;
+  /** Failures today this line stands for. */
+  count: number;
   at: string;
   /** Set once several failures in a row hit the same record — a stuck loop. */
   isStuckLoop: boolean;
@@ -56,10 +59,8 @@ export const AUTOMATION_HEALTH_KEYS = {
   fullCheckNote: 'automationHealth.fullCheckNote',
   fullCheckLink: 'automationHealth.fullCheckLink',
   reason: {
-    rateLimited: 'automationHealth.reason.rateLimited',
-    missingInput: 'automationHealth.reason.missingInput',
-    timeout: 'automationHealth.reason.timeout',
-    dependencyDown: 'automationHealth.reason.dependencyDown',
+    recorded: 'automationHealth.reason.recorded',
+    unrecorded: 'automationHealth.reason.unrecorded',
   },
   empty: { title: 'automationHealth.empty.title', body: 'automationHealth.empty.body' },
   error: { title: 'automationHealth.error.title', body: 'automationHealth.error.body' },

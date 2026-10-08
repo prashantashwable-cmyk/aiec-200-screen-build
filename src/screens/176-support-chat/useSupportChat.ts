@@ -4,12 +4,13 @@ import { useData } from '@/data/DataProvider';
 import { useSession } from '@/session/SessionProvider';
 import type { SupportBoard, SupportChatView, SupportThread } from '@/data/repository';
 import { POLL_MS, WAITING_POLL_MS, outboxKey, threadPath, viewKey } from './support-chat.types';
+import { newClientId } from '@/features/ids/clientId';
 
 export type SupportChatState = ReturnType<typeof useSupportChat>;
 type Intent = 'payment_status' | 'progress' | 'amc' | 'troubleshoot' | 'human';
 export interface Pending { clientId: string; text: string; intent?: Intent; at: string }
 
-const newId = (): string => `c-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+const newId = (): string => newClientId('c-');
 function readJson<T>(key: string, fallback: T): T { try { const v = JSON.parse(localStorage.getItem(key) ?? 'null'); return v ?? fallback; } catch { return fallback; } }
 function writeJson(key: string, value: unknown): void { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* a full phone must not break the chat */ } }
 

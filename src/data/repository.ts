@@ -421,7 +421,11 @@ export interface SurveyorScore {
   conversionRate: number;
   revenue: number;
   commissionEarned: number;
-  avgResponseHours: number;
+  /** Median hours from capture to first contact; null when none is recorded. */
+  avgResponseHours: number | null;
+  /** Wins in each of the last 8 weeks, oldest first (by the deal's closing). */
+  weeklyConversions: number[];
+  weeklyRevenue: number[];
   rating: number;
 }
 
@@ -429,9 +433,13 @@ export interface TechnicianScore {
   userId: string;
   name: string;
   jobsCompleted: number;
-  onTimeRate: number;
-  qcPassRate: number;
-  avgDaysPerJob: number;
+  /** Finished within the typical planned duration (129) plus a day; null with no finished job that has both dates. */
+  onTimeRate: number | null;
+  /** Share of inspected items (132 / 133) on their jobs that passed at the first attempt; null with no inspection on record. */
+  qcPassRate: number | null;
+  avgDaysPerJob: number | null;
+  /** Jobs completed in each of the last 8 weeks, oldest first. */
+  weeklyJobs: number[];
   rating: number;
 }
 
@@ -10176,9 +10184,10 @@ interface Chaos {
   failureRate: number;
 }
 
+// Latency is a development aid only (it makes loading states visible while building screens); a production build never waits on purpose.
 export const chaos: Chaos = {
-  minLatency: 220,
-  maxLatency: 520,
+  minLatency: import.meta.env.DEV ? 220 : 0,
+  maxLatency: import.meta.env.DEV ? 520 : 0,
   failureRate: 0,
 };
 
@@ -10187,14 +10196,14 @@ export function setFailureRate(rate: number) {
 }
 
 export async function simulateRead<T>(produce: () => T): Promise<T> {
-  const delay = chaos.minLatency + Math.random() * (chaos.maxLatency - chaos.minLatency);
-  await new Promise((resolve) => setTimeout(resolve, delay));
-  if (Math.random() < chaos.failureRate) throw new RepositoryError();
+  const delay = chaos.minLatency + Math.random() * (chaos.maxLatency - chaos.minLatency); // no-mock-guard: dev-only latency, 0 in production
+  await new Promise((resolve) => setTimeout(resolve, delay)); // no-mock-guard: dev-only latency, 0 in production
+  if (Math.random() < chaos.failureRate) throw new RepositoryError(); // no-mock-guard: failure injection for error-state tests, rate 0 by default
   return produce();
 }
 
 export async function simulateWrite<T>(produce: () => T): Promise<T> {
-  const delay = chaos.minLatency + Math.random() * (chaos.maxLatency - chaos.minLatency);
-  await new Promise((resolve) => setTimeout(resolve, delay));
+  const delay = chaos.minLatency + Math.random() * (chaos.maxLatency - chaos.minLatency); // no-mock-guard: dev-only latency, 0 in production
+  await new Promise((resolve) => setTimeout(resolve, delay)); // no-mock-guard: dev-only latency, 0 in production
   return produce();
 }

@@ -28,10 +28,8 @@ const translations: ScreenTranslations = {
         'Every automation showing healthy is not the same as everything being fine — for the full picture, check the alerts and exceptions dashboard too.',
       fullCheckLink: 'Open alerts & exceptions',
       reason: {
-        rateLimited: 'The messaging service rate-limited this request.',
-        missingInput: 'A required cost input was missing, so the quote could not be generated.',
-        timeout: 'The request took too long and timed out.',
-        dependencyDown: 'An outside service this depends on is not responding.',
+        recorded: '{{count}} failed today. Last error, as the step recorded it: {{text}}',
+        unrecorded: '{{count}} failed today. The step kept no reason for it.',
       },
       empty: {
         title: 'No automations configured yet',
@@ -71,10 +69,8 @@ const translations: ScreenTranslations = {
         'हर ऑटोमेशन का सेहतमंद दिखना यह नहीं बताता कि सब कुछ ठीक है — पूरी तस्वीर के लिए चेतावनी और अपवाद डैशबोर्ड भी देखिए।',
       fullCheckLink: 'चेतावनी और अपवाद खोलें',
       reason: {
-        rateLimited: 'मैसेजिंग सेवा ने इस अनुरोध को दर-सीमित कर दिया।',
-        missingInput: 'लागत की एक ज़रूरी जानकारी नहीं थी, इसलिए कोटेशन नहीं बन पाया।',
-        timeout: 'अनुरोध में बहुत समय लगा और वह समय-सीमा पार कर गया।',
-        dependencyDown: 'इस पर निर्भर बाहरी सेवा जवाब नहीं दे रही।',
+        recorded: 'आज {{count}} बार फ़ेल हुई। आख़िरी त्रुटि, जैसी इस चरण ने दर्ज की: {{text}}',
+        unrecorded: 'आज {{count}} बार फ़ेल हुई। इस चरण ने इसका कोई कारण दर्ज नहीं किया।',
       },
       empty: {
         title: 'अभी कोई ऑटोमेशन तय नहीं हुआ',
@@ -114,10 +110,8 @@ const translations: ScreenTranslations = {
         'प्रत्येक स्वयंचलन सुदृढ दिसणे म्हणजे सर्वकाही ठीक आहे असे नाही — संपूर्ण चित्रासाठी सूचना आणि अपवाद डॅशबोर्डही पहा.',
       fullCheckLink: 'सूचना आणि अपवाद उघडा',
       reason: {
-        rateLimited: 'मेसेजिंग सेवेने या विनंतीचा दर मर्यादित केला.',
-        missingInput: 'खर्चाची एक आवश्यक माहिती नव्हती, त्यामुळे कोटेशन तयार होऊ शकले नाही.',
-        timeout: 'विनंतीला खूप वेळ लागला आणि ती कालबाह्य झाली.',
-        dependencyDown: 'यावर अवलंबून असलेली बाह्य सेवा प्रतिसाद देत नाही.',
+        recorded: 'आज {{count}} वेळा अयशस्वी. शेवटची त्रुटी, या टप्प्याने नोंदवली तशी: {{text}}',
+        unrecorded: 'आज {{count}} वेळा अयशस्वी. या टप्प्याने याचे कोणतेही कारण नोंदवले नाही.',
       },
       empty: {
         title: 'अजून कोणतेही स्वयंचलन ठरलेले नाही',

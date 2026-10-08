@@ -10,6 +10,7 @@ import { identifierKind, isMajor, logProblems, rowProblem } from '@/features/tec
 import type { MaterialProblem } from '@/features/technician/materials';
 import type { MaterialStatus } from './material-usage.types';
 import { FINAL_ERRORS, MATERIAL_KEYS as K, POLL_MS, draftKey, viewKey } from './material-usage.types';
+import { newClientId } from '@/features/ids/clientId';
 
 export type Mode = 'planned' | 'part' | 'none';
 export interface ActionResult {
@@ -23,7 +24,7 @@ interface Draft {
   pendingConfirm?: string;
 }
 
-const newId = () => `mu-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+const newId = (): string => newClientId('mu-');
 const codeOf = (e: unknown) => (e instanceof Error ? e.message : 'generic');
 const isFinal = (code: string) => (FINAL_ERRORS as readonly string[]).includes(code);
 function readJson<T>(key: string): T | null {

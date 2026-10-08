@@ -8,13 +8,14 @@ import { filingProblem } from '@/features/service/tickets';
 import { currentPlace, prepareStill, prepareVideo } from '@/features/technician/mediaCapture';
 import { EMPTY_DRAFT, POLL_MS, draftKey, outboxKey, ticketPath, viewKey } from './service-tickets.types';
 import type { TicketDraft } from './service-tickets.types';
+import { newClientId } from '@/features/ids/clientId';
 
 export type ServiceTicketsState = ReturnType<typeof useServiceTickets>;
 export type Attachment = TicketCreateInput['attachments'][number];
 export type Result = { ok: true } | { ok: false; problem: string };
 const GENERIC = 'generic';
 const problemOf = (e: unknown): string => (e instanceof Error && e.message && e.message !== 'repository_failed' ? e.message : GENERIC);
-const newId = (): string => `c-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+const newId = (): string => newClientId('c-');
 
 function readJson<T>(key: string, fallback: T): T {
   try { const v = JSON.parse(localStorage.getItem(key) ?? 'null'); return v ?? fallback; } catch { return fallback; }

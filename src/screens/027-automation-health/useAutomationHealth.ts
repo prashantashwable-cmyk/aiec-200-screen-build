@@ -16,8 +16,6 @@ interface AutomationHealthState {
   reload: () => Promise<void>;
 }
 
-const REASON_BY_INDEX = ['rateLimited', 'missingInput', 'timeout', 'dependencyDown'] as const;
-
 /**
  * Owns the single most important screen for the "one person monitors" model.
  *
@@ -55,22 +53,23 @@ export function useAutomationHealth(): AutomationHealthState {
       const health = healthOf(rule);
       const uptimePct = rule.runsToday > 0 ? 1 - rule.failuresToday / Math.max(rule.runsToday, 1) : 1;
 
-      // A deterministic-looking failure log entry per failure count today,
-      // seeded from the rule id so it stays stable across renders.
-      const failures: FailureLogEntry[] = Array.from({ length: rule.failuresToday }, (_, i) => {
-        const reasonId = REASON_BY_INDEX[(rule.id.charCodeAt(0) + i) % REASON_BY_INDEX.length];
-        const attempts = retryCounts[rule.id] ?? 0;
-        return {
-          id: `${rule.id}-fail-${i}`,
-          ruleId: rule.id,
-          ruleName: rule.name,
-          reasonKey: `automationHealth.reason.${reasonId}`,
-          at: rule.lastRunAt,
-          // Three or more retries on the same rule without success reads as a
-          // stuck loop, not a component that will fix itself if left alone.
-          isStuckLoop: attempts >= 3,
-        };
-      });
+      // Only what was recorded: the last error the step itself reported (181's telemetry), never a reason picked for it.
+      // A step failing several runs in a row (its status is `failing`) reads as stuck rather than one that will fix itself.
+      const attempts = retryCounts[rule.id] ?? 0;
+      const failures: FailureLogEntry[] =
+        rule.failuresToday > 0
+          ? [
+              {
+                id: `${rule.id}-last`,
+                ruleId: rule.id,
+                ruleName: rule.name,
+                reasonText: rule.lastError ?? null,
+                count: rule.failuresToday,
+                at: rule.lastRunAt,
+                isStuckLoop: rule.status === 'failing' || attempts >= 3,
+              },
+            ]
+          : [];
 
       return { rule, health, uptimePct, failures };
     });

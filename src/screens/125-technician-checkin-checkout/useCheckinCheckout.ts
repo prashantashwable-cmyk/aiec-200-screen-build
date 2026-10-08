@@ -12,6 +12,7 @@ import { applySiteQueue } from '@/features/technician/siteQueue';
 import type { SiteQueueInput, SiteQueueItem } from '@/features/technician/siteQueue';
 import type { CheckinStatus } from './checkin-checkout.types';
 import { CHECKIN_KEYS as K, FINAL_ERRORS, PING_MS, POLL_MS, jobPath, queueKey, viewKey } from './checkin-checkout.types';
+import { newClientId } from '@/features/ids/clientId';
 
 export interface FailedChange {
   id: string;
@@ -28,7 +29,7 @@ export interface GeoState {
 }
 
 const isFinal = (code: string) => (FINAL_ERRORS as readonly string[]).includes(code);
-const newId = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+const newId = (): string => newClientId();
 
 function readQueue(key: string): SiteQueueItem[] {
   try {

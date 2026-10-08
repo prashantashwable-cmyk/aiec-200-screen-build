@@ -10,6 +10,7 @@ import { MEASURES_OF, attemptProblem, hasFloors, hasRubric, suggestVerdict } fro
 import type { AttemptProblem, Reading } from '@/features/qc/mechanical';
 import type { MechStatus } from './qc-mechanical.types';
 import { FINAL_ERRORS, MECH_KEYS as K, POLL_MS, draftKey, outboxKey, viewKey } from './qc-mechanical.types';
+import { newClientId } from '@/features/ids/clientId';
 
 export interface ActionResult {
   ok: boolean;
@@ -43,7 +44,7 @@ interface OutItem {
   capturedAt: string;
 }
 
-const newId = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+const newId = (): string => newClientId();
 const codeOf = (e: unknown) => (e instanceof Error ? e.message : 'generic');
 const isFinal = (c: string) => (FINAL_ERRORS as readonly string[]).includes(c);
 const hasVideo = (q: OutItem) => q.media.some((m) => m.media.kind === 'video');

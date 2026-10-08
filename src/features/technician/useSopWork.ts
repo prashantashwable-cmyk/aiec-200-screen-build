@@ -14,6 +14,7 @@ import { useSession } from '@/session/SessionProvider';
 import type { InstallationSopView, SopMediaInput } from '@/data/repository';
 import { applyQueue } from '@/features/technician/sopQueue';
 import type { LocalSop, SopQueueInput, SopQueueItem } from '@/features/technician/sopQueue';
+import { newClientId } from '@/features/ids/clientId';
 
 export type SopLoadStatus = 'loading' | 'ready' | 'error' | 'not_found';
 
@@ -36,7 +37,7 @@ export interface FailedChange {
 }
 
 const isFinal = (code: string) => (FINAL_ERRORS as readonly string[]).includes(code);
-const newId = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+const newId = (): string => newClientId();
 /** A video is not written to localStorage: only what survives a restart is. */
 const persistable = (q: SopQueueItem) => !(q.kind === 'evidence' && q.media.kind === 'video');
 

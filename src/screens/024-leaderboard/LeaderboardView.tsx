@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { Medal, TrendUp, Warning } from '@phosphor-icons/react';
+import { Medal, TrendDown, TrendUp, Warning } from '@phosphor-icons/react';
 import {
   Avatar,
   Badge,
@@ -107,6 +107,9 @@ export function LeaderboardView() {
           </Select>
         </label>
       </div>
+      {(s.metric === 'conversionRate' || s.metric === 'qualityScore') && s.period !== 'allTime' && (
+        <p className="t-xs t-muted mb-3">{t(K.rateAllTime)}</p>
+      )}
 
       <Card flush>
         {s.rows.map((row, index) => (
@@ -129,10 +132,14 @@ export function LeaderboardView() {
                   {row.isNewJoiner && <Badge tone="neutral">{t(K.newJoinerNote)}</Badge>}
                   {row.excluded && <Badge tone="warning">{t(K.excluded)}</Badge>}
                 </span>
-                <Sparkline points={row.sparkline} />
+                {row.sparkline.length > 0 && <Sparkline points={row.sparkline} />}
               </span>
               <span className="shrink-0 stack items-end gap-1">
-                <span className="t-md t-semibold num">{row.primaryDisplay}</span>
+                {row.primaryDisplay === null ? (
+                  <span className="t-sm t-muted">{t(K.notRated)}</span>
+                ) : (
+                  <span className="t-md t-semibold num">{row.primaryDisplay}</span>
+                )}
               </span>
             </div>
             <div className="row between p-3" style={{ paddingTop: 0 }}>
@@ -141,8 +148,18 @@ export function LeaderboardView() {
                 {s.view === 'risingStars' && (
                   <>
                     {' · '}
-                    <TrendUp size={11} className="t-success" style={{ display: 'inline' }} />{' '}
-                    {t(K.improvement, { pct: Math.round(row.improvementPct * 100) })}
+                    {row.improvementPct === null ? (
+                      t(K.noTrend)
+                    ) : (
+                      <>
+                        {row.improvementPct > 0 ? (
+                          <TrendUp size={11} className="t-success" style={{ display: 'inline' }} />
+                        ) : (
+                          <TrendDown size={11} className="t-muted" style={{ display: 'inline' }} />
+                        )}{' '}
+                        {t(K.improvement, { pct: Math.round(row.improvementPct * 100) })}
+                      </>
+                    )}
                   </>
                 )}
               </span>

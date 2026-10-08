@@ -11,6 +11,7 @@ import { applyIssueQueue } from '@/features/technician/issueQueue';
 import type { IssueQueueInput, IssueQueueItem } from '@/features/technician/issueQueue';
 import type { IssuesStatus } from './issue-reporting.types';
 import { FINAL_ERRORS, ISSUE_KEYS as K, POLL_MS, draftKey, queueKey, viewKey } from './issue-reporting.types';
+import { newClientId } from '@/features/ids/clientId';
 
 export interface FailedChange {
   id: string;
@@ -36,7 +37,7 @@ export interface FormState {
 
 const EMPTY: FormState = { category: null, severity: null, stepId: '', sopGap: false, description: '', linkTo: '', attachments: [] };
 const isFinal = (code: string) => (FINAL_ERRORS as readonly string[]).includes(code);
-const newId = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+const newId = (): string => newClientId();
 const codeOf = (e: unknown) => (e instanceof Error ? e.message : 'generic');
 const hasVideo = (q: IssueQueueItem) => q.kind === 'report' && q.media.some((m) => m.kind === 'video');
 /** Reports with a video cannot go into the phone's small storage; they are held while the app is open, across screens. */
