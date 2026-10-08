@@ -45,7 +45,20 @@ Real (in-memory), 1 Static (001 splash), 0 Partial. What changed:
 | 005 / 007 "Account verified", "GSTIN verified" after a timer | Real checks kept; the screens say the bank check and registry lookup are not connected |
 | Seven copies of the phone rule | One module, `@/features/validation/india` |
 
-Still open: everything in S0b onwards, and the items in `KNOWN_GAPS.md`.
+**S0b (tests, guard, CI) is done.** What changed:
+
+| Finding | Now |
+|---|---|
+| No tests, no CI | Vitest (`npm test`, 40 tests: validators, money rules, GST / TDS, audit chain, and the repository's own guarantees through the `Repository` interface, so the same file can run against the real backend); Playwright smoke per role (`npm run test:e2e`: every role signs in through the real login, Admin through the second step, and opens its key screens; a technician is refused an Admin screen); GitHub Actions (`.github/workflows/ci.yml`) runs typecheck, translations, guard, tests, build and the smoke on every push and PR |
+| Nothing stopped a fake coming back | `npm run guard` (`scripts/no-mock-guard.mjs`) fails on `Math.random`, a timer standing in for work, a number derived from an id, placeholder text, dead links / buttons, `alert(`, `console.log`, TODO / FIXME in `src/` (seed data and translations excepted); a line that truly needs one ends with `// no-mock-guard: <reason>` |
+| H6: recovery codes and other secrets from `Math.random`; 13 copies of a `Math.random` client id | `@/features/ids/clientId` (crypto: `newClientId`, `randomToken`, `randomCode`); every copy replaced |
+| Simulated network latency (220–520 ms) applied to every read and write | Development only; 0 in a production build |
+| **Technician quality score, on-time rate and days per job computed from the characters of the user id** (found in S0b). It fed 121's quality score, 024's ranking and 148's tier criteria | Read from records: first-attempt pass share of the independent QC checks (132 / 133) on jobs they led; start-to-finish against the planned duration; "not rated yet" when nothing is on record |
+| Surveyor response time from the id's characters (found in S0b) | Median hours from capture to first contact on record; none when nothing is recorded |
+| 024 sparkline and "rising stars" from a hash of the user id; the period selector did nothing (found in S0b) | Real weekly counts (wins, revenue, finished jobs); rising stars = last 4 weeks against the 4 before, only a real rise takes a place; the period filter applies to counts (a rate says it is all time); "not rated yet" takes no place or medal |
+| 027 failure reasons picked by `rule.id.charCodeAt(0) + i` (found in S0b) | The error the step itself recorded (181's telemetry), or "the step kept no reason" |
+
+Still open: everything in S0c onwards, and the items in `KNOWN_GAPS.md`.
 
 ---
 
@@ -247,7 +260,7 @@ external is either a stand-in or a hand-off URL.
 | H3 | Critical | No persistence; also means no backup is real (196 says so) | no storage calls in `memoryRepository.ts` |
 | H4 | High | Full Aadhaar number stored | `src/data/types.ts:2691` |
 | H5 | High | Personal data (phones, addresses, bank account numbers for seeds) ships in the JS bundle as seed | `src/data/seed.ts`, `memoryRepository.ts:13048` |
-| H6 | Medium | Recovery codes generated with `Math.random` | `memoryRepository.ts:28407` (use a CSPRNG server-side) |
+| H6 | Medium | ~~Recovery codes generated with `Math.random`~~ (fixed in S0b) | `memoryRepository.ts:28407` (use a CSPRNG server-side) |
 | H7 | Medium | Public OSM tiles leak user viewport to a third party and breach its usage policy | `MapCanvas.tsx:219` |
 | H8 | Low | Secrets scan clean; no `.env` files; `firebase.ts` reads `VITE_*` only | grep in appendix |
 | H9 | Good | DPDP groundwork exists: consent register, data requests with SLA, retention policy, access package (194); session revoke and lost-device recovery (195); location consent gates writes | — |
