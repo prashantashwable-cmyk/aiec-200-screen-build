@@ -122,10 +122,24 @@
   border-top: var(--border-width) solid var(--color-border);
   padding-bottom: env(safe-area-inset-bottom, 0px);
   z-index: var(--z-shell);
+  /* Roles with many tabs (Admin has a dozen) scroll sideways instead of squeezing or cutting the last ones off. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.shell__tabbar::-webkit-scrollbar {
+  display: none;
 }
 
 .shell__tab {
-  flex: 1 1 0;
+  /* Share the width when the tabs fit; keep each at a readable size and scroll when they do not. */
+  flex: 1 0 auto;
+  min-width: 64px;
+  scroll-snap-align: start;
   min-height: var(--tap-target);
   display: flex;
   flex-direction: column;
@@ -155,6 +169,7 @@
   font-weight: 600;
   line-height: 1.2;
   text-align: center;
+  white-space: nowrap;
 }
 
 /* ---- Sidebar (desktop) ---- */

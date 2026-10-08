@@ -49,6 +49,12 @@ export function AppShell() {
     };
   }, []);
 
+  // When the tab bar scrolls, keep the current screen's tab in view (e.g. Logistics, far to the right).
+  useEffect(() => {
+    const active = tabbarRef.current?.querySelector<HTMLElement>('[aria-current="page"]');
+    active?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [location.pathname]);
+
   const items = role ? NAV_BY_ROLE[role] : [];
 
   // Highlight by the route's declared tab, so a deep screen like
