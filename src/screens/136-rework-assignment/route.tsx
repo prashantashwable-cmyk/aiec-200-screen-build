@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { ReworkScreen } from './ReworkView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const ReworkScreen = lazyScreen(() => import('./ReworkView'), 'ReworkScreen');
 
 const route: ScreenRoute = {
   id: '136',

@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { WhatsappConsoleView } from './WhatsappConsoleView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const WhatsappConsoleView = lazyScreen(() => import('./WhatsappConsoleView'), 'WhatsappConsoleView');
 
 const route: ScreenRoute = {
   id: '053',

@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { CaptureConfirmView } from './CaptureConfirmView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const CaptureConfirmView = lazyScreen(() => import('./CaptureConfirmView'), 'CaptureConfirmView');
 
 const route: ScreenRoute = {
   id: '036',

@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { SplashView } from './SplashView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const SplashView = lazyScreen(() => import('./SplashView'), 'SplashView');
 
 const route: ScreenRoute = {
   id: '001',

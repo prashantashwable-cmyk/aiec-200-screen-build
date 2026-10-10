@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { AutoPoRulesView } from './AutoPoRulesView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const AutoPoRulesView = lazyScreen(() => import('./AutoPoRulesView'), 'AutoPoRulesView');
 
 const route: ScreenRoute = {
   id: '094',

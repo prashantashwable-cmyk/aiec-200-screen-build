@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { OverduePaymentEscalationView } from './OverduePaymentEscalationView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const OverduePaymentEscalationView = lazyScreen(() => import('./OverduePaymentEscalationView'), 'OverduePaymentEscalationView');
 
 const route: ScreenRoute = {
   id: '089',

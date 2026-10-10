@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { DeliveryDelayAlertView } from './DeliveryDelayAlertView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const DeliveryDelayAlertView = lazyScreen(() => import('./DeliveryDelayAlertView'), 'DeliveryDelayAlertView');
 
 const route: ScreenRoute = {
   id: '105',

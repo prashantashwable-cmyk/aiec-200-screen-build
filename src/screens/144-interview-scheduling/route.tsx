@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { InterviewScreen } from './InterviewView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const InterviewScreen = lazyScreen(() => import('./InterviewView'), 'InterviewScreen');
 
 /** The applicant reaches their own interview time by their application's link (no account yet); Admin has the calendar and each applicant's record. */
 const routes: ScreenRoute[] = [

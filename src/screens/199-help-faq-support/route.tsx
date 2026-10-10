@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { HelpScreen } from './HelpView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const HelpScreen = lazyScreen(() => import('./HelpView'), 'HelpScreen');
 
 /** Self-service help for every role: the articles written for your own role, a way to say whether they helped, and a path to a person when they do not. */
 const route: ScreenRoute = {

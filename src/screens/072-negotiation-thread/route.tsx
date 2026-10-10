@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { NegotiationThreadView } from './NegotiationThreadView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const NegotiationThreadView = lazyScreen(() => import('./NegotiationThreadView'), 'NegotiationThreadView');
 
 const route: ScreenRoute = {
   id: '072',

@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { WarrantyScreen } from './WarrantyView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const WarrantyScreen = lazyScreen(() => import('./WarrantyView'), 'WarrantyScreen');
 
 const route: ScreenRoute = {
   id: '139',

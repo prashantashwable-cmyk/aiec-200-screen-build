@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { AdvancePaymentRetentionView } from './AdvancePaymentRetentionView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const AdvancePaymentRetentionView = lazyScreen(() => import('./AdvancePaymentRetentionView'), 'AdvancePaymentRetentionView');
 
 const route: ScreenRoute = {
   id: '118',

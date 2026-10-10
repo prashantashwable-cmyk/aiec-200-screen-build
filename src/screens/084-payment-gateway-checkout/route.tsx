@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { PaymentGatewayCheckoutView } from './PaymentGatewayCheckoutView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const PaymentGatewayCheckoutView = lazyScreen(() => import('./PaymentGatewayCheckoutView'), 'PaymentGatewayCheckoutView');
 
 const route: ScreenRoute = {
   id: '084',

@@ -21,9 +21,12 @@ async function fillCode(page: Page, code: string, scope = page.locator('body')):
 async function signIn(page: Page, phone: string): Promise<void> {
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 180_000 });
   await page.waitForFunction(() => !document.body.innerText.includes('Getting things ready'), undefined, { timeout: 60_000 });
+  // Screens load when first opened, so wait for whichever comes first: the intro carousel (skip it) or the login form.
   const skip = page.getByText('Skip', { exact: true });
-  if (await skip.isVisible().catch(() => false)) await skip.click();
-  await page.locator('input[type="tel"]').first().fill(phone);
+  const tel = page.locator('input[type="tel"]').first();
+  await expect(skip.or(tel)).toBeVisible({ timeout: 60_000 });
+  if (await skip.isVisible()) await skip.click();
+  await tel.fill(phone);
   await page.getByRole('button', { name: /Send|Continue|OTP/i }).first().click();
   await page.waitForURL(/\/login\/otp/);
   await fillCode(page, OTP, page.getByRole('group', { name: /Verification code/i }));

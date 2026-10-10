@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { CommissionTrackerView } from './CommissionTrackerView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const CommissionTrackerView = lazyScreen(() => import('./CommissionTrackerView'), 'CommissionTrackerView');
 
 const route: ScreenRoute = {
   id: '038',

@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { AppInfoScreen } from './AppInfoView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const AppInfoScreen = lazyScreen(() => import('./AppInfoView'), 'AppInfoScreen');
 
 /** The app's version and what changed in plain words, an update prompt that is honest about the device, and a home for ideas about the app itself. */
 const route: ScreenRoute = {

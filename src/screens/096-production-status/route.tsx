@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { ProductionStatusView } from './ProductionStatusView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const ProductionStatusView = lazyScreen(() => import('./ProductionStatusView'), 'ProductionStatusView');
 
 const route: ScreenRoute = {
   id: '096',

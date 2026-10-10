@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { DealTermsFinalizationView } from './DealTermsFinalizationView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const DealTermsFinalizationView = lazyScreen(() => import('./DealTermsFinalizationView'), 'DealTermsFinalizationView');
 
 const route: ScreenRoute = {
   id: '074',

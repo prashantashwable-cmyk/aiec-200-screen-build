@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { InstallTimelineScreen } from './InstallTimelineView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const InstallTimelineScreen = lazyScreen(() => import('./InstallTimelineView'), 'InstallTimelineScreen');
 
 const route: ScreenRoute = {
   id: '129',

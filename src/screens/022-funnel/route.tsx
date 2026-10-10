@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { FunnelView } from './FunnelView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const FunnelView = lazyScreen(() => import('./FunnelView'), 'FunnelView');
 
 const route: ScreenRoute = {
   id: '022',

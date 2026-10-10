@@ -46,6 +46,7 @@ memory), backups. Each screen that depends on one says so; see
 
 ## Smaller items
 
+- The first download is still about 7.5 MB (1.8 MB compressed): screens now load when first opened, but every translation (all three languages) and the in-memory sample data still come with the app. They shrink as modules move to the server and translations load per language. A loading screen shows at once, and a start-up failure is shown on the page instead of a blank screen.
 - Many Admin screens are reachable only by URL, alerts or the assistant (no nav entry).
 - Tests cover the pure rules and the S0a guarantees; most screens have only the per-role smoke. Each later slice adds tests for what it makes real.
 - 027's nine configured (legacy) rules still show seeded run and failure counts, and its Retry re-enables the rule rather than re-running it (said in code; no runner exists until S0c's server scheduler).

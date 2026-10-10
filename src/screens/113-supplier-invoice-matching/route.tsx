@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { SupplierInvoiceMatchingView } from './SupplierInvoiceMatchingView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const SupplierInvoiceMatchingView = lazyScreen(() => import('./SupplierInvoiceMatchingView'), 'SupplierInvoiceMatchingView');
 
 const route: ScreenRoute = {
   id: '113',

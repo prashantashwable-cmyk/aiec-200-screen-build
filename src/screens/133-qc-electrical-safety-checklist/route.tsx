@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { QcElectricalScreen } from './QcElectricalView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const QcElectricalScreen = lazyScreen(() => import('./QcElectricalView'), 'QcElectricalScreen');
 
 const route: ScreenRoute = {
   id: '133',

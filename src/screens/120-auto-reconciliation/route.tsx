@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { AutoReconciliationView } from './AutoReconciliationView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const AutoReconciliationView = lazyScreen(() => import('./AutoReconciliationView'), 'AutoReconciliationView');
 
 const route: ScreenRoute = {
   id: '120',

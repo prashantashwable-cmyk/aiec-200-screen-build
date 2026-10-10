@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { AlertsBoardView } from './AlertsBoardView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const AlertsBoardView = lazyScreen(() => import('./AlertsBoardView'), 'AlertsBoardView');
 
 const route: ScreenRoute = {
   id: '029',

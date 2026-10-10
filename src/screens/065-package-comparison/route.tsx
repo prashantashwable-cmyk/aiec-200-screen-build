@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { PackageComparisonView } from './PackageComparisonView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const PackageComparisonView = lazyScreen(() => import('./PackageComparisonView'), 'PackageComparisonView');
 
 const route: ScreenRoute = {
   id: '065',

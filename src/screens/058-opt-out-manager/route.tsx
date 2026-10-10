@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { OptOutManagerView } from './OptOutManagerView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const OptOutManagerView = lazyScreen(() => import('./OptOutManagerView'), 'OptOutManagerView');
 
 const route: ScreenRoute = {
   id: '058',

@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { DuplicateMergeView } from './DuplicateMergeView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const DuplicateMergeView = lazyScreen(() => import('./DuplicateMergeView'), 'DuplicateMergeView');
 
 const route: ScreenRoute = {
   id: '045',

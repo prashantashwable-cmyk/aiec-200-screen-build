@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { CheckinCheckoutView } from './CheckinCheckoutView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const CheckinCheckoutView = lazyScreen(() => import('./CheckinCheckoutView'), 'CheckinCheckoutView');
 
 const route: ScreenRoute = {
   id: '125',

@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { ExecKpiView } from './ExecKpiView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const ExecKpiView = lazyScreen(() => import('./ExecKpiView'), 'ExecKpiView');
 
 const route: ScreenRoute = {
   id: '021',

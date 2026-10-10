@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { PaymentReminderConfigView } from './PaymentReminderConfigView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const PaymentReminderConfigView = lazyScreen(() => import('./PaymentReminderConfigView'), 'PaymentReminderConfigView');
 
 const route: ScreenRoute = {
   id: '083',

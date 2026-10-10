@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { LoanEmiApplicationView } from './LoanEmiApplicationView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const LoanEmiApplicationView = lazyScreen(() => import('./LoanEmiApplicationView'), 'LoanEmiApplicationView');
 
 const route: ScreenRoute = {
   id: '085',

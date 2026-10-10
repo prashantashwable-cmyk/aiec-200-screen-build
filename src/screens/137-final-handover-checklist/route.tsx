@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { HandoverScreen } from './HandoverView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const HandoverScreen = lazyScreen(() => import('./HandoverView'), 'HandoverScreen');
 
 const route: ScreenRoute = {
   id: '137',

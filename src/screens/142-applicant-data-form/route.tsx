@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { ApplicationScreen } from './ApplicationView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const ApplicationScreen = lazyScreen(() => import('./ApplicationView'), 'ApplicationScreen');
 
 /** The applicant reaches their own application by its link (no account yet); Admin reaches the same record, and the board of all of them, in the app. */
 const routes: ScreenRoute[] = [

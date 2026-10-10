@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { CounterOfferApprovalView } from './CounterOfferApprovalView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const CounterOfferApprovalView = lazyScreen(() => import('./CounterOfferApprovalView'), 'CounterOfferApprovalView');
 
 const route: ScreenRoute = {
   id: '073',

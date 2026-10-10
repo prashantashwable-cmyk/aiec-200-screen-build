@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { CompletionScreen } from './CompletionView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const CompletionScreen = lazyScreen(() => import('./CompletionView'), 'CompletionScreen');
 
 const route: ScreenRoute = {
   id: '140',

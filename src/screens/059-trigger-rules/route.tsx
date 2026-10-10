@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { TriggerRulesView } from './TriggerRulesView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const TriggerRulesView = lazyScreen(() => import('./TriggerRulesView'), 'TriggerRulesView');
 
 const route: ScreenRoute = {
   id: '059',

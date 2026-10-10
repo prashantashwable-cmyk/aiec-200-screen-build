@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { AgreementScreen } from './AgreementView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const AgreementScreen = lazyScreen(() => import('./AgreementView'), 'AgreementScreen');
 
 /** The partner reads and signs on their own application's link (no account yet: signing creates it); Admin prepares, sends and follows up. */
 const routes: ScreenRoute[] = [

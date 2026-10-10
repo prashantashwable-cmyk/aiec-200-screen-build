@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { QcAssignmentScreen } from './QcAssignmentView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const QcAssignmentScreen = lazyScreen(() => import('./QcAssignmentView'), 'QcAssignmentScreen');
 
 const route: ScreenRoute = {
   id: '131',

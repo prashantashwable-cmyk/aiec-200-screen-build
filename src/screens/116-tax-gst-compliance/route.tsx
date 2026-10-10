@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { TaxGstComplianceView } from './TaxGstComplianceView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const TaxGstComplianceView = lazyScreen(() => import('./TaxGstComplianceView'), 'TaxGstComplianceView');
 
 const route: ScreenRoute = {
   id: '116',

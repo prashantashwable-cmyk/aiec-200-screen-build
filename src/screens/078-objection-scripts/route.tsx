@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { ObjectionScriptsView } from './ObjectionScriptsView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const ObjectionScriptsView = lazyScreen(() => import('./ObjectionScriptsView'), 'ObjectionScriptsView');
 
 const route: ScreenRoute = {
   id: '078',

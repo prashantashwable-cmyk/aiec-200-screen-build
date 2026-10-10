@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { ComplianceScreen } from './ComplianceView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const ComplianceScreen = lazyScreen(() => import('./ComplianceView'), 'ComplianceScreen');
 
 const route: ScreenRoute = {
   id: '134',

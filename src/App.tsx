@@ -1,3 +1,5 @@
+import { Suspense } from 'react';
+import type { ReactNode } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { AppShell } from '@/navigation/AppShell';
@@ -92,6 +94,18 @@ function NotFound() {
   );
 }
 
+/** Shown for the moment a screen's own code is still arriving (screens load when first opened). */
+function ScreenLoading() {
+  const { t } = useTranslation();
+  return (
+    <div className="ds-screen" data-screen-loading>
+      <LoadingState label={t('state.loading')} variant="cards" rows={3} />
+    </div>
+  );
+}
+
+const loaded = (node: ReactNode) => <Suspense fallback={<ScreenLoading />}>{node}</Suspense>;
+
 export default function App() {
   const publicRoutes = screenRoutes.filter((r) => r.chromeless);
   const shellRoutes = screenRoutes.filter((r) => !r.chromeless);
@@ -99,7 +113,7 @@ export default function App() {
   return (
     <Routes>
       {publicRoutes.map(({ id, path, Component }) => (
-        <Route key={id} path={path} element={<Component />} />
+        <Route key={id} path={path} element={loaded(<Component />)} />
       ))}
 
       <Route
@@ -115,7 +129,7 @@ export default function App() {
             path={path}
             element={
               <RoleGuard route={{ id, path, roles }}>
-                <Component />
+                {loaded(<Component />)}
               </RoleGuard>
             }
           />
