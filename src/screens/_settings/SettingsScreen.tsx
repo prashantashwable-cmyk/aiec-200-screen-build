@@ -1,11 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check } from '@phosphor-icons/react';
+import { Check, GoogleLogo } from '@phosphor-icons/react';
 import { Button, Card, Screen, ScreenHeader, Toggle } from '@/design-system';
 import { LANGUAGE_LABELS, LANGUAGES } from '@/i18n/types';
 import { setFailureRate } from '@/data/repository';
 import { useSession } from '@/session/SessionProvider';
 import type { ThemePreference } from '@/data/types';
+import { googleEnabled } from '@/data/supabase/client';
+import { connectGoogle, signInMethods } from '@/features/auth/serverAuth';
 
 const THEMES: ThemePreference[] = [
   'light',
@@ -26,7 +28,7 @@ const THEMES: ThemePreference[] = [
  */
 export function SettingsScreen() {
   const { t } = useTranslation();
-  const { user, language, theme, setLanguage, setTheme, signOut, isDemo } = useSession();
+  const { user, language, theme, setLanguage, setTheme, signOut, isDemo, serverSession } = useSession();
   const [chaosOn, setChaosOn] = useState(false);
 
   return (
@@ -109,6 +111,8 @@ export function SettingsScreen() {
         </Card>
       )}
 
+      {serverSession && <SignInMethodsCard />}
+
       {/* Every screen in this build has a real error branch. This is how you
           actually see them without unplugging the network. */}
       <Card className="mt-3" title={t('settings.developer')}>
@@ -131,6 +135,62 @@ export function SettingsScreen() {
         </Button>
       </div>
     </Screen>
+  );
+}
+
+/**
+ * How this account can sign in (server sign-ins only). A person who uses the phone code can add Google to the same
+ * account here; Google then sends them back to this screen. One person keeps one account however they sign in.
+ */
+function SignInMethodsCard() {
+  const { t } = useTranslation();
+  const [methods, setMethods] = useState<{ phone: boolean; google: boolean } | null>(null);
+  const [state, setState] = useState<'loading' | 'ready' | 'error' | 'connecting' | 'connectFailed'>('loading');
+
+  useEffect(() => {
+    let live = true;
+    signInMethods()
+      .then((m) => { if (live) { setMethods(m); setState('ready'); } })
+      .catch(() => { if (live) setState('error'); });
+    return () => { live = false; };
+  }, []);
+
+  const connect = async () => {
+    setState('connecting');
+    try {
+      await connectGoogle(); // the browser leaves for Google
+    } catch {
+      setState('connectFailed');
+    }
+  };
+
+  return (
+    <Card className="mt-3" title={t('settings.signIn.title')}>
+      {state === 'loading' && <p className="t-sm t-muted mt-2">{t('state.loading')}</p>}
+      {state === 'error' && <p className="t-sm t-error mt-2" role="alert">{t('state.error.body')}</p>}
+      {methods && (
+        <div className="stack gap-2 mt-3" data-signin-methods={methods.google ? 'google' : 'phone'}>
+          <div className="row between">
+            <span className="t-sm t-muted">{t('settings.signIn.phone')}</span>
+            <span className="t-sm t-semibold">{t(methods.phone ? 'settings.signIn.on' : 'settings.signIn.off')}</span>
+          </div>
+          <div className="row between">
+            <span className="t-sm t-muted row gap-1"><GoogleLogo size={16} aria-hidden="true" />{t('settings.signIn.google')}</span>
+            <span className="t-sm t-semibold">{t(methods.google ? 'settings.signIn.on' : 'settings.signIn.off')}</span>
+          </div>
+          {!methods.google && (
+            googleEnabled ? (
+              <Button variant="secondary" block className="mt-2" loading={state === 'connecting'} onClick={() => void connect()}>
+                {t('settings.signIn.connect')}
+              </Button>
+            ) : (
+              <p className="t-xs t-muted mt-1">{t('settings.signIn.notConnected')}</p>
+            )
+          )}
+          {state === 'connectFailed' && <p className="t-sm t-error" role="alert">{t('settings.signIn.connectFailed')}</p>}
+        </div>
+      )}
+    </Card>
   );
 }
 

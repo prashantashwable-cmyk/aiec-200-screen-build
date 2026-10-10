@@ -9,8 +9,6 @@ import type { Language, Role, ServerProfile, ServerProfileStatus } from '@/data/
 
 export type { ServerProfile };
 
-
-
 /** What went wrong, in words the screens translate. */
 export type ServerAuthError = 'wrong_code' | 'too_many' | 'phone_linked' | 'network' | 'no_profile';
 
@@ -26,8 +24,9 @@ function kindOf(error: AuthError | Error): ServerAuthError {
   const e = error as AuthError;
   if (e.status === 429 || /rate limit|too many/i.test(e.message)) return 'too_many';
   if (e.code === 'otp_expired' || e.code === 'otp_disabled' || /expired|invalid/i.test(e.message)) return 'wrong_code';
-  // The database refused to make the sign-in: this phone already belongs to someone else's account.
-  if (/database error saving new user/i.test(e.message)) return 'phone_linked';
+  // The phone already belongs to another sign-in: refused by Supabase itself (phone_exists) or by the database's own rule.
+  if (e.code === 'phone_exists' || /already (been )?registered|phone_already_linked/i.test(e.message)) return 'phone_linked';
+  if (/database error (saving new user|updating user)/i.test(e.message)) return 'phone_linked';
   return 'network';
 }
 
@@ -84,6 +83,57 @@ export async function myServerProfile(): Promise<ServerProfile | null> {
 export async function requestServerRole(profileId: string, role: Role): Promise<void> {
   const { error } = await supabase().from('profiles').update({ requested_role: role }).eq('id', profileId);
   if (error) throw new ServerAuthFailure('network');
+}
+
+/** Where Google sends the person back to: this app's own return screen (002's `/login/google`). */
+const googleReturnUrl = () => `${window.location.origin}/login/google`;
+
+/** Sends the person to Google's own sign-in screen; they come back to `/login/google`. */
+export async function startGoogleSignIn(): Promise<void> {
+  const { error } = await supabase().auth.signInWithOAuth({ provider: 'google', options: { redirectTo: googleReturnUrl() } });
+  if (error) throw new ServerAuthFailure(kindOf(error));
+}
+
+/**
+ * Back from Google: the sign-in is finished from the one-time code in the address (supabase-js does this on load).
+ * Returns null when there is no sign-in (they cancelled on Google's screen, or the link was opened twice).
+ */
+export async function finishGoogleSignIn(): Promise<{ profile: ServerProfile | null } | null> {
+  // getSession waits for the client to finish starting, which includes exchanging the code in the address.
+  const { data } = await supabase().auth.getSession();
+  if (!data.session) return null;
+  return { profile: await myServerProfile() };
+}
+
+/**
+ * A Google sign-in confirms a mobile number once: Supabase sends a one-time code to it (through the same send-SMS hook,
+ * so it lands in the outbox like every sign-in code).
+ */
+export async function requestPhoneLink(phone10: string): Promise<void> {
+  const { error } = await supabase().auth.updateUser({ phone: e164(phone10) });
+  if (error) throw new ServerAuthFailure(kindOf(error));
+}
+
+/** Checks that code; the database then links this sign-in to the profile with that number, or makes one waiting for Admin. */
+export async function verifyPhoneLink(phone10: string, code: string): Promise<ServerProfile> {
+  const { error } = await supabase().auth.verifyOtp({ phone: e164(phone10), token: code, type: 'phone_change' });
+  if (error) throw new ServerAuthFailure(kindOf(error));
+  const me = await myServerProfile();
+  if (!me) throw new ServerAuthFailure('no_profile');
+  return me;
+}
+
+/** How this account can sign in: phone (always, once confirmed) and whether Google is connected. */
+export async function signInMethods(): Promise<{ phone: boolean; google: boolean }> {
+  const { data } = await supabase().auth.getUser();
+  const providers = (data.user?.identities ?? []).map((i) => i.provider);
+  return { phone: Boolean(data.user?.phone), google: providers.includes('google') };
+}
+
+/** Adds Google to the account already signed in (Supabase "manual linking"); Google sends them back to Settings. */
+export async function connectGoogle(): Promise<void> {
+  const { error } = await supabase().auth.linkIdentity({ provider: 'google', options: { redirectTo: `${window.location.origin}/settings` } });
+  if (error) throw new ServerAuthFailure(kindOf(error));
 }
 
 export async function signOutServer(): Promise<void> {

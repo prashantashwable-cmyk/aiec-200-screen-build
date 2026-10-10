@@ -5,13 +5,15 @@
  */
 import { afterAll, describe, expect, it } from 'vitest';
 import pg from 'pg';
+import { randomInt } from 'node:crypto';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 25 });
 afterAll(() => pool.end());
 
 type Q = pg.PoolClient;
-let phoneSeq = 0;
-const nextPhone = () => `98${String(70000000 + (phoneSeq += 1)).padStart(8, '0')}`;
+// Each run takes its own range of numbers, so a database kept between runs (a local Supabase stack) never collides.
+let phoneSeq = randomInt(0, 9_000) * 10_000;
+const nextPhone = () => `98${String(10_000_000 + (phoneSeq += 1)).padStart(8, '0')}`;
 
 /** Runs as a signed-in person (their auth id), or as an anonymous visitor (null), inside one transaction. */
 async function as<T>(authId: string | null, fn: (c: Q) => Promise<T>): Promise<T> {
@@ -289,6 +291,14 @@ describe('sign-in codes (S1)', () => {
     expect(r.rows).toEqual([{ code: '482913', purpose: 'sign_in', sent_at: null, live: true }]);
   });
 
+  it('files a code under the number it is sent to, also when a signed-in account is confirming a new mobile', async () => {
+    const phone = `91${nextPhone()}`;
+    // What Supabase Auth passes for a phone change: the user has no phone yet; sms.phone is the destination.
+    await pool.query('select public.send_sms_hook($1::jsonb)', [JSON.stringify({ user: { phone: '', new_phone: phone }, sms: { otp: '135790', phone } })]);
+    const r = await pool.query('select code from public.sms_outbox where phone = $1', [phone]);
+    expect(r.rows).toEqual([{ code: '135790' }]);
+  });
+
   it('nobody in the browser can call the hook or read the outbox, not even Admin', async () => {
     const admin = await person('admin');
     const hook = JSON.stringify({ user: { phone: '+919800000000' }, sms: { otp: '111111' } });
@@ -337,5 +347,58 @@ describe('asking for a role and Admin deciding (S1)', () => {
     const first = await as(a1.authId, (c) => c.query("update public.profiles set role = 'customer', status = 'active' where auth_user_id = $1 and status = 'pending'", [authId]));
     const second = await as(a2.authId, (c) => c.query("update public.profiles set status = 'rejected' where auth_user_id = $1 and status = 'pending'", [authId]));
     expect([first.rowCount, second.rowCount]).toEqual([1, 0]);
+  });
+});
+
+describe('Google sign-in confirms a mobile number (S1)', () => {
+  /** What Supabase Auth does for a Google sign-in: a user with an email and no phone. */
+  async function googleSignIn(): Promise<string> {
+    const r = await pool.query<{ id: string }>('insert into auth.users (id, email) values (gen_random_uuid(), $1) returning id', [`g${nextPhone()}@gmail.test`]);
+    return r.rows[0].id;
+  }
+  /** What Supabase Auth does when the phone_change code is verified. */
+  const confirmPhone = (authId: string, phone: string) => pool.query('update auth.users set phone = $1 where id = $2', [phone, authId]);
+  const profileOf = async (authId: string) => (await pool.query('select id, role, status from public.profiles where auth_user_id = $1', [authId])).rows;
+
+  it('has no profile until the phone is confirmed, so it can read nothing', async () => {
+    const authId = await googleSignIn();
+    expect(await profileOf(authId)).toEqual([]);
+    expect(await visibleProfiles(authId)).toEqual([]);
+  });
+
+  it('links the profile Admin already added once its phone is confirmed', async () => {
+    const tech = await person('technician', { signIn: false });
+    const authId = await googleSignIn();
+    await confirmPhone(authId, `91${tech.phone}`);
+    expect(await profileOf(authId)).toEqual([{ id: tech.profileId, role: 'technician', status: 'active' }]);
+    expect(await as(authId, async (c) => (await c.query('select app.my_role() as r')).rows[0].r)).toBe('technician');
+  });
+
+  it('gives an unknown phone a pending profile with no role, waiting for Admin', async () => {
+    const authId = await googleSignIn();
+    await confirmPhone(authId, `+91${nextPhone()}`);
+    expect(await profileOf(authId)).toEqual([{ id: expect.any(String), role: null, status: 'pending' }]);
+  });
+
+  it('refuses a phone that already belongs to another sign-in (one person, one account)', async () => {
+    const tech = await person('technician');
+    const authId = await googleSignIn();
+    // (Supabase itself refuses a phone held by another sign-in; this proves the database refuses too.)
+    await pool.query('update auth.users set phone = null where id = $1', [tech.authId]);
+    await expect(confirmPhone(authId, `+91${tech.phone}`)).rejects.toThrow(/phone_already_linked/);
+    expect(await profileOf(authId)).toEqual([]);
+  });
+
+  it('never moves a sign-in that already has a profile to another number', async () => {
+    const tech = await person('technician');
+    const other = await person('surveyor', { signIn: false });
+    await confirmPhone(tech.authId, `+91${other.phone}`);
+    expect(await profileOf(tech.authId)).toEqual([{ id: tech.profileId, role: 'technician', status: 'active' }]);
+    expect((await pool.query('select auth_user_id from public.profiles where id = $1', [other.profileId])).rows[0].auth_user_id).toBeNull();
+  });
+
+  it('nobody in the browser can call the linking rule directly', async () => {
+    const admin = await person('admin');
+    await expect(as(admin.authId, (c) => c.query("select app.link_profile_by_phone(gen_random_uuid(), '+919800000001')"))).rejects.toThrow(/permission denied/);
   });
 });

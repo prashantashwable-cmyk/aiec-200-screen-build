@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { CheckCircle, Clock, HourglassMedium, ShieldWarning } from '@phosphor-icons/react';
-import { Button, Card, OtpInput, formatPhone } from '@/design-system';
+import { Button, Card, Field, Input, OtpInput, formatPhone } from '@/design-system';
 import { useOtp } from './useOtp';
 import { DEMO_OTP, MAX_RESENDS, OTP_KEYS as K, REQUESTABLE_ROLES } from './otp.types';
 
@@ -19,6 +19,71 @@ export function OtpView() {
           <CheckCircle size={28} weight="fill" />
         </span>
         <h1 className="t-center">{t(K.success)}</h1>
+      </div>
+    );
+  }
+
+  // Signed in with Google, no AIEC account linked yet: the person confirms their mobile number once.
+  if (s.phase === 'phone') {
+    const fieldError = s.error === 'invalidPhone' || s.error === 'phoneTaken' ? t(K.error[s.error]) : undefined;
+    return (
+      <div className="ds-screen ds-screen--narrow stack" style={{ minHeight: '100dvh' }} data-otp-phase="phone">
+        <div className="stack gap-2 mt-5 mb-4">
+          <h1 className="t-balance">{t(K.link.title)}</h1>
+          <p className="t-sm t-muted">{t(K.link.body)}</p>
+        </div>
+        <form
+          className="stack gap-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (s.canSendPhone) void s.sendPhone();
+          }}
+        >
+          <Field label={t(K.link.field)} hint={t(K.link.hint)} error={fieldError} required>
+            {({ id, describedBy, invalid }) => (
+              <div className="row gap-2">
+                <span
+                  className="num t-medium row center shrink-0"
+                  style={{
+                    minHeight: 'var(--tap-target)',
+                    padding: '0 var(--space-3)',
+                    borderRadius: 'var(--radius-control)',
+                    border: '1px solid var(--color-border)',
+                    color: 'var(--color-text-secondary)',
+                  }}
+                >
+                  +91
+                </span>
+                <Input
+                  id={id}
+                  aria-describedby={describedBy}
+                  invalid={invalid}
+                  mono
+                  type="tel"
+                  inputMode="numeric"
+                  autoComplete="tel-national"
+                  maxLength={10}
+                  value={s.phoneInput}
+                  onChange={(e) => s.setPhoneInput(e.target.value)}
+                  autoFocus
+                />
+              </div>
+            )}
+          </Field>
+          {(s.error === 'tooMany' || s.error === 'network') && (
+            <p className="t-sm t-error" role="alert">
+              {t(K.error[s.error])}
+            </p>
+          )}
+          <Card>
+            <p className="t-xs t-muted" data-otp-note={s.smsConnected ? 'sms' : 'sms-not-connected'}>
+              {t(s.smsConnected ? K.server.smsConnected : K.server.smsNotConnected)}
+            </p>
+          </Card>
+          <Button type="submit" block loading={s.sendingPhone} disabled={!s.canSendPhone}>
+            {t(K.link.send)}
+          </Button>
+        </form>
       </div>
     );
   }
@@ -133,7 +198,7 @@ export function OtpView() {
                   {t(K.error.wrongServerCode)}
                 </p>
               )}
-              {(s.error === 'tooMany' || s.error === 'phoneLinked') && (
+              {(s.error === 'tooMany' || s.error === 'phoneLinked' || s.error === 'phoneTaken') && (
                 <p className="t-sm t-error t-center" role="alert">
                   {t(K.error[s.error])}
                 </p>

@@ -97,3 +97,94 @@ test('an unknown phone waits for Admin, Admin gives it a role, and the next sign
   await expect(page.locator('[data-server-sample]')).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+// ---- Google sign-in (owner's decision 2026-10-10: anyone may; a Google account AIEC does not know confirms a mobile once) ----
+// Google's own screen cannot be driven without a real Google account, so these start right after it: a sign-in that has an
+// email and no phone (what a Google sign-in is to Supabase), made through the local Auth service and placed where
+// supabase-js keeps its session. From there everything is the app's real return path, against the real Auth service.
+const API_URL = process.env.SUPABASE_API_URL ?? 'http://127.0.0.1:54321';
+const ANON_KEY = process.env.SUPABASE_ANON_KEY ?? '';
+const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
+
+async function emailOnlySignIn(): Promise<Record<string, unknown>> {
+  const email = `g${randomInt(1e9)}@example.com`;
+  const password = `pw-${randomInt(1e9)}-x`;
+  const made = await fetch(`${API_URL}/auth/v1/admin/users`, {
+    method: 'POST',
+    headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password, email_confirm: true }),
+  });
+  expect(made.ok).toBe(true);
+  const res = await fetch(`${API_URL}/auth/v1/token?grant_type=password`, {
+    method: 'POST',
+    headers: { apikey: ANON_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  expect(res.ok).toBe(true);
+  return (await res.json()) as Record<string, unknown>;
+}
+
+/** Arrive at the Google return screen already signed in, as supabase-js would be after Google. */
+async function returnFromGoogle(page: Page, session: Record<string, unknown>): Promise<void> {
+  await page.goto('/login', { waitUntil: 'domcontentloaded', timeout: 180_000 });
+  await page.evaluate((s) => localStorage.setItem('aiec.auth', JSON.stringify(s)), session);
+  await page.goto('/login/google');
+}
+
+async function confirmMobile(page: Page, phone10: string): Promise<void> {
+  await expect(page.locator('[data-otp-phase="phone"]')).toBeVisible();
+  await page.locator('input[type="tel"]').fill(phone10);
+  await page.getByRole('button', { name: /Send the code/i }).click();
+  await fillCode(page, await codeFor(phone10), page.getByRole('group', { name: /Verification code/i }));
+}
+
+test.describe('Google sign-in', () => {
+  test.skip(!SERVICE_KEY || !ANON_KEY, 'needs SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY of the local stack');
+
+  test('a Google sign-in confirms the mobile of a profile Admin added and opens that role\'s home', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    const phone = freshPhone();
+    await db.query("insert into public.profiles (phone, name, role, status) values ($1, 'E2E Google Tech', 'technician', 'active')", [`+91${phone}`]);
+
+    await returnFromGoogle(page, await emailOnlySignIn());
+    await confirmMobile(page, phone);
+    await expect(page).toHaveURL(/\/technician/);
+    await expect(page.locator('[data-server-sample]')).toBeVisible();
+    // The database linked this sign-in to Admin's profile, once a code was entered for the number.
+    const linked = await db.query("select count(*)::int as n from public.profiles p join auth.users u on u.id = p.auth_user_id where right(p.phone, 10) = $1 and u.email like 'g%@example.com'", [phone]);
+    expect(linked.rows[0].n).toBe(1);
+    // Settings lists how this account signs in (a reload asks the server who the person is now).
+    await page.goto('/settings');
+    await expect(page.locator('[data-signin-methods]')).toBeVisible();
+    expect(errors).toEqual([]);
+  });
+
+  test('an unknown number waits for Admin, and a number that already has its own sign-in is refused', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+
+    await returnFromGoogle(page, await emailOnlySignIn());
+    await confirmMobile(page, freshPhone());
+    await expect(page.locator('[data-otp-phase="pending"]')).toBeVisible();
+
+    // Someone who signed in with the phone code before already owns their number: Google cannot take it over.
+    const owner = freshPhone();
+    await signIn(page, owner);
+    await expect(page.locator('[data-otp-phase="pending"]')).toBeVisible();
+    await page.evaluate(() => { localStorage.removeItem('aiec.auth'); sessionStorage.clear(); });
+    await returnFromGoogle(page, await emailOnlySignIn());
+    await expect(page.locator('[data-otp-phase="phone"]')).toBeVisible();
+    await page.locator('input[type="tel"]').fill(owner);
+    await page.getByRole('button', { name: /Send the code/i }).click();
+    await expect(page.getByText(/already has its own AIEC sign-in/)).toBeVisible();
+    expect(errors).toEqual([]);
+  });
+
+  test('cancelling on Google\'s screen comes back calmly, with a way to sign in', async ({ page }) => {
+    await page.goto('/login/google?error=access_denied', { waitUntil: 'domcontentloaded', timeout: 180_000 });
+    await expect(page.locator('[data-google-return="cancelled"]')).toBeVisible();
+    await page.getByRole('button', { name: /Back to sign in/i }).click();
+    await expect(page).toHaveURL(/\/login$/);
+  });
+});

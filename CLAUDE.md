@@ -133,8 +133,13 @@ build-stage prompt. `AUDIT_REPORT.md` is the audit (what is real, what is mocked
   the methods that moved; every later slice adds its methods there). `SessionProvider.signInWithServer` makes the
   in-memory account from the server profile (`adoptServerProfile`, user id = profile id) and `serverSession` shows a
   "still sample data" banner. Codes go through the send-SMS hook to `sms_outbox` (no SMS company yet; the screen says
-  so). End-to-end: `SUPABASE_ANON_KEY=… npm run test:e2e:server` against `npx supabase start` (Docker; start it with
-  `SUPABASE_AUTH_SMS_TWILIO_AUTH_TOKEN=not-used`).
+  so). End-to-end: `SUPABASE_ANON_KEY=… SUPABASE_SERVICE_ROLE_KEY=… npm run test:e2e:server` against `npx supabase start`
+  (Docker; start it with `SUPABASE_AUTH_SMS_TWILIO_AUTH_TOKEN=not-used SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID=not-used
+  SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET=not-used`; `npx supabase db reset --local` before re-running `test:db` there).
+  Google sign-in (owner, 2026-10-10: anyone; an unknown Google account confirms a mobile once): `googleEnabled`
+  (`VITE_GOOGLE_ENABLED`), 002's second route `/login/google` (`useGoogleReturn`), 003's `phone` phase / `link` nav state
+  (`requestPhoneLink` / `verifyPhoneLink`), Settings' sign-in methods card (`connectGoogle`). **`[auth.sms]
+  enable_confirmations` must stay on**: off, adding a phone to an account takes it without a code.
 
 ## Current status (as of 2026-09-30)
 

@@ -4,8 +4,8 @@ import { useData } from '@/data/DataProvider';
 import { useSession } from '@/session/SessionProvider';
 import { HOME_PATH_BY_ROLE } from '@/navigation/registry';
 import type { Role } from '@/data/types';
-import { serverConfigured } from '@/data/supabase/client';
-import { ServerAuthFailure, sendSignInCode } from '@/features/auth/serverAuth';
+import { googleEnabled, serverConfigured } from '@/data/supabase/client';
+import { ServerAuthFailure, sendSignInCode, startGoogleSignIn } from '@/features/auth/serverAuth';
 import { isValidIndianMobile } from './login.types';
 import type { LoginErrorKind, LoginMethod, LoginStatus, LoginTab } from './login.types';
 
@@ -28,6 +28,10 @@ interface LoginState {
   canSubmitPhone: boolean;
   /** S1: true when sign-in goes through the server (a Supabase project is set). */
   server: boolean;
+  /** Google sign-in is set up (Supabase project + Google client + VITE_GOOGLE_ENABLED). */
+  googleEnabled: boolean;
+  googleStarting: boolean;
+  signInWithGoogle: () => Promise<void>;
 
   submitPhone: () => Promise<void>;
   enterDemoAs: (role: Role) => Promise<void>;
@@ -52,6 +56,7 @@ export function useLogin(): LoginState {
   const [status, setStatus] = useState<LoginStatus>('idle');
   const [error, setError] = useState<LoginErrorKind | null>(null);
   const [enteringRole, setEnteringRole] = useState<Role | null>(null);
+  const [googleStarting, setGoogleStarting] = useState(false);
 
   const setTab = useCallback((next: LoginTab) => {
     setTabState(next);
@@ -103,6 +108,22 @@ export function useLogin(): LoginState {
     }
   }, [phone, repository, navigate, remember, kind, signOut]);
 
+  // Google's own screen, then back to /login/google (GoogleReturnView), where the database says who this person is.
+  const signInWithGoogle = useCallback(async () => {
+    if (!googleEnabled) return;
+    setGoogleStarting(true);
+    setError(null);
+    try {
+      if (kind === 'demo') signOut();
+      await startGoogleSignIn();
+      // The browser is now leaving for Google; the button keeps spinning until it does.
+    } catch {
+      setGoogleStarting(false);
+      setError('google');
+      setStatus('error');
+    }
+  }, [kind, signOut]);
+
   const enterDemoAs = useCallback(
     async (role: Role) => {
       setEnteringRole(role);
@@ -134,6 +155,9 @@ export function useLogin(): LoginState {
     enteringRole,
     canSubmitPhone: isValidIndianMobile(phone),
     server: serverConfigured,
+    googleEnabled,
+    googleStarting,
+    signInWithGoogle,
     submitPhone,
     enterDemoAs,
   };

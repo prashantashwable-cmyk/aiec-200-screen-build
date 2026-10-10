@@ -151,12 +151,22 @@ function LoginTab({ state: s }: { state: ReturnType<typeof useLogin> }) {
           variant="ghost"
           block
           icon={<GoogleLogo size={18} />}
-          disabled
-          aria-describedby="login-google-note"
+          disabled={!s.googleEnabled || s.status === 'submitting'}
+          loading={s.googleStarting}
+          onClick={() => void s.signInWithGoogle()}
+          aria-describedby={s.googleEnabled ? undefined : 'login-google-note'}
+          data-google={s.googleEnabled ? 'on' : 'off'}
         >
           {t(K.google)}
         </Button>
-        <p id="login-google-note" className="t-xs t-muted t-center">{t(K.googleNotConnected)}</p>
+        {s.error === 'google' && (
+          <p className="t-sm t-error t-center" role="alert">
+            {t(K.error.google)}
+          </p>
+        )}
+        {!s.googleEnabled && (
+          <p id="login-google-note" className="t-xs t-muted t-center">{t(K.googleNotConnected)}</p>
+        )}
         <Link to="/forgot-password" className="t-sm t-center mt-2">
           {t(K.forgot)}
         </Link>

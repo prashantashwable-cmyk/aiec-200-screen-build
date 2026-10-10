@@ -12,6 +12,8 @@ interface ImportMetaEnv {
   readonly VITE_SUPABASE_ANON_KEY?: string;
   /** 'true' once an SMS provider sends the sign-in codes from the server's outbox. */
   readonly VITE_SMS_CONNECTED?: string;
+  /** 'true' once Google sign-in is set up in Google Cloud and the Supabase project (docs/SUPABASE_SETUP.md). */
+  readonly VITE_GOOGLE_ENABLED?: string;
 }
 
 interface ImportMeta {

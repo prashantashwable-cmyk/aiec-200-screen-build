@@ -161,7 +161,7 @@ site_url = "http://127.0.0.1:5173"
 # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
 # external_url = ""
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["http://localhost:5173"]
+additional_redirect_urls = ["http://localhost:5173", "http://localhost:5173/login/google", "http://localhost:5174/login/google"]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
 # JWT issuer URL. If not set, defaults to auth.external_url.
@@ -178,7 +178,8 @@ enable_signup = true
 # Allow/disallow anonymous sign-ins to your project.
 enable_anonymous_sign_ins = false
 # Allow/disallow testing manual linking of accounts
-enable_manual_linking = false
+# On: a person who signs in with the phone code can add Google to the same account (Settings -> Connect Google).
+enable_manual_linking = true
 # Passwords shorter than this value will be rejected as weak. Minimum 6, recommended 8 or more.
 minimum_password_length = 6
 # Passwords that do not meet the following requirements will be rejected as weak. Supported values
@@ -261,7 +262,9 @@ otp_expiry = 3600
 # role (see supabase/migrations/*_identity.sql) until Admin decides, so open sign-up is safe.
 enable_signup = true
 # If enabled, users need to confirm their phone number before signing in.
-enable_confirmations = false
+# MUST stay on: with it off, adding a phone to a signed-in account (a Google sign-in confirming its mobile) takes the
+# number at once without a code, so anyone could claim someone else's number and with it their AIEC account.
+enable_confirmations = true
 # Template for sending OTP to users
 # In India the wording must match a DLT-registered template with the SMS provider.
 template = "Your AIEC sign-in code is {{ .Code }}"
@@ -346,6 +349,17 @@ url = ""
 skip_nonce_check = false
 # If enabled, it will allow the user to successfully authenticate when the provider does not return an email address.
 email_optional = false
+
+# Google sign-in (owner's decision, 2026-10-10). Off on a local stack, which has no Google client of its own; on the
+# live project it is switched on in the dashboard (docs/SUPABASE_SETUP.md). To try it locally, create a Google OAuth
+# client, set the two variables below and enabled = true (and skip_nonce_check = true, as Supabase advises locally).
+[auth.external.google]
+enabled = false
+client_id = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET)"
+redirect_uri = ""
+url = ""
+skip_nonce_check = false
 
 # Allow Solana wallet holders to sign in to your project via the Sign in with Solana (SIWS, EIP-4361) standard.
 # You can configure "web3" rate limit in the [auth.rate_limit] section and set up [auth.captcha] if self-hosting.

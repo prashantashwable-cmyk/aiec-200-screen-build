@@ -82,7 +82,8 @@ Real (in-memory), 1 Static (001 splash), 0 Partial. What changed:
 | Session | Supabase keeps the session (`aiec.auth`); a reload asks the server who the person is now (a role taken away ends the session); sign-out ends it on the server. The screens' in-memory account is made from the server profile (`adoptServerProfile`), and a banner on every screen says the rest is still sample data |
 | Removed fakes | 002's email/password accepted any password and "Continue with Google" signed in as the owner: both now say "not connected yet" |
 | Proof | 27 database tests (6 new: hook writes the outbox, nobody in the browser can call it or read it, requesting a role only while pending, no self-stamped decision, the decision is stamped and audited, a second Admin finds nothing pending) on plain Postgres 16 and Supabase's Postgres 17; a browser test (`npm run test:e2e:server`) on a local Supabase stack: an unknown phone signs in with the code read from the outbox, waits, asks to be a technician; Admin signs in, approves; the person's next sign-in opens the technician home |
-| Owner steps | `docs/SUPABASE_SETUP.md` steps 7–11 |
+| Google sign-in | Owner's decision: anyone may use it. `signInWithOAuth` → `/login/google`; a Google account with no AIEC profile confirms a mobile number with a one-time code (`updateUser` + `verifyOtp` `phone_change`), then the database links it exactly like a phone sign-in (`app.link_profile_by_phone`, trigger `on_auth_user_phone_set`) or it waits for Admin; a number that already has its own sign-in is refused (one person, one account) and the person is told to sign in with the code and use Settings → Connect Google (`linkIdentity`). **Found while testing:** with Supabase's "phone confirmations" off, adding a phone to an account took the number without a code (anyone could claim another person's number); it is now on in `config.toml` and an essential setup step. Also fixed: the send-SMS hook now files a code under `sms.phone` (for a phone change the user's own phone is still empty). 7 new database tests (34 total), 3 new browser tests on the local stack |
+| Owner steps | `docs/SUPABASE_SETUP.md` steps 7–14 |
 
 Still open: everything in S2 onwards, and the items in `KNOWN_GAPS.md`.
 
@@ -260,7 +261,7 @@ people only. Everything else external is either a stand-in or a hand-off URL.
 
 | Integration | State | Recommendation (indicative INR, to verify) |
 |---|---|---|
-| Phone OTP auth | **Real with a Supabase project (S1)**: Supabase Auth makes and checks codes; no SMS company yet (codes wait in `sms_outbox`). Without a project: `123456` | Supabase Auth phone OTP via MSG91 / Twilio Verify; MSG91 OTP ≈ ₹0.20–0.25 per SMS + DLT registration |
+| Phone OTP auth / Google | **Real with a Supabase project (S1)**; Google sign-in built, switched on by the owner's Google Cloud setup: Supabase Auth makes and checks codes; no SMS company yet (codes wait in `sms_outbox`). Without a project: `123456` | Supabase Auth phone OTP via MSG91 / Twilio Verify; MSG91 OTP ≈ ₹0.20–0.25 per SMS + DLT registration |
 | Database + RLS | **Started (S0c)**: identity, audit chain, heartbeat, storage migrations in `supabase/` | Supabase Postgres (ap-south-1 Mumbai), free plan to start; Pro ≈ US$25 (≈ ₹2,100)/month + compute for a live business (backups, no pausing) — **D1 decided** |
 | Map tiles | **Real, but non-compliant**: public `tile.openstreetmap.org` (`MapCanvas.tsx:219`), not allowed for production traffic | MapTiler / Stadia / Ola Maps; ≈ ₹0 up to free tier, then ~₹1,500–4,000/month at small scale |
 | Geocoding / routing | Missing (hand-off to Google Maps URLs; 020 uses its own heuristic) | Ola Maps or Google Routes; pay-per-use |

@@ -4,7 +4,8 @@ import { useData } from '@/data/DataProvider';
 import { useSession } from '@/session/SessionProvider';
 import { HOME_PATH_BY_ROLE } from '@/navigation/registry';
 import { serverConfigured } from '@/data/supabase/client';
-import { ServerAuthFailure, requestServerRole, sendSignInCode, verifySignInCode } from '@/features/auth/serverAuth';
+import { ServerAuthFailure, requestPhoneLink, requestServerRole, sendSignInCode, verifyPhoneLink, verifySignInCode } from '@/features/auth/serverAuth';
+import { isIndianMobile } from '@/features/validation/india';
 import type { Role, ServerProfile } from '@/data/types';
 import {
   DEMO_OTP,
@@ -24,6 +25,10 @@ interface OtpNavState {
   remember?: boolean;
   /** S1: the code was asked for from the server (Supabase), which checks it. */
   server?: boolean;
+  /** Back from Google with no profile yet: the person confirms a mobile number once, and that links their account. */
+  link?: boolean;
+  /** Back from Google with a profile that is waiting for Admin or not open: show that straight away. */
+  profile?: ServerProfile;
 }
 
 interface OtpState {
@@ -50,6 +55,13 @@ interface OtpState {
   requestedRole: Role | null;
   askState: 'idle' | 'saving' | 'saved' | 'failed';
   askForRole: (role: Role) => Promise<void>;
+  /** Google sign-in confirming a mobile number (phase `phone` asks for it). */
+  link: boolean;
+  phoneInput: string;
+  setPhoneInput: (value: string) => void;
+  canSendPhone: boolean;
+  sendingPhone: boolean;
+  sendPhone: () => Promise<void>;
 }
 
 /**
@@ -67,13 +79,19 @@ export function useOtp(): OtpState {
 
   const navState = (location.state ?? {}) as OtpNavState;
   const userId = navState.userId;
-  const phone = navState.phone ?? '';
   const server = Boolean(navState.server) && serverConfigured;
-  const hasContext = server ? phone.length === 10 : Boolean(userId);
+  const link = server && Boolean(navState.link);
+  const landed = server ? navState.profile ?? null : null;
+  const [phone, setPhone] = useState(navState.phone ?? '');
+  const [phoneInput, setPhoneInputState] = useState('');
+  const [sendingPhone, setSendingPhone] = useState(false);
+  const hasContext = server ? link || Boolean(landed) || phone.length === 10 : Boolean(userId);
 
-  const [phase, setPhase] = useState<OtpPhase>('entering');
+  const [phase, setPhase] = useState<OtpPhase>(
+    landed ? (landed.status === 'pending' ? 'pending' : 'inactive') : link ? 'phone' : 'entering',
+  );
   const [error, setError] = useState<OtpError | null>(hasContext ? null : 'missingContext');
-  const [pendingProfile, setPendingProfile] = useState<ServerProfile | null>(null);
+  const [pendingProfile, setPendingProfile] = useState<ServerProfile | null>(landed?.status === 'pending' ? landed : null);
   const [askState, setAskState] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
   const [code, setCodeState] = useState('');
   const [resendIn, setResendIn] = useState(RESEND_COOLDOWN_S);
@@ -134,7 +152,7 @@ export function useOtp(): OtpState {
     setPhase('verifying');
     setError(null);
     try {
-      const profile = await verifySignInCode(phone, code);
+      const profile = link ? await verifyPhoneLink(phone, code) : await verifySignInCode(phone, code);
       if (profile.status === 'active' && profile.role) {
         await signInWithServer(profile);
         setPhase('success');
@@ -151,10 +169,41 @@ export function useOtp(): OtpState {
     } catch (err) {
       const kind = err instanceof ServerAuthFailure ? err.kind : 'network';
       setCodeState('');
-      setError(kind === 'wrong_code' ? 'wrongServerCode' : kind === 'too_many' ? 'tooMany' : kind === 'phone_linked' ? 'phoneLinked' : 'network');
+      setError(kind === 'wrong_code' ? 'wrongServerCode' : kind === 'too_many' ? 'tooMany' : kind === 'phone_linked' ? (link ? 'phoneTaken' : 'phoneLinked') : 'network');
       setPhase('entering');
     }
-  }, [phone, code, signInWithServer, navigate]);
+  }, [phone, code, link, signInWithServer, navigate]);
+
+  const setPhoneInput = useCallback((value: string) => {
+    // Accept what a person actually types (+91, spaces) and keep the 10 digits.
+    setPhoneInputState(value.replace(/\D/g, '').slice(-10));
+    setError(null);
+  }, []);
+
+  // Google sign-in: ask Supabase to send a code to the number the person gave; the code screen then checks it.
+  const sendPhone = useCallback(async () => {
+    if (!isIndianMobile(phoneInput)) {
+      setError('invalidPhone');
+      return;
+    }
+    setSendingPhone(true);
+    setError(null);
+    try {
+      await requestPhoneLink(phoneInput);
+      setPhone(phoneInput);
+      sentAtRef.current = Date.now();
+      firstResendAtRef.current = Date.now();
+      setResendsUsed(1);
+      setResendIn(RESEND_COOLDOWN_S);
+      setCodeState('');
+      setPhase('entering');
+    } catch (err) {
+      const kind = err instanceof ServerAuthFailure ? err.kind : 'network';
+      setError(kind === 'phone_linked' ? 'phoneTaken' : kind === 'too_many' ? 'tooMany' : 'network');
+    } finally {
+      setSendingPhone(false);
+    }
+  }, [phoneInput]);
 
   const verify = useCallback(async () => {
     if (server) {
@@ -239,7 +288,7 @@ export function useOtp(): OtpState {
     const now = Date.now();
     if (server) {
       // Ask the server for a fresh code; it applies its own limits too.
-      void sendSignInCode(phone).catch((err: unknown) => setError(err instanceof ServerAuthFailure && err.kind === 'too_many' ? 'tooMany' : 'network'));
+      void (link ? requestPhoneLink(phone) : sendSignInCode(phone)).catch((err: unknown) => setError(err instanceof ServerAuthFailure && err.kind === 'too_many' ? 'tooMany' : 'network'));
     }
     // The cap is per rolling window, so an old window resets the counter.
     if (now - firstResendAtRef.current > RESEND_WINDOW_MS) {
@@ -256,13 +305,20 @@ export function useOtp(): OtpState {
     setCodeState('');
     setError(null);
     setPhase('entering');
-  }, [resendsUsed, server, phone]);
+  }, [resendsUsed, server, link, phone]);
 
   const changeNumber = useCallback(() => {
+    // Signed in with Google and confirming a number: another number is asked for here, the Google sign-in stays.
+    if (link && phase !== 'pending' && phase !== 'inactive') {
+      setCodeState('');
+      setError(null);
+      setPhase('phone');
+      return;
+    }
     // Going back a step must not lose the rest of the login flow, so this is a
     // plain navigation rather than a session teardown.
     navigate('/login');
-  }, [navigate]);
+  }, [navigate, link, phase]);
 
   const askForRole = useCallback(
     async (role: Role) => {
@@ -285,6 +341,12 @@ export function useOtp(): OtpState {
     requestedRole: pendingProfile?.requestedRole ?? null,
     askState,
     askForRole,
+    link,
+    phoneInput,
+    setPhoneInput,
+    canSendPhone: isIndianMobile(phoneInput) && phase === 'phone' && !sendingPhone,
+    sendingPhone,
+    sendPhone,
     phase,
     error,
     code,

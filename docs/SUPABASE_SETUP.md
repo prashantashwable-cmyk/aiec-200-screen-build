@@ -69,6 +69,9 @@ After step 5 (the database is deployed, including `sms_outbox` and `send_sms_hoo
 7. **Phone sign-in.** Supabase dashboard → Authentication → Sign In / Providers → **Phone**: turn it on. If it
    asks for an SMS provider, choose any (for example Twilio) and type `not-used` in its fields: the next step
    makes the database receive the codes instead, so those fields are never used.
+   **Also turn on "Enable phone confirmations" there. This is essential:** with it off, a signed-in account that
+   adds a mobile number (a Google sign-in, step 12) would get the number at once without a code, so anyone could
+   claim someone else's number and, with it, their AIEC account.
 8. **Send the codes to the database.** Authentication → Hooks → **Send SMS hook** → Postgres function →
    schema `public`, function `send_sms_hook` → Enable. From now on every sign-in code lands in the private
    table `sms_outbox` (nobody using the app can read it, not even Admin).
@@ -93,6 +96,30 @@ After step 5 (the database is deployed, including `sms_outbox` and `send_sms_hoo
     `sms_outbox`, sends, and records `sent_at`. Once it does, set `VITE_SMS_CONNECTED=true` so the code
     screen says the code was sent by SMS.
 
+## Turning on "Continue with Google" (free)
+
+Anyone may sign in with Google (owner's decision). A Google account AIEC does not know is asked once for its mobile
+number and the code sent to it; after that, Google and that number are the same AIEC account (or it waits for you, as
+a new number does). Someone who already signs in with the phone code can add Google from Settings → Connect Google.
+
+12. **Google Cloud (free).** Go to console.cloud.google.com with the business Google account and create a project
+    `AIEC`. Then:
+    - APIs & Services → **OAuth consent screen**: User type **External**; app name `AIEC`; your support email; save.
+      It starts in **Testing**: only the Google accounts you list under "Test users" (up to 100) can sign in. When
+      you are ready for everyone, press **Publish app** (AIEC only asks for name and email, so Google does not
+      need a review for that).
+    - APIs & Services → **Credentials** → Create credentials → **OAuth client ID** → Web application, name `AIEC`.
+      Under "Authorised redirect URIs" add `https://<project-ref>.supabase.co/auth/v1/callback` (the project
+      reference from step 3). Create, and keep the **Client ID** and **Client secret** private.
+13. **Supabase.** Authentication → Sign In / Providers → **Google**: turn it on and paste the Client ID and Client
+    secret. Authentication → **URL Configuration**: Site URL = the app's address on Vercel (for example
+    `https://aiec.vercel.app`); under Redirect URLs add `https://<that address>/login/google` and
+    `https://<that address>/settings` (and, for Vercel preview links, `https://*-prashantashwable-5664s-projects.vercel.app/**`).
+    Authentication → Sign In / Providers → turn on **Allow manual linking** (this is what "Connect Google" in
+    Settings uses).
+14. **Vercel.** Add the environment variable `VITE_GOOGLE_ENABLED` = `true` and rebuild. Until then the Google button
+    says it is not set up yet, rather than sending people to an error.
+
 Admins who sign in for real still meet the app's own second step (code `246810`, shown on that screen), because
 Supabase's own second step is a paid feature; see KNOWN_GAPS.md.
 
@@ -100,4 +127,8 @@ Supabase's own second step is a paid feature; see KNOWN_GAPS.md.
 
 `npx supabase start` (needs Docker) runs the same thing locally; `npx supabase status` prints the local URL
 and key. `npm run test:db` with `DB_ALREADY_MIGRATED=1 DATABASE_URL=postgres://postgres:postgres@127.0.0.1:54322/postgres`
-checks the rules there, and `SUPABASE_ANON_KEY=<key> npm run test:e2e:server` signs in end to end in a browser.
+checks the rules there (run `npx supabase db reset --local` first when the stack has been used before: one test breaks
+the audit chain on purpose), and `SUPABASE_ANON_KEY=<key> SUPABASE_SERVICE_ROLE_KEY=<key> npm run test:e2e:server` signs
+in end to end in a browser, by phone code and by the return from Google (Google's own screen needs a real Google
+account, so the test starts just after it). Start the stack with
+`SUPABASE_AUTH_SMS_TWILIO_AUTH_TOKEN=not-used SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID=not-used SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET=not-used`.

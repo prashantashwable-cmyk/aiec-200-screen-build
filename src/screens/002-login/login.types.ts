@@ -13,7 +13,8 @@ export type LoginErrorKind =
   | 'roleMismatch'
   | 'network'
   | 'invalidPhone'
-  | 'tooMany';
+  | 'tooMany'
+  | 'google';
 
 /** The four roles offered on the Demo tab. Supplier onboards, it does not demo. */
 export const DEMO_ROLES: Role[] = ['admin', 'surveyor', 'technician', 'customer'];
@@ -37,6 +38,14 @@ export const LOGIN_KEYS = {
   serverNote: 'login.serverNote',
   emailNotConnected: 'login.emailNotConnected',
   googleNotConnected: 'login.googleNotConnected',
+  googleReturn: {
+    working: 'login.googleReturn.working',
+    cancelledTitle: 'login.googleReturn.cancelledTitle',
+    cancelledBody: 'login.googleReturn.cancelledBody',
+    failedTitle: 'login.googleReturn.failedTitle',
+    failedBody: 'login.googleReturn.failedBody',
+    back: 'login.googleReturn.back',
+  },
   demo: {
     heading: 'login.demo.heading',
     body: 'login.demo.body',
@@ -55,6 +64,7 @@ export const LOGIN_KEYS = {
     network: 'login.error.network',
     invalidPhone: 'login.error.invalidPhone',
     tooMany: 'login.error.tooMany',
+    google: 'login.error.google',
   },
 } as const;
 

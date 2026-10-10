@@ -13,9 +13,21 @@ export type OtpPhase =
   /** S1: signed in, but Admin has not given this phone a role yet. */
   | 'pending'
   /** S1: the account is suspended or was turned away. */
-  | 'inactive';
+  | 'inactive'
+  /** Signed in with Google, no profile yet: the person types the mobile number to confirm. */
+  | 'phone';
 
-export type OtpError = 'wrongCode' | 'malformed' | 'network' | 'missingContext' | 'tooMany' | 'phoneLinked' | 'wrongServerCode';
+export type OtpError =
+  | 'wrongCode'
+  | 'malformed'
+  | 'network'
+  | 'missingContext'
+  | 'tooMany'
+  | 'phoneLinked'
+  | 'wrongServerCode'
+  /** Google sign-in: that number already has its own AIEC sign-in (one person, one account). */
+  | 'phoneTaken'
+  | 'invalidPhone';
 
 /** Roles a person waiting for Admin may ask for (Admin itself is never asked for). */
 export const REQUESTABLE_ROLES = ['surveyor', 'technician', 'customer', 'supplier'] as const;
@@ -58,6 +70,13 @@ export const OTP_KEYS = {
     askFailed: 'otp.pending.askFailed',
   },
   inactive: { title: 'otp.inactive.title', body: 'otp.inactive.body' },
+  link: {
+    title: 'otp.link.title',
+    body: 'otp.link.body',
+    field: 'otp.link.field',
+    hint: 'otp.link.hint',
+    send: 'otp.link.send',
+  },
   expired: { title: 'otp.expired.title', body: 'otp.expired.body', action: 'otp.expired.action' },
   cooldown: { title: 'otp.cooldown.title', body: 'otp.cooldown.body' },
   resendBlocked: { title: 'otp.resendBlocked.title', body: 'otp.resendBlocked.body' },
@@ -69,5 +88,7 @@ export const OTP_KEYS = {
     tooMany: 'otp.error.tooMany',
     phoneLinked: 'otp.error.phoneLinked',
     wrongServerCode: 'otp.error.wrongServerCode',
+    phoneTaken: 'otp.error.phoneTaken',
+    invalidPhone: 'otp.error.invalidPhone',
   },
 } as const;
