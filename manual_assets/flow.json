@@ -1,0 +1,14 @@
+[
+ {
+  "file": "flow/login-phone-entered.png",
+  "note": "Login with a mobile number entered"
+ },
+ {
+  "file": "flow/otp-screen.png",
+  "note": "One-time code screen"
+ },
+ {
+  "file": "flow/second-step-gate.png",
+  "note": "Second sign-in step (security gate)"
+ }
+]

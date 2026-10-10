@@ -1,0 +1,158 @@
+/* AIEC user manual: print stylesheet. Colours are the app's own light-theme tokens (src/styles/tokens.css):
+   gold accent, emerald ink, warm paper. Fonts are the app's Devanagari pairing (Martel for headings, Hind for text). */
+@import url('../../manual_assets/fonts/fonts.css');
+
+:root {
+  --gold: #B8873D;
+  --gold-soft: #F3E8D6;
+  --emerald: #0E4B3D;
+  --emerald-soft: #E3EFEA;
+  --ink: #23201B;
+  --muted: #5E5850;
+  --paper: #FFFFFF;
+  --warm: #F8F6F1;
+  --line: #E6DFD3;
+  --warn: #9A5B00;
+  --warn-soft: #FFF3DD;
+  --danger: #A23B2A;
+  --danger-soft: #FBEAE6;
+}
+
+@page { size: A4; margin: 18mm 16mm 20mm 16mm; }
+
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body {
+  font-family: 'Hind', 'Noto Sans Devanagari', 'FreeSans', sans-serif;
+  font-size: 12.5pt;
+  line-height: 1.75;
+  color: var(--ink);
+  background: var(--paper);
+  margin: 0;
+}
+
+h1, h2, h3, h4 { font-family: 'Martel', 'Hind', serif; color: var(--emerald); line-height: 1.35; margin: 0; }
+h1.chapter {
+  font-size: 22pt;
+  break-before: page;
+  padding: 0 0 6mm;
+  margin-bottom: 6mm;
+  border-bottom: 2.5pt solid var(--gold);
+}
+h1.chapter .num { color: var(--gold); margin-right: 3mm; }
+h2 { font-size: 14.5pt; margin: 8mm 0 3mm; break-after: avoid; }
+h2 .num, h3 .num { color: var(--gold); margin-right: 2mm; }
+h3 { font-size: 12pt; margin: 6mm 0 2mm; break-after: avoid; }
+h4 { font-size: 10.5pt; margin: 4mm 0 1.5mm; color: var(--ink); font-family: 'Hind', sans-serif; font-weight: 700; break-after: avoid; }
+
+p { margin: 0 0 2.6mm; orphans: 3; widows: 3; }
+a { color: var(--emerald); text-decoration: none; }
+a.ref { border-bottom: 0.5pt dotted var(--emerald); }
+code, .path { font-family: 'DejaVu Sans Mono', monospace; font-size: 8.6pt; background: var(--warm); padding: 0 1.2mm; border-radius: 1mm; color: var(--emerald); }
+.ui { font-weight: 600; color: var(--emerald); background: var(--emerald-soft); padding: 0 1.4mm; border-radius: 1mm; white-space: nowrap; }
+.lead-in { font-size: 11.5pt; color: var(--muted); margin-bottom: 5mm; }
+
+ul, ol { margin: 0 0 3mm; padding-left: 6.5mm; }
+li { margin-bottom: 1.2mm; }
+
+/* Numbered procedure */
+ol.steps { counter-reset: step; list-style: none; padding-left: 0; }
+ol.steps > li { counter-increment: step; position: relative; padding-left: 11mm; margin-bottom: 3.5mm; break-inside: avoid; }
+ol.steps > li::before {
+  content: counter(step);
+  position: absolute; left: 0; top: 0.4mm;
+  width: 8mm; height: 8mm; border-radius: 50%;
+  background: var(--gold); color: #fff; font-weight: 700; font-size: 11pt;
+  display: flex; align-items: center; justify-content: center; line-height: 1;
+}
+
+/* The nine-part feature layout */
+.feature { margin-top: 2mm; }
+.facts { display: grid; grid-template-columns: 30mm 1fr; gap: 1.6mm 4mm; margin: 2mm 0 4mm; padding: 3.5mm 4mm; background: var(--warm); border-radius: 2.5mm; break-inside: avoid; }
+.facts dt { font-weight: 700; color: var(--emerald); }
+.facts dd { margin: 0; }
+.label { display: inline-block; font-weight: 700; color: var(--gold); text-transform: none; margin: 3mm 0 1mm; font-size: 10pt; break-after: avoid; }
+
+/* Callouts */
+.callout { border-radius: 2.5mm; padding: 3mm 4mm 3mm 4mm; margin: 3mm 0 4mm; break-inside: avoid; border-left: 2.5pt solid; }
+.callout b.kind { display: block; margin-bottom: 0.8mm; }
+.callout.tip { background: var(--emerald-soft); border-color: var(--emerald); }
+.callout.tip b.kind { color: var(--emerald); }
+.callout.note { background: var(--gold-soft); border-color: var(--gold); }
+.callout.note b.kind { color: #7A5520; }
+.callout.warn { background: var(--warn-soft); border-color: var(--warn); }
+.callout.warn b.kind { color: var(--warn); }
+.callout.danger { background: var(--danger-soft); border-color: var(--danger); }
+.callout.danger b.kind { color: var(--danger); }
+.callout p:last-child { margin-bottom: 0; }
+
+/* Figures */
+figure { margin: 3mm 0 5mm; break-inside: avoid; text-align: center; }
+figure img { max-width: 100%; border: 0.6pt solid var(--line); border-radius: 2mm; display: block; margin: 0 auto; }
+figure.w-full img { width: 100%; }
+figure.w-wide img { width: 88%; }
+figure.w-mid img { width: 70%; }
+figure.w-phone img { width: 46%; }
+figure.w-small img { width: 38%; }
+figcaption { font-size: 9pt; color: var(--muted); margin-top: 1.8mm; }
+figcaption b { color: var(--emerald); }
+.fig-row { display: flex; gap: 5mm; justify-content: center; align-items: flex-start; break-inside: avoid; }
+.fig-row figure { flex: 1; margin-top: 0; }
+.fig-row figure img { width: 100%; }
+.unverified { display: inline-block; background: var(--warn-soft); color: var(--warn); font-size: 8pt; font-weight: 700; padding: 0 1.6mm; border-radius: 1mm; }
+
+/* Tables */
+table { width: 100%; border-collapse: collapse; margin: 2mm 0 5mm; font-size: 9pt; break-inside: auto; }
+thead { display: table-header-group; }
+tr { break-inside: avoid; }
+th { background: var(--emerald); color: #fff; text-align: left; padding: 1.8mm 2.4mm; font-weight: 600; }
+td { border-bottom: 0.5pt solid var(--line); padding: 1.6mm 2.4mm; vertical-align: top; }
+tbody tr:nth-child(even) td { background: #FBFAF7; }
+table.compact { font-size: 8.2pt; }
+table.compact td, table.compact th { padding: 1.1mm 1.8mm; }
+td.num, th.num { white-space: nowrap; }
+
+/* Flow diagram (verified workflows) */
+.flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 0; margin: 3mm 0 5mm; break-inside: avoid; }
+.flow .node { background: var(--warm); border: 0.8pt solid var(--gold); border-radius: 2mm; padding: 2mm 2.6mm; font-size: 8.8pt; width: 33mm; text-align: center; margin: 1.5mm 0; }
+.flow .node b { display: block; color: var(--emerald); font-size: 9pt; }
+.flow .node small { color: var(--muted); }
+.flow .arrow { display: flex; align-items: center; color: var(--gold); font-size: 13pt; padding: 0 1mm; }
+
+/* Cover */
+.cover { height: 257mm; display: flex; flex-direction: column; justify-content: space-between; background: var(--warm); margin: -18mm -16mm 0; padding: 26mm 22mm 20mm; box-sizing: border-box; height: 297mm; }
+.cover .shaft { display: flex; flex-direction: column; gap: 2.2mm; width: 18mm; }
+.cover .shaft span { height: 2.2mm; border-radius: 1mm; background: var(--gold); }
+.cover .shaft span.dim { background: var(--gold-soft); }
+.cover .brand { font-family: 'Martel', serif; font-size: 30pt; color: var(--emerald); font-weight: 800; margin-top: 6mm; }
+.cover .company { font-size: 12pt; color: var(--muted); letter-spacing: 0.4mm; }
+.cover .title { font-family: 'Martel', serif; font-size: 40pt; color: var(--ink); font-weight: 800; line-height: 1.25; }
+.cover .subtitle { font-size: 14pt; color: var(--muted); margin-top: 4mm; }
+.cover .rule { height: 2pt; width: 40mm; background: var(--gold); margin: 8mm 0; }
+.cover .meta { font-size: 10.5pt; color: var(--ink); }
+.cover .meta div { margin-bottom: 1.2mm; }
+.cover .shot { width: 52mm; border-radius: 4mm; border: 0.8pt solid var(--line); box-shadow: 0 2mm 6mm rgba(0,0,0,0.08); }
+.cover .middle { display: flex; justify-content: space-between; align-items: flex-end; gap: 10mm; }
+
+/* Table of contents */
+.toc { margin-top: 2mm; }
+.toc a { display: flex; align-items: baseline; color: var(--ink); padding: 0.7mm 0; }
+.toc a .t { flex: 0 1 auto; }
+.toc a .dots { flex: 1; border-bottom: 0.7pt dotted #BFB6A6; margin: 0 2mm; transform: translateY(-1mm); }
+.toc a .p { flex: 0 0 auto; font-variant-numeric: tabular-nums; color: var(--emerald); font-weight: 600; min-width: 8mm; text-align: right; }
+.toc .l1 { font-weight: 700; font-size: 11pt; margin-top: 2.6mm; color: var(--emerald); }
+.toc .l1 .t { color: var(--emerald); }
+.toc .l2 { padding-left: 7mm; font-size: 9.8pt; }
+
+/* Gallery appendix */
+.gallery { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm 6mm; }
+.gallery figure { margin: 0; }
+.gallery figure img { width: 100%; }
+.gallery figcaption { font-size: 8pt; text-align: left; }
+
+.page-break { break-before: page; }
+.keep { break-inside: avoid; }
+.muted { color: var(--muted); }
+.small { font-size: 9pt; }
+
+.big-q { font-size: 14pt; font-weight: 700; color: var(--emerald); margin: 5mm 0 2mm; }
+.role-card { border: 1pt solid var(--gold); border-radius: 3mm; padding: 3mm 4mm; margin: 2mm 0; background: var(--warm); }
