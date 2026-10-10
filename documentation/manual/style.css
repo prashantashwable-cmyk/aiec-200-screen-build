@@ -23,8 +23,8 @@
 html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 body {
   font-family: 'Hind', 'Noto Sans Devanagari', 'FreeSans', sans-serif;
-  font-size: 10.5pt;
-  line-height: 1.6;
+  font-size: 12.5pt;
+  line-height: 1.75;
   color: var(--ink);
   background: var(--paper);
   margin: 0;
@@ -56,12 +56,12 @@ li { margin-bottom: 1.2mm; }
 
 /* Numbered procedure */
 ol.steps { counter-reset: step; list-style: none; padding-left: 0; }
-ol.steps > li { counter-increment: step; position: relative; padding-left: 9mm; margin-bottom: 2mm; break-inside: avoid; }
+ol.steps > li { counter-increment: step; position: relative; padding-left: 11mm; margin-bottom: 3.5mm; break-inside: avoid; }
 ol.steps > li::before {
   content: counter(step);
   position: absolute; left: 0; top: 0.4mm;
-  width: 6mm; height: 6mm; border-radius: 50%;
-  background: var(--gold); color: #fff; font-weight: 700; font-size: 8.5pt;
+  width: 8mm; height: 8mm; border-radius: 50%;
+  background: var(--gold); color: #fff; font-weight: 700; font-size: 11pt;
   display: flex; align-items: center; justify-content: center; line-height: 1;
 }
 
@@ -153,3 +153,6 @@ td.num, th.num { white-space: nowrap; }
 .keep { break-inside: avoid; }
 .muted { color: var(--muted); }
 .small { font-size: 9pt; }
+
+.big-q { font-size: 14pt; font-weight: 700; color: var(--emerald); margin: 5mm 0 2mm; }
+.role-card { border: 1pt solid var(--gold); border-radius: 3mm; padding: 3mm 4mm; margin: 2mm 0; background: var(--warm); }

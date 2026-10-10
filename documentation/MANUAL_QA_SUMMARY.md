@@ -1,6 +1,6 @@
 # User manual: QA summary
 
-Deliverable: `output/Application_User_Manual.pdf` (Marathi, 153 pages, A4, ~14 MB).
+Deliverable: `output/Application_User_Manual.pdf` (simple Marathi for first-time users, 112 pages, A4, ~9 MB).
 
 ## What was done and checked
 - The app was built (`vite build`) and run (`vite preview`) in its demo mode (in-memory sample data). Every route (205 routes, 200 screens) was opened by Playwright, signed in as each role (Admin, surveyor, technician, customer, supplier) or as a visitor for public pages. That gave 298 genuine screenshots in Marathi, Light theme, with location allowed (Pune). Annotated layout shots come from the same running app.

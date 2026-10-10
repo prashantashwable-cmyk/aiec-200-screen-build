@@ -260,9 +260,9 @@ class Doc:
         if viewport == 'mobile':
             im = Image.open(path)
             crop = (0, 0, im.width, min(im.height, max_h * 2))
-            return self.figure_file(key, path, caption, width or 'w-phone', crop, px=640, inline=inline, src_note=s['url'])
+            return self.figure_file(key, path, caption, width or 'w-phone', crop, px=640, inline=inline)
         crop = desktop_crop(path, max_h, sidebar)
-        return self.figure_file(key, path, caption, width or 'w-wide', crop, px=1100, inline=inline, src_note=s['url'])
+        return self.figure_file(key, path, caption, width or 'w-wide', crop, px=1100, inline=inline)
 
     def fig_row(self, figs: list[str]):
         self.raw('<div class="fig-row">' + ''.join(figs) + '</div>')
@@ -338,7 +338,7 @@ def heading_pages(pdf: Path, doc: Doc) -> dict[str, int]:
 
 def build():
     sys.path.insert(0, str(HERE))
-    import content_mr  # noqa: E402
+    import simple_mr as content_mr  # noqa: E402
 
     BUILD.mkdir(parents=True, exist_ok=True)
     OUTPUT.mkdir(parents=True, exist_ok=True)
