@@ -3,8 +3,12 @@ import type { ScreenTranslations } from '@/i18n/types';
 const translations: ScreenTranslations = {
   en: {
     onbCustomer: {
+      alert: { noDataConsent: 'A customer declined sharing their project details: talk to them before work starts' },
+      existingPhone: 'This mobile number belongs to an AIEC partner account. Use a different number, or call us.',
+      saveFailed: 'We could not save your details. Nothing is lost: try again in a moment.',
+      passwordLater: 'Signing in is by a code sent to your phone. There is no password to set.',
       title: 'Confirm your details',
-      subtitle: 'Your account is already set up. Just check we got everything right.',
+      subtitle: 'Check we got everything right, and confirm to open your account.',
       fromLead: 'From the site survey at {{site}} · {{code}}',
       loading: 'Loading your project',
       section: { details: 'Your details', access: 'How you sign in', consent: 'Staying in touch' },
@@ -60,8 +64,12 @@ const translations: ScreenTranslations = {
 
   hi: {
     onbCustomer: {
+      alert: { noDataConsent: 'एक ग्राहक ने अपने प्रोजेक्ट का विवरण साझा करने से मना किया: काम शुरू होने से पहले उनसे बात करें' },
+      existingPhone: 'यह मोबाइल नंबर एक AIEC पार्टनर खाते का है। कोई दूसरा नंबर उपयोग करें, या हमें कॉल करें।',
+      saveFailed: 'हम आपका विवरण सहेज नहीं सके। कुछ भी खोया नहीं है: थोड़ी देर में फिर कोशिश करें।',
+      passwordLater: 'साइन इन आपके फ़ोन पर भेजे गए कोड से होता है। कोई पासवर्ड बनाना नहीं है।',
       title: 'अपनी जानकारी पक्की कीजिए',
-      subtitle: 'आपका खाता पहले से बन चुका है। बस देख लीजिए कि सब सही है।',
+      subtitle: 'देख लीजिए कि सब सही है, और अपना खाता खोलने के लिए पुष्टि करें।',
       fromLead: '{{site}} पर हुए साइट सर्वे से · {{code}}',
       loading: 'आपका प्रोजेक्ट लोड हो रहा है',
       section: { details: 'आपकी जानकारी', access: 'आप कैसे साइन इन करेंगे', consent: 'संपर्क में रहना' },
@@ -117,8 +125,12 @@ const translations: ScreenTranslations = {
 
   mr: {
     onbCustomer: {
+      alert: { noDataConsent: 'एका ग्राहकाने प्रकल्पाची माहिती शेअर करण्यास नकार दिला: काम सुरू होण्यापूर्वी त्यांच्याशी बोला' },
+      existingPhone: 'हा मोबाइल नंबर AIEC भागीदार खात्याचा आहे. दुसरा नंबर वापरा, किंवा आम्हाला कॉल करा.',
+      saveFailed: 'आम्ही तुमची माहिती जतन करू शकलो नाही. काहीही हरवलेले नाही: थोड्या वेळाने पुन्हा प्रयत्न करा.',
+      passwordLater: 'साइन इन तुमच्या फोनवर पाठवलेल्या कोडने होते. कोणताही पासवर्ड सेट करायचा नाही.',
       title: 'तुमची माहिती निश्चित करा',
-      subtitle: 'तुमचे खाते आधीच तयार आहे. फक्त सर्व बरोबर आहे का ते पहा.',
+      subtitle: 'सर्व बरोबर आहे का ते पहा, आणि तुमचे खाते उघडण्यासाठी पुष्टी करा.',
       fromLead: '{{site}} इथे झालेल्या साइट सर्वेक्षणातून · {{code}}',
       loading: 'तुमचा प्रकल्प लोड होत आहे',
       section: { details: 'तुमची माहिती', access: 'तुम्ही कसे साइन इन कराल', consent: 'संपर्कात राहणे' },

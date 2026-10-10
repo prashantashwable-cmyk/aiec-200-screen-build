@@ -1,6 +1,7 @@
 /** Screen 007 — Supplier / manufacturer KYC wizard. Types and keys only. */
 
 import type { DocumentSlotValue } from '@/features/onboarding/DocumentSlot';
+import { DRAFT_KEYS } from '@/features/onboarding/handoff';
 
 /**
  * GSTIN verification has more than two outcomes, and the difference matters:
@@ -25,6 +26,8 @@ export interface SupplierDraft {
   pincode: string;
   signatoryName: string;
   signatoryDesignation: string;
+  /** The signatory's own mobile — what they sign in with once KYC is approved. */
+  signatoryPhone: string;
 
   catalogFile: DocumentSlotValue | null;
   catalogRowCount: string;
@@ -48,6 +51,7 @@ export const EMPTY_SUPPLIER_DRAFT: SupplierDraft = {
   pincode: '',
   signatoryName: '',
   signatoryDesignation: '',
+  signatoryPhone: '',
   catalogFile: null,
   catalogRowCount: '',
   accountHolder: '',
@@ -59,7 +63,7 @@ export const EMPTY_SUPPLIER_DRAFT: SupplierDraft = {
   paymentTermsAccepted: false,
 };
 
-export const SUPPLIER_DRAFT_KEY = 'aiec.onboarding.supplier';
+export const SUPPLIER_DRAFT_KEY = DRAFT_KEYS.supplier;
 
 export const SUPPLIER_KEYS = {
   title: 'onbSupplier.title',
@@ -79,6 +83,8 @@ export const SUPPLIER_KEYS = {
     pincode: 'onbSupplier.field.pincode',
     signatoryName: 'onbSupplier.field.signatoryName',
     signatoryDesignation: 'onbSupplier.field.signatoryDesignation',
+    signatoryPhone: 'onbSupplier.field.signatoryPhone',
+    signatoryPhoneHint: 'onbSupplier.field.signatoryPhoneHint',
     catalogRowCount: 'onbSupplier.field.catalogRowCount',
     catalogRowCountHint: 'onbSupplier.field.catalogRowCountHint',
     accountHolder: 'onbSupplier.field.accountHolder',
@@ -111,6 +117,7 @@ export const SUPPLIER_KEYS = {
     verified: 'onbSupplier.bank.verified',
     failed: 'onbSupplier.bank.failed',
     blocked: 'onbSupplier.bank.blocked',
+    notConnected: 'onbSupplier.bank.notConnected',
   },
   terms: {
     heading: 'onbSupplier.terms.heading',
@@ -127,6 +134,12 @@ export const SUPPLIER_KEYS = {
     pincode: 'onbSupplier.invalid.pincode',
     ifsc: 'onbSupplier.invalid.ifsc',
     accountNumber: 'onbSupplier.invalid.accountNumber',
+    signatoryPhone: 'onbSupplier.invalid.signatoryPhone',
+  },
+  submitError: {
+    duplicate_gstin: 'onbSupplier.submitError.duplicate_gstin',
+    phone_taken: 'onbSupplier.submitError.phone_taken',
+    generic: 'onbSupplier.submitError.generic',
   },
   poNote: 'onbSupplier.poNote',
 } as const;

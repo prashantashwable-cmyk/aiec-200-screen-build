@@ -4,10 +4,9 @@ import { useData } from '@/data/DataProvider';
 import { useSession } from '@/session/SessionProvider';
 import { HOME_PATH_BY_ROLE } from '@/navigation/registry';
 import type { Role } from '@/data/types';
-import {
-  isValidEmail,
-  isValidIndianMobile,
-} from './login.types';
+import { googleEnabled, serverConfigured } from '@/data/supabase/client';
+import { ServerAuthFailure, sendSignInCode, startGoogleSignIn } from '@/features/auth/serverAuth';
+import { isValidIndianMobile } from './login.types';
 import type { LoginErrorKind, LoginMethod, LoginStatus, LoginTab } from './login.types';
 
 interface LoginState {
@@ -18,10 +17,6 @@ interface LoginState {
 
   phone: string;
   setPhone: (value: string) => void;
-  email: string;
-  setEmail: (value: string) => void;
-  password: string;
-  setPassword: (value: string) => void;
   remember: boolean;
   setRemember: (value: boolean) => void;
 
@@ -31,11 +26,14 @@ interface LoginState {
   enteringRole: Role | null;
 
   canSubmitPhone: boolean;
-  canSubmitEmail: boolean;
+  /** S1: true when sign-in goes through the server (a Supabase project is set). */
+  server: boolean;
+  /** Google sign-in is set up (Supabase project + Google client + VITE_GOOGLE_ENABLED). */
+  googleEnabled: boolean;
+  googleStarting: boolean;
+  signInWithGoogle: () => Promise<void>;
 
   submitPhone: () => Promise<void>;
-  submitEmail: () => Promise<void>;
-  signInWithGoogle: () => Promise<void>;
   enterDemoAs: (role: Role) => Promise<void>;
 }
 
@@ -54,12 +52,11 @@ export function useLogin(): LoginState {
   const [tab, setTabState] = useState<LoginTab>('login');
   const [method, setMethod] = useState<LoginMethod>('phone');
   const [phone, setPhoneState] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(true);
   const [status, setStatus] = useState<LoginStatus>('idle');
   const [error, setError] = useState<LoginErrorKind | null>(null);
   const [enteringRole, setEnteringRole] = useState<Role | null>(null);
+  const [googleStarting, setGoogleStarting] = useState(false);
 
   const setTab = useCallback((next: LoginTab) => {
     setTabState(next);
@@ -85,6 +82,15 @@ export function useLogin(): LoginState {
       // Leaving a demo session for a real login: drop the demo session first.
       if (kind === 'demo') signOut();
 
+      if (serverConfigured) {
+        // S1: the server sends the code and later decides who this number is. A number AIEC does not know yet still signs in
+        // and waits for Admin with no role, so nothing here asks the in-memory list.
+        await sendSignInCode(phone);
+        navigate('/login/otp', { state: { phone, remember, server: true } });
+        setStatus('idle');
+        return;
+      }
+
       const users = await repository.listUsers();
       const match = users.find((u) => u.phone === phone);
       if (!match) {
@@ -96,59 +102,27 @@ export function useLogin(): LoginState {
       // is verified locally on screen 003; see BUILD_README.md.
       navigate('/login/otp', { state: { userId: match.id, phone, remember } });
       setStatus('idle');
-    } catch {
-      setError('network');
+    } catch (err) {
+      setError(err instanceof ServerAuthFailure && err.kind === 'too_many' ? 'tooMany' : 'network');
       setStatus('error');
     }
   }, [phone, repository, navigate, remember, kind, signOut]);
 
-  const submitEmail = useCallback(async () => {
-    if (!isValidEmail(email)) {
-      setError('invalidEmail');
-      setStatus('error');
-      return;
-    }
-    setStatus('submitting');
+  // Google's own screen, then back to /login/google (GoogleReturnView), where the database says who this person is.
+  const signInWithGoogle = useCallback(async () => {
+    if (!googleEnabled) return;
+    setGoogleStarting(true);
     setError(null);
     try {
       if (kind === 'demo') signOut();
-      const users = await repository.listUsers();
-      const match = users.find((u) => u.email?.toLowerCase() === email.trim().toLowerCase());
-      // Password fallback is simulated — no credential store exists in this
-      // build, so any non-empty password is accepted for a known email.
-      if (!match || password.length < 4) {
-        setError('badCredentials');
-        setStatus('error');
-        return;
-      }
-      navigate('/login/otp', { state: { userId: match.id, phone: match.phone, remember } });
-      setStatus('idle');
+      await startGoogleSignIn();
+      // The browser is now leaving for Google; the button keeps spinning until it does.
     } catch {
-      setError('network');
+      setGoogleStarting(false);
+      setError('google');
       setStatus('error');
     }
-  }, [email, password, repository, navigate, remember, kind, signOut]);
-
-  const signInWithGoogle = useCallback(async () => {
-    // Simulated: Google Sign-In needs a real Firebase Auth project. The button
-    // resolves to the seeded owner account so the flow stays clickable.
-    setStatus('submitting');
-    try {
-      if (kind === 'demo') signOut();
-      const users = await repository.listUsers({ role: 'admin' });
-      const owner = users[0];
-      if (!owner) {
-        setError('badCredentials');
-        setStatus('error');
-        return;
-      }
-      navigate('/login/otp', { state: { userId: owner.id, phone: owner.phone, remember } });
-      setStatus('idle');
-    } catch {
-      setError('network');
-      setStatus('error');
-    }
-  }, [repository, navigate, remember, kind, signOut]);
+  }, [kind, signOut]);
 
   const enterDemoAs = useCallback(
     async (role: Role) => {
@@ -174,20 +148,17 @@ export function useLogin(): LoginState {
     setMethod,
     phone,
     setPhone,
-    email,
-    setEmail,
-    password,
-    setPassword,
     remember,
     setRemember,
     status,
     error,
     enteringRole,
     canSubmitPhone: isValidIndianMobile(phone),
-    canSubmitEmail: isValidEmail(email) && password.length >= 4,
-    submitPhone,
-    submitEmail,
+    server: serverConfigured,
+    googleEnabled,
+    googleStarting,
     signInWithGoogle,
+    submitPhone,
     enterDemoAs,
   };
 }

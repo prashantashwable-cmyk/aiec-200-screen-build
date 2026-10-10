@@ -1,7 +1,9 @@
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { ChatCircleText } from '@phosphor-icons/react';
 import {
   Badge,
+  Button,
   Card,
   EmptyState,
   ErrorState,
@@ -34,6 +36,7 @@ const STATUS_TONE = {
  */
 export function CommissionTrackerView() {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
   const toast = useToast();
   const s = useCommissionTracker();
 
@@ -71,7 +74,7 @@ export function CommissionTrackerView() {
 
   return (
     <Screen>
-      <ScreenHeader title={t(K.title)} subtitle={t(K.subtitle)} />
+      <ScreenHeader title={t(K.title)} subtitle={t(K.subtitle)} action={<span className="row gap-2"><Button size="sm" variant="secondary" data-open-rewards onClick={() => navigate('/rewards-leaderboard')}>{t('rewardsLeaderboard.link.open')}</Button><Button size="sm" variant="secondary" data-open-badges onClick={() => navigate('/badges')}>{t('badges.link.open')}</Button><Button size="sm" variant="secondary" data-open-tds onClick={() => navigate('/tds-statement')}>{t('tdsStatement.link.open')}</Button><Button size="sm" variant="secondary" data-open-history onClick={() => navigate('/payout-history')}>{t('payoutHistory.link.open')}</Button></span>} />
 
       <SegBar
         label={t(K.period.thisMonth)}
@@ -138,25 +141,26 @@ export function CommissionTrackerView() {
                   </span>
                 }
               />
-              <p className="t-xs t-muted mt-1">{t(K.statusExplain[entry.status])}</p>
-              {entry.status !== 'paid' && entry.status !== 'forfeited' && (
-                <button
-                  type="button"
-                  className="tappable t-xs t-accent row gap-1 mt-1"
-                  style={{ minHeight: 32 }}
-                  onClick={() => {
-                    const result = s.raiseQuery(entry);
-                    if (result === 'blocked') {
-                      toast.push(t('state.demoBlocked.body'), 'warning');
-                    } else {
-                      toast.push(t(K.queryNote), 'success');
-                    }
-                  }}
-                >
-                  <ChatCircleText size={13} />
-                  {t(K.raiseQuery)}
-                </button>
+              {entry.status === 'approved' && entry.payoutApproval?.status === 'held' ? (
+                <div className="stack gap-1 mt-1" data-payout-hold>
+                  <Badge tone="warning">{t('payoutApproval.partner.onHold', { date: formatDate(entry.payoutApproval.at, i18n.language) })}</Badge>
+                  <p className="t-xs t-muted">{t(`payoutApproval.partner.hold.${entry.payoutApproval.holdKind ?? 'other'}`)}</p>
+                </div>
+              ) : entry.status === 'approved' && entry.disbursement && entry.disbursement.status !== 'cancelled' && entry.disbursement.status !== 'completed' ? (
+                <p className="t-xs t-muted mt-1" data-payout-disbursement={entry.disbursement.status}>{entry.disbursement.status === 'failed' ? t(['account_closed', 'invalid_account', 'bank_rejected', 'upi_invalid'].includes(entry.disbursement.failure ?? '') ? 'payoutDisbursement.partner.needsDetails' : 'payoutDisbursement.partner.retrying') : t('payoutDisbursement.partner.sending')}</p>
+              ) : (
+                <p className="t-xs t-muted mt-1">{entry.status === 'approved' && entry.payoutApproval?.status === 'approved' && entry.payoutApproval.amount === entry.amount ? t('payoutApproval.partner.cleared') : t(K.statusExplain[entry.status])}</p>
               )}
+              <button
+                type="button"
+                className="tappable t-xs t-accent row gap-1 mt-1"
+                style={{ minHeight: 32 }}
+                data-ask-about={entry.id}
+                onClick={() => navigate(`/payout-dispute?entry=${entry.id}`)}
+              >
+                <ChatCircleText size={13} />
+                {t(K.raiseQuery)}
+              </button>
             </div>
           );
         })}

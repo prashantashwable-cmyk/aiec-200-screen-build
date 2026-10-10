@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { RoleSelectView } from './RoleSelectView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const RoleSelectView = lazyScreen(() => import('./RoleSelectView'), 'RoleSelectView');
 
 const route: ScreenRoute = {
   id: '004',

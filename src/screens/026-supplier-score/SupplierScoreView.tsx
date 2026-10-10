@@ -124,7 +124,7 @@ export function SupplierScoreView() {
             row={row}
             expanded={expanded === row.supplier.id}
             onToggle={() => setExpanded((cur) => (cur === row.supplier.id ? null : row.supplier.id))}
-            onToggleWatchlist={() => s.toggleWatchlist(row.supplier.id)}
+            onToggleWatchlist={() => void s.toggleWatchlist(row.supplier.id)}
           />
         ))}
       </div>

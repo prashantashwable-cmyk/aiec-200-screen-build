@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { ActivityFeedView } from './ActivityFeedView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const ActivityFeedView = lazyScreen(() => import('./ActivityFeedView'), 'ActivityFeedView');
 
 const route: ScreenRoute = {
   id: '012',

@@ -1,8 +1,8 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useData } from '@/data/DataProvider';
 import { useWizard } from '@/features/onboarding/useWizard';
 import type { WizardStepDef } from '@/features/onboarding/useWizard';
-import { isValidGstin, isValidIfsc, isValidPincode } from '@/features/onboarding/validators';
+import { isValidGstin, isValidIfsc, isValidIndianMobile, isValidPincode } from '@/features/onboarding/validators';
 import {
   EMPTY_SUPPLIER_DRAFT,
   SUPPLIER_DRAFT_KEY,
@@ -22,7 +22,8 @@ export const SUPPLIER_STEPS: WizardStepDef<SupplierDraft>[] = [
       (d.gstinCheck === 'matched' || d.gstinCheck === 'lookupFailed') &&
       d.registeredAddress.trim().length >= 6 &&
       isValidPincode(d.pincode) &&
-      d.signatoryName.trim().length >= 3,
+      d.signatoryName.trim().length >= 3 &&
+      isValidIndianMobile(d.signatoryPhone),
     isBlocked: (d) => d.gstinCheck === 'duplicate' || d.gstinCheck === 'mismatch',
   },
   {
@@ -51,9 +52,10 @@ export const SUPPLIER_STEPS: WizardStepDef<SupplierDraft>[] = [
 interface OnboardSupplierState {
   wizard: ReturnType<typeof useWizard<SupplierDraft>>;
   verifyGstin: () => Promise<void>;
-  runPennyDrop: () => Promise<void>;
   payoutsBlocked: boolean;
   submit: () => Promise<void>;
+  /** Translation key for why the last submission was refused, if it was. */
+  submitErrorKey: string | null;
 }
 
 export function useOnboardSupplier(): OnboardSupplierState {
@@ -77,43 +79,46 @@ export function useOnboardSupplier(): OnboardSupplierState {
         return;
       }
 
-      // SIMULATED: the legal-name lookup needs the GST registry. Without it,
-      // a GSTIN ending in '9' stands in for "registry unreachable" so the
-      // manual-verification path can actually be exercised.
-      await new Promise((resolve) => setTimeout(resolve, 1200));
-      update({ gstinCheck: normalised.endsWith('9') ? 'lookupFailed' : 'matched' });
+      // The legal-name lookup needs the GST registry, which is not connected: the format and the
+      // one-account rule are checked here, and an admin confirms the legal name during KYC review (091).
+      update({ gstinCheck: 'lookupFailed' });
     } catch {
       // A failed request is exactly the offline case: allow, flag for review.
       update({ gstinCheck: 'lookupFailed' });
     }
   }, [draft.gstin, repository, update]);
 
-  const runPennyDrop = useCallback(async () => {
-    update({ pennyDrop: 'running' });
-    // SIMULATED, same as the surveyor payout account: an account number ending
-    // in 0 fails, so the blocked-payment path is reachable on demand.
-    await new Promise((resolve) => setTimeout(resolve, 1400));
-    update({ pennyDrop: draft.accountNumber.endsWith('0') ? 'failed' : 'verified' });
-  }, [draft.accountNumber, update]);
+  const [submitErrorKey, setSubmitErrorKey] = useState<string | null>(null);
 
   const submit = useCallback(async () => {
     wizard.setStatus('submitting');
+    setSubmitErrorKey(null);
     try {
-      // The account lands pending. No purchase order can be issued against it
-      // until an admin approves KYC, and any seeded catalogue stays in review.
-      await new Promise((resolve) => setTimeout(resolve, 700));
+      // The account lands pending — a real Supplier plus the signatory's own
+      // login, usable straight away to follow the review. No purchase order
+      // can be issued against it until an admin approves KYC in the Supplier
+      // Directory.
+      await repository.submitSupplierOnboarding({
+        companyName: draft.companyName,
+        gstin: draft.gstin,
+        city: draft.city,
+        signatoryName: draft.signatoryName,
+        signatoryPhone: draft.signatoryPhone,
+      });
       wizard.setStatus('submitted');
       localStorage.removeItem(SUPPLIER_DRAFT_KEY);
-    } catch {
+    } catch (err) {
+      const code = err instanceof Error ? err.message : '';
+      setSubmitErrorKey(code === 'duplicate_gstin' || code === 'phone_taken' ? K.submitError[code] : K.submitError.generic);
       wizard.setStatus('error');
     }
-  }, [wizard]);
+  }, [wizard, repository, draft]);
 
   return {
     wizard,
     verifyGstin,
-    runPennyDrop,
-    payoutsBlocked: draft.pennyDrop === 'failed',
+    payoutsBlocked: false,
     submit,
+    submitErrorKey,
   };
 }

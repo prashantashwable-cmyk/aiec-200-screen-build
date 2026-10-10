@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { SiteVisitVerifyView } from './SiteVisitVerifyView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const SiteVisitVerifyView = lazyScreen(() => import('./SiteVisitVerifyView'), 'SiteVisitVerifyView');
 
 const route: ScreenRoute = {
   id: '017',

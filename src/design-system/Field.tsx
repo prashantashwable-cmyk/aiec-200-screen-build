@@ -133,9 +133,15 @@ export function Checkbox({ checked, onChange, label, disabled }: CheckboxProps) 
         aria-checked={checked}
         disabled={disabled}
         className="ds-check"
-        onClick={() => onChange(!checked)}
+        // Cancelling the click stops the wrapping <label> from re-dispatching
+        // it to this button — otherwise tapping the tick itself toggled twice
+        // and a checked box could never be unticked by tapping it.
+        onClick={(e) => {
+          e.preventDefault();
+          onChange(!checked);
+        }}
       >
-        {checked && <Check size={15} weight="bold" />}
+        {checked && <Check size={15} weight="bold" style={{ pointerEvents: 'none' }} />}
       </button>
       <span className="t-sm grow">{label}</span>
     </label>

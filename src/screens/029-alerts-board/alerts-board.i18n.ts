@@ -26,6 +26,9 @@ const translations: ScreenTranslations = {
       delegate: 'Delegate',
       delegateTo: 'Who should own this?',
       delegated: 'Delegated to {{name}}',
+      delegatePick: 'Choose a person',
+      delegateNote: 'They are told at once and own the follow-up: if they do not acknowledge it in time, it comes back up to you.',
+      actionFailed: 'That did not go through. Try again in a moment.',
       resolvedElsewhere: 'Resolved elsewhere — cleared automatically',
       criticalFirst: 'Sorted by severity first, always — a critical item never gets buried by a newer, smaller one.',
       liveLinkNote:
@@ -67,6 +70,9 @@ const translations: ScreenTranslations = {
       delegate: 'सौंपें',
       delegateTo: 'यह किसके ज़िम्मे हो?',
       delegated: '{{name}} को सौंपा गया',
+      delegatePick: 'व्यक्ति चुनें',
+      delegateNote: 'उन्हें तुरंत बताया जाता है और आगे की कार्रवाई उनकी ज़िम्मेदारी होती है: समय पर स्वीकार न करें तो यह वापस आप तक आता है।',
+      actionFailed: 'यह हो नहीं पाया। थोड़ी देर में फिर कोशिश करें।',
       resolvedElsewhere: 'कहीं और निपटा — अपने आप साफ़ हुआ',
       criticalFirst: 'हमेशा गंभीरता के हिसाब से पहले क्रमबद्ध — कोई गंभीर मामला किसी नए, छोटे मामले तले दबता नहीं।',
       liveLinkNote:
@@ -108,6 +114,9 @@ const translations: ScreenTranslations = {
       delegate: 'सोपवा',
       delegateTo: 'हे कोणाकडे सोपवायचे?',
       delegated: '{{name}} कडे सोपवले',
+      delegatePick: 'व्यक्ती निवडा',
+      delegateNote: 'त्यांना लगेच कळवले जाते आणि पुढची कार्यवाही त्यांची जबाबदारी असते: वेळेत स्वीकारले नाही तर ते परत तुमच्याकडे येते.',
+      actionFailed: 'हे झाले नाही. थोड्या वेळाने पुन्हा प्रयत्न करा.',
       resolvedElsewhere: 'दुसरीकडे निकाली — आपोआप साफ झाले',
       criticalFirst: 'नेहमी तीव्रतेनुसार आधी क्रमवारी — एखादे गंभीर प्रकरण नवीन, छोट्या प्रकरणाखाली दबले जात नाही.',
       liveLinkNote:

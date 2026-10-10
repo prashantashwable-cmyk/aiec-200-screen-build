@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { CaptureGpsView } from './CaptureGpsView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const CaptureGpsView = lazyScreen(() => import('./CaptureGpsView'), 'CaptureGpsView');
 
 const route: ScreenRoute = {
   id: '032',

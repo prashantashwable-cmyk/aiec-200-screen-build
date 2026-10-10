@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { CallLogView } from './CallLogView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const CallLogView = lazyScreen(() => import('./CallLogView'), 'CallLogView');
 
 const route: ScreenRoute = {
   id: '054',

@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { QuotationPreviewView } from './QuotationPreviewView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const QuotationPreviewView = lazyScreen(() => import('./QuotationPreviewView'), 'QuotationPreviewView');
 
 const route: ScreenRoute = {
   id: '064',

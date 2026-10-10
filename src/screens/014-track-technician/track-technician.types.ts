@@ -19,6 +19,8 @@ export type TechAnomaly =
   | 'checkoutIncomplete'
   /** A safety step is blocked because its evidence is missing. */
   | 'blockedStepNoEvidence'
+  /** Still checked in from an earlier day: nobody has said when they left, so that time is not counted (125). */
+  | 'visitUnconfirmed'
   | 'signalLost';
 
 export interface AnomalyFinding {
@@ -63,6 +65,8 @@ export const TRACK_TECH_KEYS = {
   loading: 'trackTechnician.loading',
   mapLabel: 'trackTechnician.mapLabel',
   escalate: 'trackTechnician.escalate',
+  safety: 'trackTechnician.safety',
+  issues: 'trackTechnician.issues',
   openTimeline: 'trackTechnician.openTimeline',
   oneSourceNote: 'trackTechnician.oneSourceNote',
   stat: {
@@ -97,6 +101,7 @@ export const TRACK_TECH_KEYS = {
     leftDuringCriticalStep: 'trackTechnician.anomaly.leftDuringCriticalStep',
     checkoutIncomplete: 'trackTechnician.anomaly.checkoutIncomplete',
     blockedStepNoEvidence: 'trackTechnician.anomaly.blockedStepNoEvidence',
+    visitUnconfirmed: 'trackTechnician.anomaly.visitUnconfirmed',
     signalLost: 'trackTechnician.anomaly.signalLost',
   },
   notFound: { title: 'trackTechnician.notFound.title', body: 'trackTechnician.notFound.body' },

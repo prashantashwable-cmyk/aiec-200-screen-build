@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useData } from '@/data/DataProvider';
+import { useSession } from '@/session/SessionProvider';
 import type { Deal, Lead, Payment, Supplier, User } from '@/data/types';
-import { SAVED_REPORTS_KEY, isCompatible } from './report-builder.types';
+import { isCompatible } from './report-builder.types';
 import type { BuilderStatus, DimensionId, MetricId, RangePreset, ReportRow, SavedReport } from './report-builder.types';
 
 interface ReportBuilderState {
@@ -15,10 +16,10 @@ interface ReportBuilderState {
   compatible: boolean;
   rows: ReportRow[];
   saved: SavedReport[];
-  saveCurrent: (name: string) => void;
+  /** Resolves to null when saved, or the reason it was refused. */
+  saveCurrent: (name: string) => Promise<'name_taken' | 'too_many' | 'generic' | null>;
   loadSaved: (report: SavedReport) => void;
-  deleteSaved: (id: string) => void;
-  setSchedule: (id: string, frequency: SavedReport['scheduleFrequency']) => void;
+  deleteSaved: (id: string) => Promise<void>;
   exportCsv: () => void;
   reload: () => Promise<void>;
 }
@@ -26,14 +27,6 @@ interface ReportBuilderState {
 function csvEscape(value: string | number): string {
   const str = String(value);
   return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
-}
-
-function readSaved(): SavedReport[] {
-  try {
-    return JSON.parse(localStorage.getItem(SAVED_REPORTS_KEY) ?? '[]') as SavedReport[];
-  } catch {
-    return [];
-  }
 }
 
 /** Rolls forward correctly every time it runs — never frozen to creation date. */
@@ -56,6 +49,7 @@ function rangeStart(range: RangePreset, now: number): number {
  */
 export function useReportBuilder(): ReportBuilderState {
   const repository = useData();
+  const { user } = useSession();
   const [status, setStatus] = useState<BuilderStatus>('loading');
   const [metric, setMetric] = useState<MetricId>('leadCount');
   const [dimension, setDimension] = useState<DimensionId>('stage');
@@ -65,7 +59,13 @@ export function useReportBuilder(): ReportBuilderState {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [saved, setSaved] = useState<SavedReport[]>(readSaved);
+  const [saved, setSaved] = useState<SavedReport[]>([]);
+
+  const reloadSaved = useCallback(async () => {
+    if (!user) return;
+    const list = await repository.listSavedReports(user.id);
+    setSaved(list.map((r) => ({ id: r.id, name: r.name, metric: r.metric as MetricId, dimension: r.dimension as DimensionId, range: r.range as RangePreset })));
+  }, [repository, user]);
 
   const reload = useCallback(async () => {
     setStatus('loading');
@@ -82,11 +82,12 @@ export function useReportBuilder(): ReportBuilderState {
       setPayments(paymentList);
       setUsers(userList);
       setSuppliers(supplierList);
+      await reloadSaved();
       setStatus('ready');
     } catch {
       setStatus('error');
     }
-  }, [repository]);
+  }, [repository, reloadSaved]);
 
   useEffect(() => {
     void reload();
@@ -145,22 +146,18 @@ export function useReportBuilder(): ReportBuilderState {
   }, [compatible, leads, deals, payments, users, suppliers, dimension, metric, range]);
 
   const saveCurrent = useCallback(
-    (name: string) => {
-      const report: SavedReport = {
-        id: `rep-${Date.now()}`,
-        name,
-        metric,
-        dimension,
-        range,
-        scheduleFrequency: 'none',
-      };
-      setSaved((current) => {
-        const next = [report, ...current];
-        localStorage.setItem(SAVED_REPORTS_KEY, JSON.stringify(next));
-        return next;
-      });
+    async (name: string) => {
+      if (!user) return 'generic' as const;
+      try {
+        await repository.saveReportDefinition(user.id, { name, metric, dimension, range });
+        await reloadSaved();
+        return null;
+      } catch (err) {
+        const code = err instanceof Error ? err.message : '';
+        return code === 'name_taken' || code === 'too_many' ? code : ('generic' as const);
+      }
     },
-    [metric, dimension, range],
+    [repository, user, metric, dimension, range, reloadSaved],
   );
 
   const loadSaved = useCallback((report: SavedReport) => {
@@ -169,21 +166,14 @@ export function useReportBuilder(): ReportBuilderState {
     setRange(report.range);
   }, []);
 
-  const deleteSaved = useCallback((id: string) => {
-    setSaved((current) => {
-      const next = current.filter((r) => r.id !== id);
-      localStorage.setItem(SAVED_REPORTS_KEY, JSON.stringify(next));
-      return next;
-    });
-  }, []);
-
-  const setSchedule = useCallback((id: string, frequency: SavedReport['scheduleFrequency']) => {
-    setSaved((current) => {
-      const next = current.map((r) => (r.id === id ? { ...r, scheduleFrequency: frequency } : r));
-      localStorage.setItem(SAVED_REPORTS_KEY, JSON.stringify(next));
-      return next;
-    });
-  }, []);
+  const deleteSaved = useCallback(
+    async (id: string) => {
+      if (!user) return;
+      await repository.deleteSavedReport(user.id, id).catch(() => undefined);
+      await reloadSaved();
+    },
+    [repository, user, reloadSaved],
+  );
 
   const exportCsv = useCallback(() => {
     const csvRows = [['Dimension', 'Value'], ...rows.map((r) => [r.dimensionValue, String(r.value)])];
@@ -211,7 +201,6 @@ export function useReportBuilder(): ReportBuilderState {
     saveCurrent,
     loadSaved,
     deleteSaved,
-    setSchedule,
     exportCsv,
     reload,
   };

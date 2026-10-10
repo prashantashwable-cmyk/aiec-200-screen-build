@@ -9,11 +9,12 @@ import {
   Checkbox,
   EmptyState,
   ErrorState,
-  Input,
   LoadingState,
   Screen,
   ScreenHeader,
   SegBar,
+  Select,
+  Sheet,
   Tabs,
   useToast,
 } from '@/design-system';
@@ -134,11 +135,10 @@ export function AlertsBoardView() {
                 selected={s.selectedIds.includes(row.alert.id)}
                 onSelect={() => s.toggleSelect(row.alert.id)}
                 onSnooze={(hours) => {
-                  s.snooze(row.alert, hours);
-                  toast.push(t(K.snoozed), 'success');
+                  void s.snooze(row.alert, hours).then((ok) => toast.push(ok ? t(K.snoozed) : t(K.actionFailed), ok ? 'success' : 'error'));
                 }}
                 onDelegateClick={() => setDelegateTarget(row)}
-                delegatedTo={s.delegatedTo[row.alert.id]}
+                delegatedTo={row.alert.delegatedToUserId ? s.staff.find((u) => u.id === row.alert.delegatedToUserId)?.name : undefined}
               />
             ))}
           </div>
@@ -147,20 +147,25 @@ export function AlertsBoardView() {
 
       <p className="t-xs t-muted mt-4">{t(K.liveLinkNote)}</p>
 
-      {delegateTarget && (
-        <Card className="mt-4">
-          <h2 className="t-md t-semibold">{t(K.delegateTo)}</h2>
-          <div className="mt-2">
-            <Input value={delegateName} onChange={(e) => setDelegateName(e.target.value)} />
-          </div>
-          <div className="row gap-2 mt-3">
+      <Sheet
+        open={!!delegateTarget}
+        onClose={() => setDelegateTarget(null)}
+        title={t(K.delegateTo)}
+        closeLabel={t('action.close')}
+        footer={
+          <div className="row gap-2">
             <Button
-              disabled={!delegateName.trim()}
+              disabled={!delegateName || !delegateTarget}
               onClick={() => {
-                s.delegate(delegateTarget.alert, delegateName.trim());
-                toast.push(t(K.delegated, { name: delegateName.trim() }), 'success');
-                setDelegateTarget(null);
-                setDelegateName('');
+                if (!delegateTarget) return;
+                const person = s.staff.find((u) => u.id === delegateName);
+                void s.delegate(delegateTarget.alert, delegateName).then((ok) => {
+                  toast.push(ok ? t(K.delegated, { name: person?.name ?? '' }) : t(K.actionFailed), ok ? 'success' : 'error');
+                  if (ok) {
+                    setDelegateTarget(null);
+                    setDelegateName('');
+                  }
+                });
               }}
             >
               {t(K.delegate)}
@@ -169,8 +174,17 @@ export function AlertsBoardView() {
               {t('action.cancel')}
             </Button>
           </div>
-        </Card>
-      )}
+        }
+      >
+        {delegateTarget && <p className="t-sm mb-2">{t(delegateTarget.alert.titleKey)} · {delegateTarget.alert.code}</p>}
+        <Select aria-label={t(K.delegateTo)} value={delegateName} onChange={(e) => setDelegateName(e.target.value)}>
+          <option value="">{t(K.delegatePick)}</option>
+          {s.staff.map((u) => (
+            <option key={u.id} value={u.id}>{`${u.name} · ${t(`role.${u.role}`)}`}</option>
+          ))}
+        </Select>
+        <p className="t-xs t-muted mt-2">{t(K.delegateNote)}</p>
+      </Sheet>
     </Screen>
   );
 }

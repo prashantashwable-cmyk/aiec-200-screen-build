@@ -177,6 +177,21 @@ export function TrackTechnicianView() {
                 <Badge tone={s.data.job.status === 'on_hold' ? 'warning' : 'emerald'}>
                   {t(`status.${s.data.job.status === 'in_progress' ? 'inProgress' : s.data.job.status === 'on_hold' ? 'onHold' : 'scheduled'}`)}
                 </Badge>
+                <Button size="sm" variant="secondary" onClick={() => navigate(`/safety-checklist/${s.data?.job?.id}`)}>
+                  {t(K.safety)}
+                </Button>
+                <Button size="sm" variant="secondary" onClick={() => navigate(`/job-issues/${s.data?.job?.id}`)}>
+                  {t(K.issues)}
+                </Button>
+                <Button size="sm" variant="secondary" onClick={() => navigate(`/material-usage/${s.data?.job?.id}`)}>
+                  {t('materialLog.title')}
+                </Button>
+                <Button size="sm" variant="secondary" onClick={() => navigate(`/installation-timeline/${s.data?.job?.id}`)}>
+                  {t('installTimeline.title')}
+                </Button>
+                <Button size="sm" variant="secondary" onClick={() => navigate(`/job-team/${s.data?.job?.id}`)}>
+                  {t('jobTeam.title')}
+                </Button>
               </div>
             </Card>
 

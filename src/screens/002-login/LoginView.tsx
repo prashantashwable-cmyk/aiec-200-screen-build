@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 import {
   ChartLineUp,
   GoogleLogo,
@@ -114,42 +115,9 @@ function LoginTab({ state: s }: { state: ReturnType<typeof useLogin> }) {
           )}
         </Field>
       ) : (
-        <>
-          <Field
-            label={t(K.field.email)}
-            error={s.error === 'invalidEmail' ? t(K.error.invalidEmail) : undefined}
-            required
-          >
-            {({ id, describedBy, invalid }) => (
-              <Input
-                id={id}
-                aria-describedby={describedBy}
-                invalid={invalid}
-                type="email"
-                autoComplete="email"
-                value={s.email}
-                onChange={(e) => s.setEmail(e.target.value)}
-              />
-            )}
-          </Field>
-          <Field
-            label={t(K.field.password)}
-            error={s.error === 'badCredentials' ? t(K.error.badCredentials) : undefined}
-            required
-          >
-            {({ id, describedBy, invalid }) => (
-              <Input
-                id={id}
-                aria-describedby={describedBy}
-                invalid={invalid}
-                type="password"
-                autoComplete="current-password"
-                value={s.password}
-                onChange={(e) => s.setPassword(e.target.value)}
-              />
-            )}
-          </Field>
-        </>
+        <Card>
+          <p className="t-sm t-muted" data-login-note="email-not-connected">{t(K.emailNotConnected)}</p>
+        </Card>
       )}
 
       <Checkbox checked={s.remember} onChange={s.setRemember} label={t(K.remember)} />
@@ -157,6 +125,11 @@ function LoginTab({ state: s }: { state: ReturnType<typeof useLogin> }) {
       {s.error === 'network' && (
         <p className="t-sm t-error" role="alert">
           {t(K.error.network)}
+        </p>
+      )}
+      {s.error === 'tooMany' && (
+        <p className="t-sm t-error" role="alert">
+          {t(K.error.tooMany)}
         </p>
       )}
       {s.error === 'roleMismatch' && (
@@ -169,8 +142,8 @@ function LoginTab({ state: s }: { state: ReturnType<typeof useLogin> }) {
         <Button
           block
           loading={s.status === 'submitting'}
-          disabled={s.method === 'phone' ? !s.canSubmitPhone : !s.canSubmitEmail}
-          onClick={s.method === 'phone' ? s.submitPhone : s.submitEmail}
+          disabled={s.method !== 'phone' || !s.canSubmitPhone}
+          onClick={s.submitPhone}
         >
           {t(K.continueWithOtp)}
         </Button>
@@ -178,17 +151,28 @@ function LoginTab({ state: s }: { state: ReturnType<typeof useLogin> }) {
           variant="ghost"
           block
           icon={<GoogleLogo size={18} />}
-          onClick={s.signInWithGoogle}
-          disabled={s.status === 'submitting'}
+          disabled={!s.googleEnabled || s.status === 'submitting'}
+          loading={s.googleStarting}
+          onClick={() => void s.signInWithGoogle()}
+          aria-describedby={s.googleEnabled ? undefined : 'login-google-note'}
+          data-google={s.googleEnabled ? 'on' : 'off'}
         >
           {t(K.google)}
         </Button>
-        <a href="/forgot-password" className="t-sm t-center mt-2">
+        {s.error === 'google' && (
+          <p className="t-sm t-error t-center" role="alert">
+            {t(K.error.google)}
+          </p>
+        )}
+        {!s.googleEnabled && (
+          <p id="login-google-note" className="t-xs t-muted t-center">{t(K.googleNotConnected)}</p>
+        )}
+        <Link to="/forgot-password" className="t-sm t-center mt-2">
           {t(K.forgot)}
-        </a>
+        </Link>
       </div>
 
-      <p className="t-xs t-muted t-center">{t(K.simulatedNote)}</p>
+      <p className="t-xs t-muted t-center" data-login-note={s.server ? 'server' : 'demo'}>{t(s.server ? K.serverNote : K.simulatedNote)}</p>
     </div>
   );
 }

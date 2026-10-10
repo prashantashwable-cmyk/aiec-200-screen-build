@@ -7,6 +7,14 @@
   min-height: 100dvh;
 }
 
+/* Demo banner + (on a phone) the top bar with the assistant's bell, stuck
+   together so neither scrolls away from the other. */
+.shell__top {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-shell);
+}
+
 .shell__demo-banner {
   display: flex;
   align-items: center;
@@ -19,9 +27,76 @@
   font-weight: 600;
   text-align: center;
   border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.shell__topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 0 var(--space-2) 0 var(--space-4);
+  min-height: 48px;
+  background: var(--color-surface);
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.shell__topbar .shell__brand-mark {
+  font-family: var(--font-display);
+  font-size: var(--text-md);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--color-accent-secondary);
+}
+
+/* A screen's own sticky filter/search bar, pinned just under the shell's
+   sticky top area (whose height AppShell publishes as --shell-top-height). */
+.sticky-under-shell {
   position: sticky;
-  top: 0;
-  z-index: var(--z-shell);
+  top: var(--shell-top-height, 0px);
+  z-index: calc(var(--z-shell) - 1);
+  background: var(--color-bg);
+  padding-block: var(--space-2);
+}
+
+/* A screen's sticky action bar sits just above the phone tab bar rather
+   than behind it (--shell-bottom-height is 0 on desktop). */
+.shell__main .ds-action-bar {
+  bottom: var(--shell-bottom-height, 0px);
+}
+
+/* ---- The assistant's bell ---- */
+.shell__bell {
+  position: relative;
+  color: var(--color-accent-secondary);
+}
+
+.shell__bell--side {
+  width: 100%;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+
+.shell__bell-count {
+  position: absolute;
+  top: 4px;
+  right: 2px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--color-error);
+  color: var(--color-on-accent);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
+
+.shell__bell--side .shell__bell-count {
+  position: static;
 }
 
 .shell__body {
@@ -47,10 +122,24 @@
   border-top: var(--border-width) solid var(--color-border);
   padding-bottom: env(safe-area-inset-bottom, 0px);
   z-index: var(--z-shell);
+  /* Roles with many tabs (Admin has a dozen) scroll sideways instead of squeezing or cutting the last ones off. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.shell__tabbar::-webkit-scrollbar {
+  display: none;
 }
 
 .shell__tab {
-  flex: 1 1 0;
+  /* Share the width when the tabs fit; keep each at a readable size and scroll when they do not. */
+  flex: 1 0 auto;
+  min-width: 64px;
+  scroll-snap-align: start;
   min-height: var(--tap-target);
   display: flex;
   flex-direction: column;
@@ -80,6 +169,7 @@
   font-weight: 600;
   line-height: 1.2;
   text-align: center;
+  white-space: nowrap;
 }
 
 /* ---- Sidebar (desktop) ---- */
@@ -88,7 +178,8 @@
 }
 
 @media (min-width: 1024px) {
-  .shell__tabbar {
+  .shell__tabbar,
+  .shell__topbar {
     display: none;
   }
   .shell__main {
@@ -163,4 +254,12 @@
 }
 .brand-shaft__floor--lit {
   background: var(--color-accent-primary);
+}
+
+/* The logo AIEC has set in Company Profile (191) stands where the floor indicator does. */
+.shell__brand-logo {
+  height: 24px;
+  width: auto;
+  max-width: 56px;
+  object-fit: contain;
 }

@@ -178,7 +178,9 @@ function AutomationCard({
             <div key={failure.id} className="row gap-2">
               <Warning size={14} className="t-warning shrink-0" style={{ marginTop: 2 }} />
               <span className="t-xs t-muted grow">
-                {t(failure.reasonKey)}
+                {failure.reasonText
+                  ? t(K.reason.recorded, { count: failure.count, text: failure.reasonText })
+                  : t(K.reason.unrecorded, { count: failure.count })}
                 {failure.isStuckLoop && (
                   <span className="t-error"> · {t(K.stuckLoop)}</span>
                 )}

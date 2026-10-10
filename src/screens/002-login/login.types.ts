@@ -11,10 +11,10 @@ export type LoginStatus = 'idle' | 'submitting' | 'error';
 export type LoginErrorKind =
   | 'unknownNumber'
   | 'roleMismatch'
-  | 'badCredentials'
   | 'network'
   | 'invalidPhone'
-  | 'invalidEmail';
+  | 'tooMany'
+  | 'google';
 
 /** The four roles offered on the Demo tab. Supplier onboards, it does not demo. */
 export const DEMO_ROLES: Role[] = ['admin', 'surveyor', 'technician', 'customer'];
@@ -35,6 +35,17 @@ export const LOGIN_KEYS = {
   google: 'login.google',
   forgot: 'login.forgot',
   simulatedNote: 'login.simulatedNote',
+  serverNote: 'login.serverNote',
+  emailNotConnected: 'login.emailNotConnected',
+  googleNotConnected: 'login.googleNotConnected',
+  googleReturn: {
+    working: 'login.googleReturn.working',
+    cancelledTitle: 'login.googleReturn.cancelledTitle',
+    cancelledBody: 'login.googleReturn.cancelledBody',
+    failedTitle: 'login.googleReturn.failedTitle',
+    failedBody: 'login.googleReturn.failedBody',
+    back: 'login.googleReturn.back',
+  },
   demo: {
     heading: 'login.demo.heading',
     body: 'login.demo.body',
@@ -50,14 +61,12 @@ export const LOGIN_KEYS = {
   error: {
     unknownNumber: 'login.error.unknownNumber',
     roleMismatch: 'login.error.roleMismatch',
-    badCredentials: 'login.error.badCredentials',
     network: 'login.error.network',
     invalidPhone: 'login.error.invalidPhone',
-    invalidEmail: 'login.error.invalidEmail',
+    tooMany: 'login.error.tooMany',
+    google: 'login.error.google',
   },
 } as const;
 
 /** Indian mobile numbers: 10 digits, never starting 0-5. */
-export const isValidIndianMobile = (value: string): boolean => /^[6-9]\d{9}$/.test(value.trim());
-
-export const isValidEmail = (value: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value.trim());
+export { isIndianMobile as isValidIndianMobile } from '@/features/validation/india';

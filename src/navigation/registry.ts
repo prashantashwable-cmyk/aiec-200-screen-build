@@ -24,13 +24,14 @@ export interface ScreenRoute {
   /** Translation key for the screen title, used by the shell and page title. */
   titleKey: string;
   Component: ComponentType;
-  /** Which bottom-tab/sidebar item highlights while this screen is open. */
-  tab?: string;
+  /** Which bottom-tab/sidebar item highlights while this screen is open —
+   *  per role for a screen two roles reach from different tabs. */
+  tab?: string | Partial<Record<Role, string>>;
   /** Auth and splash screens render without the navigation shell. */
   chromeless?: boolean;
 }
 
-const modules = import.meta.glob<{ default: ScreenRoute }>('../screens/**/route.tsx', {
+const modules = import.meta.glob<{ default: ScreenRoute | ScreenRoute[] }>('../screens/**/route.tsx', {
   eager: true,
 });
 
@@ -39,18 +40,21 @@ function collect(): ScreenRoute[] {
   const seenPaths = new Map<string, string>();
 
   for (const key of Object.keys(modules).sort()) {
-    const route = modules[key]?.default;
-    if (!route) {
+    const exported = modules[key]?.default;
+    if (!exported) {
       if (import.meta.env.DEV) console.warn(`[routes] ${key} has no default export`);
       continue;
     }
-    const clash = seenPaths.get(route.path);
-    if (clash) {
-      // Two screens on one path means one is unreachable — loud in dev.
-      console.error(`[routes] path "${route.path}" claimed by both ${clash} and ${route.id}`);
+    // One screen may be reached by two roles through two paths (a public applicant link and Admin's own page): it exports a list.
+    for (const route of Array.isArray(exported) ? exported : [exported]) {
+      const clash = seenPaths.get(route.path);
+      if (clash) {
+        // Two screens on one path means one is unreachable — loud in dev.
+        console.error(`[routes] path "${route.path}" claimed by both ${clash} and ${route.id}`);
+      }
+      seenPaths.set(route.path, route.id);
+      routes.push(route);
     }
-    seenPaths.set(route.path, route.id);
-    routes.push(route);
   }
 
   // Static segments before params so '/admin/map/filters' is not swallowed by
@@ -80,5 +84,5 @@ export const HOME_PATH_BY_ROLE: Record<Role, string> = {
   surveyor: '/surveyor',
   technician: '/technician',
   customer: '/customer',
-  supplier: '/supplier',
+  supplier: '/orders',
 };

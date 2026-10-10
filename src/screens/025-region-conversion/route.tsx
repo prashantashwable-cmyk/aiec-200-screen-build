@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { RegionConversionView } from './RegionConversionView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const RegionConversionView = lazyScreen(() => import('./RegionConversionView'), 'RegionConversionView');
 
 const route: ScreenRoute = {
   id: '025',

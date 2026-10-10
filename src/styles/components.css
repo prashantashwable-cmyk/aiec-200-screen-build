@@ -229,6 +229,10 @@
   font-size: var(--text-xs);
   color: var(--color-text-secondary);
 }
+/* A step whose meta is several lines of record (e.g. an agreement version). */
+.ds-ascension--multiline .ds-ascension__meta {
+  white-space: pre-line;
+}
 
 /* ============================== Badge =================================== */
 .ds-badge {
@@ -243,6 +247,10 @@
   white-space: nowrap;
   background: var(--color-accent-primary-soft);
   color: var(--color-accent-primary);
+}
+.ds-badge--wrap {
+  white-space: normal;
+  max-width: 100%;
 }
 .ds-badge--success {
   background: var(--color-success-soft);
@@ -673,6 +681,8 @@ select.ds-input {
   overflow: hidden;
 }
 .ds-progress__fill {
+  /* An inline span ignores width and height, so the bar never filled. */
+  display: block;
   height: 100%;
   background: var(--color-accent-primary);
   border-radius: var(--radius-pill);
@@ -808,4 +818,232 @@ select.ds-input {
   text-align: right;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+}
+
+/* Tabs that keep every label on one line and scroll sideways instead of
+   squeezing — for strips with more stages than a phone can fit (095). */
+.ds-tabs--scroll {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.ds-tabs--scroll .ds-tabs__tab {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* Conversation bubbles (099). Own side on the right, the other party on the
+   left, a call or email logged after the fact dashed, and the record's own
+   automatic entries as a centred pill — so nobody mistakes one for another. */
+.ds-thread {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.ds-bubble-row {
+  display: flex;
+}
+.ds-bubble-row--own {
+  justify-content: flex-end;
+}
+.ds-bubble {
+  max-width: min(85%, 560px);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-alt);
+  color: var(--color-text-primary);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  overflow-wrap: anywhere;
+}
+.ds-bubble--own {
+  background: var(--color-accent-primary);
+  color: var(--color-bg);
+}
+.ds-bubble--logged {
+  background: var(--color-surface);
+  border: var(--border-width) dashed var(--color-border);
+  color: var(--color-text-primary);
+}
+.ds-bubble__tag,
+.ds-bubble__meta {
+  font-size: var(--text-xs);
+  opacity: 0.8;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+.ds-bubble__meta {
+  align-self: flex-end;
+}
+.ds-bubble__ref {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  border: var(--border-width) solid currentColor;
+  border-radius: var(--radius-control);
+  padding: 2px var(--space-2);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  align-self: flex-start;
+}
+.ds-thread__break {
+  align-self: center;
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  padding-top: var(--space-2);
+}
+.ds-thread__system {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  background: var(--color-surface-alt);
+  border-radius: 999px;
+  padding: 2px var(--space-3);
+  text-align: center;
+}
+
+/* Calendar (shared by calendar-layout screens). Colours are the same status
+   tokens Badge uses, so a colour learned elsewhere means the same here. */
+.cal__head,
+.cal__body {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+}
+.cal__weekday {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  text-align: center;
+  padding-bottom: var(--space-1);
+}
+.cal__cell {
+  min-height: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  min-width: 0;
+}
+.cal--week .cal__cell {
+  min-height: 72px;
+}
+.cal__cell--outside {
+  opacity: 0.45;
+}
+.cal__cell--today .cal__date {
+  color: var(--color-accent-primary);
+  font-weight: 700;
+}
+.cal__cell--selected {
+  border-color: var(--color-accent-primary);
+  background: var(--color-surface-alt);
+}
+.cal__date {
+  font-size: var(--text-sm);
+  font-family: var(--font-mono);
+}
+.cal__dots {
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.cal__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-text-secondary);
+}
+.cal__chips {
+  display: none;
+  width: 100%;
+  flex-direction: column;
+  gap: 2px;
+}
+.cal__chip {
+  font-size: var(--text-xs);
+  padding: 1px var(--space-1);
+  border-radius: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  background: var(--color-surface-alt);
+}
+.cal__more {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+@media (min-width: 640px) {
+  .cal--week .cal__chips {
+    display: flex;
+  }
+  .cal--week .cal__dots {
+    display: none;
+  }
+  .cal--week .cal__cell {
+    align-items: stretch;
+    min-height: 120px;
+  }
+  .cal--week .cal__date {
+    align-self: flex-start;
+  }
+}
+.cal__dot--success,
+.cal__chip--success {
+  background: var(--color-success);
+  color: var(--color-bg);
+}
+.cal__dot--warning,
+.cal__chip--warning {
+  background: var(--color-warning);
+  color: var(--color-bg);
+}
+.cal__dot--error,
+.cal__chip--error {
+  background: var(--color-error);
+  color: var(--color-bg);
+}
+.cal__dot--accent,
+.cal__chip--accent {
+  background: var(--color-accent-primary);
+  color: var(--color-bg);
+}
+.cal__dot--emerald,
+.cal__chip--emerald {
+  background: var(--color-accent-secondary);
+  color: var(--color-bg);
+}
+
+/* A larger button for gloved hands and bright sun (field checklists). */
+.ds-btn--big {
+  min-height: 56px;
+  font-size: var(--fs-md, 1rem);
+  font-weight: 600;
+}
+
+/* A grid of KPI cards that reads the same on every screen: two across on a phone, three and four as the screen widens (193). */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+@media (min-width: 820px) {
+  .kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (min-width: 1200px) {
+  .kpi-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }

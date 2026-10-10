@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useData } from '@/data/DataProvider';
 import type { AutomationRule } from '@/data/types';
-import { DEGRADED_THRESHOLD, DOWN_THRESHOLD } from './automation-health.types';
+import { healthOf } from '@/features/automation/health';
 import type { AutomationRow, ComponentHealth, FailureLogEntry, HealthStatus } from './automation-health.types';
 
 const POLL_MS = 20_000;
@@ -14,18 +14,6 @@ interface AutomationHealthState {
   retry: (rule: AutomationRule) => Promise<void>;
   togglePause: (rule: AutomationRule) => Promise<void>;
   reload: () => Promise<void>;
-}
-
-const REASON_BY_INDEX = ['rateLimited', 'missingInput', 'timeout', 'dependencyDown'] as const;
-
-function healthOf(rule: AutomationRule): ComponentHealth {
-  if (!rule.enabled) return 'paused';
-  if (rule.status === 'failing') return 'down';
-  if (rule.status === 'degraded') return 'degraded';
-  const successRate = rule.runsToday > 0 ? 1 - rule.failuresToday / rule.runsToday : 1;
-  if (successRate < DOWN_THRESHOLD) return 'down';
-  if (successRate < DEGRADED_THRESHOLD) return 'degraded';
-  return 'healthy';
 }
 
 /**
@@ -65,22 +53,23 @@ export function useAutomationHealth(): AutomationHealthState {
       const health = healthOf(rule);
       const uptimePct = rule.runsToday > 0 ? 1 - rule.failuresToday / Math.max(rule.runsToday, 1) : 1;
 
-      // A deterministic-looking failure log entry per failure count today,
-      // seeded from the rule id so it stays stable across renders.
-      const failures: FailureLogEntry[] = Array.from({ length: rule.failuresToday }, (_, i) => {
-        const reasonId = REASON_BY_INDEX[(rule.id.charCodeAt(0) + i) % REASON_BY_INDEX.length];
-        const attempts = retryCounts[rule.id] ?? 0;
-        return {
-          id: `${rule.id}-fail-${i}`,
-          ruleId: rule.id,
-          ruleName: rule.name,
-          reasonKey: `automationHealth.reason.${reasonId}`,
-          at: rule.lastRunAt,
-          // Three or more retries on the same rule without success reads as a
-          // stuck loop, not a component that will fix itself if left alone.
-          isStuckLoop: attempts >= 3,
-        };
-      });
+      // Only what was recorded: the last error the step itself reported (181's telemetry), never a reason picked for it.
+      // A step failing several runs in a row (its status is `failing`) reads as stuck rather than one that will fix itself.
+      const attempts = retryCounts[rule.id] ?? 0;
+      const failures: FailureLogEntry[] =
+        rule.failuresToday > 0
+          ? [
+              {
+                id: `${rule.id}-last`,
+                ruleId: rule.id,
+                ruleName: rule.name,
+                reasonText: rule.lastError ?? null,
+                count: rule.failuresToday,
+                at: rule.lastRunAt,
+                isStuckLoop: rule.status === 'failing' || attempts >= 3,
+              },
+            ]
+          : [];
 
       return { rule, health, uptimePct, failures };
     });

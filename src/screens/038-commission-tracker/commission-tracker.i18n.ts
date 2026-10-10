@@ -11,9 +11,16 @@ const translations: ScreenTranslations = {
     commission: {
       reason: {
         leadConverted: 'Lead converted to a sale',
+        referralReward: 'Referral reward',
+        exitSettlement: 'Final settlement after leaving',
+        contestPrize: 'Contest prize',
+        payoutCorrection: 'Correction after your question',
         leadQualified: 'Lead reached a qualified stage',
         siteVisitVerified: 'Site visit verified',
         monthlyBonus: 'Monthly performance bonus',
+        installationCompleted: 'Installation completed and handed over',
+        dealClosed: 'Closed the deal after the lead was reassigned',
+        qcCompleted: 'Independent quality check completed',
       },
     },
     commissionTracker: {
@@ -57,9 +64,16 @@ const translations: ScreenTranslations = {
     commission: {
       reason: {
         leadConverted: 'लीड बिक्री में बदला',
+        referralReward: 'रेफ़रल इनाम',
+        exitSettlement: 'छोड़ने के बाद अंतिम निपटान',
+        contestPrize: 'प्रतियोगिता पुरस्कार',
+        payoutCorrection: 'आपके सवाल के बाद सुधार',
         leadQualified: 'लीड योग्य चरण तक पहुँचा',
         siteVisitVerified: 'साइट विज़िट सत्यापित',
         monthlyBonus: 'मासिक प्रदर्शन बोनस',
+        installationCompleted: 'इंस्टॉलेशन पूरा हुआ और सौंपा गया',
+        dealClosed: 'लीड दोबारा सौंपे जाने के बाद डील पूरी की',
+        qcCompleted: 'स्वतंत्र गुणवत्ता जाँच पूरी की',
       },
     },
     commissionTracker: {
@@ -103,9 +117,16 @@ const translations: ScreenTranslations = {
     commission: {
       reason: {
         leadConverted: 'लीड विक्रीत रूपांतरित झाला',
+        referralReward: 'रेफरल बक्षीस',
+        exitSettlement: 'सोडल्यानंतरचा अंतिम हिशोब',
+        contestPrize: 'स्पर्धा बक्षीस',
+        payoutCorrection: 'तुमच्या प्रश्नानंतर दुरुस्ती',
         leadQualified: 'लीड पात्र टप्प्यावर पोहोचला',
         siteVisitVerified: 'साइट भेट पडताळली',
         monthlyBonus: 'मासिक कामगिरी बोनस',
+        installationCompleted: 'इन्स्टॉलेशन पूर्ण झालं आणि सुपूर्द केलं',
+        dealClosed: 'लीड पुन्हा सोपवल्यानंतर डील पूर्ण केली',
+        qcCompleted: 'स्वतंत्र गुणवत्ता तपासणी पूर्ण केली',
       },
     },
     commissionTracker: {

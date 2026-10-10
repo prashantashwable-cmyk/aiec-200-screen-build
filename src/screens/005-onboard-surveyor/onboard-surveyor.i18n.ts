@@ -16,7 +16,7 @@ const translations: ScreenTranslations = {
         phone: 'Mobile number',
         city: 'City',
         aadhaar: 'Aadhaar number',
-        aadhaarHint: 'We only ever show the last four digits back to you.',
+        aadhaarHint: 'AIEC keeps only the last four digits. The full number stays on this phone.',
         pan: 'PAN',
         accountHolder: 'Name on the account',
         accountNumber: 'Account number',
@@ -26,7 +26,7 @@ const translations: ScreenTranslations = {
       },
       doc: {
         aadhaar: 'Photo of your Aadhaar',
-        aadhaarHint: 'Lay it flat, fill the frame, and avoid direct light on the card.',
+        aadhaarHint: 'Use a masked Aadhaar (only the last four digits showing) if you have one. Lay it flat, fill the frame, and avoid direct light on the card.',
         pan: 'Photo of your PAN card',
         bank: 'Passbook or cancelled cheque',
         bankHint: 'The account number and IFSC must both be readable in the photo.',
@@ -46,6 +46,7 @@ const translations: ScreenTranslations = {
         verified: 'Account verified',
         failed: 'Verification failed',
         retry: 'Try verification again',
+        notConnected: 'The bank check is not connected yet, so this account has not been verified. AIEC confirms it with you before the first payment.',
         blockedBanner:
           'Your bank account could not be verified. You can finish signing up, but commission payouts stay on hold until this is sorted.',
       },
@@ -78,7 +79,7 @@ const translations: ScreenTranslations = {
         phone: 'मोबाइल नंबर',
         city: 'शहर',
         aadhaar: 'आधार नंबर',
-        aadhaarHint: 'हम आपको हमेशा सिर्फ़ आख़िरी चार अंक ही दिखाते हैं।',
+        aadhaarHint: 'AIEC केवल आख़िरी चार अंक रखता है। पूरा नंबर इसी फ़ोन पर रहता है।',
         pan: 'पैन',
         accountHolder: 'खाते पर लिखा नाम',
         accountNumber: 'खाता संख्या',
@@ -88,7 +89,7 @@ const translations: ScreenTranslations = {
       },
       doc: {
         aadhaar: 'आधार की फ़ोटो',
-        aadhaarHint: 'सीधा रखकर, पूरे फ़्रेम में लीजिए, और कार्ड पर सीधी रोशनी न पड़ने दीजिए।',
+        aadhaarHint: 'अगर आपके पास मास्क्ड आधार है (केवल आख़िरी चार अंक दिखते हैं), तो उसी की फ़ोटो लें। सीधा रखकर, पूरे फ़्रेम में लीजिए, और कार्ड पर सीधी रोशनी न पड़ने दीजिए।',
         pan: 'पैन कार्ड की फ़ोटो',
         bank: 'पासबुक या रद्द किया हुआ चेक',
         bankHint: 'फ़ोटो में खाता संख्या और IFSC दोनों पढ़े जाने चाहिए।',
@@ -108,6 +109,7 @@ const translations: ScreenTranslations = {
         verified: 'खाता सत्यापित',
         failed: 'सत्यापन नहीं हुआ',
         retry: 'सत्यापन दोबारा करें',
+        notConnected: 'बैंक जाँच अभी जुड़ी नहीं है, इसलिए यह खाता सत्यापित नहीं हुआ है। पहले भुगतान से पहले AIEC आपके साथ इसकी पुष्टि करेगा।',
         blockedBanner:
           'आपका बैंक खाता सत्यापित नहीं हो पाया। आप साइन अप पूरा कर सकते हैं, लेकिन जब तक यह ठीक नहीं होता, कमीशन का भुगतान रुका रहेगा।',
       },
@@ -140,7 +142,7 @@ const translations: ScreenTranslations = {
         phone: 'मोबाइल क्रमांक',
         city: 'शहर',
         aadhaar: 'आधार क्रमांक',
-        aadhaarHint: 'आम्ही तुम्हाला नेहमी फक्त शेवटचे चार अंकच दाखवतो.',
+        aadhaarHint: 'AIEC फक्त शेवटचे चार अंक ठेवते. पूर्ण नंबर याच फोनवर राहतो.',
         pan: 'पॅन',
         accountHolder: 'खात्यावरील नाव',
         accountNumber: 'खाते क्रमांक',
@@ -150,7 +152,7 @@ const translations: ScreenTranslations = {
       },
       doc: {
         aadhaar: 'आधारचा फोटो',
-        aadhaarHint: 'सपाट ठेवून, संपूर्ण चौकटीत घ्या, आणि कार्डावर थेट प्रकाश पडू देऊ नका.',
+        aadhaarHint: 'तुमच्याकडे मास्क्ड आधार असल्यास (फक्त शेवटचे चार अंक दिसतात) त्याचाच फोटो घ्या. सपाट ठेवून, संपूर्ण चौकटीत घ्या, आणि कार्डावर थेट प्रकाश पडू देऊ नका.',
         pan: 'पॅन कार्डाचा फोटो',
         bank: 'पासबुक किंवा रद्द केलेला धनादेश',
         bankHint: 'फोटोत खाते क्रमांक आणि IFSC दोन्ही वाचता आले पाहिजेत.',
@@ -170,6 +172,7 @@ const translations: ScreenTranslations = {
         verified: 'खाते पडताळले',
         failed: 'पडताळणी झाली नाही',
         retry: 'पडताळणी पुन्हा करा',
+        notConnected: 'बँक तपासणी अजून जोडलेली नाही, त्यामुळे हे खाते पडताळलेले नाही. पहिल्या पेमेंटपूर्वी AIEC तुमच्यासोबत त्याची खात्री करेल.',
         blockedBanner:
           'तुमचे बँक खाते पडताळता आले नाही. तुम्ही नोंदणी पूर्ण करू शकता, पण हे सुरळीत होईपर्यंत कमिशनचे पैसे थांबवले जातील.',
       },

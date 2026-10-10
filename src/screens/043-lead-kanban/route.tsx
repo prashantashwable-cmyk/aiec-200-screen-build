@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { LeadKanbanView } from './LeadKanbanView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const LeadKanbanView = lazyScreen(() => import('./LeadKanbanView'), 'LeadKanbanView');
 
 const route: ScreenRoute = {
   id: '043',

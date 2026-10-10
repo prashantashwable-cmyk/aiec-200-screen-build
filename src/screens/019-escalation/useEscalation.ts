@@ -3,6 +3,7 @@ import { useData } from '@/data/DataProvider';
 import { useSession } from '@/session/SessionProvider';
 import { haversineKm } from '@/design-system';
 import type { Alert } from '@/data/types';
+import type { AlertEscalationView } from '@/data/repository';
 import { ACK_DEADLINE_MS, CLUSTER_RADIUS_KM, CLUSTER_WINDOW_MS } from './escalation.types';
 import type { EscalationEntry, EscalationStage, EscalationStatus } from './escalation.types';
 
@@ -40,17 +41,19 @@ export function useEscalation(): EscalationState {
   const [status, setStatus] = useState<EscalationStatus>('loading');
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [chains, setChains] = useState<AlertEscalationView[]>([]);
 
   const reload = useCallback(async () => {
     try {
       const list = await repository.listAlerts();
       setAlerts(list);
+      // How far each alert has climbed its chain (184) decides when it counts as overdue.
+      setChains(user ? await repository.getAlertEscalations(user.id).catch(() => []) : []);
       setStatus('ready');
     } catch {
       setStatus((current) => (current === 'ready' ? 'ready' : 'error'));
     }
-  }, [repository]);
+  }, [repository, user]);
 
   useEffect(() => {
     void reload();
@@ -78,16 +81,17 @@ export function useEscalation(): EscalationState {
         })
         .map((other) => other.code);
 
+      const chain = chains.find((c) => c.alertId === alert.id);
+      const waitMs = chain?.firstBackupAfterMinutes != null ? chain.firstBackupAfterMinutes * 60_000 : ACK_DEADLINE_MS;
       return {
         alert,
         stage: stageOf(alert),
         clusterWith,
-        overdueAcknowledgement:
-          alert.status === 'open' &&
-          Date.now() - new Date(alert.raisedAt).getTime() > ACK_DEADLINE_MS,
+        chain,
+        overdueAcknowledgement: alert.status === 'open' && Date.now() - new Date(alert.raisedAt).getTime() > waitMs,
       };
     });
-  }, [alerts]);
+  }, [alerts, chains]);
 
   const acknowledge = useCallback(
     async (alert: Alert) => {
@@ -107,22 +111,16 @@ export function useEscalation(): EscalationState {
       // A resolution without a note is not a resolution — it is a dismissal
       // wearing a different name, and this screen does not allow those.
       if (note.trim().length < 4) return;
+      // Persisted through the repository so the 15s poll can't revert it.
       setBusyId(alert.id);
       try {
-        setNotes((current) => ({ ...current, [alert.id]: note }));
-        // The repository has no resolve method; acknowledging then marking the
-        // local record resolved keeps the flow honest until one exists.
-        await repository.acknowledgeAlert(alert.id, user?.id ?? 'unknown');
-        setAlerts((current) =>
-          current.map((a) =>
-            a.id === alert.id ? { ...a, status: 'resolved', context: `${a.context} — ${note}` } : a,
-          ),
-        );
+        await repository.resolveAlert(alert.id, user?.id ?? 'unknown', note);
+        await reload();
       } finally {
         setBusyId(null);
       }
     },
-    [repository, user?.id],
+    [repository, user?.id, reload],
   );
 
   const open = entries.filter((e) => e.stage !== 'resolved');

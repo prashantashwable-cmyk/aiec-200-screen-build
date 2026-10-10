@@ -1,4 +1,5 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
+import { useData } from '@/data/DataProvider';
 import { useWizard } from '@/features/onboarding/useWizard';
 import type { WizardStepDef } from '@/features/onboarding/useWizard';
 import { isValidIndianMobile } from '@/features/onboarding/validators';
@@ -53,9 +54,12 @@ interface OnboardTechnicianState {
   unverified: SkillId[];
   insurance: ReturnType<typeof insuranceStatus>;
   submit: () => Promise<void>;
+  /** Why the last submit was refused, when the reason is the applicant's to act on. */
+  submitError: 'already_applied' | 'phone_taken' | null;
 }
 
 export function useOnboardTechnician(): OnboardTechnicianState {
+  const repository = useData();
   const wizard = useWizard<TechnicianDraft>(
     TECHNICIAN_DRAFT_KEY,
     EMPTY_TECHNICIAN_DRAFT,
@@ -98,16 +102,38 @@ export function useOnboardTechnician(): OnboardTechnicianState {
     [draft.sopAcknowledged, update],
   );
 
+  const [submitError, setSubmitError] = useState<'already_applied' | 'phone_taken' | null>(null);
+
   const submit = useCallback(async () => {
     wizard.setStatus('submitting');
+    setSubmitError(null);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 700));
+      // Lands in pending_approval for Admin (004). Only certified skills count
+      // for job matching; claims without a certificate are kept for review.
+      const certified = verifiedSkills(draft);
+      const documents = [
+        ...certified.map((id) => ({ kind: 'certificate' as const, doc: draft.skills[id].certificate! })),
+        ...(draft.insuranceDoc ? [{ kind: 'insurance' as const, doc: draft.insuranceDoc }] : []),
+      ].map((d) => ({ kind: d.kind, label: d.doc.fileName, fileName: d.doc.fileName, capturedAt: d.doc.capturedAt }));
+      await repository.submitFieldPartnerOnboarding({
+        role: 'technician',
+        name: draft.fullName,
+        phone: draft.phone,
+        city: draft.city,
+        skills: certified,
+        unverifiedSkills: unverifiedSkills(draft),
+        yearsExperience: draft.yearsExperience,
+        insuranceExpiry: draft.insuranceExpiry || undefined,
+        documents,
+      });
       wizard.setStatus('submitted');
       localStorage.removeItem(TECHNICIAN_DRAFT_KEY);
-    } catch {
+    } catch (err) {
+      const code = err instanceof Error ? err.message : '';
+      setSubmitError(code === 'already_applied' || code === 'phone_taken' ? code : null);
       wizard.setStatus('error');
     }
-  }, [wizard]);
+  }, [wizard, repository, draft]);
 
   return {
     wizard,
@@ -119,5 +145,6 @@ export function useOnboardTechnician(): OnboardTechnicianState {
     unverified: unverifiedSkills(draft),
     insurance: insuranceStatus(draft),
     submit,
+    submitError,
   };
 }

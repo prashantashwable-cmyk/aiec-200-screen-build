@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { Receipt, WarningCircle } from '@phosphor-icons/react';
+import { ChartBar, ClockCounterClockwise, FileText, Percent, Receipt, SlidersHorizontal, Stack, WarningCircle } from '@phosphor-icons/react';
 import {
   Badge,
   Button,
@@ -113,6 +113,46 @@ export function QuotationGeneratorView() {
           })}
         </div>
       )}
+
+      <h2 className="t-lg mb-3 mt-4">{t(K.quickLinks.heading)}</h2>
+      <div className="grid-auto mb-4" style={{ ['--min' as string]: '160px' }}>
+        <Card onClick={() => navigate('/admin/quotes/templates')}>
+          <div className="row gap-3">
+            <FileText size={22} className="t-emerald" />
+            <span className="t-sm t-medium">{t(K.quickLinks.templates)}</span>
+          </div>
+        </Card>
+        <Card onClick={() => navigate('/admin/quotes/compare')}>
+          <div className="row gap-3">
+            <Stack size={22} className="t-emerald" />
+            <span className="t-sm t-medium">{t(K.quickLinks.compare)}</span>
+          </div>
+        </Card>
+        <Card onClick={() => navigate('/admin/quotes/history')}>
+          <div className="row gap-3">
+            <ClockCounterClockwise size={22} className="t-emerald" />
+            <span className="t-sm t-medium">{t(K.quickLinks.history)}</span>
+          </div>
+        </Card>
+        <Card onClick={() => navigate('/admin/quotes/discounts')}>
+          <div className="row gap-3">
+            <Percent size={22} className="t-emerald" />
+            <span className="t-sm t-medium">{t(K.quickLinks.discounts)}</span>
+          </div>
+        </Card>
+        <Card onClick={() => navigate('/admin/quotes/analytics')}>
+          <div className="row gap-3">
+            <ChartBar size={22} className="t-emerald" />
+            <span className="t-sm t-medium">{t(K.quickLinks.analytics)}</span>
+          </div>
+        </Card>
+        <Card onClick={() => navigate('/admin/quotes/pricing')}>
+          <div className="row gap-3">
+            <SlidersHorizontal size={22} className="t-emerald" />
+            <span className="t-sm t-medium">{t(K.quickLinks.pricing)}</span>
+          </div>
+        </Card>
+      </div>
 
       <Sheet
         open={!!s.editingQuotation}

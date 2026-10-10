@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { AiBotConfigView } from './AiBotConfigView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const AiBotConfigView = lazyScreen(() => import('./AiBotConfigView'), 'AiBotConfigView');
 
 const route: ScreenRoute = {
   id: '056',

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useData } from '@/data/DataProvider';
+import { useSession } from '@/session/SessionProvider';
+import type { AssignmentFacts } from '@/data/repository';
 import { haversineKm } from '@/design-system';
 import type { User } from '@/data/types';
 import { AVERAGE_SPEED_KMH, MAX_REASONABLE_KM, SCORE_WEIGHTS } from './route-optimize.types';
@@ -11,22 +13,15 @@ interface RouteOptimizeState {
   selectedTask: UnassignedTask | null;
   selectTask: (task: UnassignedTask) => void;
   candidates: Candidate[];
-  assign: (task: UnassignedTask, candidate: Candidate) => Promise<'assigned' | 'conflict'>;
+  assign: (task: UnassignedTask, candidate: Candidate) => Promise<'assigned' | 'conflict' | { failed: string }>;
+  /** People of the right role who are not offered for this task, with the reason from their records. */
+  notOffered: Candidate[];
   busyUserId: string | null;
   /** Set when a second admin already assigned the task this session was viewing. */
   conflictTaskId: string | null;
   clearConflict: () => void;
   reload: () => Promise<void>;
 }
-
-/**
- * A leave calendar is not modelled in this build, so "on approved leave" is
- * derived from something deterministic and inspectable rather than invented
- * per render: an inactive user counts as unavailable, and one specific seeded
- * technician (Ajay Nikam, currently off duty) stands in for the "excluded
- * from ranking" case so it is exercised without random flakiness.
- */
-const SIMULATED_ON_LEAVE_IDS = new Set(['u-tech-3']);
 
 /**
  * Owns the assignment suggestion engine.
@@ -38,6 +33,7 @@ const SIMULATED_ON_LEAVE_IDS = new Set(['u-tech-3']);
  */
 export function useRouteOptimize(): RouteOptimizeState {
   const repository = useData();
+  const { user: me } = useSession();
 
   const [status, setStatus] = useState<SuggestStatus>('loading');
   const [tasks, setTasks] = useState<UnassignedTask[]>([]);
@@ -45,6 +41,8 @@ export function useRouteOptimize(): RouteOptimizeState {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
   const [conflictTaskId, setConflictTaskId] = useState<string | null>(null);
+  /** Real open work and blocks for the selected task, read from the repository. */
+  const [facts, setFacts] = useState<{ taskId: string; rows: AssignmentFacts[] } | null>(null);
 
   const reload = useCallback(async () => {
     setStatus('loading');
@@ -73,7 +71,7 @@ export function useRouteOptimize(): RouteOptimizeState {
         .map((j) => ({
           id: `job-${j.id}`,
           kind: 'jobAssignment',
-          title: j.siteName,
+          title: j.siteName || j.code,
           address: j.address,
           location: j.location,
           requiredSkills: [],
@@ -96,27 +94,32 @@ export function useRouteOptimize(): RouteOptimizeState {
 
   const selectedTask = tasks.find((t) => t.id === selectedTaskId) ?? null;
 
-  const candidates = useMemo<Candidate[]>(() => {
-    if (!selectedTask) return [];
+  useEffect(() => {
+    if (!selectedTask || !me) return undefined;
+    let live = true;
+    const target = selectedTask.lead ? { leadId: selectedTask.lead.id } : { jobId: selectedTask.job!.id };
+    void repository
+      .getAssignmentFacts(target, me.id)
+      .then((rows) => { if (live) setFacts({ taskId: selectedTask.id, rows }); })
+      .catch(() => { if (live) setStatus('error'); });
+    return () => { live = false; };
+  }, [repository, selectedTask, me]);
 
-    const pool = users.filter((u) => u.role === selectedTask.role);
-    const workloadCounts = new Map<string, number>();
-    // Current open-task count per person — the whole reason a nearby but
-    // overloaded staffer should rank behind someone a little further away.
-    for (const u of pool) {
-      workloadCounts.set(u.id, u.onDuty ? Math.round(Math.random() * 0 + (u.rating ? 6 - u.rating : 3)) : 0);
-    }
+  const ranked = useMemo<Candidate[]>(() => {
+    if (!selectedTask || facts?.taskId !== selectedTask.id) return [];
+    const byUser = new Map(facts.rows.map((f) => [f.userId, f]));
+    const pool = users.filter((u) => u.role === selectedTask.role && byUser.has(u.id));
 
-    const scored = pool.map((user) => {
-      const unavailable = user.status !== 'active' || SIMULATED_ON_LEAVE_IDS.has(user.id);
+    return pool.map((user) => {
+      const f = byUser.get(user.id)!;
       const distanceKm = user.location
         ? Math.round(haversineKm(user.location, selectedTask.location) * 10) / 10
         : Number.POSITIVE_INFINITY;
-      const workload = workloadCounts.get(user.id) ?? 0;
-      // No history is treated neutrally, not penalised — a new joiner gets a
-      // mid-range skill score rather than the lowest one.
+      // Real open work (leads held, or unfinished jobs led or crewed): a nearby but overloaded person should rank behind someone a little further away.
+      const workload = f.openWork;
       const isNewJoiner = !user.joinedAt || Date.now() - new Date(user.joinedAt).getTime() < 14 * 86_400_000;
-      const skillMatch = selectedTask.requiredSkills.length === 0 ? 1 : isNewJoiner ? 0.6 : 0.8;
+      // A job needing a skill the person lacks is not offered at all (see the block); everyone offered matches.
+      const skillMatch = f.hasSkill ? 1 : 0;
 
       const proximityScore = Number.isFinite(distanceKm)
         ? Math.max(0, 1 - distanceKm / MAX_REASONABLE_KM)
@@ -137,55 +140,56 @@ export function useRouteOptimize(): RouteOptimizeState {
         currentWorkload: workload,
         skillMatch,
         score,
-        unavailable,
-        unavailableReason: unavailable
-          ? SIMULATED_ON_LEAVE_IDS.has(user.id)
-            ? 'onLeave'
-            : 'wrongRole'
-          : undefined,
+        unavailable: f.block !== null,
+        unavailableReason: f.block ?? undefined,
         isNewJoiner,
       } satisfies Candidate;
     });
+  }, [selectedTask, users, facts]);
 
-    return scored
-      .filter((c) => !c.unavailable)
-      .filter((c) => c.distanceKm <= MAX_REASONABLE_KM)
-      .sort((a, b) => b.score - a.score);
-  }, [selectedTask, users]);
+  const candidates = useMemo(
+    () => ranked.filter((c) => !c.unavailable && c.distanceKm <= MAX_REASONABLE_KM).sort((a, b) => b.score - a.score),
+    [ranked],
+  );
+  const notOffered = useMemo(
+    () => ranked.filter((c) => c.unavailable || c.distanceKm > MAX_REASONABLE_KM).sort((a, b) => a.user.name.localeCompare(b.user.name)),
+    [ranked],
+  );
 
   const assign = useCallback(
-    async (task: UnassignedTask, candidate: Candidate) => {
+    async (task: UnassignedTask, candidate: Candidate): Promise<'assigned' | 'conflict' | { failed: string }> => {
+      if (!me) return { failed: 'forbidden' };
       setBusyUserId(candidate.user.id);
       try {
-        // Re-check against the live repository immediately before writing —
-        // this is what makes double-assignment structurally impossible rather
-        // than merely unlikely.
         if (task.kind === 'leadFollowUp' && task.lead) {
+          // Re-check against the live record immediately before writing, so two admins cannot both assign it.
           const fresh = await repository.getLead(task.lead.id);
           if (fresh && fresh.surveyorId !== '') {
             setConflictTaskId(task.id);
             await reload();
-            return 'conflict' as const;
+            return 'conflict';
           }
-          await repository.updateLead(task.lead.id, { surveyorId: candidate.user.id });
+          await repository.reassignLead(task.lead.id, candidate.user.id, 'Assigned from best-match suggestions', me.name);
         } else if (task.kind === 'jobAssignment' && task.job) {
-          const fresh = await repository.getJob(task.job.id);
-          if (fresh?.technicianId) {
-            setConflictTaskId(task.id);
-            await reload();
-            return 'conflict' as const;
-          }
-          // The repository has no direct job-update method; the assignment is
-          // still reflected by removing the task from the unassigned queue.
+          // The repository refuses if someone got there first, and applies every check a technician must pass to lead a job.
+          await repository.assignJobLead(task.job.id, candidate.user.id, me.id);
         }
         setTasks((current) => current.filter((t) => t.id !== task.id));
         setSelectedTaskId(null);
-        return 'assigned' as const;
+        return 'assigned';
+      } catch (err) {
+        const code = err instanceof Error ? err.message : 'generic';
+        if (code === 'already_assigned') {
+          setConflictTaskId(task.id);
+          await reload();
+          return 'conflict';
+        }
+        return { failed: code };
       } finally {
         setBusyUserId(null);
       }
     },
-    [repository, reload],
+    [repository, reload, me],
   );
 
   return {
@@ -194,6 +198,7 @@ export function useRouteOptimize(): RouteOptimizeState {
     selectedTask,
     selectTask: (task) => setSelectedTaskId(task.id),
     candidates,
+    notOffered,
     assign,
     busyUserId,
     conflictTaskId,

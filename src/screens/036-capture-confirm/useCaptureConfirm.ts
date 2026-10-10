@@ -4,6 +4,8 @@ import { useData } from '@/data/DataProvider';
 import { useSession } from '@/session/SessionProvider';
 import { useCaptureDraft } from '@/features/leadCapture/CaptureDraftProvider';
 import type { Lead } from '@/data/types';
+import type { CommissionRatesView } from '@/data/repository';
+import { amountOf } from '@/features/commission/rules';
 import {
   BASE_CAPTURE_BONUS,
   CONVERSION_BONUS_FLOOR,
@@ -64,11 +66,20 @@ export function useCaptureConfirm(): CaptureConfirmState {
   }, [isOnline, status]);
 
   const estimatedValue = estimateLeadValue(draft.spec.floors ?? 0, draft.spec.capacityPersons ?? 0);
-  const baseBonus = BASE_CAPTURE_BONUS;
-  const conversionBonus = Math.max(
-    CONVERSION_BONUS_FLOOR,
-    Math.round(estimatedValue * CONVERSION_BONUS_RATE),
-  );
+  // The figures are the commission rules' (161), including what the surveyor's tier adds; the constants only stand in until they have loaded.
+  const [rates, setRates] = useState<CommissionRatesView | null>(null);
+  useEffect(() => {
+    if (!user) return;
+    let live = true;
+    void repository.getMyCommissionRates(user.id).then((r) => { if (live) setRates(r); }).catch(() => undefined);
+    return () => { live = false; };
+  }, [repository, user]);
+  const ruleParams = (id: string) => rates?.rules.find((r) => r.id === id)?.params;
+  const baseBonus = ruleParams('site_visit')?.amount ?? BASE_CAPTURE_BONUS;
+  const conv = ruleParams('conversion');
+  const conversionBonus = conv
+    ? amountOf('conversion', conv, { dealValue: estimatedValue, tierPlusPct: rates?.tierPlusPct ?? 0 })
+    : Math.max(CONVERSION_BONUS_FLOOR, Math.round(estimatedValue * CONVERSION_BONUS_RATE));
 
   async function submitNow() {
     if (!user) return;

@@ -36,6 +36,8 @@ interface WizardShellProps<TDraft> {
   back: () => void;
   isFirstStep: boolean;
   onSubmit: () => void;
+  /** Why the last submit was refused, as a `wizard.error.*` key; the generic retry text otherwise. */
+  errorKey?: 'already_applied' | 'phone_taken' | null;
   children: ReactNode;
 }
 
@@ -57,6 +59,7 @@ export function WizardShell<TDraft>({
   back,
   isFirstStep,
   onSubmit,
+  errorKey,
   children,
 }: WizardShellProps<TDraft>) {
   const { t } = useTranslation();
@@ -120,7 +123,7 @@ export function WizardShell<TDraft>({
       {status === 'error' && (
         <Card className="mb-3">
           <p className="t-sm t-error t-semibold">{t('wizard.error.title')}</p>
-          <p className="t-sm t-muted mt-2">{t('wizard.error.body')}</p>
+          <p className="t-sm t-muted mt-2">{t(errorKey ? `wizard.error.${errorKey}` : 'wizard.error.body')}</p>
         </Card>
       )}
 

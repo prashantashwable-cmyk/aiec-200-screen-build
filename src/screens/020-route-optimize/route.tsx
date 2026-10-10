@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { RouteOptimizeView } from './RouteOptimizeView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const RouteOptimizeView = lazyScreen(() => import('./RouteOptimizeView'), 'RouteOptimizeView');
 
 const route: ScreenRoute = {
   id: '020',

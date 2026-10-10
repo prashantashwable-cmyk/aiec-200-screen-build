@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { Warning } from '@phosphor-icons/react';
 import {
   Badge,
+  Button,
   Card,
   ErrorState,
   ListRow,
@@ -86,6 +87,32 @@ export function FinanceView() {
             large
           />
         </Card>
+        {s.inTransit && (
+          <Card>
+            <StatTile label={t(K.card.inTransit)} value={<span className="num">{formatINRCompact(s.inTransit.value)}</span>} caption={t(K.card.inTransitNote)} large />
+          </Card>
+        )}
+        {s.payouts && (
+          <Card>
+            <StatTile label={t(K.card.payouts)} value={<span className="num">{formatINRCompact(s.payouts.approvedNow)}</span>} caption={t(K.card.payoutsNote, { count: s.payouts.approvedCount, pending: formatINRCompact(s.payouts.projected) })} large />
+            <Button size="sm" variant="ghost" onClick={() => navigate('/payout-tracker')}>
+              {t(K.card.seePayouts)}
+            </Button>
+          </Card>
+        )}
+        {s.supplierOutflows && (
+          <Card>
+            <StatTile
+              label={t(K.card.supplierOut)}
+              value={<span className="num">{formatINRCompact(s.supplierOutflows.next30)}</span>}
+              caption={t(K.card.supplierOutNote, { owed: formatINRCompact(s.supplierOutflows.owedNow), later: formatINRCompact(s.supplierOutflows.later) })}
+              large
+            />
+            <Button size="sm" variant="ghost" onClick={() => navigate('/supplier-payment-schedule')}>
+              {t(K.card.seeSchedule)}
+            </Button>
+          </Card>
+        )}
       </div>
 
       {summary.skewedByOutlier && (

@@ -1,6 +1,7 @@
 /** Screen 020 — Route Optimization / Best-Match Suggestion Screen. */
 
 import type { Job, Lead, Role, User } from '@/data/types';
+import type { AssignmentBlock } from '@/data/repository';
 
 export type SuggestStatus = 'loading' | 'ready' | 'empty' | 'error';
 
@@ -27,9 +28,9 @@ export interface Candidate {
   skillMatch: number;
   /** The single number candidates are ranked by — proximity, load and skill combined. */
   score: number;
-  /** Approved leave, or any reason they cannot be suggested at all. */
+  /** Any reason, read from the records, they cannot take this task. */
   unavailable: boolean;
-  unavailableReason?: 'onLeave' | 'wrongRole';
+  unavailableReason?: AssignmentBlock;
   isNewJoiner: boolean;
 }
 
@@ -67,9 +68,17 @@ export const ROUTE_OPTIMIZE_KEYS = {
     score: 'routeOptimize.field.score',
   },
   reason: {
-    onLeave: 'routeOptimize.reason.onLeave',
-    wrongRole: 'routeOptimize.reason.wrongRole',
+    not_active: 'routeOptimize.reason.not_active',
+    leaving: 'routeOptimize.reason.leaving',
+    training_incomplete: 'routeOptimize.reason.training_incomplete',
+    tier_cannot_lead: 'routeOptimize.reason.tier_cannot_lead',
+    day_off: 'routeOptimize.reason.day_off',
+    booked_that_day: 'routeOptimize.reason.booked_that_day',
+    missing_skill: 'routeOptimize.reason.missing_skill',
   },
+  notOffered: 'routeOptimize.notOffered',
+  tooFar: 'routeOptimize.tooFar',
+  assignFailed: 'routeOptimize.assignFailed',
   newJoiner: 'routeOptimize.newJoiner',
   topPick: 'routeOptimize.topPick',
   kind: {

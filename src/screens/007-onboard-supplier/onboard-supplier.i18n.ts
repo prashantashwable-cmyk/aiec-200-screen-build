@@ -20,6 +20,8 @@ const translations: ScreenTranslations = {
         pincode: 'PIN code',
         signatoryName: 'Authorised signatory',
         signatoryDesignation: 'Their designation',
+        signatoryPhone: 'Signatory mobile number',
+        signatoryPhoneHint: "You'll sign in with this number to follow your KYC review and, once approved, your orders.",
         catalogRowCount: 'How many products are in the file?',
         catalogRowCountHint: 'A rough count helps us spot a truncated upload.',
         accountHolder: 'Name on the account',
@@ -28,10 +30,10 @@ const translations: ScreenTranslations = {
       },
       gstin: {
         verify: 'Verify GSTIN',
-        running: 'Checking the GST registry…',
+        running: 'Checking…',
         matched: 'GSTIN verified',
         lookupFailed:
-          'The GST registry did not respond, so we could not match the legal name automatically. You can carry on — an admin will verify this by hand before your account goes live.',
+          'Format checked, and this GSTIN is not already registered with AIEC. The GST registry lookup is not connected yet, so an admin confirms the legal name by hand before your account goes live.',
         mismatch:
           'The legal name on this GSTIN does not match the company name you entered. Check both and try again.',
         duplicate:
@@ -55,6 +57,7 @@ const translations: ScreenTranslations = {
         running: 'Checking with your bank…',
         verified: 'Account verified',
         failed: 'Verification failed',
+        notConnected: 'The bank check is not connected yet, so this account has not been verified. AIEC confirms it with you before the first payment.',
         blocked:
           'This account could not be verified. You can finish registering, but no payment can be released until it is sorted.',
       },
@@ -76,6 +79,12 @@ const translations: ScreenTranslations = {
         pincode: 'Enter a valid 6-digit PIN code.',
         ifsc: 'An IFSC looks like HDFC0001234 — four letters, a zero, then six characters.',
         accountNumber: 'An account number is between 9 and 18 digits.',
+        signatoryPhone: 'Enter a valid 10-digit Indian mobile number.',
+      },
+      submitError: {
+        duplicate_gstin: 'A supplier with this GSTIN is already registered. Contact AIEC if this is your company.',
+        phone_taken: 'This mobile number is already linked to another AIEC account. Use a different number.',
+        generic: 'We could not submit your details. Please try again.',
       },
       poNote:
         'No purchase order can be issued to you until an admin approves this KYC. We will tell you the moment it is done.',
@@ -101,6 +110,8 @@ const translations: ScreenTranslations = {
         pincode: 'पिन कोड',
         signatoryName: 'अधिकृत हस्ताक्षरकर्ता',
         signatoryDesignation: 'उनका पद',
+        signatoryPhone: 'हस्ताक्षरकर्ता का मोबाइल नंबर',
+        signatoryPhoneHint: 'इसी नंबर से साइन इन करके आप अपनी KYC समीक्षा और स्वीकृति के बाद अपने ऑर्डर देख सकेंगे।',
         catalogRowCount: 'फ़ाइल में कितने उत्पाद हैं?',
         catalogRowCountHint: 'मोटा-मोटी गिनती से हमें अधूरी अपलोड पकड़ने में मदद मिलती है।',
         accountHolder: 'खाते पर लिखा नाम',
@@ -109,10 +120,10 @@ const translations: ScreenTranslations = {
       },
       gstin: {
         verify: 'GSTIN सत्यापित करें',
-        running: 'GST रजिस्ट्री से जाँच हो रही है…',
+        running: 'जाँच हो रही है…',
         matched: 'GSTIN सत्यापित',
         lookupFailed:
-          'GST रजिस्ट्री से जवाब नहीं मिला, इसलिए क़ानूनी नाम अपने आप मिलान नहीं हो सका। आप आगे बढ़ सकते हैं — खाता चालू होने से पहले एडमिन इसे ख़ुद जाँच लेगा।',
+          'फ़ॉर्मैट जाँचा गया, और यह GSTIN AIEC में पहले से पंजीकृत नहीं है। GST रजिस्ट्री से मिलान अभी जुड़ा नहीं है, इसलिए खाता चालू होने से पहले एक एडमिन हाथ से कानूनी नाम की पुष्टि करेगा।',
         mismatch:
           'इस GSTIN का क़ानूनी नाम आपकी लिखी कंपनी के नाम से मेल नहीं खाता। दोनों जाँचकर दोबारा कोशिश कीजिए।',
         duplicate:
@@ -136,6 +147,7 @@ const translations: ScreenTranslations = {
         running: 'आपके बैंक से जाँच हो रही है…',
         verified: 'खाता सत्यापित',
         failed: 'सत्यापन नहीं हुआ',
+        notConnected: 'बैंक जाँच अभी जुड़ी नहीं है, इसलिए यह खाता सत्यापित नहीं हुआ है। पहले भुगतान से पहले AIEC आपके साथ इसकी पुष्टि करेगा।',
         blocked:
           'यह खाता सत्यापित नहीं हो पाया। आप पंजीकरण पूरा कर सकते हैं, लेकिन ठीक होने तक कोई भुगतान जारी नहीं होगा।',
       },
@@ -157,6 +169,12 @@ const translations: ScreenTranslations = {
         pincode: 'सही 6 अंकों का पिन कोड डालिए।',
         ifsc: 'IFSC ऐसा दिखता है: HDFC0001234 — चार अक्षर, एक शून्य, फिर छह अक्षर-अंक।',
         accountNumber: 'खाता संख्या 9 से 18 अंकों की होती है।',
+        signatoryPhone: 'एक मान्य 10 अंकों का भारतीय मोबाइल नंबर दर्ज करें।',
+      },
+      submitError: {
+        duplicate_gstin: 'इस GSTIN वाला सप्लायर पहले से पंजीकृत है। यदि यह आपकी कंपनी है तो AIEC से संपर्क करें।',
+        phone_taken: 'यह मोबाइल नंबर पहले से किसी अन्य AIEC खाते से जुड़ा है। कोई दूसरा नंबर उपयोग करें।',
+        generic: 'हम आपका विवरण जमा नहीं कर सके। कृपया फिर से प्रयास करें।',
       },
       poNote:
         'जब तक एडमिन यह KYC मंज़ूर नहीं करता, आपको कोई ऑर्डर जारी नहीं किया जा सकता। मंज़ूरी होते ही हम बता देंगे।',
@@ -182,6 +200,8 @@ const translations: ScreenTranslations = {
         pincode: 'पिन कोड',
         signatoryName: 'अधिकृत स्वाक्षरीकर्ता',
         signatoryDesignation: 'त्यांचे पद',
+        signatoryPhone: 'स्वाक्षरीकर्त्याचा मोबाईल क्रमांक',
+        signatoryPhoneHint: 'याच क्रमांकाने साइन इन करून तुम्ही तुमचे KYC पुनरावलोकन आणि मंजुरीनंतर तुमचे ऑर्डर पाहू शकाल.',
         catalogRowCount: 'फाइलमध्ये किती उत्पादने आहेत?',
         catalogRowCountHint: 'ढोबळ आकड्यामुळे अर्धवट अपलोड ओळखणे आम्हाला सोपे जाते.',
         accountHolder: 'खात्यावरील नाव',
@@ -190,10 +210,10 @@ const translations: ScreenTranslations = {
       },
       gstin: {
         verify: 'GSTIN पडताळा',
-        running: 'GST नोंदवहीकडून तपासत आहे…',
+        running: 'तपासत आहे…',
         matched: 'GSTIN पडताळले',
         lookupFailed:
-          'GST नोंदवहीकडून प्रतिसाद आला नाही, त्यामुळे कायदेशीर नाव आपोआप जुळवता आले नाही. तुम्ही पुढे जाऊ शकता — खाते सुरू होण्यापूर्वी प्रशासक हे स्वतः तपासेल.',
+          'फॉरमॅट तपासला, आणि हा GSTIN AIEC मध्ये आधीच नोंदलेला नाही. GST नोंदवहीशी जुळवणी अजून जोडलेली नाही, त्यामुळे खाते सुरू होण्यापूर्वी एक प्रशासक कायदेशीर नाव हाताने तपासेल.',
         mismatch:
           'या GSTIN वरील कायदेशीर नाव तुम्ही लिहिलेल्या कंपनीच्या नावाशी जुळत नाही. दोन्ही तपासा आणि पुन्हा प्रयत्न करा.',
         duplicate:
@@ -217,6 +237,7 @@ const translations: ScreenTranslations = {
         running: 'तुमच्या बँकेकडून तपासत आहे…',
         verified: 'खाते पडताळले',
         failed: 'पडताळणी झाली नाही',
+        notConnected: 'बँक तपासणी अजून जोडलेली नाही, त्यामुळे हे खाते पडताळलेले नाही. पहिल्या पेमेंटपूर्वी AIEC तुमच्यासोबत त्याची खात्री करेल.',
         blocked:
           'हे खाते पडताळता आले नाही. तुम्ही नोंदणी पूर्ण करू शकता, पण हे सुरळीत होईपर्यंत कोणतेही पैसे दिले जाणार नाहीत.',
       },
@@ -238,6 +259,12 @@ const translations: ScreenTranslations = {
         pincode: 'योग्य ६ अंकी पिन कोड टाका.',
         ifsc: 'IFSC असा दिसतो: HDFC0001234 — चार अक्षरे, एक शून्य, मग सहा अक्षरे-अंक.',
         accountNumber: 'खाते क्रमांक ९ ते १८ अंकांचा असतो.',
+        signatoryPhone: 'वैध १० अंकी भारतीय मोबाईल क्रमांक टाका.',
+      },
+      submitError: {
+        duplicate_gstin: 'या GSTIN चा सप्लायर आधीच नोंदणीकृत आहे. ही तुमची कंपनी असल्यास AIEC शी संपर्क साधा.',
+        phone_taken: 'हा मोबाईल क्रमांक आधीच दुसऱ्या AIEC खात्याशी जोडलेला आहे. वेगळा क्रमांक वापरा.',
+        generic: 'आम्ही तुमचे तपशील सादर करू शकलो नाही. कृपया पुन्हा प्रयत्न करा.',
       },
       poNote:
         'प्रशासक हे KYC मंजूर करेपर्यंत तुम्हाला कोणतीही ऑर्डर देता येणार नाही. मंजुरी होताच आम्ही कळवू.',

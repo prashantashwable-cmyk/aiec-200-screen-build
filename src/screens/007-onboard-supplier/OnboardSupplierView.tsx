@@ -4,7 +4,7 @@ import { Info, Warning } from '@phosphor-icons/react';
 import { Badge, Button, Card, Checkbox, Field, Input, TextArea } from '@/design-system';
 import { DocumentSlot } from '@/features/onboarding/DocumentSlot';
 import { WizardShell } from '@/features/onboarding/WizardShell';
-import { isValidGstin, isValidIfsc, isValidPincode } from '@/features/onboarding/validators';
+import { isValidGstin, isValidIfsc, isValidIndianMobile, isValidPincode } from '@/features/onboarding/validators';
 import {
   ACCEPTED_CATALOG_ATTR,
   ACCEPTED_CATALOG_EXTENSIONS,
@@ -42,6 +42,14 @@ export function OnboardSupplierView() {
       back={s.wizard.back}
       onSubmit={() => void s.submit()}
     >
+      {s.submitErrorKey && (
+        <Card>
+          <p className="t-sm t-error row gap-2">
+            <Warning size={16} className="shrink-0" />
+            {t(s.submitErrorKey)}
+          </p>
+        </Card>
+      )}
       {s.payoutsBlocked && (
         <Card>
           <p className="t-sm t-warning row gap-2">
@@ -197,6 +205,22 @@ export function OnboardSupplierView() {
               />
             )}
           </Field>
+          <Field
+            label={t(K.field.signatoryPhone)}
+            hint={t(K.field.signatoryPhoneHint)}
+            required
+            error={draft.signatoryPhone.length >= 10 && !isValidIndianMobile(draft.signatoryPhone) ? t(K.invalid.signatoryPhone) : undefined}
+          >
+            {({ id }) => (
+              <Input
+                id={id}
+                type="tel"
+                inputMode="numeric"
+                value={draft.signatoryPhone}
+                onChange={(e) => update({ signatoryPhone: e.target.value.replace(/\D/g, '').slice(0, 10) })}
+              />
+            )}
+          </Field>
         </>
       )}
 
@@ -319,23 +343,13 @@ export function OnboardSupplierView() {
             onChange={(value) => update({ bankDoc: value })}
           />
 
+          {/* No bank-verification provider is connected, so nothing here claims the account was checked. */}
           <Card>
-            <div className="row between gap-3">
-              <span className="t-sm t-semibold grow">{t(K.bank.verify)}</span>
-              {draft.pennyDrop === 'verified' && <Badge tone="success" dot>{t(K.bank.verified)}</Badge>}
-              {draft.pennyDrop === 'failed' && <Badge tone="error" dot>{t(K.bank.failed)}</Badge>}
-            </div>
-            <div className="mt-3">
-              <Button
-                size="sm"
-                variant={draft.pennyDrop === 'verified' ? 'ghost' : 'primary'}
-                loading={draft.pennyDrop === 'running'}
-                disabled={!isValidIfsc(draft.ifsc) || !/^\d{9,18}$/.test(draft.accountNumber)}
-                onClick={() => void s.runPennyDrop()}
-              >
-                {draft.pennyDrop === 'running' ? t(K.bank.running) : t(K.bank.verify)}
-              </Button>
-            </div>
+            <p className="t-sm t-semibold">{t(K.bank.verify)}</p>
+            <p className="t-xs t-muted mt-2 row gap-2">
+              <Info size={14} className="shrink-0" />
+              {t(K.bank.notConnected)}
+            </p>
           </Card>
         </>
       )}

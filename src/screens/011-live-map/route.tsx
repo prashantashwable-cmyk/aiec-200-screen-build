@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { LiveMapView } from './LiveMapView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const LiveMapView = lazyScreen(() => import('./LiveMapView'), 'LiveMapView');
 
 const route: ScreenRoute = {
   id: '011',

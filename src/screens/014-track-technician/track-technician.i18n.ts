@@ -25,6 +25,8 @@ const translations: ScreenTranslations = {
       title: 'Technician detail',
       loading: 'Loading the job',
       mapLabel: 'Job site and the technician’s current position',
+      safety: 'Safety checks',
+      issues: 'Field issues',
       escalate: 'Escalate this',
       openTimeline: 'Open the installation timeline',
       oneSourceNote:
@@ -66,6 +68,7 @@ const translations: ScreenTranslations = {
           'This job was checked out with SOP steps still unfinished. It has not been marked complete — it is waiting on your review.',
         blockedStepNoEvidence:
           'A safety-critical step is waiting on photo proof. It cannot be signed off until evidence is attached.',
+        visitUnconfirmed: 'Still checked in from an earlier day. Their time on site is not counted until they say when they left. They have been asked.',
         signalLost: 'No location signal for {{context}} minutes while the job is still running.',
       },
       notFound: {
@@ -102,6 +105,8 @@ const translations: ScreenTranslations = {
       title: 'तकनीशियन विवरण',
       loading: 'काम लोड हो रहा है',
       mapLabel: 'काम की साइट और तकनीशियन की मौजूदा जगह',
+      safety: 'सुरक्षा जाँचें',
+      issues: 'फ़ील्ड की समस्याएँ',
       escalate: 'इसे आगे बढ़ाएँ',
       openTimeline: 'इंस्टॉलेशन टाइमलाइन खोलें',
       oneSourceNote:
@@ -143,6 +148,7 @@ const translations: ScreenTranslations = {
           'SOP चरण अधूरे रहते हुए इस काम से चेक-आउट हुआ है। इसे पूरा नहीं माना गया — यह आपकी समीक्षा का इंतज़ार कर रहा है।',
         blockedStepNoEvidence:
           'एक सुरक्षा-चरण फ़ोटो सबूत का इंतज़ार कर रहा है। सबूत लगे बिना उसे पूरा नहीं किया जा सकता।',
+        visitUnconfirmed: 'किसी पिछले दिन से अभी भी चेक-इन दिख रहे हैं। जब तक वे नहीं बताते कि कब निकले, उनका साइट पर समय गिना नहीं जाता। उनसे पूछा जा चुका है।',
         signalLost: 'काम चालू रहते हुए {{context}} मिनट से कोई लोकेशन सिग्नल नहीं।',
       },
       notFound: {
@@ -179,6 +185,8 @@ const translations: ScreenTranslations = {
       title: 'तंत्रज्ञ तपशील',
       loading: 'काम लोड होत आहे',
       mapLabel: 'कामाची साइट आणि तंत्रज्ञाची सध्याची जागा',
+      safety: 'सुरक्षा तपासण्या',
+      issues: 'फील्डमधील समस्या',
       escalate: 'हे वर कळवा',
       openTimeline: 'बसवणुकीची कालरेषा उघडा',
       oneSourceNote:
@@ -220,6 +228,7 @@ const translations: ScreenTranslations = {
           'SOP टप्पे अपूर्ण असताना या कामातून चेक-आउट झाले आहे. ते पूर्ण म्हणून नोंदलेले नाही — तुमच्या तपासणीची वाट पाहत आहे.',
         blockedStepNoEvidence:
           'एक सुरक्षा-टप्पा फोटो पुराव्याची वाट पाहत आहे. पुरावा जोडल्याशिवाय तो पूर्ण करता येणार नाही.',
+        visitUnconfirmed: 'आधीच्या दिवसापासून अजूनही चेक-इन दिसत आहेत. ते कधी निघाले हे सांगेपर्यंत त्यांची साइटवरील वेळ मोजली जात नाही. त्यांना विचारले आहे.',
         signalLost: 'काम चालू असताना {{context}} मिनिटांपासून स्थानाचा सिग्नल नाही.',
       },
       notFound: {

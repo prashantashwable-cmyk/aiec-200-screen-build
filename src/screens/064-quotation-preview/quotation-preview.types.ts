@@ -37,6 +37,8 @@ export const QUOTATION_PREVIEW_KEYS = {
   actions: {
     accept: 'quotationPreview.actions.accept',
     requestChanges: 'quotationPreview.actions.requestChanges',
+    send: 'quotationPreview.actions.send',
+    deliveryStatus: 'quotationPreview.actions.deliveryStatus',
   },
 
   changeRequestSheet: {

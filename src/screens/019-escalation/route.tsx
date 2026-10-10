@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { EscalationView } from './EscalationView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const EscalationView = lazyScreen(() => import('./EscalationView'), 'EscalationView');
 
 const route: ScreenRoute = {
   id: '019',

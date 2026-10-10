@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useData } from '@/data/DataProvider';
 import { useSession } from '@/session/SessionProvider';
-import type { Alert, AlertSeverity } from '@/data/types';
+import type { Alert, AlertSeverity, User } from '@/data/types';
 import { SEVERITY_ORDER } from './alerts-board.types';
 import type { AgeFilter, BoardStatus, ExceptionRow } from './alerts-board.types';
 
-const SNOOZED_KEY = 'aiec.snoozedAlerts';
-const DELEGATED_KEY = 'aiec.delegatedAlerts';
 const POLL_MS = 20_000;
 
 interface AlertsBoardState {
@@ -22,18 +20,11 @@ interface AlertsBoardState {
   selectedIds: string[];
   toggleSelect: (id: string) => void;
   bulkAcknowledge: () => Promise<void>;
-  snooze: (alert: Alert, hours: number) => void;
-  delegate: (alert: Alert, to: string) => void;
-  delegatedTo: Record<string, string>;
+  snooze: (alert: Alert, hours: number) => Promise<boolean>;
+  delegate: (alert: Alert, toUserId: string) => Promise<boolean>;
+  /** Active staff an alert can be handed to (Admin, surveyors, technicians), for the delegate picker and names. */
+  staff: User[];
   reload: () => Promise<void>;
-}
-
-function readMap(key: string): Record<string, number | string> {
-  try {
-    return JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, number | string>;
-  } catch {
-    return {};
-  }
 }
 
 /**
@@ -54,13 +45,13 @@ export function useAlertsBoard(): AlertsBoardState {
   const [ageFilter, setAgeFilter] = useState<AgeFilter>('all');
   const [activeCategories, setActiveCategories] = useState<string[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [snoozed, setSnoozed] = useState<Record<string, number>>(() => readMap(SNOOZED_KEY) as Record<string, number>);
-  const [delegatedTo, setDelegatedTo] = useState<Record<string, string>>(() => readMap(DELEGATED_KEY) as Record<string, string>);
+  const [staff, setStaff] = useState<User[]>([]);
 
   const reload = useCallback(async () => {
     try {
-      const list = await repository.listAlerts();
+      const [list, people] = await Promise.all([repository.listAlerts(), repository.listUsers({ status: 'active' })]);
       setAlerts(list);
+      setStaff(people.filter((u) => u.role === 'admin' || u.role === 'surveyor' || u.role === 'technician'));
       setStatus(list.length === 0 ? 'empty' : 'ready');
     } catch {
       setStatus((current) => (current === 'ready' ? 'ready' : 'error'));
@@ -81,8 +72,8 @@ export function useAlertsBoard(): AlertsBoardState {
       .filter((a) => (showResolved ? a.status === 'resolved' : a.status !== 'resolved'))
       .filter((a) => activeCategories.length === 0 || activeCategories.includes(a.category))
       .filter((a) => {
-        const snoozedUntil = snoozed[a.id];
-        return !snoozedUntil || snoozedUntil <= now;
+        // Snoozes are kept on the alert itself, so every Admin and every device sees the same board.
+        return !a.snoozedUntil || new Date(a.snoozedUntil).getTime() <= now;
       })
       .filter((a) => {
         if (ageFilter === 'all') return true;
@@ -110,7 +101,7 @@ export function useAlertsBoard(): AlertsBoardState {
         if (sevDiff !== 0) return sevDiff;
         return b.ageHours - a.ageHours;
       });
-  }, [alerts, showResolved, activeCategories, ageFilter, snoozed]);
+  }, [alerts, showResolved, activeCategories, ageFilter]);
 
   const toggleCategory = useCallback((category: string) => {
     setActiveCategories((current) =>
@@ -129,21 +120,33 @@ export function useAlertsBoard(): AlertsBoardState {
     await reload();
   }, [selectedIds, repository, user?.id, reload]);
 
-  const snooze = useCallback((alert: Alert, hours: number) => {
-    setSnoozed((current) => {
-      const next = { ...current, [alert.id]: Date.now() + hours * 3_600_000 };
-      localStorage.setItem(SNOOZED_KEY, JSON.stringify(next));
-      return next;
-    });
-  }, []);
+  const snooze = useCallback(
+    async (alert: Alert, hours: number) => {
+      if (!user) return false;
+      try {
+        await repository.snoozeAlert(alert.id, hours, user.id);
+        await reload();
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [repository, user, reload],
+  );
 
-  const delegate = useCallback((alert: Alert, to: string) => {
-    setDelegatedTo((current) => {
-      const next = { ...current, [alert.id]: to };
-      localStorage.setItem(DELEGATED_KEY, JSON.stringify(next));
-      return next;
-    });
-  }, []);
+  const delegate = useCallback(
+    async (alert: Alert, toUserId: string) => {
+      if (!user) return false;
+      try {
+        await repository.delegateAlert(alert.id, toUserId, user.id);
+        await reload();
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [repository, user, reload],
+  );
 
   return {
     status,
@@ -160,7 +163,7 @@ export function useAlertsBoard(): AlertsBoardState {
     bulkAcknowledge,
     snooze,
     delegate,
-    delegatedTo,
+    staff,
     reload,
   };
 }

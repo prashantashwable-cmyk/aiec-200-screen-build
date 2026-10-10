@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { IssuerBlock } from '@/features/brand/IssuerBlock';
 import { useNavigate } from 'react-router-dom';
 import { CheckCircle, Clock, Eye } from '@phosphor-icons/react';
 import {
@@ -110,6 +111,10 @@ export function QuotationPreviewView() {
       <ScreenHeader title={view.leadSiteName} subtitle={view.code} action={<Badge tone="accent">{t(`quotationStatus.${view.effectiveStatus}`)}</Badge>} />
 
       <Card className="mb-4">
+        <IssuerBlock at={view.sentAt ?? null} />
+      </Card>
+
+      <Card className="mb-4">
         <StatTile label={t(K.finalPriceLabel)} value={<span className="num">{formatINR(view.finalPrice)}</span>} large caption={t(K.gstInclusiveNote, { pct: view.gstPercent })} />
       </Card>
 
@@ -158,6 +163,9 @@ export function QuotationPreviewView() {
 
       <ActionBar>
         <div className="stack gap-2">
+          <Button block variant="secondary" onClick={() => navigate(`/admin/quotes/${view.id}/send`)}>
+            {t(view.effectiveStatus === 'draft' || view.effectiveStatus === 'change_requested' ? K.actions.send : K.actions.deliveryStatus)}
+          </Button>
           <Button block loading={s.accepting} onClick={() => void s.accept().then((ok) => toast.push(t(ok ? K.toast.accepted : K.toast.error), ok ? 'success' : 'error'))}>
             {t(K.actions.accept)}
           </Button>

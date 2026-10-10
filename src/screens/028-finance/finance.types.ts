@@ -1,12 +1,17 @@
 /** Screen 028 — Financial Overview: Cash Flow & Receivables. Types and keys. */
 
 import type { Payment } from '@/data/types';
+import type { AgingBucket } from '@/features/payments/aging';
 
 export type FinanceStatus = 'loading' | 'ready' | 'error';
 
-export type AgingBucket = 'current' | 'd30' | 'd60' | 'd90plus' | 'disputed';
-
-export const AGING_BUCKETS: AgingBucket[] = ['current', 'd30', 'd60', 'd90plus', 'disputed'];
+/** The aging-bucket vocabulary and its one definition live in
+ *  `@/features/payments/aging` — shared with screen 082's Payment
+ *  Collection Dashboard so the two screens can never disagree on what
+ *  "overdue" means. Re-exported here so this screen's own files don't need
+ *  to change their import path. */
+export { AGING_BUCKETS, OUTLIER_MULTIPLE } from '@/features/payments/aging';
+export type { AgingBucket };
 
 export interface AgingGroup {
   bucket: AgingBucket;
@@ -29,9 +34,6 @@ export interface FinanceSummary {
   skewedByOutlier: boolean;
 }
 
-/** A single receivable this many times the median counts as an outlier. */
-export const OUTLIER_MULTIPLE = 3;
-
 export const FINANCE_KEYS = {
   title: 'finance.title',
   subtitle: 'finance.subtitle',
@@ -41,6 +43,14 @@ export const FINANCE_KEYS = {
     cashOut: 'finance.card.cashOut',
     netPosition: 'finance.card.netPosition',
     totalReceivable: 'finance.card.totalReceivable',
+    inTransit: 'finance.card.inTransit',
+    inTransitNote: 'finance.card.inTransitNote',
+    supplierOut: 'finance.card.supplierOut',
+    supplierOutNote: 'finance.card.supplierOutNote',
+    seeSchedule: 'finance.card.seeSchedule',
+    payouts: 'finance.card.payouts',
+    payoutsNote: 'finance.card.payoutsNote',
+    seePayouts: 'finance.card.seePayouts',
   },
   outlierNote: 'finance.outlierNote',
   medianNote: 'finance.medianNote',

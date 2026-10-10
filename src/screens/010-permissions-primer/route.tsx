@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { PermissionsPrimerView } from './PermissionsPrimerView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const PermissionsPrimerView = lazyScreen(() => import('./PermissionsPrimerView'), 'PermissionsPrimerView');
 
 const route: ScreenRoute = {
   id: '010',

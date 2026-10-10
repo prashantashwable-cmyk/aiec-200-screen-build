@@ -1,12 +1,15 @@
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Suspense } from 'react';
+import type { ReactNode } from 'react';
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { AppShell } from '@/navigation/AppShell';
-import { HOME_PATH_BY_ROLE, canAccess, screenRoutes } from '@/navigation/registry';
+import { HOME_PATH_BY_ROLE, screenRoutes } from '@/navigation/registry';
+import type { ScreenRoute } from '@/navigation/registry';
+import { useAccess } from '@/features/access/AccessContext';
 import { useSession } from '@/session/SessionProvider';
 import { EmptyState, LoadingState, Screen } from '@/design-system';
 import { SettingsScreen } from '@/screens/_settings/SettingsScreen';
 import { PendingApprovalScreen } from '@/screens/_pending/PendingApprovalScreen';
-import { ModulePendingScreen } from '@/screens/_pending/ModulePendingScreen';
 
 /**
  * Routing is assembled from the discovered screen registry. Public (chromeless)
@@ -41,35 +44,67 @@ function RequireSession({ children }: { children: React.ReactNode }) {
 }
 
 function RoleGuard({
-  allowed,
+  route,
   children,
 }: {
-  allowed: Parameters<typeof canAccess>[0]['roles'];
+  route: Pick<ScreenRoute, 'id' | 'path' | 'roles'>;
   children: React.ReactNode;
 }) {
   const { role } = useSession();
-  if (allowed !== 'public' && (!role || !allowed.includes(role))) {
-    return <Navigate to={role ? HOME_PATH_BY_ROLE[role] : '/login'} replace />;
-  }
+  const { canOpen } = useAccess();
+  // Who may open a screen is decided centrally (192): the code's route table, then Admin's decisions for the role and for the person.
+  if (route.roles !== 'public' && !role) return <Navigate to="/login" replace />;
+  // Said plainly rather than bouncing home, so a refused link is never mistaken for a broken one.
+  if (route.roles !== 'public' && role && !canOpen(route)) return <Forbidden />;
   return <>{children}</>;
+}
+
+function Forbidden() {
+  const { t } = useTranslation();
+  const { role } = useSession();
+  const navigate = useNavigate();
+  return (
+    <Screen width="narrow">
+      <div data-refused>
+        <EmptyState
+          title={t('forbidden.title')}
+          body={t('forbidden.body')}
+          actionLabel={t('forbidden.home')}
+          onAction={() => navigate(role ? HOME_PATH_BY_ROLE[role] : '/login', { replace: true })}
+        />
+      </div>
+    </Screen>
+  );
 }
 
 function NotFound() {
   const { t } = useTranslation();
   const { role } = useSession();
+  const navigate = useNavigate();
   return (
     <Screen width="narrow">
       <EmptyState
         title={t('notFound.title')}
         body={t('notFound.body')}
         actionLabel={t('notFound.home')}
-        onAction={() => {
-          window.location.href = role ? HOME_PATH_BY_ROLE[role] : '/login';
-        }}
+        // Within the app, never a page reload: a reload would start the data over.
+        onAction={() => navigate(role ? HOME_PATH_BY_ROLE[role] : '/login', { replace: true })}
       />
     </Screen>
   );
 }
+
+/** Shown for the moment a screen's own code is still arriving (screens load when first opened). */
+function ScreenLoading() {
+  const { t } = useTranslation();
+  return (
+    <div className="ds-screen" data-screen-loading>
+      <LoadingState label={t('state.loading')} variant="cards" rows={3} />
+    </div>
+  );
+}
+
+const loaded = (node: ReactNode) => <Suspense fallback={<ScreenLoading />}>{node}</Suspense>;
 
 export default function App() {
   const publicRoutes = screenRoutes.filter((r) => r.chromeless);
@@ -78,7 +113,7 @@ export default function App() {
   return (
     <Routes>
       {publicRoutes.map(({ id, path, Component }) => (
-        <Route key={id} path={path} element={<Component />} />
+        <Route key={id} path={path} element={loaded(<Component />)} />
       ))}
 
       <Route
@@ -93,8 +128,8 @@ export default function App() {
             key={id}
             path={path}
             element={
-              <RoleGuard allowed={roles}>
-                <Component />
+              <RoleGuard route={{ id, path, roles }}>
+                {loaded(<Component />)}
               </RoleGuard>
             }
           />
@@ -102,12 +137,6 @@ export default function App() {
 
         {/* Foundation-owned screens, not part of the numbered 200. */}
         <Route path="/settings" element={<SettingsScreen />} />
-        <Route
-          path="/technician"
-          element={<ModulePendingScreen role="technician" moduleNumber={13} />}
-        />
-        <Route path="/customer" element={<ModulePendingScreen role="customer" moduleNumber={18} />} />
-        <Route path="/supplier" element={<ModulePendingScreen role="supplier" moduleNumber={10} />} />
       </Route>
 
       <Route path="*" element={<NotFound />} />

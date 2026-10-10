@@ -1,6 +1,7 @@
 /** Screen 006 — Technician onboarding wizard. Types and translation keys only. */
 
 import type { DocumentSlotValue } from '@/features/onboarding/DocumentSlot';
+import { DRAFT_KEYS } from '@/features/onboarding/handoff';
 
 /** Skill tags feed job-assignment eligibility directly, so they are a fixed set. */
 export const SKILL_IDS = [
@@ -77,7 +78,7 @@ export const EMPTY_TECHNICIAN_DRAFT: TechnicianDraft = {
   },
 };
 
-export const TECHNICIAN_DRAFT_KEY = 'aiec.onboarding.technician';
+export const TECHNICIAN_DRAFT_KEY = DRAFT_KEYS.technician;
 
 /** Warn this far ahead of an insurance lapse, and block once it passes. */
 export const INSURANCE_WARN_DAYS = 30;

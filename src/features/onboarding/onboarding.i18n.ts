@@ -34,6 +34,8 @@ const translations: ScreenTranslations = {
       error: {
         title: 'Could not submit',
         body: 'Your answers are safe and still saved on this device. Try sending again in a moment.',
+        already_applied: 'An application from this mobile number is already waiting for review. We will tell you when it has been decided.',
+        phone_taken: 'This mobile number is already linked to another AIEC account. Sign in with it, or use a different number.',
       },
     },
   },
@@ -66,6 +68,8 @@ const translations: ScreenTranslations = {
       error: {
         title: 'भेजा नहीं जा सका',
         body: 'आपके जवाब सुरक्षित हैं और इसी डिवाइस पर सहेजे हुए हैं। थोड़ी देर में दोबारा भेजिए।',
+        already_applied: 'इस मोबाइल नंबर से एक आवेदन पहले से समीक्षा की प्रतीक्षा में है। निर्णय होते ही हम आपको बताएँगे।',
+        phone_taken: 'यह मोबाइल नंबर पहले से किसी दूसरे AIEC खाते से जुड़ा है। उसी से साइन इन करें, या कोई दूसरा नंबर उपयोग करें।',
       },
     },
   },
@@ -98,6 +102,8 @@ const translations: ScreenTranslations = {
       error: {
         title: 'पाठवता आले नाही',
         body: 'तुमची उत्तरे सुरक्षित आहेत आणि याच डिव्हाइसवर जतन आहेत. थोड्या वेळाने पुन्हा पाठवा.',
+        already_applied: 'या मोबाइल नंबरवरून आलेला अर्ज आधीच तपासणीच्या प्रतीक्षेत आहे. निर्णय होताच आम्ही तुम्हाला कळवू.',
+        phone_taken: 'हा मोबाइल नंबर आधीच दुसऱ्या AIEC खात्याशी जोडलेला आहे. त्याने साइन इन करा, किंवा दुसरा नंबर वापरा.',
       },
     },
   },

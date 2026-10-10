@@ -1,5 +1,7 @@
 import type { ScreenRoute } from '@/navigation/registry';
-import { HeatmapView } from './HeatmapView';
+import { lazyScreen } from '@/navigation/lazyScreen';
+
+const HeatmapView = lazyScreen(() => import('./HeatmapView'), 'HeatmapView');
 
 const route: ScreenRoute = {
   id: '016',

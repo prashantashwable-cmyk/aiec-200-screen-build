@@ -33,7 +33,7 @@ const translations: ScreenTranslations = {
           4: 'Strong',
         },
         rule: {
-          length: 'At least 8 characters',
+          length: 'At least {{count}} characters',
           upper: 'Mix of capital and small letters',
           digit: 'At least one number',
           symbol: 'At least one symbol',
@@ -100,7 +100,7 @@ const translations: ScreenTranslations = {
           4: 'मज़बूत',
         },
         rule: {
-          length: 'कम से कम 8 अक्षर',
+          length: 'कम से कम {{count}} अक्षर',
           upper: 'बड़े और छोटे अक्षर दोनों',
           digit: 'कम से कम एक अंक',
           symbol: 'कम से कम एक चिह्न',
@@ -166,7 +166,7 @@ const translations: ScreenTranslations = {
           4: 'मजबूत',
         },
         rule: {
-          length: 'किमान ८ अक्षरे',
+          length: 'किमान {{count}} अक्षरे',
           upper: 'मोठी आणि लहान दोन्ही अक्षरे',
           digit: 'किमान एक अंक',
           symbol: 'किमान एक चिन्ह',
