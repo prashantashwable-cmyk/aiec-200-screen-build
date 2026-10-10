@@ -1,0 +1,101 @@
+{
+ "layoutDesktop": {
+  "file": "layout-desktop.png",
+  "width": 1280,
+  "height": 860,
+  "scale": 1,
+  "marks": {
+   "brand": {
+    "x": 16,
+    "y": 24,
+    "w": 207,
+    "h": 54
+   },
+   "bell": {
+    "x": 16,
+    "y": 82,
+    "w": 207,
+    "h": 48
+   },
+   "nav": {
+    "x": 16,
+    "y": 82,
+    "w": 207,
+    "h": 48
+   },
+   "active": {
+    "x": 16,
+    "y": 134,
+    "w": 207,
+    "h": 48
+   },
+   "signout": {
+    "x": 16,
+    "y": 810,
+    "w": 207,
+    "h": 65
+   },
+   "heading": {
+    "x": 692,
+    "y": 16,
+    "w": 137,
+    "h": 28
+   },
+   "content": {
+    "x": 264,
+    "y": 197,
+    "w": 186,
+    "h": 120
+   }
+  }
+ },
+ "assistant": {
+  "file": "assistant-drawer.png"
+ },
+ "leadDetail": {
+  "file": "lead-detail.png",
+  "url": "/admin/leads"
+ },
+ "signedOut": {
+  "file": "signed-out.png",
+  "url": "/login"
+ },
+ "gate": {
+  "file": "second-step-gate.png"
+ },
+ "layoutMobile": {
+  "file": "layout-mobile.png",
+  "width": 390,
+  "height": 844,
+  "scale": 2,
+  "marks": {
+   "topbar": {
+    "x": 0,
+    "y": 0,
+    "w": 390,
+    "h": 49
+   },
+   "bell": {
+    "x": 334,
+    "y": 0,
+    "w": 48,
+    "h": 48
+   },
+   "heading": {
+    "x": 127,
+    "y": 65,
+    "w": 137,
+    "h": 28
+   },
+   "tabbar": {
+    "x": 0,
+    "y": 791,
+    "w": 390,
+    "h": 53
+   }
+  }
+ },
+ "demoTab": {
+  "file": "login-demo-tab.png"
+ }
+}

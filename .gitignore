@@ -22,3 +22,6 @@ test-results/
 playwright-report/
 supabase/.temp/
 supabase/.branches/
+documentation/manual/build/
+manual_assets/pdf_images/
+manual_assets/*.log

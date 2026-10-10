@@ -1,0 +1,2129 @@
+[
+ {
+  "dir": "001-splash",
+  "id": "001",
+  "path": "/",
+  "titleKey": "splash.title",
+  "roles": [
+   "public"
+  ],
+  "tab": null
+ },
+ {
+  "dir": "002-login",
+  "id": "002",
+  "path": "/login",
+  "titleKey": "login.title",
+  "roles": [
+   "public"
+  ],
+  "tab": null
+ },
+ {
+  "dir": "002-login",
+  "id": "002",
+  "path": "/login/google",
+  "titleKey": "login.title",
+  "roles": [
+   "public"
+  ],
+  "tab": null
+ },
+ {
+  "dir": "003-otp",
+  "id": "003",
+  "path": "/login/otp",
+  "titleKey": "otp.title",
+  "roles": [
+   "public"
+  ],
+  "tab": null
+ },
+ {
+  "dir": "004-role-select",
+  "id": "004",
+  "path": "/onboarding/role",
+  "titleKey": "roleSelect.title",
+  "roles": [
+   "public"
+  ],
+  "tab": null
+ },
+ {
+  "dir": "005-onboard-surveyor",
+  "id": "005",
+  "path": "/onboarding/surveyor",
+  "titleKey": "onbSurveyor.title",
+  "roles": [
+   "public"
+  ],
+  "tab": null
+ },
+ {
+  "dir": "006-onboard-technician",
+  "id": "006",
+  "path": "/onboarding/technician",
+  "titleKey": "onbTechnician.title",
+  "roles": [
+   "public"
+  ],
+  "tab": null
+ },
+ {
+  "dir": "007-onboard-supplier",
+  "id": "007",
+  "path": "/onboarding/supplier",
+  "titleKey": "onbSupplier.title",
+  "roles": [
+   "public"
+  ],
+  "tab": null
+ },
+ {
+  "dir": "008-onboard-customer",
+  "id": "008",
+  "path": "/onboarding/customer",
+  "titleKey": "onbCustomer.title",
+  "roles": [
+   "public"
+  ],
+  "tab": null
+ },
+ {
+  "dir": "009-forgot-password",
+  "id": "009",
+  "path": "/forgot-password",
+  "titleKey": "forgotPassword.title",
+  "roles": [
+   "public"
+  ],
+  "tab": null
+ },
+ {
+  "dir": "010-permissions-primer",
+  "id": "010",
+  "path": "/onboarding/permissions",
+  "titleKey": "permissions.title",
+  "roles": [
+   "public"
+  ],
+  "tab": null
+ },
+ {
+  "dir": "011-live-map",
+  "id": "011",
+  "path": "/admin/map",
+  "titleKey": "liveMap.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'map'"
+ },
+ {
+  "dir": "012-activity-feed",
+  "id": "012",
+  "path": "/admin/activity",
+  "titleKey": "activityFeed.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'map'"
+ },
+ {
+  "dir": "013-track-surveyor",
+  "id": "013",
+  "path": "/admin/tracking/surveyor/:userId",
+  "titleKey": "trackSurveyor.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'map'"
+ },
+ {
+  "dir": "014-track-technician",
+  "id": "014",
+  "path": "/admin/tracking/technician/:userId",
+  "titleKey": "trackTechnician.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'map'"
+ },
+ {
+  "dir": "015-territories",
+  "id": "015",
+  "path": "/admin/territories",
+  "titleKey": "territories.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'map'"
+ },
+ {
+  "dir": "016-heatmap",
+  "id": "016",
+  "path": "/admin/heatmap",
+  "titleKey": "heatmap.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'map'"
+ },
+ {
+  "dir": "017-site-visit-verify",
+  "id": "017",
+  "path": "/admin/site-visits",
+  "titleKey": "siteVisitVerify.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'map'"
+ },
+ {
+  "dir": "018-map-filters",
+  "id": "018",
+  "path": "/admin/map/filters",
+  "titleKey": "mapFilters.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'map'"
+ },
+ {
+  "dir": "019-escalation",
+  "id": "019",
+  "path": "/admin/escalations",
+  "titleKey": "escalation.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'alerts'"
+ },
+ {
+  "dir": "020-route-optimize",
+  "id": "020",
+  "path": "/admin/routes",
+  "titleKey": "routeOptimize.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'map'"
+ },
+ {
+  "dir": "021-exec-kpi",
+  "id": "021",
+  "path": "/admin",
+  "titleKey": "execKpi.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'home'"
+ },
+ {
+  "dir": "022-funnel",
+  "id": "022",
+  "path": "/admin/analytics/funnel",
+  "titleKey": "funnel.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'analytics'"
+ },
+ {
+  "dir": "023-revenue",
+  "id": "023",
+  "path": "/admin/analytics/revenue",
+  "titleKey": "revenue.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'analytics'"
+ },
+ {
+  "dir": "024-leaderboard",
+  "id": "024",
+  "path": "/admin/analytics/leaderboard",
+  "titleKey": "leaderboard.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'analytics'"
+ },
+ {
+  "dir": "025-region-conversion",
+  "id": "025",
+  "path": "/admin/analytics/conversion",
+  "titleKey": "regionConversion.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'analytics'"
+ },
+ {
+  "dir": "026-supplier-score",
+  "id": "026",
+  "path": "/admin/analytics/suppliers",
+  "titleKey": "supplierScore.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'analytics'"
+ },
+ {
+  "dir": "027-automation-health",
+  "id": "027",
+  "path": "/admin/analytics/automation",
+  "titleKey": "automationHealth.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'analytics'"
+ },
+ {
+  "dir": "028-finance",
+  "id": "028",
+  "path": "/admin/analytics/finance",
+  "titleKey": "finance.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'analytics'"
+ },
+ {
+  "dir": "029-alerts-board",
+  "id": "029",
+  "path": "/admin/alerts",
+  "titleKey": "alertsBoard.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'alerts'"
+ },
+ {
+  "dir": "030-report-builder",
+  "id": "030",
+  "path": "/admin/reports",
+  "titleKey": "reportBuilder.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'analytics'"
+ },
+ {
+  "dir": "031-surveyor-home",
+  "id": "031",
+  "path": "/surveyor",
+  "titleKey": "surveyorHome.title",
+  "roles": [
+   "surveyor"
+  ],
+  "tab": "'home'"
+ },
+ {
+  "dir": "032-capture-gps",
+  "id": "032",
+  "path": "/surveyor/capture",
+  "titleKey": "captureGps.title",
+  "roles": [
+   "surveyor"
+  ],
+  "tab": "'capture'"
+ },
+ {
+  "dir": "033-capture-contact",
+  "id": "033",
+  "path": "/surveyor/capture/contact",
+  "titleKey": "captureContact.title",
+  "roles": [
+   "surveyor"
+  ],
+  "tab": "'capture'"
+ },
+ {
+  "dir": "034-capture-spec",
+  "id": "034",
+  "path": "/surveyor/capture/spec",
+  "titleKey": "captureSpec.title",
+  "roles": [
+   "surveyor"
+  ],
+  "tab": "'capture'"
+ },
+ {
+  "dir": "035-capture-duplicate",
+  "id": "035",
+  "path": "/surveyor/capture/duplicate",
+  "titleKey": "captureDuplicate.title",
+  "roles": [
+   "surveyor"
+  ],
+  "tab": "'capture'"
+ },
+ {
+  "dir": "036-capture-confirm",
+  "id": "036",
+  "path": "/surveyor/capture/confirm",
+  "titleKey": "captureConfirm.title",
+  "roles": [
+   "surveyor"
+  ],
+  "tab": "'capture'"
+ },
+ {
+  "dir": "037-my-leads",
+  "id": "037",
+  "path": "/surveyor/leads",
+  "titleKey": "myLeads.title",
+  "roles": [
+   "surveyor"
+  ],
+  "tab": "'leads'"
+ },
+ {
+  "dir": "038-commission-tracker",
+  "id": "038",
+  "path": "/surveyor/earnings",
+  "titleKey": "commissionTracker.title",
+  "roles": [
+   "surveyor"
+  ],
+  "tab": "'earnings'"
+ },
+ {
+  "dir": "039-route-plan",
+  "id": "039",
+  "path": "/surveyor/route",
+  "titleKey": "routePlan.title",
+  "roles": [
+   "surveyor"
+  ],
+  "tab": "'route'"
+ },
+ {
+  "dir": "040-surveyor-performance",
+  "id": "040",
+  "path": "/surveyor/performance",
+  "titleKey": "surveyorPerformance.title",
+  "roles": [
+   "surveyor"
+  ],
+  "tab": "'home'"
+ },
+ {
+  "dir": "041-lead-inbox",
+  "id": "041",
+  "path": "/admin/leads",
+  "titleKey": "leadInbox.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'leads'"
+ },
+ {
+  "dir": "042-lead-detail",
+  "id": "042",
+  "path": "/admin/leads/:leadId",
+  "titleKey": "leadDetail.section.overview",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'leads'"
+ },
+ {
+  "dir": "043-lead-kanban",
+  "id": "043",
+  "path": "/admin/leads/pipeline",
+  "titleKey": "leadKanban.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'leads'"
+ },
+ {
+  "dir": "044-lead-assignment",
+  "id": "044",
+  "path": "/admin/leads/assignment",
+  "titleKey": "leadAssignment.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'leads'"
+ },
+ {
+  "dir": "045-duplicate-merge",
+  "id": "045",
+  "path": "/admin/leads/duplicates",
+  "titleKey": "duplicateMerge.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'leads'"
+ },
+ {
+  "dir": "046-lead-scoring",
+  "id": "046",
+  "path": "/admin/leads/scoring",
+  "titleKey": "leadScoring.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'leads'"
+ },
+ {
+  "dir": "047-followup-scheduler",
+  "id": "047",
+  "path": "/admin/leads/follow-ups",
+  "titleKey": "followupScheduler.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'leads'"
+ },
+ {
+  "dir": "048-lead-source-attribution",
+  "id": "048",
+  "path": "/admin/leads/attribution",
+  "titleKey": "leadSourceAttribution.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'leads'"
+ },
+ {
+  "dir": "049-lost-lead",
+  "id": "049",
+  "path": "/admin/leads/:leadId/lost",
+  "titleKey": "lostLead.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'leads'"
+ },
+ {
+  "dir": "050-lead-import-export",
+  "id": "050",
+  "path": "/admin/leads/import-export",
+  "titleKey": "leadImportExport.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'leads'"
+ },
+ {
+  "dir": "051-comm-templates",
+  "id": "051",
+  "path": "/admin/comm/templates",
+  "titleKey": "commTemplates.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'comm'"
+ },
+ {
+  "dir": "052-sequence-builder",
+  "id": "052",
+  "path": "/admin/comm/sequences",
+  "titleKey": "sequenceBuilder.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'comm'"
+ },
+ {
+  "dir": "053-whatsapp-console",
+  "id": "053",
+  "path": "/admin/comm/whatsapp",
+  "titleKey": "whatsappConsole.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'comm'"
+ },
+ {
+  "dir": "054-call-log",
+  "id": "054",
+  "path": "/admin/comm/calls",
+  "titleKey": "callLog.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'comm'"
+ },
+ {
+  "dir": "055-sms-broadcast",
+  "id": "055",
+  "path": "/admin/comm/broadcast",
+  "titleKey": "smsBroadcast.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'comm'"
+ },
+ {
+  "dir": "056-ai-bot-config",
+  "id": "056",
+  "path": "/admin/comm/bot",
+  "titleKey": "aiBotConfig.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'comm'"
+ },
+ {
+  "dir": "057-reply-inbox",
+  "id": "057",
+  "path": "/admin/comm/inbox",
+  "titleKey": "replyInbox.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'comm'"
+ },
+ {
+  "dir": "058-opt-out-manager",
+  "id": "058",
+  "path": "/admin/comm/opt-outs",
+  "titleKey": "optOutManager.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'comm'"
+ },
+ {
+  "dir": "059-trigger-rules",
+  "id": "059",
+  "path": "/admin/comm/trigger-rules",
+  "titleKey": "triggerRules.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'comm'"
+ },
+ {
+  "dir": "060-comm-analytics",
+  "id": "060",
+  "path": "/admin/comm/analytics",
+  "titleKey": "commAnalytics.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'comm'"
+ },
+ {
+  "dir": "061-quotation-generator",
+  "id": "061",
+  "path": "/admin/quotes",
+  "titleKey": "quotationGenerator.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'quotes'"
+ },
+ {
+  "dir": "062-cost-breakdown",
+  "id": "062",
+  "path": "/admin/quotes/:quotationId/cost",
+  "titleKey": "costBreakdown.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'quotes'"
+ },
+ {
+  "dir": "063-quotation-template",
+  "id": "063",
+  "path": "/admin/quotes/templates",
+  "titleKey": "quotationTemplate.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'quotes'"
+ },
+ {
+  "dir": "064-quotation-preview",
+  "id": "064",
+  "path": "/admin/quotes/:quotationId/preview",
+  "titleKey": "quotationPreview.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'quotes'"
+ },
+ {
+  "dir": "065-package-comparison",
+  "id": "065",
+  "path": "/admin/quotes/compare",
+  "titleKey": "packageComparison.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'quotes'"
+ },
+ {
+  "dir": "066-quotation-history",
+  "id": "066",
+  "path": "/admin/quotes/history",
+  "titleKey": "quotationHistory.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'quotes'"
+ },
+ {
+  "dir": "067-discount-approval",
+  "id": "067",
+  "path": "/admin/quotes/discounts",
+  "titleKey": "discountApproval.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'quotes'"
+ },
+ {
+  "dir": "068-quotation-send",
+  "id": "068",
+  "path": "/admin/quotes/:quotationId/send",
+  "titleKey": "quotationSend.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'quotes'"
+ },
+ {
+  "dir": "069-quotation-analytics",
+  "id": "069",
+  "path": "/admin/quotes/analytics",
+  "titleKey": "quotationAnalytics.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'quotes'"
+ },
+ {
+  "dir": "070-pricing-config",
+  "id": "070",
+  "path": "/admin/quotes/pricing",
+  "titleKey": "pricingConfig.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'quotes'"
+ },
+ {
+  "dir": "071-negotiation-bot-config",
+  "id": "071",
+  "path": "/admin/deals/bot-config",
+  "titleKey": "negotiationBotConfig.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'deals'"
+ },
+ {
+  "dir": "072-negotiation-thread",
+  "id": "072",
+  "path": "/admin/deals/:negotiationId/thread",
+  "titleKey": "negotiationThread.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'deals'"
+ },
+ {
+  "dir": "073-counter-offer-approval",
+  "id": "073",
+  "path": "/admin/deals/counter-offers",
+  "titleKey": "counterOfferApproval.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'deals'"
+ },
+ {
+  "dir": "074-deal-terms-finalization",
+  "id": "074",
+  "path": "/admin/deals/:dealId/terms",
+  "titleKey": "dealTermsFinalization.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'deals'"
+ },
+ {
+  "dir": "075-contract-generator",
+  "id": "075",
+  "path": "/admin/deals/:dealId/contract",
+  "titleKey": "contractGenerator.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'deals'"
+ },
+ {
+  "dir": "076-esignature-capture",
+  "id": "076",
+  "path": "/admin/deals/:dealId/signature",
+  "titleKey": "esignatureCapture.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'deals'"
+ },
+ {
+  "dir": "077-deal-closure-confirmation",
+  "id": "077",
+  "path": "/admin/deals/:dealId/closure",
+  "titleKey": "dealClosureConfirmation.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'deals'"
+ },
+ {
+  "dir": "078-objection-scripts",
+  "id": "078",
+  "path": "/admin/deals/objection-scripts",
+  "titleKey": "objectionScripts.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'deals'"
+ },
+ {
+  "dir": "079-competitor-battlecards",
+  "id": "079",
+  "path": "/admin/deals/battlecards",
+  "titleKey": "competitorBattlecards.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'deals'"
+ },
+ {
+  "dir": "080-deal-won-celebration",
+  "id": "080",
+  "path": "/deals/:dealId/celebration",
+  "titleKey": "dealWonCelebration.title",
+  "roles": [
+   "admin",
+   "surveyor"
+  ],
+  "tab": "'deals'"
+ },
+ {
+  "dir": "081-payment-schedule-setup",
+  "id": "081",
+  "path": "/admin/deals/:dealId/schedule",
+  "titleKey": "paymentScheduleSetup.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'deals'"
+ },
+ {
+  "dir": "082-payment-collection-dashboard",
+  "id": "082",
+  "path": "/admin/analytics/collections",
+  "titleKey": "paymentCollectionDashboard.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'analytics'"
+ },
+ {
+  "dir": "083-payment-reminder-config",
+  "id": "083",
+  "path": "/admin/analytics/collections/reminders",
+  "titleKey": "paymentReminderConfig.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'analytics'"
+ },
+ {
+  "dir": "084-payment-gateway-checkout",
+  "id": "084",
+  "path": "/customer/payments/:paymentId/checkout",
+  "titleKey": "paymentGatewayCheckout.title",
+  "roles": [
+   "customer"
+  ],
+  "tab": "'home'"
+ },
+ {
+  "dir": "085-loan-emi-application",
+  "id": "085",
+  "path": "/customer/deals/:dealId/loan-application",
+  "titleKey": "loanEmiApplication.title",
+  "roles": [
+   "customer"
+  ],
+  "tab": "'home'"
+ },
+ {
+  "dir": "086-loan-partner-integration-status",
+  "id": "086",
+  "path": "/admin/analytics/financing",
+  "titleKey": "loanPartnerStatus.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'analytics'"
+ },
+ {
+  "dir": "087-invoice-generator",
+  "id": "087",
+  "path": "/deals/:dealId/invoices",
+  "titleKey": "invoiceGenerator.title",
+  "roles": [
+   "admin",
+   "customer"
+  ],
+  "tab": "'deals'"
+ },
+ {
+  "dir": "088-payment-receipt-history",
+  "id": "088",
+  "path": "/payments/history",
+  "titleKey": "paymentReceiptHistory.title",
+  "roles": [
+   "admin",
+   "customer"
+  ],
+  "tab": "'analytics'"
+ },
+ {
+  "dir": "089-overdue-payment-escalation",
+  "id": "089",
+  "path": "/admin/analytics/collections/escalation",
+  "titleKey": "overduePaymentEscalation.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'analytics'"
+ },
+ {
+  "dir": "090-refund-dispute-management",
+  "id": "090",
+  "path": "/admin/analytics/collections/disputes",
+  "titleKey": "refundDisputeManagement.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'analytics'"
+ },
+ {
+  "dir": "091-supplier-directory",
+  "id": "091",
+  "path": "/admin/suppliers",
+  "titleKey": "supplierDirectory.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'suppliers'"
+ },
+ {
+  "dir": "092-purchase-order-generator",
+  "id": "092",
+  "path": "/admin/deals/:dealId/purchase-orders",
+  "titleKey": "purchaseOrderGenerator.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'suppliers'"
+ },
+ {
+  "dir": "093-supplier-catalog",
+  "id": "093",
+  "path": "/catalog",
+  "titleKey": "supplierCatalog.title",
+  "roles": [
+   "admin",
+   "supplier"
+  ],
+  "tab": "{ admin: 'suppliers', supplier: 'catalog' }"
+ },
+ {
+  "dir": "094-auto-po-rules",
+  "id": "094",
+  "path": "/admin/suppliers/po-rules",
+  "titleKey": "autoPoRules.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'suppliers'"
+ },
+ {
+  "dir": "095-supplier-orders",
+  "id": "095",
+  "path": "/orders",
+  "titleKey": "supplierOrders.title",
+  "roles": [
+   "admin",
+   "supplier"
+  ],
+  "tab": "{ admin: 'suppliers', supplier: 'orders' }"
+ },
+ {
+  "dir": "096-production-status",
+  "id": "096",
+  "path": "/orders/production/:recordId",
+  "titleKey": "productionStatus.title",
+  "roles": [
+   "admin",
+   "supplier"
+  ],
+  "tab": "{ admin: 'suppliers', supplier: 'orders' }"
+ },
+ {
+  "dir": "097-supplier-scorecard",
+  "id": "097",
+  "path": "/scorecard",
+  "titleKey": "supplierScorecard.title",
+  "roles": [
+   "admin",
+   "supplier"
+  ],
+  "tab": "{ admin: 'suppliers', supplier: 'scorecard' }"
+ },
+ {
+  "dir": "098-supplier-agreement",
+  "id": "098",
+  "path": "/agreement",
+  "titleKey": "supplierAgreement.title",
+  "roles": [
+   "admin",
+   "supplier"
+  ],
+  "tab": "{ admin: 'suppliers', supplier: 'agreement' }"
+ },
+ {
+  "dir": "099-supplier-messages",
+  "id": "099",
+  "path": "/supplier-messages",
+  "titleKey": "supplierMessages.title",
+  "roles": [
+   "admin",
+   "supplier"
+  ],
+  "tab": "{ admin: 'suppliers', supplier: 'messages' }"
+ },
+ {
+  "dir": "100-supplier-payment-terms",
+  "id": "100",
+  "path": "/admin/suppliers/payment-terms",
+  "titleKey": "supplierPaymentTerms.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'suppliers'"
+ },
+ {
+  "dir": "101-delivery-scheduling",
+  "id": "101",
+  "path": "/deliveries",
+  "titleKey": "deliveryScheduling.title",
+  "roles": [
+   "admin",
+   "supplier"
+  ],
+  "tab": "{ admin: 'logistics', supplier: 'orders' }"
+ },
+ {
+  "dir": "102-shipment-tracking",
+  "id": "102",
+  "path": "/shipments",
+  "titleKey": "shipmentTracking.title",
+  "roles": [
+   "admin",
+   "customer",
+   "technician",
+   "supplier"
+  ],
+  "tab": "{ admin: 'logistics', supplier: 'orders', customer: 'shipments', technician: 'shipments' }"
+ },
+ {
+  "dir": "103-delivery-checklist",
+  "id": "103",
+  "path": "/delivery-checklist",
+  "titleKey": "deliveryChecklist.title",
+  "roles": [
+   "admin",
+   "technician"
+  ],
+  "tab": "{ admin: 'logistics', technician: 'shipments' }"
+ },
+ {
+  "dir": "104-delivery-confirmation",
+  "id": "104",
+  "path": "/delivery-confirmation",
+  "titleKey": "deliveryConfirmation.title",
+  "roles": [
+   "admin",
+   "technician",
+   "customer"
+  ],
+  "tab": "{ admin: 'logistics', technician: 'shipments', customer: 'shipments' }"
+ },
+ {
+  "dir": "105-delivery-delay-alert",
+  "id": "105",
+  "path": "/delivery-delays",
+  "titleKey": "deliveryDelay.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'logistics'"
+ },
+ {
+  "dir": "106-stock-in-transit",
+  "id": "106",
+  "path": "/stock-in-transit",
+  "titleKey": "stockInTransit.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'logistics'"
+ },
+ {
+  "dir": "107-delivery-sop-checklist",
+  "id": "107",
+  "path": "/delivery-sop",
+  "titleKey": "deliverySop.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'logistics'"
+ },
+ {
+  "dir": "108-damaged-parts-report",
+  "id": "108",
+  "path": "/damaged-parts",
+  "titleKey": "damagedParts.title",
+  "roles": [
+   "admin",
+   "technician"
+  ],
+  "tab": "{ admin: 'logistics', technician: 'shipments' }"
+ },
+ {
+  "dir": "109-delivery-partner-management",
+  "id": "109",
+  "path": "/delivery-partners",
+  "titleKey": "deliveryPartners.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'logistics'"
+ },
+ {
+  "dir": "110-delivery-analytics",
+  "id": "110",
+  "path": "/delivery-analytics",
+  "titleKey": "deliveryAnalytics.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'logistics'"
+ },
+ {
+  "dir": "111-supplier-payment-approval",
+  "id": "111",
+  "path": "/supplier-payments",
+  "titleKey": "supplierPaymentApproval.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'supplierPay'"
+ },
+ {
+  "dir": "112-milestone-payment-release",
+  "id": "112",
+  "path": "/supplier-payment-release",
+  "titleKey": "supplierPaymentRelease.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'supplierPay'"
+ },
+ {
+  "dir": "113-supplier-invoice-matching",
+  "id": "113",
+  "path": "/supplier-invoices",
+  "titleKey": "supplierInvoiceMatching.title",
+  "roles": [
+   "admin",
+   "supplier"
+  ],
+  "tab": "{ admin: 'supplierPay', supplier: 'invoices' }"
+ },
+ {
+  "dir": "114-supplier-payment-schedule",
+  "id": "114",
+  "path": "/supplier-payment-schedule",
+  "titleKey": "supplierPaymentSchedule.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'supplierPay'"
+ },
+ {
+  "dir": "115-supplier-payment-history",
+  "id": "115",
+  "path": "/supplier-payment-history",
+  "titleKey": "supplierPaymentHistory.title",
+  "roles": [
+   "admin",
+   "supplier"
+  ],
+  "tab": "{ admin: 'supplierPay', supplier: 'payments' }"
+ },
+ {
+  "dir": "116-tax-gst-compliance",
+  "id": "116",
+  "path": "/gst-compliance",
+  "titleKey": "gstCompliance.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'supplierPay'"
+ },
+ {
+  "dir": "117-supplier-dispute-resolution",
+  "id": "117",
+  "path": "/supplier-disputes",
+  "titleKey": "supplierDispute.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'supplierPay'"
+ },
+ {
+  "dir": "118-advance-payment-retention",
+  "id": "118",
+  "path": "/advance-retention",
+  "titleKey": "advanceRetention.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'supplierPay'"
+ },
+ {
+  "dir": "119-supplier-payment-analytics",
+  "id": "119",
+  "path": "/supplier-payment-analytics",
+  "titleKey": "supplierPaymentAnalytics.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'supplierPay'"
+ },
+ {
+  "dir": "120-auto-reconciliation",
+  "id": "120",
+  "path": "/reconciliation",
+  "titleKey": "reconciliation.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'analytics'"
+ },
+ {
+  "dir": "121-technician-home",
+  "id": "121",
+  "path": "/technician",
+  "titleKey": "technicianHome.title",
+  "roles": [
+   "technician"
+  ],
+  "tab": "'home'"
+ },
+ {
+  "dir": "122-job-detail-site-info",
+  "id": "122",
+  "path": "/technician/jobs/:jobId",
+  "titleKey": "technicianJob.title",
+  "roles": [
+   "technician"
+  ],
+  "tab": "'jobs'"
+ },
+ {
+  "dir": "123-installation-sop-checklist",
+  "id": "123",
+  "path": "/technician/jobs/:jobId/sop",
+  "titleKey": "installSop.title",
+  "roles": [
+   "technician"
+  ],
+  "tab": "'jobs'"
+ },
+ {
+  "dir": "124-photo-video-evidence-capture",
+  "id": "124",
+  "path": "/technician/jobs/:jobId/evidence",
+  "titleKey": "installEvidence.title",
+  "roles": [
+   "technician"
+  ],
+  "tab": "'jobs'"
+ },
+ {
+  "dir": "125-technician-checkin-checkout",
+  "id": "125",
+  "path": "/technician/jobs/:jobId/checkin",
+  "titleKey": "siteCheckIn.title",
+  "roles": [
+   "technician"
+  ],
+  "tab": "'jobs'"
+ },
+ {
+  "dir": "126-safety-compliance-checklist",
+  "id": "126",
+  "path": "/safety-checklist/:jobId",
+  "titleKey": "safetyChecklist.title",
+  "roles": [
+   "technician",
+   "admin"
+  ],
+  "tab": "{ admin: 'map', technician: 'jobs' }"
+ },
+ {
+  "dir": "127-issue-blocker-reporting",
+  "id": "127",
+  "path": "/job-issues/:jobId?",
+  "titleKey": "issueReport.title",
+  "roles": [
+   "technician",
+   "admin"
+  ],
+  "tab": "{ admin: 'map', technician: 'jobs' }"
+ },
+ {
+  "dir": "128-material-usage-logging",
+  "id": "128",
+  "path": "/material-usage/:jobId?",
+  "titleKey": "materialLog.title",
+  "roles": [
+   "technician",
+   "admin"
+  ],
+  "tab": "{ admin: 'map', technician: 'jobs' }"
+ },
+ {
+  "dir": "129-installation-progress-timeline",
+  "id": "129",
+  "path": "/installation-timeline/:jobId?",
+  "titleKey": "installTimeline.title",
+  "roles": [
+   "technician",
+   "admin",
+   "customer"
+  ],
+  "tab": "{ admin: 'map', technician: 'jobs', customer: 'installation' }"
+ },
+ {
+  "dir": "130-technician-team-coordination",
+  "id": "130",
+  "path": "/job-team/:jobId?",
+  "titleKey": "jobTeam.title",
+  "roles": [
+   "technician",
+   "admin"
+  ],
+  "tab": "{ admin: 'map', technician: 'jobs' }"
+ },
+ {
+  "dir": "131-qc-inspector-assignment",
+  "id": "131",
+  "path": "/qc-assignments/:jobId?",
+  "titleKey": "qcAssignment.title",
+  "roles": [
+   "technician",
+   "admin"
+  ],
+  "tab": "{ admin: 'map', technician: 'jobs' }"
+ },
+ {
+  "dir": "132-qc-mechanical-checklist",
+  "id": "132",
+  "path": "/qc-mechanical/:jobId?",
+  "titleKey": "qcMech.title",
+  "roles": [
+   "technician",
+   "admin"
+  ],
+  "tab": "{ admin: 'map', technician: 'jobs' }"
+ },
+ {
+  "dir": "133-qc-electrical-safety-checklist",
+  "id": "133",
+  "path": "/qc-electrical/:jobId?",
+  "titleKey": "qcElec.title",
+  "roles": [
+   "technician",
+   "admin"
+  ],
+  "tab": "{ admin: 'map', technician: 'jobs' }"
+ },
+ {
+  "dir": "134-compliance-certification",
+  "id": "134",
+  "path": "/compliance/:jobId?",
+  "titleKey": "compliance.title",
+  "roles": [
+   "technician",
+   "admin"
+  ],
+  "tab": "{ admin: 'map', technician: 'jobs' }"
+ },
+ {
+  "dir": "135-defect-snag-list",
+  "id": "135",
+  "path": "/snags/:jobId?",
+  "titleKey": "snagList.title",
+  "roles": [
+   "technician",
+   "admin"
+  ],
+  "tab": "{ admin: 'map', technician: 'jobs' }"
+ },
+ {
+  "dir": "136-rework-assignment",
+  "id": "136",
+  "path": "/rework/:snagId?",
+  "titleKey": "rework.title",
+  "roles": [
+   "technician",
+   "admin"
+  ],
+  "tab": "{ admin: 'map', technician: 'jobs' }"
+ },
+ {
+  "dir": "137-final-handover-checklist",
+  "id": "137",
+  "path": "/handover-checklist/:jobId?",
+  "titleKey": "handover.title",
+  "roles": [
+   "technician",
+   "admin"
+  ],
+  "tab": "{ admin: 'map', technician: 'jobs' }"
+ },
+ {
+  "dir": "138-customer-handover-walkthrough",
+  "id": "138",
+  "path": "/handover-walkthrough/:jobId?",
+  "titleKey": "walkthrough.title",
+  "roles": [
+   "technician",
+   "admin",
+   "customer"
+  ],
+  "tab": "{ admin: 'map', technician: 'jobs', customer: 'installation' }"
+ },
+ {
+  "dir": "139-warranty-amc-registration",
+  "id": "139",
+  "path": "/warranty/:jobId?",
+  "titleKey": "warranty.title",
+  "roles": [
+   "admin",
+   "customer"
+  ],
+  "tab": "{ admin: 'map', customer: 'installation' }"
+ },
+ {
+  "dir": "140-handover-completion-certificate",
+  "id": "140",
+  "path": "/handover-certificate/:jobId?",
+  "titleKey": "completion.title",
+  "roles": [
+   "admin",
+   "customer"
+  ],
+  "tab": "{ admin: 'map', customer: 'installation' }"
+ },
+ {
+  "dir": "141-recruitment-landing",
+  "id": "141",
+  "path": "/join",
+  "titleKey": "recruit.title",
+  "roles": [
+   "public"
+  ],
+  "tab": null
+ },
+ {
+  "dir": "142-applicant-data-form",
+  "id": "142",
+  "path": "/apply/:applicationId",
+  "titleKey": "application.title",
+  "roles": [
+   "public"
+  ],
+  "tab": null
+ },
+ {
+  "dir": "142-applicant-data-form",
+  "id": "142",
+  "path": "/applications/:applicationId?",
+  "titleKey": "application.admin.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'partners'"
+ },
+ {
+  "dir": "143-applicant-screening",
+  "id": "143",
+  "path": "/screening",
+  "titleKey": "screening.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'partners'"
+ },
+ {
+  "dir": "144-interview-scheduling",
+  "id": "144",
+  "path": "/interview/:applicationId",
+  "titleKey": "interview.title",
+  "roles": [
+   "public"
+  ],
+  "tab": null
+ },
+ {
+  "dir": "144-interview-scheduling",
+  "id": "144",
+  "path": "/interviews/:applicationId?",
+  "titleKey": "interview.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'partners'"
+ },
+ {
+  "dir": "145-background-verification",
+  "id": "145",
+  "path": "/verification/:applicationId?",
+  "titleKey": "verification.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'partners'"
+ },
+ {
+  "dir": "146-offer-agreement",
+  "id": "146",
+  "path": "/agreement/:applicationId",
+  "titleKey": "agreement.title",
+  "roles": [
+   "public"
+  ],
+  "tab": null
+ },
+ {
+  "dir": "146-offer-agreement",
+  "id": "146",
+  "path": "/offers/:applicationId?",
+  "titleKey": "agreement.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'partners'"
+ },
+ {
+  "dir": "147-recruitment-dashboard",
+  "id": "147",
+  "path": "/recruitment",
+  "titleKey": "recruitDash.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'partners'"
+ },
+ {
+  "dir": "148-partner-tier-assignment",
+  "id": "148",
+  "path": "/partner-tiers/:partnerId?",
+  "titleKey": "partnerTiers.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'partners'"
+ },
+ {
+  "dir": "149-partner-directory",
+  "id": "149",
+  "path": "/partner-directory",
+  "titleKey": "partnerDir.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'partners'"
+ },
+ {
+  "dir": "150-partner-exit",
+  "id": "150",
+  "path": "/partner-exit/:partnerId?",
+  "titleKey": "partnerExit.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'partners'"
+ },
+ {
+  "dir": "151-training-library",
+  "id": "151",
+  "path": "/training",
+  "titleKey": "trainingLib.title",
+  "roles": [
+   "surveyor",
+   "technician",
+   "supplier"
+  ],
+  "tab": "'training'"
+ },
+ {
+  "dir": "152-lesson-player",
+  "id": "152",
+  "path": "/training/:moduleId",
+  "titleKey": "lessonPlayer.title",
+  "roles": [
+   "surveyor",
+   "technician",
+   "supplier"
+  ],
+  "tab": "'training'"
+ },
+ {
+  "dir": "153-sop-document-repository",
+  "id": "153",
+  "path": "/sops/:docId?",
+  "titleKey": "sopRepo.title",
+  "roles": [
+   "technician",
+   "admin"
+  ],
+  "tab": "{ admin: 'partners', technician: 'training' }"
+ },
+ {
+  "dir": "154-quiz-certification-test",
+  "id": "154",
+  "path": "/assessment/:moduleId?",
+  "titleKey": "assessment.title",
+  "roles": [
+   "surveyor",
+   "technician",
+   "supplier",
+   "admin"
+  ],
+  "tab": "{ admin: 'partners', technician: 'training', surveyor: 'training', supplier: 'training' }"
+ },
+ {
+  "dir": "155-certification-badges",
+  "id": "155",
+  "path": "/certifications",
+  "titleKey": "certifications.title",
+  "roles": [
+   "surveyor",
+   "technician",
+   "supplier"
+  ],
+  "tab": "'training'"
+ },
+ {
+  "dir": "156-refresher-reminders",
+  "id": "156",
+  "path": "/refreshers",
+  "titleKey": "refreshers.title",
+  "roles": [
+   "admin",
+   "surveyor",
+   "technician"
+  ],
+  "tab": "{ admin: 'partners', surveyor: 'training', technician: 'training' }"
+ },
+ {
+  "dir": "157-skill-matrix",
+  "id": "157",
+  "path": "/skill-matrix",
+  "titleKey": "skillMatrix.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'partners'"
+ },
+ {
+  "dir": "158-training-compliance",
+  "id": "158",
+  "path": "/training-compliance",
+  "titleKey": "trainingCompliance.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'partners'"
+ },
+ {
+  "dir": "159-sop-rollout",
+  "id": "159",
+  "path": "/sop-rollouts/:rolloutId?",
+  "titleKey": "sopRollout.title",
+  "roles": [
+   "admin",
+   "technician",
+   "surveyor",
+   "supplier"
+  ],
+  "tab": "{ admin: 'partners', technician: 'training', surveyor: 'training', supplier: 'training' }"
+ },
+ {
+  "dir": "160-training-feedback",
+  "id": "160",
+  "path": "/training-feedback/:moduleId?",
+  "titleKey": "trainingFeedback.title",
+  "roles": [
+   "admin",
+   "surveyor",
+   "technician",
+   "supplier"
+  ],
+  "tab": "{ admin: 'partners', surveyor: 'training', technician: 'training', supplier: 'training' }"
+ },
+ {
+  "dir": "161-commission-rules",
+  "id": "161",
+  "path": "/commission-rules",
+  "titleKey": "commissionRules.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'partners'"
+ },
+ {
+  "dir": "162-payout-tracker",
+  "id": "162",
+  "path": "/payout-tracker",
+  "titleKey": "payoutTracker.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'partners'"
+ },
+ {
+  "dir": "163-payout-approval",
+  "id": "163",
+  "path": "/payout-approval",
+  "titleKey": "payoutApproval.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'partners'"
+ },
+ {
+  "dir": "164-payout-disbursement",
+  "id": "164",
+  "path": "/payout-disbursement",
+  "titleKey": "payoutDisbursement.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'partners'"
+ },
+ {
+  "dir": "165-rewards-leaderboard",
+  "id": "165",
+  "path": "/rewards-leaderboard",
+  "titleKey": "rewardsLeaderboard.title",
+  "roles": [
+   "surveyor",
+   "technician",
+   "admin"
+  ],
+  "tab": "{ surveyor: 'earnings', technician: 'home', admin: 'partners' }"
+ },
+ {
+  "dir": "166-badges-milestones",
+  "id": "166",
+  "path": "/badges",
+  "titleKey": "badges.title",
+  "roles": [
+   "surveyor",
+   "technician"
+  ],
+  "tab": "{ surveyor: 'earnings', technician: 'home' }"
+ },
+ {
+  "dir": "167-contest-setup",
+  "id": "167",
+  "path": "/contest-setup",
+  "titleKey": "contestSetup.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'partners'"
+ },
+ {
+  "dir": "168-payout-history",
+  "id": "168",
+  "path": "/payout-history",
+  "titleKey": "payoutHistory.title",
+  "roles": [
+   "surveyor",
+   "technician",
+   "supplier"
+  ],
+  "tab": "{ surveyor: 'earnings', technician: 'home', supplier: 'payments' }"
+ },
+ {
+  "dir": "169-tds-statement",
+  "id": "169",
+  "path": "/tds-statement",
+  "titleKey": "tdsStatement.title",
+  "roles": [
+   "surveyor",
+   "technician",
+   "supplier",
+   "admin"
+  ],
+  "tab": "{ surveyor: 'earnings', technician: 'home', supplier: 'payments', admin: 'analytics' }"
+ },
+ {
+  "dir": "170-payout-dispute",
+  "id": "170",
+  "path": "/payout-dispute",
+  "titleKey": "payoutDispute.title",
+  "roles": [
+   "surveyor",
+   "technician",
+   "supplier",
+   "admin"
+  ],
+  "tab": "{ surveyor: 'earnings', technician: 'home', supplier: 'payments', admin: 'partners' }"
+ },
+ {
+  "dir": "171-customer-home",
+  "id": "171",
+  "path": "/customer",
+  "titleKey": "customerHome.title",
+  "roles": [
+   "customer"
+  ],
+  "tab": "'home'"
+ },
+ {
+  "dir": "172-project-status-tracker",
+  "id": "172",
+  "path": "/project-status",
+  "titleKey": "projectStatus.title",
+  "roles": [
+   "customer"
+  ],
+  "tab": "'installation'"
+ },
+ {
+  "dir": "173-document-vault",
+  "id": "173",
+  "path": "/documents",
+  "titleKey": "documentVault.title",
+  "roles": [
+   "customer"
+  ],
+  "tab": "'documents'"
+ },
+ {
+  "dir": "174-customer-payments",
+  "id": "174",
+  "path": "/my-payments",
+  "titleKey": "customerPayments.title",
+  "roles": [
+   "customer"
+  ],
+  "tab": "'home'"
+ },
+ {
+  "dir": "175-service-tickets",
+  "id": "175",
+  "path": "/service-requests/:ticketId?",
+  "titleKey": "serviceTickets.title",
+  "roles": [
+   "customer",
+   "admin",
+   "technician"
+  ],
+  "tab": "{ customer: 'home', admin: 'home', technician: 'jobs' }"
+ },
+ {
+  "dir": "176-support-chat",
+  "id": "176",
+  "path": "/support-chat/:conversationId?",
+  "titleKey": "supportChat.title",
+  "roles": [
+   "customer",
+   "admin"
+  ],
+  "tab": "{ customer: 'home', admin: 'comm' }"
+ },
+ {
+  "dir": "177-feedback-rating",
+  "id": "177",
+  "path": "/feedback/:feedbackId?",
+  "titleKey": "feedback.title",
+  "roles": [
+   "customer",
+   "admin"
+  ],
+  "tab": "{ customer: 'home', admin: 'analytics' }"
+ },
+ {
+  "dir": "178-maintenance-booking",
+  "id": "178",
+  "path": "/maintenance/:ticketId?",
+  "titleKey": "maintenance.title",
+  "roles": [
+   "customer"
+  ],
+  "tab": "'home'"
+ },
+ {
+  "dir": "179-referral-program",
+  "id": "179",
+  "path": "/referrals",
+  "titleKey": "referral.title",
+  "roles": [
+   "customer"
+  ],
+  "tab": "'home'"
+ },
+ {
+  "dir": "179-referral-program",
+  "id": "179",
+  "path": "/refer/:code",
+  "titleKey": "referral.landing.brand",
+  "roles": [
+   "public"
+  ],
+  "tab": null
+ },
+ {
+  "dir": "180-notification-center",
+  "id": "180",
+  "path": "/notifications",
+  "titleKey": "notifications.title",
+  "roles": [
+   "customer"
+  ],
+  "tab": "'home'"
+ },
+ {
+  "dir": "181-automation-rules-dashboard",
+  "id": "181",
+  "path": "/automation-rules",
+  "titleKey": "automationRules.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'analytics'"
+ },
+ {
+  "dir": "182-workflow-trigger-builder",
+  "id": "182",
+  "path": "/workflow-rules/:ruleId?",
+  "titleKey": "workflowRules.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'analytics'"
+ },
+ {
+  "dir": "183-notification-settings",
+  "id": "183",
+  "path": "/notification-settings",
+  "titleKey": "internalNotifications.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'settings'"
+ },
+ {
+  "dir": "184-escalation-matrix",
+  "id": "184",
+  "path": "/escalation-matrix",
+  "titleKey": "escalationMatrix.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'analytics'"
+ },
+ {
+  "dir": "185-sla-monitor",
+  "id": "185",
+  "path": "/sla-monitor",
+  "titleKey": "slaMonitor.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'analytics'"
+ },
+ {
+  "dir": "186-system-health",
+  "id": "186",
+  "path": "/system-health",
+  "titleKey": "systemHealth.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'analytics'"
+ },
+ {
+  "dir": "187-automation-audit-log",
+  "id": "187",
+  "path": "/audit-log",
+  "titleKey": "auditLog.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'analytics'"
+ },
+ {
+  "dir": "188-manual-override-console",
+  "id": "188",
+  "path": "/override-console",
+  "titleKey": "manualOverride.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'analytics'"
+ },
+ {
+  "dir": "189-integration-management",
+  "id": "189",
+  "path": "/integrations",
+  "titleKey": "integrationManagement.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'settings'"
+ },
+ {
+  "dir": "190-automation-sandbox",
+  "id": "190",
+  "path": "/automation-sandbox",
+  "titleKey": "automationSandbox.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'analytics'"
+ },
+ {
+  "dir": "191-company-profile-branding",
+  "id": "191",
+  "path": "/company-profile",
+  "titleKey": "companyProfile.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'settings'"
+ },
+ {
+  "dir": "192-user-role-permissions",
+  "id": "192",
+  "path": "/access-control",
+  "titleKey": "accessControl.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'settings'"
+ },
+ {
+  "dir": "193-single-person-monitor",
+  "id": "193",
+  "path": "/monitor",
+  "titleKey": "monitor.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'home'"
+ },
+ {
+  "dir": "194-data-privacy-consent",
+  "id": "194",
+  "path": "/privacy",
+  "titleKey": "privacy.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'settings'"
+ },
+ {
+  "dir": "195-security-session-management",
+  "id": "195",
+  "path": "/security",
+  "titleKey": "security.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'settings'"
+ },
+ {
+  "dir": "196-backup-data-export",
+  "id": "196",
+  "path": "/backups",
+  "titleKey": "backups.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'settings'"
+ },
+ {
+  "dir": "197-subscription-billing",
+  "id": "197",
+  "path": "/billing",
+  "titleKey": "billing.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'settings'"
+ },
+ {
+  "dir": "198-legal-templates",
+  "id": "198",
+  "path": "/legal-templates",
+  "titleKey": "legal.title",
+  "roles": [
+   "admin"
+  ],
+  "tab": "'settings'"
+ },
+ {
+  "dir": "199-help-faq-support",
+  "id": "199",
+  "path": "/help",
+  "titleKey": "help.title",
+  "roles": [
+   "admin",
+   "surveyor",
+   "technician",
+   "customer",
+   "supplier"
+  ],
+  "tab": "{ admin: 'settings', customer: 'settings', technician: 'settings', supplier: 'settings', surveyor: 'home' }"
+ },
+ {
+  "dir": "200-app-version-feedback",
+  "id": "200",
+  "path": "/app-info",
+  "titleKey": "appInfo.title",
+  "roles": [
+   "admin",
+   "surveyor",
+   "technician",
+   "customer",
+   "supplier"
+  ],
+  "tab": "{ admin: 'settings', customer: 'settings', technician: 'settings', supplier: 'settings', surveyor: 'home' }"
+ }
+]
