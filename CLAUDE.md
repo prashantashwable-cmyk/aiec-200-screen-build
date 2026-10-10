@@ -23,6 +23,7 @@ node scripts/check-translations.mjs    # must say "All three languages complete 
 npm run guard                          # no-mock guard: must say "clean"
 npm test                               # Vitest: pure rules + repository guarantees
 npm run test:e2e                       # Playwright smoke, every role (starts the dev server itself)
+npm run test:db                        # database rules against a real Postgres (starts a local one if needed)
 ```
 
 CI (`.github/workflows/ci.yml`) runs all of these plus the build on every push and PR.
@@ -118,8 +119,12 @@ build-stage prompt. `AUDIT_REPORT.md` is the audit (what is real, what is mocked
   from `@/features/ids/clientId` (crypto), never `Math.random`. Performance numbers (`technicianScoreOf`, `getSurveyorScores`)
   are read from records and are `null` ("not rated yet") when nothing is on record; their weekly series drive 024's sparkline
   and rising stars. The repository's simulated latency is development-only.
-- Open decisions: D1 backend (Supabase or Firebase), D2 the product spec (the prompt describes a different product;
-  the repo's own 200 specs are followed), D3 password reset.
+- S0c facts: the database lives in `supabase/` (`config.toml`, `migrations/*.sql`; never edit an applied migration, add
+  a new one). `npm run test:db` proves it against a real Postgres (`scripts/db/local-postgres.sh` starts one; CI uses a
+  service container; `DB_ALREADY_MIGRATED=1` points it at a `supabase start` stack). Rules are row-level security plus
+  guard triggers; `app.*` helpers (`my_profile_id`, `my_role`, `is_admin`, `my_is_demo`, `from_client`) say who is asking.
+  A trigger that must know the caller is not `security definer`. Owner setup: `docs/SUPABASE_SETUP.md`.
+- Decisions (owner, 2026-10-10): D1 **Supabase** (free plan to start), D2 **the repo's own 200 specs**, D3 **keep 009**.
 
 ## Current status (as of 2026-09-30)
 

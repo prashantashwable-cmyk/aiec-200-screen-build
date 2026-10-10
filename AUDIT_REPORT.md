@@ -58,7 +58,20 @@ Real (in-memory), 1 Static (001 splash), 0 Partial. What changed:
 | 024 sparkline and "rising stars" from a hash of the user id; the period selector did nothing (found in S0b) | Real weekly counts (wins, revenue, finished jobs); rising stars = last 4 weeks against the 4 before, only a real rise takes a place; the period filter applies to counts (a rate says it is all time); "not rated yet" takes no place or medal |
 | 027 failure reasons picked by `rule.id.charCodeAt(0) + i` (found in S0b) | The error the step itself recorded (181's telemetry), or "the step kept no reason" |
 
-Still open: everything in S0c onwards, and the items in `KNOWN_GAPS.md`.
+**S0c (database foundation) is done.** The app does not use it yet; modules move onto it from S1.
+
+| Piece | What exists now |
+|---|---|
+| Supabase project files | `supabase/config.toml` (phone sign-in on, Mumbai-ready) and four migrations in `supabase/migrations` |
+| Identity | `profiles`: phone (last 10 digits are the person), role, status, demo or real. First sign-in links a phone Admin already added, else creates a pending profile with no role. Only Admin changes role / status / phone; demo or real is fixed; the last active Admin cannot stop being one; nothing is ever deleted |
+| Row-level rules | A person sees only themself; Admin sees their own world (real or demo, never both); anonymous sees nothing |
+| Audit log on the server | `audit_events`: SHA-256 chain set by the database (sequence, time and actor can't be chosen by the browser), refused for update / delete / truncate by everyone, `app.verify_audit_chain()` names the first broken entry |
+| Server clock | `app.heartbeat()` every minute by pg_cron: records the beat and checks the log; a break is written to the log once |
+| File stores | private `evidence` and `documents` buckets, each person files under their own folder, Admin reads all |
+| Proof | 21 database tests (`npm run test:db`) on plain Postgres 16 and on Supabase's own Postgres 17; an end-to-end run through Supabase's sign-in service and REST API with signed tokens (a technician cannot make themself Admin, a forged log entry is stored as theirs, Admin cannot edit the log, a pending newcomer cannot write); CI runs the database tests on every push |
+| Owner steps | `docs/SUPABASE_SETUP.md`; `.github/workflows/db-deploy.yml` sends the migrations to the live project from repository secrets |
+
+Still open: everything in S1 onwards, and the items in `KNOWN_GAPS.md`.
 
 ---
 
@@ -235,7 +248,7 @@ external is either a stand-in or a hand-off URL.
 | Integration | State | Recommendation (indicative INR, to verify) |
 |---|---|---|
 | Phone OTP auth | **Fake** (`123456`) | Supabase Auth phone OTP via MSG91 / Twilio Verify; MSG91 OTP ≈ ₹0.20–0.25 per SMS + DLT registration |
-| Database + RLS | **Missing** | Supabase Postgres (ap-south-1 Mumbai) Pro ≈ US$25 (≈ ₹2,100)/month + compute; or keep the planned Firebase (adapter slot exists) — **decision D1** |
+| Database + RLS | **Started (S0c)**: identity, audit chain, heartbeat, storage migrations in `supabase/` | Supabase Postgres (ap-south-1 Mumbai), free plan to start; Pro ≈ US$25 (≈ ₹2,100)/month + compute for a live business (backups, no pausing) — **D1 decided** |
 | Map tiles | **Real, but non-compliant**: public `tile.openstreetmap.org` (`MapCanvas.tsx:219`), not allowed for production traffic | MapTiler / Stadia / Ola Maps; ≈ ₹0 up to free tier, then ~₹1,500–4,000/month at small scale |
 | Geocoding / routing | Missing (hand-off to Google Maps URLs; 020 uses its own heuristic) | Ola Maps or Google Routes; pay-per-use |
 | Offline map packs | Missing | Protomaps PMTiles for Pune region (self-hosted file, ≈ free) |
@@ -304,11 +317,11 @@ Risks: the in-memory store relies on synchronous reads inside one function
 become transactions and must be re-checked for races. The heartbeat's 92 units
 assume one process; a server cron must take a lock.
 
-### Decisions needed
+### Decisions (answered by the owner on 2026-10-10)
 
-- **D1 — Backend.** Supabase (Postgres + RLS + Mumbai region, matches the prompt) or Firebase (what `firebase.ts` and the foundation docs planned). Everything in S0c/S0d depends on it, and it needs an account and billing that only the owner can create.
-- **D2 — Product spec.** Confirm that the repo's 200 specs are the spec (conflicts C1–C6), or provide the MVP_Master_Prompt specification.
-- **D3 — Passwords.** Sign-in is OTP-only; keep 009 (forgot password) or remove it.
+- **D1 — Backend: Supabase**, starting on the free plan ("if it is free"). The free plan is enough to build and try the app: 500 MB database, 50,000 monthly sign-ins, two projects. Its limits for a live business: a free project **pauses after a week with no activity**, has **no daily backups**, and Supabase's own second-step sign-in (multi-factor) is a paid-plan feature. The paid plan is US$25/month plus compute. **SMS sign-in codes are never free:** each one goes through an SMS provider (Twilio, MessageBird, Textlocal or Vonage are built in), and in India the message must match a DLT-registered template. Setup steps: `docs/SUPABASE_SETUP.md`.
+- **D2 — Product spec: the repo's own 200 specs** (`001_…md`–`200_…md`) are the spec. Conflicts C1–C6 are settled in favour of the repo.
+- **D3 — Passwords: keep 009** (forgot password). Sign-in stays by one-time code; a password matters only where a person has set one, and 009's reset is what Supabase's own password reset will back in S1.
 
 ---
 
