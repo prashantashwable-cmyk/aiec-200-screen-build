@@ -59,5 +59,45 @@ wording must match a template registered on the DLT portal. This is needed in th
 - `heartbeat_runs`: one line a minute from the server's own clock, which checks the record is intact.
 - Two private file stores, `evidence` (site photos and videos) and `documents`.
 
-The app does not use any of this yet: screens move onto it one module at a time from S1, starting with
-sign-in and people.
+Since S1, sign-in and people use it (below). Every other screen still works on sample data in the browser and
+moves onto the database one module at a time.
+
+## Turning on real sign-in (S1)
+
+After step 5 (the database is deployed, including `sms_outbox` and `send_sms_hook`):
+
+7. **Phone sign-in.** Supabase dashboard → Authentication → Sign In / Providers → **Phone**: turn it on. If it
+   asks for an SMS provider, choose any (for example Twilio) and type `not-used` in its fields: the next step
+   makes the database receive the codes instead, so those fields are never used.
+8. **Send the codes to the database.** Authentication → Hooks → **Send SMS hook** → Postgres function →
+   schema `public`, function `send_sms_hook` → Enable. From now on every sign-in code lands in the private
+   table `sms_outbox` (nobody using the app can read it, not even Admin).
+9. **Make yourself the first Admin.** Dashboard → SQL Editor, with your own 10-digit mobile number:
+   ```sql
+   insert into public.profiles (phone, name, role, status)
+   values ('+91XXXXXXXXXX', 'Prashant Vasant Wable', 'admin', 'active');
+   ```
+   When you sign in with that number, the database links the sign-in to this row. Any other number that
+   signs in waits with no role until you approve it (screen "Choose your role", `/onboarding/role`, as Admin).
+10. **Give the app the two public values.** Where the app is built (Vercel → Project → Settings → Environment
+    Variables, or a `.env.local` file on a computer), set:
+    - `VITE_SUPABASE_URL` = the Project URL
+    - `VITE_SUPABASE_ANON_KEY` = the anon / publishable key
+    Then rebuild. The login screen now says "Sign in with your mobile number" instead of the demo note.
+11. **Until an SMS company is connected**, the code is not sent to anyone's phone, and the code screen says
+    so. To let someone in, read their code in the SQL Editor and tell them (it lasts a few minutes):
+    ```sql
+    select phone, code, created_at from public.sms_outbox order by id desc limit 5;
+    ```
+    Connecting an SMS company (a DLT-registered template, paid per message) is a later step: a sender reads
+    `sms_outbox`, sends, and records `sent_at`. Once it does, set `VITE_SMS_CONNECTED=true` so the code
+    screen says the code was sent by SMS.
+
+Admins who sign in for real still meet the app's own second step (code `246810`, shown on that screen), because
+Supabase's own second step is a paid feature; see KNOWN_GAPS.md.
+
+### Trying it on a computer first
+
+`npx supabase start` (needs Docker) runs the same thing locally; `npx supabase status` prints the local URL
+and key. `npm run test:db` with `DB_ALREADY_MIGRATED=1 DATABASE_URL=postgres://postgres:postgres@127.0.0.1:54322/postgres`
+checks the rules there, and `SUPABASE_ANON_KEY=<key> npm run test:e2e:server` signs in end to end in a browser.

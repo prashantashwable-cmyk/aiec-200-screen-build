@@ -280,6 +280,13 @@ max_frequency = "5s"
 # inactivity_timeout = "8h"
 
 # This hook runs before a new user is created and allows developers to reject the request based on the incoming user object.
+# Sign-in codes are handed to the database (public.send_sms_hook writes them to the private sms_outbox) instead of a
+# built-in SMS provider, so any Indian provider (DLT templates) can send them from there. On the live project, set the
+# same hook in the dashboard: Authentication → Hooks → Send SMS → Postgres function public.send_sms_hook.
+[auth.hook.send_sms]
+enabled = true
+uri = "pg-functions://postgres/public/send_sms_hook"
+
 # [auth.hook.before_user_created]
 # enabled = true
 # uri = "pg-functions://postgres/auth/before-user-created-hook"
@@ -291,9 +298,11 @@ max_frequency = "5s"
 
 # Configure one of the supported SMS providers: `twilio`, `twilio_verify`, `messagebird`, `textlocal`, `vonage`.
 [auth.sms.twilio]
-enabled = false
-account_sid = ""
-message_service_sid = ""
+# Supabase only offers phone sign-in once a provider is named, even though the Send SMS hook below does the sending
+# (when the hook is on, this provider is never called). These are not credentials.
+enabled = true
+account_sid = "not-used-send-sms-hook-delivers"
+message_service_sid = "not-used-send-sms-hook-delivers"
 # DO NOT commit your Twilio auth token to git. Use environment variable substitution instead:
 auth_token = "env(SUPABASE_AUTH_SMS_TWILIO_AUTH_TOKEN)"
 

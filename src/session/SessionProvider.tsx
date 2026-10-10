@@ -5,6 +5,9 @@ import { useData } from '@/data/DataProvider';
 import type { Language, Role, ThemePreference, User } from '@/data/types';
 import { deviceLabelOf } from '@/features/security/security';
 import { readAuthSessionId, readSecondFactorAt, writeAuthSessionId, writeSecondFactorAt } from '@/features/security/sessionKeys';
+import { serverConfigured } from '@/data/supabase/client';
+import { myServerProfile, signOutServer } from '@/features/auth/serverAuth';
+import type { ServerProfile } from '@/data/types';
 
 /**
  * Who is signed in, in what mode, in what language, in what theme.
@@ -31,6 +34,8 @@ interface SessionState {
    * and every deep link bounces a signed-in user back to the login screen.
    */
   restoring: boolean;
+  /** True when this session was signed in through the server (S1), not the in-memory build. */
+  serverSession: boolean;
 }
 
 interface SessionContextValue extends SessionState {
@@ -38,6 +43,8 @@ interface SessionContextValue extends SessionState {
   enterDemo: (role: Role) => Promise<void>;
   /** Completes a real sign-in once OTP has been verified. */
   signInAs: (userId: string) => Promise<void>;
+  /** S1: completes a sign-in the server verified (Supabase phone code). The server's profile decides the role. */
+  signInWithServer: (profile: ServerProfile) => Promise<void>;
   signOut: () => void;
   setLanguage: (lang: Language) => void;
   setTheme: (theme: ThemePreference) => void;
@@ -91,6 +98,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     theme: readStoredTheme(),
     // Start in the restoring state only if there is actually something stored.
     restoring: sessionStorage.getItem(STORAGE_KEY_SESSION) !== null,
+    serverSession: false,
   }));
 
   // Apply the stored theme before first paint of the shell.
@@ -107,15 +115,22 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       return;
     }
     try {
-      const parsed = JSON.parse(raw) as { kind: SessionKind; userId: string };
+      const parsed = JSON.parse(raw) as { kind: SessionKind; userId: string; server?: boolean };
       if (parsed.kind === 'anonymous') {
         setState((s) => ({ ...s, restoring: false }));
         return;
       }
-      void repository
-        .getUser(parsed.userId)
+      // A server sign-in survives a reload on the server's side; the in-memory workspace starts fresh, so the person is taken
+      // into it again from what the server says now (their role may have changed, or they may no longer be allowed in).
+      const restored: Promise<User | null> = parsed.server
+        ? serverConfigured
+          ? myServerProfile().then((p) => (p && p.status === 'active' && p.role ? repository.adoptServerProfile(p) : null))
+          : Promise.resolve(null)
+        : repository.getUser(parsed.userId);
+      void restored
         .then((user) => {
           if (!user) {
+            if (parsed.server && serverConfigured) void signOutServer().catch(() => undefined);
             // The stored id no longer resolves — clear it and fail safely to
             // anonymous rather than leaving the app stuck restoring forever.
             sessionStorage.removeItem(STORAGE_KEY_SESSION);
@@ -137,6 +152,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             isDemo: parsed.kind === 'demo',
             language: user.preferredLanguage ?? s.language,
             restoring: false,
+            serverSession: Boolean(parsed.server),
           }));
         })
         .catch(() => setState((s) => ({ ...s, restoring: false })));
@@ -146,7 +162,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, [repository]);
 
-  const adopt = useCallback((user: User, kind: SessionKind) => {
+  const adopt = useCallback((user: User, kind: SessionKind, server = false) => {
     // A real sign-in is a recorded session Admin can see and end (195); a demo one is not.
     writeSecondFactorAt(null);
     if (kind === 'authenticated') void repository.openAuthSession(user.id, sessionContext()).then((r) => writeAuthSessionId(r.sessionId)).catch(() => writeAuthSessionId(null));
@@ -160,10 +176,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       language: user.preferredLanguage ?? s.language,
       theme: user.themePreference ?? s.theme,
       restoring: false,
+      serverSession: server,
     }));
     applyLanguage(user.preferredLanguage);
     applyTheme(user.themePreference);
-    sessionStorage.setItem(STORAGE_KEY_SESSION, JSON.stringify({ kind, userId: user.id }));
+    sessionStorage.setItem(STORAGE_KEY_SESSION, JSON.stringify({ kind, userId: user.id, server }));
   }, [repository]);
 
   const enterDemo = useCallback(
@@ -184,7 +201,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [repository, adopt],
   );
 
+  const signInWithServer = useCallback(
+    async (profile: ServerProfile) => {
+      const user = await repository.adoptServerProfile(profile);
+      adopt(user, 'authenticated', true);
+    },
+    [repository, adopt],
+  );
+
   const signOut = useCallback(() => {
+    if (serverConfigured) void signOutServer().catch(() => undefined);
     // Full teardown — nothing from the previous session carries over.
     const recorded = readAuthSessionId();
     if (recorded) void repository.endAuthSession(recorded).catch(() => undefined);
@@ -199,6 +225,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       language: s.language,
       theme: s.theme,
       restoring: false,
+      serverSession: false,
     }));
   }, [repository]);
 
@@ -221,8 +248,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo<SessionContextValue>(
-    () => ({ ...state, enterDemo, signInAs, signOut, setLanguage, setTheme }),
-    [state, enterDemo, signInAs, signOut, setLanguage, setTheme],
+    () => ({ ...state, enterDemo, signInAs, signInWithServer, signOut, setLanguage, setTheme }),
+    [state, enterDemo, signInAs, signInWithServer, signOut, setLanguage, setTheme],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

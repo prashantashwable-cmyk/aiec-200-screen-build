@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { normalizeSkills } from '@/features/qc/inspectors';
@@ -12,10 +13,12 @@ import {
   ErrorState,
   ListRow,
   LoadingState,
+  Select,
+  formatPhone,
   formatDate,
   formatDateTime,
 } from '@/design-system';
-import type { Role } from '@/data/types';
+import type { Role, SignInRequest } from '@/data/types';
 import { useRoleSelect } from './useRoleSelect';
 import { ROLE_SELECT_KEYS as K, SELECTABLE_ROLES } from './role-select.types';
 
@@ -70,6 +73,22 @@ export function RoleSelectView() {
               </Button>
             </div>
           </Card>
+        )}
+
+        {s.signInRequests && (
+          <section className="mb-4" data-signin-requests>
+            <h2 className="t-lg mb-1">{t(K.signIn.title)}</h2>
+            <p className="t-sm t-muted mb-2">{t(K.signIn.subtitle)}</p>
+            {s.signInRequests.length === 0 ? (
+              <Card body={t(K.signIn.empty)} />
+            ) : (
+              <div className="stack gap-3">
+                {s.signInRequests.map((r) => (
+                  <SignInRequestCard key={r.id} request={r} onDecide={s.decideSignIn} />
+                ))}
+              </div>
+            )}
+          </section>
         )}
 
         {s.pending.length === 0 ? (
@@ -227,5 +246,43 @@ export function RoleSelectView() {
         </Button>
       </ActionBar>
     </div>
+  );
+}
+
+/** S1: one person who signed in through the server and waits for Admin to say what they are. */
+function SignInRequestCard({ request: r, onDecide }: { request: SignInRequest; onDecide: (r: SignInRequest, approve: boolean, role: Role) => Promise<void> }) {
+  const { t, i18n } = useTranslation();
+  const [role, setRole] = useState<Role>(r.requestedRole ?? 'customer');
+  const selectId = `signin-role-${r.id}`;
+  return (
+    <Card>
+      <div className="row gap-3">
+        <Avatar name={r.name || r.phone} />
+        <div className="grow stack gap-1" style={{ minWidth: 0 }}>
+          <span className="t-medium num">{r.name || formatPhone(r.phone.replace(/\D/g, '').slice(-10))}</span>
+          <span className="t-xs t-muted">
+            {r.requestedRole ? t(K.signIn.asked, { role: t(`role.${r.requestedRole}`) }) : t(K.signIn.notAsked)}
+            {' · '}
+            {t(K.signIn.since, { date: formatDateTime(r.waitingSince, i18n.language) })}
+          </span>
+        </div>
+      </div>
+      <div className="stack gap-1 mt-3">
+        <label className="t-xs t-muted" htmlFor={selectId}>{t(K.signIn.giveRole)}</label>
+        <Select id={selectId} value={role} onChange={(e) => setRole(e.target.value as Role)}>
+          {SELECTABLE_ROLES.map((x) => (
+            <option key={x} value={x}>{t(`role.${x}`)}</option>
+          ))}
+        </Select>
+      </div>
+      <div className="row gap-2 mt-3" style={{ justifyContent: 'flex-end' }}>
+        <Button size="sm" variant="ghost" icon={<XCircle size={16} />} onClick={() => void onDecide(r, false, role)}>
+          {t(K.queue.rejected)}
+        </Button>
+        <Button size="sm" icon={<CheckCircle size={16} />} onClick={() => void onDecide(r, true, role)}>
+          {t(K.queue.approved)}
+        </Button>
+      </div>
+    </Card>
   );
 }

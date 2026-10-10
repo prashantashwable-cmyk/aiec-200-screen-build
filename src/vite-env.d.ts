@@ -7,6 +7,11 @@ interface ImportMetaEnv {
   readonly VITE_FIREBASE_STORAGE_BUCKET?: string;
   readonly VITE_FIREBASE_MESSAGING_SENDER_ID?: string;
   readonly VITE_FIREBASE_APP_ID?: string;
+  /** The Supabase project's address and public (anon / publishable) key. Both set = real sign-in (S1); unset = the in-memory build. */
+  readonly VITE_SUPABASE_URL?: string;
+  readonly VITE_SUPABASE_ANON_KEY?: string;
+  /** 'true' once an SMS provider sends the sign-in codes from the server's outbox. */
+  readonly VITE_SMS_CONNECTED?: string;
 }
 
 interface ImportMeta {

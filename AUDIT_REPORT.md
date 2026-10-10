@@ -71,7 +71,20 @@ Real (in-memory), 1 Static (001 splash), 0 Partial. What changed:
 | Proof | 21 database tests (`npm run test:db`) on plain Postgres 16 and on Supabase's own Postgres 17; an end-to-end run through Supabase's sign-in service and REST API with signed tokens (a technician cannot make themself Admin, a forged log entry is stored as theirs, Admin cannot edit the log, a pending newcomer cannot write); CI runs the database tests on every push |
 | Owner steps | `docs/SUPABASE_SETUP.md`; `.github/workflows/db-deploy.yml` sends the migrations to the live project from repository secrets |
 
-Still open: everything in S1 onwards, and the items in `KNOWN_GAPS.md`.
+**S1 (real sign-in and people) is done**, active whenever the app is built with a Supabase project's address
+(`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`); without one the app stays the in-memory build it was.
+
+| Piece | What exists now |
+|---|---|
+| Codes | Supabase Auth makes and checks the 6-digit code (`signInWithOtp` / `verifyOtp`); its send-SMS hook files each code in `sms_outbox`, which no browser role can read. No SMS company is connected: the code screen says so, and the owner reads codes in the SQL Editor until one is |
+| Who the number is | Decided by the database, never the browser: a known phone is linked to its profile, an unknown one is a pending profile with no role, shown "waiting for AIEC" (it may say which role it wants: `requested_role`, only while pending) and kept out of every screen |
+| Admin's decision | 004 lists people waiting (`listSignInRequests`) with the role they asked for; approving gives a role, rejecting turns them away (`decideSignInRequest`, refused as `not_pending` if another Admin decided first). The database stamps who decided and when, and writes `profile.decided` to the audit chain itself |
+| Session | Supabase keeps the session (`aiec.auth`); a reload asks the server who the person is now (a role taken away ends the session); sign-out ends it on the server. The screens' in-memory account is made from the server profile (`adoptServerProfile`), and a banner on every screen says the rest is still sample data |
+| Removed fakes | 002's email/password accepted any password and "Continue with Google" signed in as the owner: both now say "not connected yet" |
+| Proof | 27 database tests (6 new: hook writes the outbox, nobody in the browser can call it or read it, requesting a role only while pending, no self-stamped decision, the decision is stamped and audited, a second Admin finds nothing pending) on plain Postgres 16 and Supabase's Postgres 17; a browser test (`npm run test:e2e:server`) on a local Supabase stack: an unknown phone signs in with the code read from the outbox, waits, asks to be a technician; Admin signs in, approves; the person's next sign-in opens the technician home |
+| Owner steps | `docs/SUPABASE_SETUP.md` steps 7–11 |
+
+Still open: everything in S2 onwards, and the items in `KNOWN_GAPS.md`.
 
 ---
 
@@ -242,12 +255,12 @@ shared `ErrorState`).
 
 ## G. Integrations audit
 
-No `fetch`, `XMLHttpRequest` or SDK call exists anywhere in `src/`. Everything
-external is either a stand-in or a hand-off URL.
+Since S1 the Supabase client (`@supabase/supabase-js`) is the one external SDK in `src/`, used for sign-in and
+people only. Everything else external is either a stand-in or a hand-off URL.
 
 | Integration | State | Recommendation (indicative INR, to verify) |
 |---|---|---|
-| Phone OTP auth | **Fake** (`123456`) | Supabase Auth phone OTP via MSG91 / Twilio Verify; MSG91 OTP ≈ ₹0.20–0.25 per SMS + DLT registration |
+| Phone OTP auth | **Real with a Supabase project (S1)**: Supabase Auth makes and checks codes; no SMS company yet (codes wait in `sms_outbox`). Without a project: `123456` | Supabase Auth phone OTP via MSG91 / Twilio Verify; MSG91 OTP ≈ ₹0.20–0.25 per SMS + DLT registration |
 | Database + RLS | **Started (S0c)**: identity, audit chain, heartbeat, storage migrations in `supabase/` | Supabase Postgres (ap-south-1 Mumbai), free plan to start; Pro ≈ US$25 (≈ ₹2,100)/month + compute for a live business (backups, no pausing) — **D1 decided** |
 | Map tiles | **Real, but non-compliant**: public `tile.openstreetmap.org` (`MapCanvas.tsx:219`), not allowed for production traffic | MapTiler / Stadia / Ola Maps; ≈ ₹0 up to free tier, then ~₹1,500–4,000/month at small scale |
 | Geocoding / routing | Missing (hand-off to Google Maps URLs; 020 uses its own heuristic) | Ola Maps or Google Routes; pay-per-use |

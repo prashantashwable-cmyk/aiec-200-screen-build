@@ -193,6 +193,7 @@ const common: ScreenTranslations = {
     demo: {
       banner: 'Demo Mode — sample data, no real money moves',
       exit: 'Exit demo',
+      serverSample: 'You are signed in for real. Apart from sign-in, the screens still show sample data while the rest moves onto the server.',
     },
     pending: {
       title: 'Pending approval',
@@ -687,6 +688,7 @@ const common: ScreenTranslations = {
     demo: {
       banner: 'डेमो मोड — नमूना डेटा, असली पैसा नहीं चलता',
       exit: 'डेमो से बाहर',
+      serverSample: 'आप असल में साइन इन हैं। साइन-इन के अलावा, बाकी हिस्सा सर्वर पर आने तक स्क्रीनें अभी नमूना डेटा दिखाती हैं।',
     },
     pending: {
       title: 'मंज़ूरी बाकी है',
@@ -1182,6 +1184,7 @@ const common: ScreenTranslations = {
     demo: {
       banner: 'डेमो मोड — नमुना माहिती, खरे पैसे हलत नाहीत',
       exit: 'डेमोमधून बाहेर',
+      serverSample: 'तुम्ही खरोखर साइन इन आहात. साइन-इन सोडून, बाकी भाग सर्व्हरवर येईपर्यंत स्क्रीन अजून नमुना माहिती दाखवतात.',
     },
     pending: {
       title: 'मंजुरी बाकी आहे',

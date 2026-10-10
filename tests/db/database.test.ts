@@ -280,3 +280,62 @@ describe('the heartbeat (the server clock)', () => {
     expect(notes.rows[0].n).toBe(1);
   });
 });
+
+describe('sign-in codes (S1)', () => {
+  it('Supabase Auth files each code in the outbox through the hook, with an expiry', async () => {
+    const phone = `+91${nextPhone()}`;
+    await pool.query('select public.send_sms_hook($1::jsonb)', [JSON.stringify({ user: { phone }, sms: { otp: '482913' } })]);
+    const r = await pool.query('select code, purpose, sent_at, expires_at > now() as live from public.sms_outbox where phone = $1', [phone]);
+    expect(r.rows).toEqual([{ code: '482913', purpose: 'sign_in', sent_at: null, live: true }]);
+  });
+
+  it('nobody in the browser can call the hook or read the outbox, not even Admin', async () => {
+    const admin = await person('admin');
+    const hook = JSON.stringify({ user: { phone: '+919800000000' }, sms: { otp: '111111' } });
+    for (const who of [admin.authId, null]) {
+      await expect(as(who, (c) => c.query('select public.send_sms_hook($1::jsonb)', [hook]))).rejects.toThrow(/permission denied/);
+      await expect(as(who, (c) => c.query('select code from public.sms_outbox'))).rejects.toThrow(/permission denied/);
+    }
+  });
+});
+
+describe('asking for a role and Admin deciding (S1)', () => {
+  it('a waiting person may say which role they want, but not once they have one', async () => {
+    const authId = await signIn(`91${nextPhone()}`);
+    await as(authId, (c) => c.query("update public.profiles set requested_role = 'technician' where auth_user_id = $1", [authId]));
+    expect((await pool.query('select requested_role, role, status from public.profiles where auth_user_id = $1', [authId])).rows[0])
+      .toEqual({ requested_role: 'technician', role: null, status: 'pending' });
+    const tech = await person('technician');
+    await expect(as(tech.authId, (c) => c.query("update public.profiles set requested_role = 'surveyor' where id = $1", [tech.profileId]))).rejects.toThrow(/not_pending/);
+  });
+
+  it('a person cannot stamp a decision on themself', async () => {
+    const authId = await signIn(`91${nextPhone()}`);
+    await expect(as(authId, (c) => c.query("update public.profiles set decision_note = 'approved by me' where auth_user_id = $1", [authId]))).rejects.toThrow(/forbidden_field/);
+    await expect(as(authId, (c) => c.query('update public.profiles set decided_at = now() where auth_user_id = $1', [authId]))).rejects.toThrow(/forbidden_field/);
+  });
+
+  it("Admin's decision is stamped by the database and written to the audit log", async () => {
+    const admin = await person('admin');
+    const authId = await signIn(`91${nextPhone()}`);
+    const r = await as(admin.authId, (c) => c.query(
+      "update public.profiles set role = 'surveyor', status = 'active', decision_note = 'Known to Prashant', decided_by = null where auth_user_id = $1 and status = 'pending' returning id, decided_by, decided_at",
+      [authId],
+    ));
+    expect(r.rows[0].decided_by).toBe(admin.profileId);
+    expect(r.rows[0].decided_at).toBeTruthy();
+    const log = await pool.query("select actor_kind, actor_profile_id, record_id, detail from public.audit_events where source_key = 'profile.decided' and record_id = $1", [r.rows[0].id]);
+    expect(log.rows).toHaveLength(1);
+    expect(log.rows[0]).toMatchObject({ actor_kind: 'person', actor_profile_id: admin.profileId });
+    expect(log.rows[0].detail).toMatchObject({ from_role: null, to_role: 'surveyor', from_status: 'pending', to_status: 'active', note: 'Known to Prashant' });
+  });
+
+  it('a second Admin deciding the same person after the first finds nothing still pending', async () => {
+    const a1 = await person('admin');
+    const a2 = await person('admin');
+    const authId = await signIn(`91${nextPhone()}`);
+    const first = await as(a1.authId, (c) => c.query("update public.profiles set role = 'customer', status = 'active' where auth_user_id = $1 and status = 'pending'", [authId]));
+    const second = await as(a2.authId, (c) => c.query("update public.profiles set status = 'rejected' where auth_user_id = $1 and status = 'pending'", [authId]));
+    expect([first.rowCount, second.rowCount]).toEqual([1, 0]);
+  });
+});

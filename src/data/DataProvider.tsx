@@ -2,8 +2,13 @@ import { createContext, useContext, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { memoryRepository } from './memoryRepository';
 import type { Repository } from './repository';
+import { serverConfigured } from './supabase/client';
+import { withServer } from './supabase/serverRepository';
 
-const DataContext = createContext<Repository>(memoryRepository);
+/** The app's repository: the in-memory one, with the parts already moved onto the server when a Supabase project is set. */
+const appRepository: Repository = serverConfigured ? withServer(memoryRepository) : memoryRepository;
+
+const DataContext = createContext<Repository>(appRepository);
 
 /**
  * Screens read the repository from here, never by importing a concrete
@@ -12,7 +17,7 @@ const DataContext = createContext<Repository>(memoryRepository);
  */
 export function DataProvider({
   children,
-  repository = memoryRepository,
+  repository = appRepository,
 }: {
   children: ReactNode;
   repository?: Repository;

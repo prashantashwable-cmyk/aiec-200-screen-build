@@ -7,6 +7,8 @@ import { defineConfig, devices } from '@playwright/test';
  */
 export default defineConfig({
   testDir: 'tests/e2e',
+  // Real sign-in against a Supabase stack has its own config (playwright.server.config.ts).
+  testIgnore: /server-.*\.spec\.ts/,
   timeout: 120_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,

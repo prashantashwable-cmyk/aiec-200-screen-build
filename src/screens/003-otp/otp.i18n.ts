@@ -17,6 +17,22 @@ const translations: ScreenTranslations = {
         'Using a number outside India? It still works — just include the correct country code.',
       noGateway:
         'No messaging gateway is connected in this build, so nothing is actually sent by SMS. Your code is {{code}}.',
+      server: {
+        smsConnected: 'The code was sent to your phone by SMS. It is good for a few minutes.',
+        smsNotConnected:
+          'AIEC has not connected a text-message service yet, so this code is not sent to your phone. Ask the office for the code waiting for your number.',
+      },
+      pending: {
+        title: 'You are signed in, waiting for AIEC',
+        body: 'Your number is confirmed. AIEC has not given your account a role yet, so there is nothing to open until the office does. You can tell them what you are here for.',
+        ask: 'What are you here as?',
+        asked: 'Thank you. AIEC has been told you asked to join as {{role}}.',
+        askFailed: 'That did not reach AIEC. Check your connection and try again.',
+      },
+      inactive: {
+        title: 'This account is not open',
+        body: 'Your number is confirmed, but this account has been closed or put on hold. Please call the AIEC office.',
+      },
       expired: {
         title: 'That code has expired',
         body: 'Codes are valid for five minutes. Ask for a fresh one and we will start the clock again.',
@@ -35,6 +51,9 @@ const translations: ScreenTranslations = {
         malformed: 'A code is exactly six digits.',
         network: 'We could not check the code. Try again in a moment.',
         missingContext: 'Start again from the sign-in screen so we know which number to verify.',
+        tooMany: 'Too many tries for this number. Wait a few minutes and ask for a new code.',
+        phoneLinked: 'This number is already linked to another sign-in. Please call the AIEC office.',
+        wrongServerCode: 'That code is not right or has expired. Check it, or ask for a new one.',
       },
     },
   },
@@ -54,6 +73,22 @@ const translations: ScreenTranslations = {
       countryNote: 'भारत से बाहर का नंबर है? वह भी चलेगा — बस सही देश कोड लगाइए।',
       noGateway:
         'इस बिल्ड में कोई मैसेजिंग गेटवे जुड़ा नहीं है, इसलिए SMS सचमुच नहीं जाता। आपका कोड {{code}} है।',
+      server: {
+        smsConnected: 'कोड SMS से आपके फ़ोन पर भेजा गया है। यह कुछ मिनट तक चलेगा।',
+        smsNotConnected:
+          'AIEC ने अभी कोई SMS सेवा नहीं जोड़ी है, इसलिए यह कोड आपके फ़ोन पर नहीं जाता। अपने नंबर के लिए रखा कोड ऑफ़िस से पूछिए।',
+      },
+      pending: {
+        title: 'आप साइन इन हैं, AIEC का इंतज़ार है',
+        body: 'आपका नंबर पक्का हो गया। AIEC ने अभी आपके खाते को कोई भूमिका नहीं दी है, इसलिए ऑफ़िस के देने तक खोलने को कुछ नहीं है। आप बता सकते हैं कि आप किस लिए आए हैं।',
+        ask: 'आप किस रूप में जुड़ रहे हैं?',
+        asked: 'धन्यवाद। AIEC को बता दिया गया है कि आप {{role}} के रूप में जुड़ना चाहते हैं।',
+        askFailed: 'यह AIEC तक नहीं पहुँचा। कनेक्शन देखकर दोबारा कोशिश कीजिए।',
+      },
+      inactive: {
+        title: 'यह खाता खुला नहीं है',
+        body: 'आपका नंबर पक्का है, पर यह खाता बंद है या रोका गया है। कृपया AIEC ऑफ़िस को फ़ोन कीजिए।',
+      },
       expired: {
         title: 'यह कोड समाप्त हो गया',
         body: 'कोड पाँच मिनट तक चलता है। नया कोड माँगिए, घड़ी फिर से शुरू हो जाएगी।',
@@ -72,6 +107,9 @@ const translations: ScreenTranslations = {
         malformed: 'कोड ठीक छह अंकों का होता है।',
         network: 'हम कोड जाँच नहीं पाए। थोड़ी देर में दोबारा कोशिश कीजिए।',
         missingContext: 'साइन-इन स्क्रीन से दोबारा शुरू कीजिए, ताकि हमें पता हो कौन सा नंबर जाँचना है।',
+        tooMany: 'इस नंबर के लिए बहुत कोशिशें हो गईं। कुछ मिनट रुककर नया कोड माँगिए।',
+        phoneLinked: 'यह नंबर पहले से किसी दूसरे साइन-इन से जुड़ा है। कृपया AIEC ऑफ़िस को फ़ोन कीजिए।',
+        wrongServerCode: 'यह कोड सही नहीं है या इसका समय निकल गया। जाँचिए, या नया कोड माँगिए।',
       },
     },
   },
@@ -91,6 +129,22 @@ const translations: ScreenTranslations = {
       countryNote: 'भारताबाहेरचा क्रमांक आहे? तोही चालतो — फक्त बरोबर देश कोड लावा.',
       noGateway:
         'या बिल्डमध्ये मेसेजिंग गेटवे जोडलेला नाही, त्यामुळे SMS प्रत्यक्षात जात नाही. तुमचा कोड {{code}} आहे.',
+      server: {
+        smsConnected: 'कोड SMS ने तुमच्या फोनवर पाठवला आहे. तो काही मिनिटे चालेल.',
+        smsNotConnected:
+          'AIEC ने अजून SMS सेवा जोडलेली नाही, त्यामुळे हा कोड तुमच्या फोनवर जात नाही. तुमच्या क्रमांकासाठी ठेवलेला कोड ऑफिसला विचारा.',
+      },
+      pending: {
+        title: 'तुम्ही साइन इन आहात, AIEC ची वाट पाहत आहोत',
+        body: 'तुमचा क्रमांक पक्का झाला. AIEC ने अजून तुमच्या खात्याला भूमिका दिलेली नाही, त्यामुळे ऑफिस देईपर्यंत उघडण्यासारखे काही नाही. तुम्ही कशासाठी आला आहात ते सांगू शकता.',
+        ask: 'तुम्ही कोणत्या भूमिकेत जोडले जात आहात?',
+        asked: 'धन्यवाद. तुम्ही {{role}} म्हणून जोडले जाऊ इच्छिता हे AIEC ला कळवले आहे.',
+        askFailed: 'हे AIEC पर्यंत पोहोचले नाही. कनेक्शन तपासून पुन्हा प्रयत्न करा.',
+      },
+      inactive: {
+        title: 'हे खाते उघडे नाही',
+        body: 'तुमचा क्रमांक पक्का आहे, पण हे खाते बंद केले आहे किंवा थांबवले आहे. कृपया AIEC ऑफिसला फोन करा.',
+      },
       expired: {
         title: 'हा कोड कालबाह्य झाला',
         body: 'कोड पाच मिनिटे चालतो. नवीन कोड मागा, घड्याळ पुन्हा सुरू होईल.',
@@ -109,6 +163,9 @@ const translations: ScreenTranslations = {
         malformed: 'कोड नेमका सहा अंकांचा असतो.',
         network: 'आम्ही कोड तपासू शकलो नाही. थोड्या वेळाने पुन्हा प्रयत्न करा.',
         missingContext: 'साइन-इन स्क्रीनवरून पुन्हा सुरू करा, म्हणजे कोणता क्रमांक तपासायचा ते आम्हाला कळेल.',
+        tooMany: 'या क्रमांकासाठी खूप प्रयत्न झाले. काही मिनिटे थांबून नवीन कोड मागा.',
+        phoneLinked: 'हा क्रमांक आधीच दुसऱ्या साइन-इनशी जोडलेला आहे. कृपया AIEC ऑफिसला फोन करा.',
+        wrongServerCode: 'हा कोड बरोबर नाही किंवा त्याची वेळ संपली. तपासा, किंवा नवीन कोड मागा.',
       },
     },
   },

@@ -23,6 +23,7 @@ node scripts/check-translations.mjs    # must say "All three languages complete 
 npm run guard                          # no-mock guard: must say "clean"
 npm test                               # Vitest: pure rules + repository guarantees
 npm run test:e2e                       # Playwright smoke, every role (starts the dev server itself)
+npm run test:e2e:server                # real sign-in against a local Supabase stack (needs `npx supabase start`)
 npm run test:db                        # database rules against a real Postgres (starts a local one if needed)
 ```
 
@@ -125,6 +126,15 @@ build-stage prompt. `AUDIT_REPORT.md` is the audit (what is real, what is mocked
   guard triggers; `app.*` helpers (`my_profile_id`, `my_role`, `is_admin`, `my_is_demo`, `from_client`) say who is asking.
   A trigger that must know the caller is not `security definer`. Owner setup: `docs/SUPABASE_SETUP.md`.
 - Decisions (owner, 2026-10-10): D1 **Supabase** (free plan to start), D2 **the repo's own 200 specs**, D3 **keep 009**.
+- S1 facts: with `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` set (`serverConfigured`, `@/data/supabase/client`), sign-in is
+  Supabase phone OTP (`@/features/auth/serverAuth`); without them the app is the in-memory build, unchanged. The database
+  decides who a number is (pending profile with no role, or linked); 003 shows `pending` / `inactive` phases, 004 shows
+  Admin `listSignInRequests` / `decideSignInRequest` (`withServer` in `@/data/supabase/serverRepository` overrides only
+  the methods that moved; every later slice adds its methods there). `SessionProvider.signInWithServer` makes the
+  in-memory account from the server profile (`adoptServerProfile`, user id = profile id) and `serverSession` shows a
+  "still sample data" banner. Codes go through the send-SMS hook to `sms_outbox` (no SMS company yet; the screen says
+  so). End-to-end: `SUPABASE_ANON_KEY=… npm run test:e2e:server` against `npx supabase start` (Docker; start it with
+  `SUPABASE_AUTH_SMS_TWILIO_AUTH_TOKEN=not-used`).
 
 ## Current status (as of 2026-09-30)
 

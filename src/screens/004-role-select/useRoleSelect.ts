@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useData } from '@/data/DataProvider';
 import { useSession } from '@/session/SessionProvider';
-import type { Role, User } from '@/data/types';
+import type { Role, SignInRequest, User } from '@/data/types';
+import { serverConfigured } from '@/data/supabase/client';
 import {
   AUTO_APPROVED_ROLES,
   ONBOARDING_PATH_BY_ROLE,
@@ -29,6 +30,9 @@ interface RoleSelectState {
   staleRecordName: string | null;
   clearStale: () => void;
   decide: (user: User, approve: boolean) => Promise<void>;
+  /** S1: people who signed in through the server and wait for a role; null when sign-in is not on the server. */
+  signInRequests: SignInRequest[] | null;
+  decideSignIn: (request: SignInRequest, approve: boolean, role: Role) => Promise<void>;
   reload: () => Promise<void>;
 }
 
@@ -52,22 +56,26 @@ export function useRoleSelect(): RoleSelectState {
   const [isReapplication, setIsReapplication] = useState(false);
   const [pending, setPending] = useState<User[]>([]);
   const [audit, setAudit] = useState<RoleAuditEntry[]>([]);
+  const [signInRequests, setSignInRequests] = useState<SignInRequest[] | null>(null);
   const [staleRecordName, setStaleRecordName] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     setStatus('loading');
     try {
-      const [waiting, trail] = await Promise.all([
+      const askServer = mode === 'adminQueue' && serverConfigured && user;
+      const [waiting, trail, requests] = await Promise.all([
         repository.listUsers({ status: 'pending_approval' }),
         repository.listRoleAudit(50),
+        askServer ? repository.listSignInRequests(user.id) : Promise.resolve(null),
       ]);
       setPending(waiting);
       setAudit(trail);
+      setSignInRequests(requests);
       setStatus('ready');
     } catch {
       setStatus('error');
     }
-  }, [repository]);
+  }, [repository, mode, user]);
 
   useEffect(() => {
     // Resume exactly where the applicant left off rather than restarting.
@@ -128,6 +136,26 @@ export function useRoleSelect(): RoleSelectState {
     [repository, user, reload],
   );
 
+  const decideSignIn = useCallback(
+    async (request: SignInRequest, approve: boolean, chosen: Role) => {
+      if (!user) return;
+      setStatus('submitting');
+      try {
+        // The server refuses when someone else decided first (`not_pending`), and keeps the decision in its audit trail.
+        await repository.decideSignInRequest(request.id, { approve, role: chosen }, user.id);
+        await reload();
+      } catch (err) {
+        if (err instanceof Error && err.message === 'not_pending') {
+          setStaleRecordName(request.name || request.phone);
+          await reload();
+          return;
+        }
+        setStatus('error');
+      }
+    },
+    [repository, user, reload],
+  );
+
   return {
     mode,
     status,
@@ -143,6 +171,8 @@ export function useRoleSelect(): RoleSelectState {
     staleRecordName,
     clearStale: () => setStaleRecordName(null),
     decide,
+    signInRequests,
+    decideSignIn,
     reload,
   };
 }

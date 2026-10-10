@@ -6465,3 +6465,28 @@ export interface ProductFeedback {
   handledBy?: string;
   handledAt?: string;
 }
+
+/* ============================== S1: signing in through the server */
+
+/** A person as the server (Supabase `profiles`) knows them. The server decides role and status; the app never does. */
+export type ServerProfileStatus = 'pending' | 'active' | 'suspended' | 'rejected';
+
+export interface ServerProfile {
+  id: string;
+  phone: string;
+  name: string;
+  role: Role | null;
+  status: ServerProfileStatus;
+  isDemo: boolean;
+  preferredLanguage: Language;
+  requestedRole: Role | null;
+}
+
+/** Someone who signed in with a phone AIEC did not know, waiting for Admin to give them a role (004). */
+export interface SignInRequest {
+  id: string;
+  phone: string;
+  name: string;
+  requestedRole: Role | null;
+  waitingSince: string;
+}

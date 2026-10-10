@@ -17,7 +17,7 @@ import { screenRoutes } from './registry';
 export function AppShell() {
   const { t } = useTranslation();
   const { brand } = useBrand();
-  const { user, role, isDemo, signOut } = useSession();
+  const { user, role, isDemo, signOut, serverSession } = useSession();
   const location = useLocation();
   // The app's one clock, and every role's assistant — see features/work.
   const heartbeat = useFollowUpHeartbeat(user?.id);
@@ -88,6 +88,11 @@ export function AppShell() {
             >
               {t('demo.exit')}
             </button>
+          </div>
+        )}
+        {serverSession && (
+          <div className="shell__demo-banner" role="status" data-server-sample>
+            <span>{t('demo.serverSample')}</span>
           </div>
         )}
         {role === 'admin' && user && <SandboxBanner userId={user.id} tick={heartbeat.tick} />}

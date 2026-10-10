@@ -70,6 +70,15 @@ export const ROLE_SELECT_KEYS = {
     supplierKyc: 'roleSelect.queue.supplierKyc',
     decision: { approved: 'roleSelect.queue.decision.approved', rejected: 'roleSelect.queue.decision.rejected' },
   },
+  signIn: {
+    title: 'roleSelect.signIn.title',
+    subtitle: 'roleSelect.signIn.subtitle',
+    empty: 'roleSelect.signIn.empty',
+    asked: 'roleSelect.signIn.asked',
+    notAsked: 'roleSelect.signIn.notAsked',
+    since: 'roleSelect.signIn.since',
+    giveRole: 'roleSelect.signIn.giveRole',
+  },
   loading: 'roleSelect.loading',
   error: { title: 'roleSelect.error.title', body: 'roleSelect.error.body' },
 } as const;

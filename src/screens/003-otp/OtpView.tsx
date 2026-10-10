@@ -1,8 +1,8 @@
 import { useTranslation } from 'react-i18next';
-import { CheckCircle, Clock, ShieldWarning } from '@phosphor-icons/react';
+import { CheckCircle, Clock, HourglassMedium, ShieldWarning } from '@phosphor-icons/react';
 import { Button, Card, OtpInput, formatPhone } from '@/design-system';
 import { useOtp } from './useOtp';
-import { DEMO_OTP, MAX_RESENDS, OTP_KEYS as K } from './otp.types';
+import { DEMO_OTP, MAX_RESENDS, OTP_KEYS as K, REQUESTABLE_ROLES } from './otp.types';
 
 /**
  * Screen 003 — OTP Verification. A calm doorway, not paperwork: six boxes, a
@@ -19,6 +19,48 @@ export function OtpView() {
           <CheckCircle size={28} weight="fill" />
         </span>
         <h1 className="t-center">{t(K.success)}</h1>
+      </div>
+    );
+  }
+
+  if (s.phase === 'pending' || s.phase === 'inactive') {
+    const pending = s.phase === 'pending';
+    return (
+      <div className="ds-screen ds-screen--narrow stack" style={{ minHeight: '100dvh' }} data-otp-phase={s.phase}>
+        <div className="stack gap-2 mt-5 mb-4">
+          <span className="ds-state__icon" style={{ color: pending ? 'var(--color-accent-primary)' : 'var(--color-warning)' }}>
+            {pending ? <HourglassMedium size={28} /> : <ShieldWarning size={28} />}
+          </span>
+          <h1 className="t-balance">{t(pending ? K.pending.title : K.inactive.title)}</h1>
+          <p className="t-sm t-muted">{t(pending ? K.pending.body : K.inactive.body)}</p>
+        </div>
+        {pending && (
+          <Card title={t(K.pending.ask)}>
+            <div className="row wrap gap-2 mt-2">
+              {REQUESTABLE_ROLES.map((role) => (
+                <Button
+                  key={role}
+                  size="sm"
+                  variant={s.requestedRole === role ? 'primary' : 'secondary'}
+                  aria-pressed={s.requestedRole === role}
+                  loading={s.askState === 'saving'}
+                  onClick={() => void s.askForRole(role)}
+                >
+                  {t(`role.${role}`)}
+                </Button>
+              ))}
+            </div>
+            {s.askState === 'saved' && s.requestedRole && (
+              <p className="t-sm t-success mt-2" role="status">{t(K.pending.asked, { role: t(`role.${s.requestedRole}`) })}</p>
+            )}
+            {s.askState === 'failed' && <p className="t-sm t-error mt-2" role="alert">{t(K.pending.askFailed)}</p>}
+          </Card>
+        )}
+        <div className="stack gap-2 mt-4">
+          <Button variant="quiet" block onClick={s.changeNumber}>
+            {t(K.changeNumber)}
+          </Button>
+        </div>
       </div>
     );
   }
@@ -86,6 +128,16 @@ export function OtpView() {
                   {t(K.error.malformed)}
                 </p>
               )}
+              {s.error === 'wrongServerCode' && (
+                <p className="t-sm t-error t-center" role="alert">
+                  {t(K.error.wrongServerCode)}
+                </p>
+              )}
+              {(s.error === 'tooMany' || s.error === 'phoneLinked') && (
+                <p className="t-sm t-error t-center" role="alert">
+                  {t(K.error[s.error])}
+                </p>
+              )}
               {s.error === 'network' && (
                 <p className="t-sm t-error t-center" role="alert">
                   {t(K.error.network)}
@@ -123,9 +175,11 @@ export function OtpView() {
             </>
           )}
 
-          {/* Honest about why the code is on screen rather than in an SMS. */}
+          {/* Honest about how the code reaches the person: on screen in the in-memory build, by text once connected. */}
           <Card>
-            <p className="t-xs t-muted">{t(K.noGateway, { code: DEMO_OTP })}</p>
+            <p className="t-xs t-muted" data-otp-note={s.server ? (s.smsConnected ? 'sms' : 'sms-not-connected') : 'demo'}>
+              {s.server ? t(s.smsConnected ? K.server.smsConnected : K.server.smsNotConnected) : t(K.noGateway, { code: DEMO_OTP })}
+            </p>
           </Card>
 
           <p className="t-xs t-muted t-center">{t(K.countryNote)}</p>

@@ -9,9 +9,16 @@ export type OtpPhase =
   /** Too many wrong codes; a visible countdown, never a silent block. */
   | 'cooldown'
   /** Resend cap hit — protects SMS spend and blocks abuse. */
-  | 'resendBlocked';
+  | 'resendBlocked'
+  /** S1: signed in, but Admin has not given this phone a role yet. */
+  | 'pending'
+  /** S1: the account is suspended or was turned away. */
+  | 'inactive';
 
-export type OtpError = 'wrongCode' | 'malformed' | 'network' | 'missingContext';
+export type OtpError = 'wrongCode' | 'malformed' | 'network' | 'missingContext' | 'tooMany' | 'phoneLinked' | 'wrongServerCode';
+
+/** Roles a person waiting for Admin may ask for (Admin itself is never asked for). */
+export const REQUESTABLE_ROLES = ['surveyor', 'technician', 'customer', 'supplier'] as const;
 
 export const OTP_LENGTH = 6;
 /** A code is good for five minutes from the moment it was sent. */
@@ -24,8 +31,8 @@ export const MAX_RESENDS = 5;
 export const RESEND_WINDOW_MS = 10 * 60 * 1000;
 
 /**
- * There is no SMS gateway in this build, so the code cannot arrive by message.
- * It is shown on screen instead, and the screen says why — see BUILD_README.md.
+ * The in-memory build (no Supabase project) has no SMS gateway, so its code cannot arrive by message: it is shown on
+ * screen instead, and the screen says why. With a Supabase project (S1) the server makes and checks a real code.
  */
 export const DEMO_OTP = '123456';
 
@@ -42,6 +49,15 @@ export const OTP_KEYS = {
   resendCount: 'otp.resendCount',
   countryNote: 'otp.countryNote',
   noGateway: 'otp.noGateway',
+  server: { smsConnected: 'otp.server.smsConnected', smsNotConnected: 'otp.server.smsNotConnected' },
+  pending: {
+    title: 'otp.pending.title',
+    body: 'otp.pending.body',
+    ask: 'otp.pending.ask',
+    asked: 'otp.pending.asked',
+    askFailed: 'otp.pending.askFailed',
+  },
+  inactive: { title: 'otp.inactive.title', body: 'otp.inactive.body' },
   expired: { title: 'otp.expired.title', body: 'otp.expired.body', action: 'otp.expired.action' },
   cooldown: { title: 'otp.cooldown.title', body: 'otp.cooldown.body' },
   resendBlocked: { title: 'otp.resendBlocked.title', body: 'otp.resendBlocked.body' },
@@ -50,5 +66,8 @@ export const OTP_KEYS = {
     malformed: 'otp.error.malformed',
     network: 'otp.error.network',
     missingContext: 'otp.error.missingContext',
+    tooMany: 'otp.error.tooMany',
+    phoneLinked: 'otp.error.phoneLinked',
+    wrongServerCode: 'otp.error.wrongServerCode',
   },
 } as const;

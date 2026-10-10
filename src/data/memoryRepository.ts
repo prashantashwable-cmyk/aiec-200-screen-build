@@ -20248,6 +20248,42 @@ export const memoryRepository: Repository = {
       return patchInPlace(suppliers, supplierId, { watchlist: on ? { at: new Date().toISOString(), byName: admin.name } : undefined });
     }),
 
+  adoptServerProfile: (profile) =>
+    simulateWrite(() => {
+      if (profile.status !== 'active' || !profile.role) throw new RepositoryError('not_active');
+      const key = profile.phone.replace(/\D/g, '').slice(-10);
+      const known = users.find((u) => u.role === profile.role && u.phone.replace(/\D/g, '').slice(-10) === key);
+      if (known) {
+        // The server has just proven who this is; its record of the account is what counts.
+        return patchInPlace(users, known.id, { status: 'active', name: known.name || profile.name });
+      }
+      const user: User = {
+        id: profile.id,
+        role: profile.role,
+        name: profile.name || `+91 ${key}`,
+        phone: key,
+        status: 'active',
+        preferredLanguage: profile.preferredLanguage,
+        themePreference: 'light',
+        isDemo: profile.isDemo,
+        joinedAt: new Date().toISOString(),
+      };
+      users.push(user);
+      return user;
+    }),
+
+  // Without a server nobody can sign in for real, so nobody waits for a role this way.
+  listSignInRequests: (adminId) =>
+    simulateRead(() => {
+      adminOnly(adminId);
+      return [];
+    }),
+
+  decideSignInRequest: () =>
+    simulateWrite(() => {
+      throw new RepositoryError('not_configured');
+    }),
+
   confirmCustomerAccount: (input) =>
     simulateWrite(() => {
       const lead = byId(leads, input.leadId);

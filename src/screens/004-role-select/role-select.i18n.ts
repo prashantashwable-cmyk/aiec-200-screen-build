@@ -13,6 +13,15 @@ const translations: ScreenTranslations = {
       resumed: 'We kept the choice you made last time. Change it if you meant something else.',
       reapplication:
         'You applied for this before and were not approved. You can apply again — it will be marked as a re-application.',
+      signIn: {
+        title: 'Signed in, waiting for a role',
+        subtitle: 'These numbers signed in but AIEC does not know them yet. Give each one a role, or turn it away. Nothing opens for them until you do.',
+        empty: 'Nobody is waiting.',
+        asked: 'Asked to join as {{role}}',
+        notAsked: 'Has not said what they are here for',
+        since: 'waiting since {{date}}',
+        giveRole: 'Give this person the role',
+      },
       loading: 'Loading roles',
       description: {
         surveyor: 'Visit sites, capture buildings as leads, and earn commission on what converts.',
@@ -66,6 +75,15 @@ const translations: ScreenTranslations = {
       resumed: 'पिछली बार का चुनाव हमने संभालकर रखा है। कुछ और चाहते हों तो बदल लीजिए।',
       reapplication:
         'आपने पहले भी इसके लिए आवेदन किया था और मंज़ूरी नहीं मिली थी। दोबारा आवेदन कर सकते हैं — इसे पुनः-आवेदन के रूप में दर्ज किया जाएगा।',
+      signIn: {
+        title: 'साइन इन हुए, भूमिका का इंतज़ार',
+        subtitle: 'इन नंबरों ने साइन इन किया है, पर AIEC इन्हें अभी नहीं जानता। हर एक को भूमिका दीजिए, या मना कीजिए। आपके तय करने तक उनके लिए कुछ नहीं खुलता।',
+        empty: 'कोई इंतज़ार में नहीं है।',
+        asked: '{{role}} के रूप में जुड़ना चाहते हैं',
+        notAsked: 'अभी नहीं बताया कि किस लिए आए हैं',
+        since: '{{date}} से इंतज़ार में',
+        giveRole: 'इस व्यक्ति को यह भूमिका दें',
+      },
       loading: 'भूमिकाएँ लोड हो रही हैं',
       description: {
         surveyor: 'साइट पर जाइए, इमारतों को लीड बनाइए, और जो सौदे बनें उन पर कमीशन कमाइए।',
@@ -119,6 +137,15 @@ const translations: ScreenTranslations = {
       resumed: 'मागच्या वेळची तुमची निवड आम्ही जपून ठेवली आहे. दुसरे काही हवे असेल तर बदला.',
       reapplication:
         'तुम्ही याआधीही यासाठी अर्ज केला होता आणि मंजुरी मिळाली नव्हती. पुन्हा अर्ज करू शकता — तो पुन्हा-अर्ज म्हणून नोंदवला जाईल.',
+      signIn: {
+        title: 'साइन इन झाले, भूमिकेची वाट',
+        subtitle: 'या क्रमांकांनी साइन इन केले आहे, पण AIEC त्यांना अजून ओळखत नाही. प्रत्येकाला भूमिका द्या, किंवा नकार द्या. तुम्ही ठरवेपर्यंत त्यांच्यासाठी काही उघडत नाही.',
+        empty: 'कोणीही वाट पाहत नाही.',
+        asked: '{{role}} म्हणून जोडले जाऊ इच्छितात',
+        notAsked: 'कशासाठी आले ते अजून सांगितले नाही',
+        since: '{{date}} पासून वाट पाहत आहेत',
+        giveRole: 'या व्यक्तीला ही भूमिका द्या',
+      },
       loading: 'भूमिका लोड होत आहेत',
       description: {
         surveyor: 'साइटवर जा, इमारतींचे लीड बनवा, आणि जे व्यवहार होतील त्यावर कमिशन मिळवा.',

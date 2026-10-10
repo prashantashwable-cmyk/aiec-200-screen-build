@@ -3,6 +3,9 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useData } from '@/data/DataProvider';
 import { useSession } from '@/session/SessionProvider';
 import { HOME_PATH_BY_ROLE } from '@/navigation/registry';
+import { serverConfigured } from '@/data/supabase/client';
+import { ServerAuthFailure, requestServerRole, sendSignInCode, verifySignInCode } from '@/features/auth/serverAuth';
+import type { Role, ServerProfile } from '@/data/types';
 import {
   DEMO_OTP,
   ESCALATED_COOLDOWN_S,
@@ -19,6 +22,8 @@ interface OtpNavState {
   userId?: string;
   phone?: string;
   remember?: boolean;
+  /** S1: the code was asked for from the server (Supabase), which checks it. */
+  server?: boolean;
 }
 
 interface OtpState {
@@ -37,6 +42,14 @@ interface OtpState {
   verify: () => Promise<void>;
   resend: () => void;
   changeNumber: () => void;
+  /** S1: signed in through the server, so no code is shown on screen. */
+  server: boolean;
+  /** Whether text messages are connected (set with the SMS provider, VITE_SMS_CONNECTED). */
+  smsConnected: boolean;
+  /** S1: a person waiting for Admin may say which role they want. */
+  requestedRole: Role | null;
+  askState: 'idle' | 'saving' | 'saved' | 'failed';
+  askForRole: (role: Role) => Promise<void>;
 }
 
 /**
@@ -50,14 +63,18 @@ export function useOtp(): OtpState {
   const navigate = useNavigate();
   const location = useLocation();
   const repository = useData();
-  const { signInAs, signOut } = useSession();
+  const { signInAs, signInWithServer, signOut } = useSession();
 
   const navState = (location.state ?? {}) as OtpNavState;
   const userId = navState.userId;
   const phone = navState.phone ?? '';
+  const server = Boolean(navState.server) && serverConfigured;
+  const hasContext = server ? phone.length === 10 : Boolean(userId);
 
-  const [phase, setPhase] = useState<OtpPhase>(userId ? 'entering' : 'entering');
-  const [error, setError] = useState<OtpError | null>(userId ? null : 'missingContext');
+  const [phase, setPhase] = useState<OtpPhase>('entering');
+  const [error, setError] = useState<OtpError | null>(hasContext ? null : 'missingContext');
+  const [pendingProfile, setPendingProfile] = useState<ServerProfile | null>(null);
+  const [askState, setAskState] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
   const [code, setCodeState] = useState('');
   const [resendIn, setResendIn] = useState(RESEND_COOLDOWN_S);
   const [cooldownIn, setCooldownIn] = useState(0);
@@ -112,7 +129,42 @@ export function useOtp(): OtpState {
     setError(null);
   }, []);
 
+  // S1: the server makes and checks the code, counts wrong tries itself, and says who this person is.
+  const verifyOnServer = useCallback(async () => {
+    setPhase('verifying');
+    setError(null);
+    try {
+      const profile = await verifySignInCode(phone, code);
+      if (profile.status === 'active' && profile.role) {
+        await signInWithServer(profile);
+        setPhase('success');
+        const home = HOME_PATH_BY_ROLE[profile.role];
+        window.setTimeout(() => navigate(home, { replace: true }), 450);
+        return;
+      }
+      if (profile.status === 'pending') {
+        setPendingProfile(profile);
+        setPhase('pending');
+        return;
+      }
+      setPhase('inactive');
+    } catch (err) {
+      const kind = err instanceof ServerAuthFailure ? err.kind : 'network';
+      setCodeState('');
+      setError(kind === 'wrong_code' ? 'wrongServerCode' : kind === 'too_many' ? 'tooMany' : kind === 'phone_linked' ? 'phoneLinked' : 'network');
+      setPhase('entering');
+    }
+  }, [phone, code, signInWithServer, navigate]);
+
   const verify = useCallback(async () => {
+    if (server) {
+      if (code.length !== OTP_LENGTH) {
+        setError('malformed');
+        return;
+      }
+      await verifyOnServer();
+      return;
+    }
     if (!userId) {
       setError('missingContext');
       return;
@@ -174,7 +226,7 @@ export function useOtp(): OtpState {
       setError('network');
       setPhase('entering');
     }
-  }, [userId, code, wrongAttempts, repository, signInAs, signOut, navigate]);
+  }, [server, verifyOnServer, userId, code, wrongAttempts, repository, signInAs, signOut, navigate]);
 
   // The spec asks for no extra "continue" tap: the moment six valid digits are
   // present, verification runs itself. The button below stays for keyboard and
@@ -185,6 +237,10 @@ export function useOtp(): OtpState {
 
   const resend = useCallback(() => {
     const now = Date.now();
+    if (server) {
+      // Ask the server for a fresh code; it applies its own limits too.
+      void sendSignInCode(phone).catch((err: unknown) => setError(err instanceof ServerAuthFailure && err.kind === 'too_many' ? 'tooMany' : 'network'));
+    }
     // The cap is per rolling window, so an old window resets the counter.
     if (now - firstResendAtRef.current > RESEND_WINDOW_MS) {
       firstResendAtRef.current = now;
@@ -200,7 +256,7 @@ export function useOtp(): OtpState {
     setCodeState('');
     setError(null);
     setPhase('entering');
-  }, [resendsUsed]);
+  }, [resendsUsed, server, phone]);
 
   const changeNumber = useCallback(() => {
     // Going back a step must not lose the rest of the login flow, so this is a
@@ -208,7 +264,27 @@ export function useOtp(): OtpState {
     navigate('/login');
   }, [navigate]);
 
+  const askForRole = useCallback(
+    async (role: Role) => {
+      if (!pendingProfile) return;
+      setAskState('saving');
+      try {
+        await requestServerRole(pendingProfile.id, role);
+        setPendingProfile({ ...pendingProfile, requestedRole: role });
+        setAskState('saved');
+      } catch {
+        setAskState('failed');
+      }
+    },
+    [pendingProfile],
+  );
+
   return {
+    server,
+    smsConnected: import.meta.env.VITE_SMS_CONNECTED === 'true',
+    requestedRole: pendingProfile?.requestedRole ?? null,
+    askState,
+    askForRole,
     phase,
     error,
     code,

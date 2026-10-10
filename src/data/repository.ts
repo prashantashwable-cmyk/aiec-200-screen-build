@@ -341,6 +341,8 @@ import type {
   PaymentMethodChange,
   HelpArticleVersion,
   HelpText,
+  ServerProfile,
+  SignInRequest,
 } from './types';
 import type { SlotDay } from '@/features/logistics/deliverySlots';
 import type { ArrivalWindow, CapacityWeek, ReadinessStatus } from '@/features/logistics/transit';
@@ -8693,6 +8695,14 @@ export interface Repository {
    *  installation cannot be done without it. Throws `not_found`,
    *  `invalid_input`, `phone_taken` (the number belongs to a non-customer). */
   confirmCustomerAccount(input: CustomerConfirmInput): Promise<{ user: User; existing: boolean; linkedDeals: number }>;
+  /** S1: takes a person the server has signed in (their `ServerProfile`, active) into this workspace: the person on record
+   *  with the same phone and role, or a new record for someone the sample data does not know. The server's role wins. */
+  adoptServerProfile(profile: ServerProfile): Promise<User>;
+  /** S1 (Admin): people who signed in with a phone AIEC did not know and wait for a role, oldest first. Empty without a server. */
+  listSignInRequests(adminId: string): Promise<SignInRequest[]>;
+  /** S1 (Admin): gives a waiting person a role (`approve`, a role required) or turns them away. Refuses `not_pending` when
+   *  someone decided first and `not_configured` without a server. The server stamps and logs the decision itself. */
+  decideSignInRequest(requestId: string, input: { approve: boolean; role: Role | null; note?: string }, adminId: string): Promise<void>;
   /** Approves or rejects a pending supplier's KYC. Approving also moves
    *  `status` to `'active'` — the two are set together here since nothing
    *  else in this build ever brings a supplier live without it. Rejecting
